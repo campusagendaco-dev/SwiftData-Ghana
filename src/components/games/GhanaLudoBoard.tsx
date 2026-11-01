@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Dices, Shield, Zap, HelpCircle } from "lucide-react";
+import { HelpCircle, Shield } from "lucide-react";
 import { playSound, playSuccessSound } from "@/lib/sound";
 
 export interface LudoState {
@@ -22,17 +22,79 @@ export const INITIAL_LUDO_STATE: LudoState = {
   turn: "creator",
   diceValue: null,
   phase: "roll",
-  lastAction: "Roll the dice to begin the Ghana Ludo showdown!",
+  lastAction: "Tap the 3D Blue Dice to begin the Ghana Ludo Challenge!",
   winner: null,
   moveCount: 0,
 };
 
 const SAFE_ABSOLUTE_SQUARES = new Set([0, 7, 14, 21]);
 
+// Maps the 28-step main perimeter track to exact (row, col) cells on the 15x15 Ludo Cross Board
+const PERIMETER_COORDS: [number, number][] = [
+  // Quadrant 0: Red Start (Bottom-Left) -> Left Arm
+  [13, 6],
+  [12, 6],
+  [11, 6],
+  [10, 6],
+  [9, 6],
+  [8, 4],
+  [8, 2],
+  // Quadrant 1: Green Start (Top-Left) -> Top Arm
+  [6, 1],
+  [6, 3],
+  [6, 5],
+  [5, 6],
+  [3, 6],
+  [1, 6],
+  [0, 7],
+  // Quadrant 2: Yellow Start (Top-Right) -> Right Arm
+  [1, 8],
+  [3, 8],
+  [5, 8],
+  [6, 9],
+  [6, 11],
+  [6, 13],
+  [7, 14],
+  // Quadrant 3: Blue Start (Bottom-Right) -> Bottom Arm
+  [8, 13],
+  [8, 11],
+  [8, 9],
+  [9, 8],
+  [11, 8],
+  [13, 8],
+  [14, 7],
+];
+
+// Red (Creator) Home Stretch (col 7, rows 12 -> 9)
+const CREATOR_HOME_STRETCH: [number, number][] = [
+  [12, 7],
+  [11, 7],
+  [9, 7],
+];
+
+// Yellow/Green (Opponent) Home Stretch (col 7, rows 2 -> 5)
+const OPPONENT_HOME_STRETCH: [number, number][] = [
+  [2, 7],
+  [3, 7],
+  [5, 7],
+];
+
 function toAbsoluteSquare(side: "creator" | "opponent", relStep: number): number | null {
   if (relStep < 0 || relStep > 27) return null;
   const offset = side === "creator" ? 0 : 14;
   return (relStep + offset) % 28;
+}
+
+function getTokenBoardCoord(side: "creator" | "opponent", relStep: number): [number, number] | null {
+  if (relStep < 0 || relStep >= 31) return null;
+  if (relStep <= 27) {
+    const absIdx = toAbsoluteSquare(side, relStep);
+    return absIdx !== null ? PERIMETER_COORDS[absIdx] : null;
+  }
+  const stretchIdx = relStep - 28; // 0, 1, 2
+  return side === "creator"
+    ? CREATOR_HOME_STRETCH[stretchIdx] || [9, 7]
+    : OPPONENT_HOME_STRETCH[stretchIdx] || [5, 7];
 }
 
 export function canMoveLudoToken(tokens: number[], tokenIdx: number, dice: number): boolean {
@@ -62,8 +124,8 @@ export function applyLudoTokenMove(
   let kickedOpponent = false;
   let actionLog =
     currentPos === -1
-      ? `${side === "creator" ? "Red" : "Green"} brought Token #${tokenIdx + 1} onto the board!`
-      : `${side === "creator" ? "Red" : "Green"} advanced Token #${tokenIdx + 1} by ${dice}.`;
+      ? `${side === "creator" ? "Red" : "Yellow"} brought Token #${tokenIdx + 1} out of the Yard!`
+      : `${side === "creator" ? "Red" : "Yellow"} advanced Token #${tokenIdx + 1} by ${dice}.`;
 
   // Check if landed on opponent token on main 28-square perimeter
   if (nextPos >= 0 && nextPos <= 27) {
@@ -75,14 +137,14 @@ export function applyLudoTokenMove(
         if (oppAbs !== null && oppAbs === myAbs) {
           oppTokens[i] = -1; // Kick back to yard!
           kickedOpponent = true;
-          actionLog = `💥 KICK! ${side === "creator" ? "Red" : "Green"} kicked opponent's Token #${i + 1} back to base! Bonus Roll!`;
+          actionLog = `💥 KICK! ${side === "creator" ? "Red" : "Yellow"} kicked opponent's Token #${i + 1} back to Yard! Bonus Roll!`;
         }
       }
     }
   }
 
   if (nextPos === 31) {
-    actionLog = `🏠 HOME! ${side === "creator" ? "Red" : "Green"} brought Token #${tokenIdx + 1} safely home!`;
+    actionLog = `🏠 HOME! ${side === "creator" ? "Red" : "Yellow"} brought Token #${tokenIdx + 1} into the Center Home!`;
   }
 
   const creatorNext = side === "creator" ? myTokens : oppTokens;
@@ -116,6 +178,80 @@ export function applyLudoTokenMove(
   };
 }
 
+/**
+ * 3D Royal-Blue Dice with White Pips matching the reference Ludo artwork
+ */
+function RoyalBlue3DDice({
+  value,
+  rolling,
+  disabled,
+  onClick,
+  size = "lg",
+}: {
+  value: number;
+  rolling: boolean;
+  disabled?: boolean;
+  onClick?: () => void;
+  size?: "md" | "lg";
+}) {
+  // Standard 3x3 pip grid positions (0..8) for dice values 1..6
+  const pipMap: Record<number, number[]> = {
+    1: [4],
+    2: [0, 8],
+    3: [0, 4, 8],
+    4: [0, 2, 6, 8],
+    5: [0, 2, 4, 6, 8],
+    6: [0, 2, 3, 5, 6, 8],
+  };
+  const activePips = pipMap[value] || pipMap[6];
+  const dims = size === "lg" ? "w-16 h-16 sm:w-20 sm:h-20" : "w-12 h-12";
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={disabled ? "Wait for your roll" : "Tap to Roll Dice!"}
+      className={`group relative select-none transition-all duration-200 ${
+        disabled ? "cursor-default" : "cursor-pointer hover:scale-110 active:scale-95"
+      }`}
+    >
+      {/* 3D Perspective Cube Wrapper */}
+      <div
+        className={`${dims} rounded-[18px] relative transition-transform duration-300 ${
+          rolling ? "animate-spin scale-110" : "-rotate-12 group-hover:-rotate-6"
+        }`}
+        style={{
+          background:
+            "linear-gradient(145deg, #6366f1 0%, #4338ca 45%, #1e1b4b 100%)",
+          boxShadow:
+            "0 12px 24px rgba(0,0,0,0.65), inset 0 3px 6px rgba(255,255,255,0.45), inset -4px -6px 10px rgba(15,23,42,0.8)",
+          border: "2px solid rgba(165, 180, 252, 0.55)",
+        }}
+      >
+        {/* Top Face White Pips (3x3 grid) */}
+        <div className="w-full h-full p-2.5 sm:p-3 grid grid-cols-3 grid-rows-3 gap-1 place-items-center">
+          {Array.from({ length: 9 }).map((_, idx) => {
+            const hasPip = activePips.includes(idx);
+            return (
+              <span
+                key={idx}
+                className={`rounded-full transition-all ${
+                  size === "lg" ? "w-2.5 h-2.5 sm:w-3 sm:h-3" : "w-2 h-2"
+                } ${
+                  hasPip
+                    ? "bg-white shadow-[0_1px_3px_rgba(0,0,0,0.6),inset_0_-1px_2px_rgba(203,213,225,0.9)] scale-100"
+                    : "opacity-0 scale-0"
+                }`}
+              />
+            );
+          })}
+        </div>
+      </div>
+    </button>
+  );
+}
+
 interface GhanaLudoBoardProps {
   mode: "p2p" | "ai" | "free_data";
   mySide: "creator" | "opponent";
@@ -141,6 +277,7 @@ export function GhanaLudoBoard({
       : INITIAL_LUDO_STATE
   );
   const [rolling, setRolling] = useState(false);
+  const [lastRolledVisual, setLastRolledVisual] = useState<number>(6);
   const [showRules, setShowRules] = useState(false);
 
   useEffect(() => {
@@ -150,6 +287,7 @@ export function GhanaLudoBoard({
       (initialState.moveCount || 0) > (game.moveCount || 0)
     ) {
       setGame(initialState);
+      if (initialState.diceValue) setLastRolledVisual(initialState.diceValue);
     }
   }, [initialState, game.moveCount]);
 
@@ -163,6 +301,7 @@ export function GhanaLudoBoard({
     setTimeout(() => {
       const rolled = Math.floor(Math.random() * 6) + 1;
       setRolling(false);
+      setLastRolledVisual(rolled);
 
       const myTokens = mySide === "creator" ? game.creatorTokens : game.opponentTokens;
       const movableIndices = myTokens
@@ -184,54 +323,61 @@ export function GhanaLudoBoard({
         return;
       }
 
-      // If only 1 token can move, auto-move it for snappy gameplay!
-      if (movableIndices.length === 1) {
+      // If only 1 token can move (or all movable tokens are in yard), auto-move it for snappy gameplay
+      const uniquePositions = new Set(movableIndices.map((i) => myTokens[i]));
+      if (movableIndices.length === 1 || uniquePositions.size === 1) {
         const tempState: LudoState = { ...game, diceValue: rolled, phase: "move" };
-        const moved = applyLudoTokenMove(tempState, mySide, movableIndices[0]);
-        if (moved) {
-          if (moved.lastAction?.includes("KICK") || moved.lastAction?.includes("HOME")) {
+        const autoMoved = applyLudoTokenMove(tempState, mySide, movableIndices[0]);
+        if (autoMoved) {
+          setGame(autoMoved);
+          onStateChange?.(autoMoved);
+          if (autoMoved.winner) {
             playSuccessSound();
+            onMatchComplete?.(autoMoved.winner, autoMoved);
           }
-          setGame(moved);
-          onStateChange?.(moved);
-          if (moved.winner) onMatchComplete?.(moved.winner, moved);
           return;
         }
       }
 
-      const rolledState: LudoState = {
+      const moveState: LudoState = {
         ...game,
         diceValue: rolled,
         phase: "move",
-        lastAction: `Rolled a ${rolled}! Tap one of your highlighted tokens to move.`,
-        moveCount: (game.moveCount || 0) + 1,
+        lastAction: `🎲 Rolled a ${rolled}! Tap one of your highlighted tokens on the board to move.`,
       };
-      setGame(rolledState);
-      onStateChange?.(rolledState);
-    }, 380);
+      setGame(moveState);
+      onStateChange?.(moveState);
+    }, 450);
   }, [game, isMyTurn, rolling, mySide, onStateChange, onMatchComplete]);
 
-  const handleSelectToken = (tokenIdx: number) => {
-    if (!isMyTurn || game.phase !== "move" || !game.diceValue) return;
-    const moved = applyLudoTokenMove(game, mySide, tokenIdx);
-    if (!moved) return;
+  const handleSelectToken = useCallback(
+    (tokenIdx: number) => {
+      if (game.winner || !isMyTurn || game.phase !== "move") return;
+      const nextState = applyLudoTokenMove(game, mySide, tokenIdx);
+      if (!nextState) return;
 
-    if (moved.lastAction?.includes("KICK") || moved.lastAction?.includes("HOME")) {
-      playSuccessSound();
-    } else {
       playSound("click");
-    }
+      setGame(nextState);
+      onStateChange?.(nextState);
 
-    setGame(moved);
-    onStateChange?.(moved);
-    if (moved.winner) onMatchComplete?.(moved.winner, moved);
-  };
+      if (nextState.winner) {
+        playSuccessSound();
+        onMatchComplete?.(nextState.winner, nextState);
+      }
+    },
+    [game, isMyTurn, mySide, onStateChange, onMatchComplete]
+  );
 
-  // AI Turn Execution
+  // AI Turn Engine
   useEffect(() => {
-    if ((mode === "ai" || mode === "free_data") && !game.winner && game.turn === "opponent") {
+    if (
+      (mode === "ai" || mode === "free_data") &&
+      !game.winner &&
+      game.turn === "opponent"
+    ) {
       const timer = setTimeout(() => {
         const rolled = Math.floor(Math.random() * 6) + 1;
+        setLastRolledVisual(rolled);
         const aiTokens = game.opponentTokens;
         const movable = aiTokens
           .map((_, idx) => idx)
@@ -243,7 +389,7 @@ export function GhanaLudoBoard({
             turn: "creator",
             diceValue: null,
             phase: "roll",
-            lastAction: `${opponentName} rolled ${rolled} (no legal move). Your turn!`,
+            lastAction: `${opponentName} rolled ${rolled} — no valid moves! Your turn.`,
             moveCount: (game.moveCount || 0) + 1,
           };
           setGame(passed);
@@ -276,7 +422,7 @@ export function GhanaLudoBoard({
           onStateChange?.(nextState);
           if (nextState.winner) onMatchComplete?.(nextState.winner, nextState);
         }
-      }, 950);
+      }, 900);
 
       return () => clearTimeout(timer);
     }
@@ -284,17 +430,117 @@ export function GhanaLudoBoard({
 
   const creatorHome = game.creatorTokens.filter((t) => t === 31).length;
   const opponentHome = game.opponentTokens.filter((t) => t === 31).length;
+  const displayDiceVal = game.diceValue || lastRolledVisual || 6;
+
+  // Helper to render any tokens sitting on a specific (row, col) cell of the 15x15 cross track
+  const renderCellTokens = (r: number, c: number) => {
+    const creatorHere: number[] = [];
+    const opponentHere: number[] = [];
+
+    game.creatorTokens.forEach((rel, idx) => {
+      const coord = getTokenBoardCoord("creator", rel);
+      if (coord && coord[0] === r && coord[1] === c) creatorHere.push(idx);
+    });
+
+    game.opponentTokens.forEach((rel, idx) => {
+      const coord = getTokenBoardCoord("opponent", rel);
+      if (coord && coord[0] === r && coord[1] === c) opponentHere.push(idx);
+    });
+
+    if (creatorHere.length === 0 && opponentHere.length === 0) return null;
+
+    return (
+      <div className="absolute inset-0 flex items-center justify-center gap-0.5 z-20 pointer-events-auto">
+        {creatorHere.map((tIdx) => {
+          const canClick =
+            mySide === "creator" &&
+            isMyTurn &&
+            game.phase === "move" &&
+            game.diceValue !== null &&
+            canMoveLudoToken(game.creatorTokens, tIdx, game.diceValue);
+          return (
+            <button
+              key={`c-${tIdx}`}
+              type="button"
+              disabled={!canClick}
+              onClick={() => handleSelectToken(tIdx)}
+              title={`Red Token #${tIdx + 1}`}
+              className={`w-4 h-4 sm:w-5 sm:h-5 rounded-full bg-red-600 border-2 border-white shadow-[0_2px_6px_rgba(0,0,0,0.75)] flex items-center justify-center text-[8px] font-black text-white transition-transform ${
+                canClick ? "ring-2 ring-amber-300 animate-bounce scale-125 cursor-pointer" : ""
+              }`}
+            >
+              {tIdx + 1}
+            </button>
+          );
+        })}
+        {opponentHere.map((tIdx) => {
+          const canClick =
+            mySide === "opponent" &&
+            isMyTurn &&
+            game.phase === "move" &&
+            game.diceValue !== null &&
+            canMoveLudoToken(game.opponentTokens, tIdx, game.diceValue);
+          return (
+            <button
+              key={`o-${tIdx}`}
+              type="button"
+              disabled={!canClick}
+              onClick={() => handleSelectToken(tIdx)}
+              title={`Yellow Token #${tIdx + 1}`}
+              className={`w-4 h-4 sm:w-5 sm:h-5 rounded-full bg-amber-400 border-2 border-slate-950 shadow-[0_2px_6px_rgba(0,0,0,0.75)] flex items-center justify-center text-[8px] font-black text-slate-950 transition-transform ${
+                canClick ? "ring-2 ring-white animate-bounce scale-125 cursor-pointer" : ""
+              }`}
+            >
+              {tIdx + 1}
+            </button>
+          );
+        })}
+      </div>
+    );
+  };
+
+  // Determines the authentic Ludo square color for a track cell (r, c)
+  const getTrackCellStyle = (r: number, c: number) => {
+    // Green Start & Green Home Stretch
+    if ((r === 6 && c === 1) || (r === 7 && c >= 1 && c <= 5)) {
+      return "bg-[#15803d] text-white border-slate-700/60";
+    }
+    // Yellow Start & Yellow Home Stretch
+    if ((r === 1 && c === 8) || (c === 7 && r >= 1 && r <= 5)) {
+      return "bg-[#eab308] text-slate-950 border-slate-700/60";
+    }
+    // Red Start & Red Home Stretch
+    if ((r === 13 && c === 6) || (c === 7 && r >= 9 && r <= 13)) {
+      return "bg-[#dc2626] text-white border-slate-700/60";
+    }
+    // Blue Start & Blue Home Stretch
+    if ((r === 8 && c === 13) || (r === 7 && c >= 9 && c <= 13)) {
+      return "bg-[#0284c7] text-white border-slate-700/60";
+    }
+    return "bg-[#eef6fb] text-slate-700 border-slate-400/80";
+  };
+
+  const isStarCell = (r: number, c: number) =>
+    (r === 13 && c === 6) ||
+    (r === 6 && c === 1) ||
+    (r === 1 && c === 8) ||
+    (r === 8 && c === 13);
 
   return (
     <div className="space-y-4">
-      {/* Header Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl bg-red-950/40 border border-red-500/30">
+      {/* Top Status & Rules Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl bg-slate-900/95 border border-indigo-500/30 shadow-lg">
         <div className="flex items-center gap-2.5">
-          <Badge className="bg-gradient-to-r from-red-500 via-amber-500 to-emerald-500 text-white font-black text-xs px-3 py-1">
-            🎲 GHANA LUDO (KICK EDITION)
+          <img
+            src="/ludo-challenge-icon.png"
+            alt="Ghana Ludo"
+            className="w-8 h-8 rounded-lg object-cover shadow-md border border-white/20"
+          />
+          <Badge className="bg-gradient-to-r from-green-600 via-yellow-500 to-red-600 text-white font-black text-xs px-3 py-1 shadow">
+            🎲 GHANA LUDO ARENA
           </Badge>
           <span className="text-xs text-amber-200 font-semibold">
-            First to bring <strong>2 tokens HOME</strong> wins!
+            First to race <strong>2 tokens HOME</strong> wins!
           </span>
         </div>
         <Button
@@ -310,18 +556,256 @@ export function GhanaLudoBoard({
 
       {showRules && (
         <div className="p-3.5 rounded-xl bg-slate-900/90 border border-amber-500/30 text-xs text-slate-200 space-y-1">
-          <p className="font-black text-amber-400">🇬🇭 Ghana Ludo Fast-Match Rules:</p>
+          <p className="font-black text-amber-400">🇬🇭 Ghana Ludo Official Rules:</p>
           <ul className="list-disc pl-4 space-y-1">
-            <li>Each player starts with 1 active token on their starting Star and 3 tokens in the Yard.</li>
-            <li>Roll a <strong>6</strong> to bring a new token out of the Yard and earn a <strong>Bonus Roll</strong>!</li>
-            <li>Land on an opponent&apos;s token (outside ⭐ Safe Stars) to <strong>KICK</strong> it back to their Yard and earn a Bonus Roll!</li>
-            <li>First player to race <strong>2 tokens</strong> to step 31 (HOME) wins the challenge!</li>
+            <li>Tap the <strong>3D Blue Dice</strong> in the center of the Ludo board (or the Roll button) on your turn.</li>
+            <li>Roll a <strong>6</strong> to bring a new token out of your 2×2 Yard onto your Starting Square and earn a <strong>Bonus Roll</strong>!</li>
+            <li>Land on an opponent&apos;s token outside ⭐ Safe Start squares to <strong>KICK</strong> it back to their Yard and earn a Bonus Roll!</li>
+            <li>First player to bring <strong>2 tokens</strong> into the Center Home triangle wins the stake or Free Data reward!</li>
           </ul>
         </div>
       )}
 
-      {/* Action & Dice Control Strip */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl bg-slate-900/90 border border-white/10">
+      {/* Player Score & Turn Banner */}
+      <div className="grid grid-cols-2 gap-3">
+        {/* Creator (Red Base) */}
+        <div
+          className={`p-3 rounded-2xl border-2 transition-all flex items-center justify-between ${
+            game.turn === "creator" && !game.winner
+              ? "bg-red-950/70 border-red-500 shadow-[0_0_20px_rgba(239,68,68,0.3)]"
+              : "bg-slate-900/70 border-white/10"
+          }`}
+        >
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="w-4 h-4 rounded-full bg-[#dc2626] ring-2 ring-white shrink-0" />
+            <div className="truncate">
+              <p className="text-[10px] font-black uppercase tracking-wider text-red-300">
+                Red Camp {mySide === "creator" ? "(YOU)" : ""}
+              </p>
+              <p className="text-xs sm:text-sm font-black text-white truncate">{creatorName}</p>
+            </div>
+          </div>
+          <Badge className="bg-red-500/20 text-red-200 border border-red-500/40 font-black shrink-0">
+            🏠 {creatorHome}/2
+          </Badge>
+        </div>
+
+        {/* Opponent (Yellow Base) */}
+        <div
+          className={`p-3 rounded-2xl border-2 transition-all flex items-center justify-between ${
+            game.turn === "opponent" && !game.winner
+              ? "bg-amber-950/70 border-yellow-400 shadow-[0_0_20px_rgba(250,204,21,0.3)]"
+              : "bg-slate-900/70 border-white/10"
+          }`}
+        >
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="w-4 h-4 rounded-full bg-[#eab308] ring-2 ring-white shrink-0" />
+            <div className="truncate">
+              <p className="text-[10px] font-black uppercase tracking-wider text-yellow-300">
+                Yellow Camp {mySide === "opponent" ? "(YOU)" : ""}
+              </p>
+              <p className="text-xs sm:text-sm font-black text-white truncate">{opponentName}</p>
+            </div>
+          </div>
+          <Badge className="bg-yellow-500/20 text-yellow-200 border border-yellow-500/40 font-black shrink-0">
+            🏠 {opponentHome}/2
+          </Badge>
+        </div>
+      </div>
+
+      {/* AUTHENTIC 15x15 4-CORNER LUDO BOARD WITH CENTER 3D ROYAL BLUE DICE */}
+      <div className="relative mx-auto w-full max-w-[460px] aspect-square rounded-[28px] p-2 sm:p-3 bg-slate-950 border-4 border-slate-800 shadow-[0_20px_50px_rgba(0,0,0,0.85)]">
+        <div
+          className="w-full h-full rounded-[20px] overflow-hidden border-2 border-slate-800 grid relative bg-[#eef6fb]"
+          style={{
+            gridTemplateColumns: "repeat(15, minmax(0, 1fr))",
+            gridTemplateRows: "repeat(15, minmax(0, 1fr))",
+          }}
+        >
+          {/* 1. TOP-LEFT GREEN YARD (Rows 1..6, Cols 1..6) */}
+          <div
+            style={{ gridColumn: "1 / span 6", gridRow: "1 / span 6" }}
+            className="bg-[#15803d] p-2.5 sm:p-4 flex items-center justify-center border-r-2 border-b-2 border-slate-700/70"
+          >
+            <div className="w-full h-full bg-[#f8fafc] rounded-[22%] p-2 sm:p-3 grid grid-cols-2 grid-rows-2 gap-2 sm:gap-3 place-items-center shadow-inner">
+              {[0, 1, 2, 3].map((idx) => (
+                <div
+                  key={`green-yard-${idx}`}
+                  className="w-full h-full rounded-full bg-[#15803d] shadow-[inset_0_2px_4px_rgba(0,0,0,0.35)] flex items-center justify-center"
+                >
+                  <span className="w-3/5 h-3/5 rounded-full bg-emerald-400/30 border border-white/40" />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* 2. TOP-RIGHT YELLOW YARD — OPPONENT BASE (Rows 1..6, Cols 10..15) */}
+          <div
+            style={{ gridColumn: "10 / span 6", gridRow: "1 / span 6" }}
+            className="bg-[#eab308] p-2.5 sm:p-4 flex items-center justify-center border-l-2 border-b-2 border-slate-700/70 relative"
+          >
+            <div className="w-full h-full bg-[#f8fafc] rounded-[22%] p-2 sm:p-3 grid grid-cols-2 grid-rows-2 gap-2 sm:gap-3 place-items-center shadow-inner">
+              {game.opponentTokens.map((pos, idx) => {
+                const inYard = pos === -1;
+                const canSpawn =
+                  inYard &&
+                  mySide === "opponent" &&
+                  isMyTurn &&
+                  game.phase === "move" &&
+                  game.diceValue === 6;
+                return (
+                  <button
+                    key={`yellow-yard-${idx}`}
+                    type="button"
+                    disabled={!canSpawn}
+                    onClick={() => handleSelectToken(idx)}
+                    className={`w-full h-full rounded-full bg-[#eab308] shadow-[inset_0_2px_4px_rgba(0,0,0,0.35)] flex items-center justify-center relative transition-transform ${
+                      canSpawn ? "ring-4 ring-indigo-600 animate-pulse scale-110 cursor-pointer" : ""
+                    }`}
+                  >
+                    {inYard ? (
+                      <span className="w-4/5 h-4/5 rounded-full bg-yellow-300 border-2 border-slate-900 shadow-md flex items-center justify-center text-[10px] font-black text-slate-950">
+                        {idx + 1}
+                      </span>
+                    ) : (
+                      <span className="text-[9px] font-black text-yellow-950/60">
+                        {pos === 31 ? "🏠" : "OUT"}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 3. BOTTOM-LEFT RED YARD — CREATOR BASE (Rows 10..15, Cols 1..6) */}
+          <div
+            style={{ gridColumn: "1 / span 6", gridRow: "10 / span 6" }}
+            className="bg-[#dc2626] p-2.5 sm:p-4 flex items-center justify-center border-r-2 border-t-2 border-slate-700/70 relative"
+          >
+            <div className="w-full h-full bg-[#f8fafc] rounded-[22%] p-2 sm:p-3 grid grid-cols-2 grid-rows-2 gap-2 sm:gap-3 place-items-center shadow-inner">
+              {game.creatorTokens.map((pos, idx) => {
+                const inYard = pos === -1;
+                const canSpawn =
+                  inYard &&
+                  mySide === "creator" &&
+                  isMyTurn &&
+                  game.phase === "move" &&
+                  game.diceValue === 6;
+                return (
+                  <button
+                    key={`red-yard-${idx}`}
+                    type="button"
+                    disabled={!canSpawn}
+                    onClick={() => handleSelectToken(idx)}
+                    className={`w-full h-full rounded-full bg-[#dc2626] shadow-[inset_0_2px_4px_rgba(0,0,0,0.35)] flex items-center justify-center relative transition-transform ${
+                      canSpawn ? "ring-4 ring-yellow-300 animate-pulse scale-110 cursor-pointer" : ""
+                    }`}
+                  >
+                    {inYard ? (
+                      <span className="w-4/5 h-4/5 rounded-full bg-red-500 border-2 border-white shadow-md flex items-center justify-center text-[10px] font-black text-white">
+                        {idx + 1}
+                      </span>
+                    ) : (
+                      <span className="text-[9px] font-black text-white/80">
+                        {pos === 31 ? "🏠" : "OUT"}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 4. BOTTOM-RIGHT BLUE YARD (Rows 10..15, Cols 10..15) */}
+          <div
+            style={{ gridColumn: "10 / span 6", gridRow: "10 / span 6" }}
+            className="bg-[#0284c7] p-2.5 sm:p-4 flex items-center justify-center border-l-2 border-t-2 border-slate-700/70"
+          >
+            <div className="w-full h-full bg-[#f8fafc] rounded-[22%] p-2 sm:p-3 grid grid-cols-2 grid-rows-2 gap-2 sm:gap-3 place-items-center shadow-inner">
+              {[0, 1, 2, 3].map((idx) => (
+                <div
+                  key={`blue-yard-${idx}`}
+                  className="w-full h-full rounded-full bg-[#0284c7] shadow-[inset_0_2px_4px_rgba(0,0,0,0.35)] flex items-center justify-center"
+                >
+                  <span className="w-3/5 h-3/5 rounded-full bg-sky-300/30 border border-white/40" />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* 5. CENTER 3x3 HOME TRIANGLES (Rows 7..9, Cols 7..9) */}
+          <div
+            style={{ gridColumn: "7 / span 3", gridRow: "7 / span 3" }}
+            className="relative border-2 border-slate-700/80 overflow-hidden"
+          >
+            <svg viewBox="0 0 100 100" className="w-full h-full block">
+              {/* Top Yellow Triangle */}
+              <polygon points="0,0 100,0 50,50" fill="#eab308" stroke="#334155" strokeWidth="1.5" />
+              {/* Left Green Triangle */}
+              <polygon points="0,0 0,100 50,50" fill="#15803d" stroke="#334155" strokeWidth="1.5" />
+              {/* Right Blue Triangle */}
+              <polygon points="100,0 100,100 50,50" fill="#0284c7" stroke="#334155" strokeWidth="1.5" />
+              {/* Bottom Red Triangle */}
+              <polygon points="0,100 100,100 50,50" fill="#dc2626" stroke="#334155" strokeWidth="1.5" />
+            </svg>
+          </div>
+
+          {/* 6. RENDER ALL CROSS-TRACK CELLS (Top, Left, Right, Bottom Arms) */}
+          {Array.from({ length: 15 }).map((_, r) =>
+            Array.from({ length: 15 }).map((__, c) => {
+              // Skip the 4 6x6 corner yards and the 3x3 center goal
+              const inTopLeft = r < 6 && c < 6;
+              const inTopRight = r < 6 && c >= 9;
+              const inBottomLeft = r >= 9 && c < 6;
+              const inBottomRight = r >= 9 && c >= 9;
+              const inCenter = r >= 6 && r <= 8 && c >= 6 && c <= 8;
+              if (inTopLeft || inTopRight || inBottomLeft || inBottomRight || inCenter) {
+                return null;
+              }
+
+              const cellStyle = getTrackCellStyle(r, c);
+              const star = isStarCell(r, c);
+
+              return (
+                <div
+                  key={`cell-${r}-${c}`}
+                  style={{ gridColumn: c + 1, gridRow: r + 1 }}
+                  className={`border-[0.5px] relative flex items-center justify-center select-none ${cellStyle}`}
+                >
+                  {star && (
+                    <span className="text-[9px] sm:text-[11px] opacity-85 pointer-events-none">
+                      ★
+                    </span>
+                  )}
+                  {renderCellTokens(r, c)}
+                </div>
+              );
+            })
+          )}
+
+          {/* 7. FLOATING CENTER 3D ROYAL-BLUE DICE OVERLAY (Matches Reference Image!) */}
+          <div className="absolute inset-0 pointer-events-none flex items-center justify-center z-30">
+            <div className="pointer-events-auto flex flex-col items-center">
+              <RoyalBlue3DDice
+                value={displayDiceVal}
+                rolling={rolling}
+                disabled={!isMyTurn || game.phase !== "roll" || rolling || Boolean(game.winner)}
+                onClick={handleRollDice}
+                size="lg"
+              />
+              {isMyTurn && game.phase === "roll" && !game.winner && (
+                <span className="mt-1.5 px-2.5 py-0.5 rounded-full bg-indigo-950/95 border border-indigo-400/60 text-[10px] font-black text-white shadow-lg animate-bounce">
+                  TAP DICE TO ROLL
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Action Control Bar & Quick Token Selector */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl bg-slate-900/95 border border-white/10 shadow-lg">
         <div className="space-y-1">
           <p className="text-xs sm:text-sm font-black text-white">
             {game.winner
@@ -330,211 +814,94 @@ export function GhanaLudoBoard({
                 : `🏅 ${game.winner === "creator" ? creatorName : opponentName} won the Ludo match!`
               : isMyTurn
               ? game.phase === "roll"
-                ? "🟢 YOUR TURN — Tap 'Roll Dice' below!"
-                : `🎲 You rolled ${game.diceValue}! Tap a highlighted token below to advance.`
+                ? "🟢 YOUR TURN — Tap the 3D Blue Dice on the board!"
+                : `🎲 Rolled ${game.diceValue}! Tap a highlighted token on the board or below.`
               : `⏳ ${game.turn === "creator" ? creatorName : opponentName} is rolling...`}
           </p>
           <p className="text-xs text-amber-300/90 font-medium">{game.lastAction}</p>
         </div>
 
         <div className="flex items-center gap-3">
-          {game.diceValue && (
-            <div className="w-12 h-12 rounded-2xl bg-amber-400 text-slate-950 font-black text-2xl flex items-center justify-center shadow-lg border-2 border-white">
-              {game.diceValue}
-            </div>
-          )}
+          <RoyalBlue3DDice
+            value={displayDiceVal}
+            rolling={rolling}
+            disabled={!isMyTurn || game.phase !== "roll" || rolling || Boolean(game.winner)}
+            onClick={handleRollDice}
+            size="md"
+          />
           <Button
             onClick={handleRollDice}
             disabled={!isMyTurn || game.phase !== "roll" || rolling || Boolean(game.winner)}
-            className="h-12 px-6 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-sm gap-2 shadow-lg"
+            className="h-12 px-6 rounded-2xl bg-gradient-to-r from-indigo-600 via-blue-600 to-indigo-500 hover:from-indigo-500 hover:to-blue-500 text-white font-black text-sm gap-2 shadow-lg border border-indigo-400/40"
           >
-            <Dices className={`w-5 h-5 ${rolling ? "animate-spin" : ""}`} />
-            {rolling ? "Rolling..." : "Roll Dice"}
+            {rolling ? "Rolling..." : "Roll 3D Dice"}
           </Button>
         </div>
       </div>
 
-      {/* Interactive Dual-Camp Ludo Track & Token Selector */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Creator Camp (Red / Gold) */}
-        <div className="p-4 rounded-2xl bg-gradient-to-br from-rose-950/60 via-slate-950 to-amber-950/30 border-2 border-rose-500/40 space-y-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <span className="text-[10px] font-black uppercase tracking-wider text-rose-400">
-                🔴 Red Star Camp (Creator)
-              </span>
-              <h4 className="text-sm font-black text-white">{creatorName}</h4>
-            </div>
-            <Badge className="bg-rose-500/20 text-rose-300 border border-rose-500/40 font-black">
-              🏠 {creatorHome} / 2 Home
-            </Badge>
-          </div>
+      {/* Quick Token Controls for Mobile Convenience */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+        {(mySide === "creator" ? game.creatorTokens : game.opponentTokens).map((pos, idx) => {
+          const myTokens = mySide === "creator" ? game.creatorTokens : game.opponentTokens;
+          const selectable =
+            isMyTurn &&
+            game.phase === "move" &&
+            game.diceValue !== null &&
+            canMoveLudoToken(myTokens, idx, game.diceValue);
+          const pct = pos === -1 ? 0 : Math.min(100, Math.round((pos / 31) * 100));
+          const absSq = toAbsoluteSquare(mySide, pos);
+          const isSafe = absSq !== null && SAFE_ABSOLUTE_SQUARES.has(absSq);
 
-          <div className="grid grid-cols-2 gap-2.5">
-            {game.creatorTokens.map((pos, idx) => {
-              const selectable =
-                mySide === "creator" &&
-                isMyTurn &&
-                game.phase === "move" &&
-                game.diceValue !== null &&
-                canMoveLudoToken(game.creatorTokens, idx, game.diceValue);
-              const pct = pos === -1 ? 0 : Math.min(100, Math.round((pos / 31) * 100));
-              const absSq = toAbsoluteSquare("creator", pos);
-              const isSafe = absSq !== null && SAFE_ABSOLUTE_SQUARES.has(absSq);
-
-              return (
-                <button
-                  key={idx}
-                  type="button"
-                  disabled={!selectable}
-                  onClick={() => handleSelectToken(idx)}
-                  className={`p-3 rounded-xl border text-left transition-all ${
-                    selectable
-                      ? "bg-rose-500/25 border-amber-400 ring-2 ring-amber-400/40 hover:scale-[1.03] cursor-pointer"
-                      : pos === 31
-                      ? "bg-emerald-950/40 border-emerald-500/40"
-                      : "bg-slate-900/70 border-white/10"
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-xs font-black text-white flex items-center gap-1">
-                      🔴 Token #{idx + 1}
-                      {isSafe && (
-                        <span title="On Safe Star Square">
-                          <Shield className="w-3 h-3 text-amber-400" />
-                        </span>
-                      )}
+          return (
+            <button
+              key={`quick-token-${idx}`}
+              type="button"
+              disabled={!selectable}
+              onClick={() => handleSelectToken(idx)}
+              className={`p-3 rounded-xl border text-left transition-all ${
+                selectable
+                  ? "bg-indigo-600/25 border-amber-400 ring-2 ring-amber-400/50 hover:scale-[1.03] cursor-pointer"
+                  : pos === 31
+                  ? "bg-emerald-950/40 border-emerald-500/40"
+                  : "bg-slate-900/80 border-white/10"
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-xs font-black text-white flex items-center gap-1">
+                  <span
+                    className={`w-2.5 h-2.5 rounded-full ${
+                      mySide === "creator" ? "bg-red-500" : "bg-yellow-400"
+                    }`}
+                  />
+                  Token #{idx + 1}
+                  {isSafe && (
+                    <span title="On Safe Star Square">
+                      <Shield className="w-3 h-3 text-amber-400" />
                     </span>
-                    <span className="text-[10px] font-mono font-bold text-rose-300">
-                      {pos === -1 ? "In Yard" : pos === 31 ? "🏠 HOME" : `Step ${pos}/31`}
-                    </span>
-                  </div>
-                  <div className="w-full h-2 rounded-full bg-black/50 overflow-hidden">
-                    <div
-                      className="h-full bg-gradient-to-r from-rose-500 to-amber-400 transition-all duration-300"
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                  {selectable && (
-                    <p className="text-[10px] font-black text-amber-300 mt-1.5 animate-pulse">
-                      ⚡ Tap to advance (+{game.diceValue})
-                    </p>
                   )}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Opponent Camp (Green / Emerald) */}
-        <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-950/60 via-slate-950 to-teal-950/30 border-2 border-emerald-500/40 space-y-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400">
-                🟢 Green Star Camp (Opponent)
-              </span>
-              <h4 className="text-sm font-black text-white">{opponentName}</h4>
-            </div>
-            <Badge className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-black">
-              🏠 {opponentHome} / 2 Home
-            </Badge>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2.5">
-            {game.opponentTokens.map((pos, idx) => {
-              const selectable =
-                mySide === "opponent" &&
-                isMyTurn &&
-                game.phase === "move" &&
-                game.diceValue !== null &&
-                canMoveLudoToken(game.opponentTokens, idx, game.diceValue);
-              const pct = pos === -1 ? 0 : Math.min(100, Math.round((pos / 31) * 100));
-              const absSq = toAbsoluteSquare("opponent", pos);
-              const isSafe = absSq !== null && SAFE_ABSOLUTE_SQUARES.has(absSq);
-
-              return (
-                <button
-                  key={idx}
-                  type="button"
-                  disabled={!selectable}
-                  onClick={() => handleSelectToken(idx)}
-                  className={`p-3 rounded-xl border text-left transition-all ${
-                    selectable
-                      ? "bg-emerald-500/25 border-amber-400 ring-2 ring-amber-400/40 hover:scale-[1.03] cursor-pointer"
-                      : pos === 31
-                      ? "bg-emerald-950/40 border-emerald-500/40"
-                      : "bg-slate-900/70 border-white/10"
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-xs font-black text-white flex items-center gap-1">
-                      🟢 Token #{idx + 1}
-                      {isSafe && (
-                        <span title="On Safe Star Square">
-                          <Shield className="w-3 h-3 text-amber-400" />
-                        </span>
-                      )}
-                    </span>
-                    <span className="text-[10px] font-mono font-bold text-emerald-300">
-                      {pos === -1 ? "In Yard" : pos === 31 ? "🏠 HOME" : `Step ${pos}/31`}
-                    </span>
-                  </div>
-                  <div className="w-full h-2 rounded-full bg-black/50 overflow-hidden">
-                    <div
-                      className="h-full bg-gradient-to-r from-emerald-500 to-amber-400 transition-all duration-300"
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                  {selectable && (
-                    <p className="text-[10px] font-black text-amber-300 mt-1.5 animate-pulse">
-                      ⚡ Tap to advance (+{game.diceValue})
-                    </p>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-
-      {/* Visual 28-Square Perimeter Loop Map */}
-      <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-white/10">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">
-            Live 28-Square Ludo Perimeter Track (⭐ = Safe Star Square)
-          </span>
-          <span className="text-[10px] text-amber-400 font-bold">
-            Landing on an opponent outside ⭐ kicks them back to Yard!
-          </span>
-        </div>
-        <div className="grid grid-cols-7 sm:grid-cols-14 gap-1.5">
-          {Array.from({ length: 28 }).map((_, absIdx) => {
-            const isSafe = SAFE_ABSOLUTE_SQUARES.has(absIdx);
-            const hasCreator = game.creatorTokens.some(
-              (rel) => toAbsoluteSquare("creator", rel) === absIdx
-            );
-            const hasOpponent = game.opponentTokens.some(
-              (rel) => toAbsoluteSquare("opponent", rel) === absIdx
-            );
-
-            return (
-              <div
-                key={absIdx}
-                className={`h-9 rounded-lg border flex flex-col items-center justify-center text-[10px] font-mono relative ${
-                  isSafe
-                    ? "bg-amber-500/15 border-amber-500/40 text-amber-300"
-                    : "bg-slate-900 border-white/10 text-slate-400"
-                }`}
-              >
-                <span className="text-[8px] opacity-60">{isSafe ? "⭐" : absIdx + 1}</span>
-                <div className="flex items-center gap-0.5">
-                  {hasCreator && <span className="w-2.5 h-2.5 rounded-full bg-rose-500 ring-1 ring-white" />}
-                  {hasOpponent && <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 ring-1 ring-white" />}
-                </div>
+                </span>
+                <span className="text-[10px] font-mono font-bold text-amber-300">
+                  {pos === -1 ? "Yard" : pos === 31 ? "🏠 HOME" : `${pos}/31`}
+                </span>
               </div>
-            );
-          })}
-        </div>
+              <div className="w-full h-1.5 rounded-full bg-black/50 overflow-hidden">
+                <div
+                  className={`h-full transition-all duration-300 ${
+                    mySide === "creator"
+                      ? "bg-gradient-to-r from-red-500 to-amber-400"
+                      : "bg-gradient-to-r from-yellow-400 to-emerald-400"
+                  }`}
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+              {selectable && (
+                <p className="text-[10px] font-black text-amber-300 mt-1 animate-pulse">
+                  ⚡ Tap to move (+{game.diceValue})
+                </p>
+              )}
+            </button>
+          );
+        })}
       </div>
     </div>
   );
