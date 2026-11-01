@@ -159,39 +159,39 @@ export const GAME_STEP_GUIDES: Record<ArenaGameType, GameStepGuide> = {
     ],
   },
   ludo: {
-    title: "Ghana Ludo (Kick Edition)",
-    tagline: "Roll the 3D Blue Dice, kick opponent tokens back to their yard & race 2 tokens home!",
+    title: "Ghana Ludo (Pro 52-Cell • 2–4 Players)",
+    tagline: "Official 52-cell track, 4 tokens in Base, 8 Safe Squares, Blockades & invite up to 3 friends!",
     emoji: "🎲",
-    badge: "Fast Action",
+    badge: "🎲 2–4 Players",
     accentGradient: "from-rose-500 to-amber-500",
     steps: [
       {
         stepNum: "01",
-        heading: "Tap the 3D Blue Dice to Roll",
+        heading: "Roll 6 on the 3D Blue Dice to Launch from Base",
         detail:
-          "You start with 1 active token on your ★ Start square and 3 tokens in your Yard. Roll a 6 to deploy from your Yard!",
-        tip: "Rolling a 6 always grants you an immediate Bonus Roll.",
+          "All 4 tokens begin inside your Base. Roll a 6 to move a token onto your colored starting cell and earn an extra turn (3 consecutive 6s forfeits your turn)!",
+        tip: "You can also switch between 2P, 3P, or 4P and invite friends to Green, Yellow, or Blue!",
       },
       {
         stepNum: "02",
-        heading: "Kick Opponent Tokens Back to Yard (💥)",
+        heading: "52-Cell Circuit, Captures & 8 Protected Safe Squares",
         detail:
-          "Land on an opponent's token on any non-star square to kick it back to their Yard and earn a Bonus Roll (+50 Arena Pts!).",
-        tip: "Tokens resting on the 4 ★ Safe Star squares cannot be kicked.",
+          "Move clockwise around all 52 main-track cells. Land on an opponent token on a non-safe square to send it back to Base and earn a Bonus Roll (+50 Arena Pts!).",
+        tip: "The 4 Starting squares and 4 Star (★) squares are safe from capture.",
       },
       {
         stepNum: "03",
-        heading: "Enter Your Colored Home Stretch",
+        heading: "Form Blockades (🛡️ 2+ Tokens) & Choose Every Move",
         detail:
-          "After completing a full lap around the 15×15 cross track, guide your tokens safely up your colored Home Stretch.",
-        tip: "Opponents cannot enter your colored Home Stretch.",
+          "Stack 2 or more of your tokens on the same square to form a Blockade that opponents cannot pass or land on. Whenever multiple moves exist, YOU choose which token to move!",
+        tip: "Use a Blockade on a choke point to trap opponent runners behind you.",
       },
       {
         stepNum: "04",
-        heading: "Get 2 Tokens Home to Win (+300 Pts)",
+        heading: "Bring All 4 Tokens Home by Exact Roll (+300 Pts)",
         detail:
-          "The first player to bring 2 tokens into the Center Home Triangle wins the cash pot or Free Data points!",
-        tip: "Balance attacking opponent tokens with advancing your lead runner.",
+          "After completing a full 51-step circuit, enter your private 6-cell Home Path and bring all 4 tokens into the Center Home Triangle by exact dice roll to win!",
+        tip: "Overshooting the final home triangle is not allowed — wait for the exact dice number.",
       },
     ],
   },

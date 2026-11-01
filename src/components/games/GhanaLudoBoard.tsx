@@ -1,8 +1,21 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { HelpCircle, Shield, Brain, Volume2, VolumeX, Smartphone } from "lucide-react";
-import { playSound, playSuccessSound } from "@/lib/sound";
+import { Input } from "@/components/ui/input";
+import {
+  HelpCircle,
+  Shield,
+  Brain,
+  Volume2,
+  VolumeX,
+  Smartphone,
+  Users,
+  UserPlus,
+  Send,
+  History,
+  MessageCircle,
+} from "lucide-react";
+import { playSuccessSound } from "@/lib/sound";
 import {
   playDiceRattleSound,
   playWoodSeedClack,
@@ -11,185 +24,199 @@ import {
   getGameSensoryPreferences,
   setGameSensoryPreferences,
   HUMAN_CHALLENGER_PERSONAS,
-  sampleGaussianError,
 } from "@/lib/game-sensory-engine";
+import {
+  type LudoGameState,
+  type LudoPlayerId,
+  type LudoToken,
+  type LudoLegalMove,
+  initializeGame,
+  rollDice,
+  moveToken,
+  checkBlockade,
+  checkSafeSquare,
+  FINAL_HOME_STEP,
+} from "@/lib/ludo-engine";
 
+// Exported compatibility wrapper state stored in `game_challenges.board_state`
 export interface LudoState {
-  // Each player has 4 tokens: -1 = in yard, 0..27 = steps travelled from own start, 28..30 = home stretch, 31 = finished home
-  creatorTokens: number[];
-  opponentTokens: number[];
+  engine: LudoGameState;
   turn: "creator" | "opponent";
-  diceValue: number | null;
-  phase: "roll" | "move";
-  lastAction?: string;
-  winner?: "creator" | "opponent" | null;
+  winner: "creator" | "opponent" | null;
   moveCount: number;
+  lastAction?: string;
 }
 
 export const INITIAL_LUDO_STATE: LudoState = {
-  creatorTokens: [0, -1, -1, -1], // Start with 1 token on starting star so games start fast!
-  opponentTokens: [0, -1, -1, -1],
+  engine: initializeGame({
+    players: ["RED", "YELLOW"],
+    playerNames: {
+      RED: "Red Challenger",
+      GREEN: "Green Challenger",
+      YELLOW: "Yellow Challenger",
+      BLUE: "Blue Challenger",
+    },
+  }),
   turn: "creator",
-  diceValue: null,
-  phase: "roll",
-  lastAction: "Tap the 3D Blue Dice to begin the Ghana Ludo Challenge!",
   winner: null,
   moveCount: 0,
+  lastAction: "Roll a 6 on the 3D Blue Dice to launch a token from your Base onto the 52-cell track!",
 };
 
-const SAFE_ABSOLUTE_SQUARES = new Set([0, 7, 14, 21]);
-
-// Maps the 28-step main perimeter track to exact (row, col) cells on the 15x15 Ludo Cross Board
-const PERIMETER_COORDS: [number, number][] = [
-  // Quadrant 0: Red Start (Bottom-Left) -> Left Arm
+/**
+ * Exact 52-cell clockwise main track coordinates on the 15x15 Ludo Cross Board (indices 0..51)
+ */
+const MAIN_TRACK_COORDS: [number, number][] = [
+  // Quadrant 0: RED Start [13,6] -> Up Bottom Arm -> Left along Left Arm (0..12)
   [13, 6],
   [12, 6],
   [11, 6],
   [10, 6],
   [9, 6],
+  [8, 5],
   [8, 4],
-  [8, 2],
-  // Quadrant 1: Green Start (Top-Left) -> Top Arm
+  [8, 3],
+  [8, 2], // 8: Star Safe
+  [8, 1],
+  [8, 0],
+  [7, 0], // 11: GREEN Home Path Entry
+  [6, 0],
+  // Quadrant 1: GREEN Start [6,1] -> Right along Left Arm -> Up Top Arm (13..25)
   [6, 1],
+  [6, 2],
   [6, 3],
+  [6, 4],
   [6, 5],
   [5, 6],
+  [4, 6],
   [3, 6],
+  [2, 6], // 21: Star Safe
   [1, 6],
-  [0, 7],
-  // Quadrant 2: Yellow Start (Top-Right) -> Right Arm
+  [0, 6],
+  [0, 7], // 24: YELLOW Home Path Entry
+  [0, 8],
+  // Quadrant 2: YELLOW Start [1,8] -> Down Top Arm -> Right along Right Arm (26..38)
   [1, 8],
+  [2, 8],
   [3, 8],
+  [4, 8],
   [5, 8],
   [6, 9],
+  [6, 10],
   [6, 11],
+  [6, 12], // 34: Star Safe
   [6, 13],
-  [7, 14],
-  // Quadrant 3: Blue Start (Bottom-Right) -> Bottom Arm
+  [6, 14],
+  [7, 14], // 37: BLUE Home Path Entry
+  [8, 14],
+  // Quadrant 3: BLUE Start [8,13] -> Left along Right Arm -> Down Bottom Arm (39..51)
   [8, 13],
+  [8, 12],
   [8, 11],
+  [8, 10],
   [8, 9],
   [9, 8],
+  [10, 8],
   [11, 8],
+  [12, 8], // 47: Star Safe
   [13, 8],
-  [14, 7],
+  [14, 8],
+  [14, 7], // 50: RED Home Path Entry
+  [14, 6],
 ];
 
-// Red (Creator) Home Stretch (col 7, rows 12 -> 9)
-const CREATOR_HOME_STRETCH: [number, number][] = [
-  [12, 7],
-  [11, 7],
-  [9, 7],
-];
+/**
+ * Private 5-cell colored Home Stretch coordinates (homePathPosition 1..5; 6 is inside Center Home Triangle)
+ */
+const HOME_PATH_COORDS: Record<LudoPlayerId, [number, number][]> = {
+  RED: [
+    [13, 7],
+    [12, 7],
+    [11, 7],
+    [10, 7],
+    [9, 7],
+  ],
+  GREEN: [
+    [7, 1],
+    [7, 2],
+    [7, 3],
+    [7, 4],
+    [7, 5],
+  ],
+  YELLOW: [
+    [1, 7],
+    [2, 7],
+    [3, 7],
+    [4, 7],
+    [5, 7],
+  ],
+  BLUE: [
+    [7, 13],
+    [7, 12],
+    [7, 11],
+    [7, 10],
+    [7, 9],
+  ],
+};
 
-// Yellow/Green (Opponent) Home Stretch (col 7, rows 2 -> 5)
-const OPPONENT_HOME_STRETCH: [number, number][] = [
-  [2, 7],
-  [3, 7],
-  [5, 7],
-];
-
-function toAbsoluteSquare(side: "creator" | "opponent", relStep: number): number | null {
-  if (relStep < 0 || relStep > 27) return null;
-  const offset = side === "creator" ? 0 : 14;
-  return (relStep + offset) % 28;
-}
-
-function getTokenBoardCoord(side: "creator" | "opponent", relStep: number): [number, number] | null {
-  if (relStep < 0 || relStep >= 31) return null;
-  if (relStep <= 27) {
-    const absIdx = toAbsoluteSquare(side, relStep);
-    return absIdx !== null ? PERIMETER_COORDS[absIdx] : null;
+const PLAYER_THEME: Record<
+  LudoPlayerId,
+  {
+    label: string;
+    bg: string;
+    border: string;
+    text: string;
+    badgeBg: string;
+    hex: string;
   }
-  const stretchIdx = relStep - 28; // 0, 1, 2
-  return side === "creator"
-    ? CREATOR_HOME_STRETCH[stretchIdx] || [9, 7]
-    : OPPONENT_HOME_STRETCH[stretchIdx] || [5, 7];
-}
+> = {
+  RED: {
+    label: "Red",
+    bg: "bg-[#dc2626]",
+    border: "border-red-300",
+    text: "text-red-300",
+    badgeBg: "bg-red-500/15 border-red-500/40",
+    hex: "#dc2626",
+  },
+  GREEN: {
+    label: "Green",
+    bg: "bg-[#15803d]",
+    border: "border-emerald-300",
+    text: "text-emerald-300",
+    badgeBg: "bg-emerald-500/15 border-emerald-500/40",
+    hex: "#15803d",
+  },
+  YELLOW: {
+    label: "Yellow",
+    bg: "bg-[#eab308]",
+    border: "border-amber-200",
+    text: "text-amber-300",
+    badgeBg: "bg-amber-500/15 border-amber-500/40",
+    hex: "#eab308",
+  },
+  BLUE: {
+    label: "Blue",
+    bg: "bg-[#0284c7]",
+    border: "border-sky-300",
+    text: "text-sky-300",
+    badgeBg: "bg-sky-500/15 border-sky-500/40",
+    hex: "#0284c7",
+  },
+};
 
-export function canMoveLudoToken(tokens: number[], tokenIdx: number, dice: number): boolean {
-  const pos = tokens[tokenIdx];
-  if (pos === 31) return false;
-  if (pos === -1) return dice === 6;
-  return pos + dice <= 31;
-}
-
-export function applyLudoTokenMove(
-  state: LudoState,
-  side: "creator" | "opponent",
-  tokenIdx: number
-): LudoState | null {
-  const dice = state.diceValue;
-  if (!dice || state.phase !== "move" || state.turn !== side || state.winner) return null;
-
-  const myTokens = side === "creator" ? [...state.creatorTokens] : [...state.opponentTokens];
-  const oppTokens = side === "creator" ? [...state.opponentTokens] : [...state.creatorTokens];
-
-  if (!canMoveLudoToken(myTokens, tokenIdx, dice)) return null;
-
-  const currentPos = myTokens[tokenIdx];
-  const nextPos = currentPos === -1 ? 0 : currentPos + dice;
-  myTokens[tokenIdx] = nextPos;
-
-  let kickedOpponent = false;
-  let actionLog =
-    currentPos === -1
-      ? `${side === "creator" ? "Red" : "Yellow"} brought Token #${tokenIdx + 1} out of the Yard!`
-      : `${side === "creator" ? "Red" : "Yellow"} advanced Token #${tokenIdx + 1} by ${dice}.`;
-
-  // Check if landed on opponent token on main 28-square perimeter
-  if (nextPos >= 0 && nextPos <= 27) {
-    const myAbs = toAbsoluteSquare(side, nextPos);
-    const oppSide = side === "creator" ? "opponent" : "creator";
-    if (myAbs !== null && !SAFE_ABSOLUTE_SQUARES.has(myAbs)) {
-      for (let i = 0; i < oppTokens.length; i++) {
-        const oppAbs = toAbsoluteSquare(oppSide, oppTokens[i]);
-        if (oppAbs !== null && oppAbs === myAbs) {
-          oppTokens[i] = -1; // Kick back to yard!
-          kickedOpponent = true;
-          actionLog = `💥 KICK! ${side === "creator" ? "Red" : "Yellow"} kicked opponent's Token #${i + 1} back to Yard! Bonus Roll!`;
-        }
-      }
-    }
+function getTokenGridCoord(token: LudoToken): [number, number] | null {
+  if (token.status === "BASE" || token.status === "FINISHED") return null;
+  if (token.status === "ACTIVE" && token.trackPosition !== null) {
+    return MAIN_TRACK_COORDS[token.trackPosition] || null;
   }
-
-  if (nextPos === 31) {
-    actionLog = `🏠 HOME! ${side === "creator" ? "Red" : "Yellow"} brought Token #${tokenIdx + 1} into the Center Home!`;
+  if (token.status === "HOME_PATH" && token.homePathPosition >= 1 && token.homePathPosition <= 5) {
+    return HOME_PATH_COORDS[token.owner][token.homePathPosition - 1] || null;
   }
-
-  const creatorNext = side === "creator" ? myTokens : oppTokens;
-  const opponentNext = side === "creator" ? oppTokens : myTokens;
-
-  // Win condition: First player to get 2 tokens home (pos === 31) wins the fast-match!
-  const creatorHomeCount = creatorNext.filter((p) => p === 31).length;
-  const opponentHomeCount = opponentNext.filter((p) => p === 31).length;
-
-  let winner: "creator" | "opponent" | null = null;
-  if (creatorHomeCount >= 2) winner = "creator";
-  else if (opponentHomeCount >= 2) winner = "opponent";
-
-  // Bonus roll on rolling a 6, kicking an opponent, or reaching home
-  const earnedBonusTurn = !winner && (dice === 6 || kickedOpponent || nextPos === 31);
-  const nextTurn: "creator" | "opponent" = earnedBonusTurn
-    ? side
-    : side === "creator"
-    ? "opponent"
-    : "creator";
-
-  return {
-    creatorTokens: creatorNext,
-    opponentTokens: opponentNext,
-    turn: nextTurn,
-    diceValue: null,
-    phase: "roll",
-    lastAction: actionLog,
-    winner,
-    moveCount: (state.moveCount || 0) + 1,
-  };
+  return null;
 }
 
 /**
- * 3D Royal-Blue Dice with White Pips matching the reference Ludo artwork
+ * 3D Royal-Blue Dice with White Pips
  */
 function RoyalBlue3DDice({
   value,
@@ -204,7 +231,6 @@ function RoyalBlue3DDice({
   onClick?: () => void;
   size?: "md" | "lg";
 }) {
-  // Standard 3x3 pip grid positions (0..8) for dice values 1..6
   const pipMap: Record<number, number[]> = {
     1: [4],
     2: [0, 8],
@@ -221,25 +247,22 @@ function RoyalBlue3DDice({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      title={disabled ? "Wait for your roll" : "Tap to Roll Dice!"}
+      title={disabled ? "Complete your move or wait for your turn" : "Tap to Roll Dice!"}
       className={`group relative select-none transition-all duration-200 ${
-        disabled ? "cursor-default" : "cursor-pointer hover:scale-110 active:scale-95"
+        disabled ? "cursor-default opacity-80" : "cursor-pointer hover:scale-110 active:scale-95"
       }`}
     >
-      {/* 3D Perspective Cube Wrapper */}
       <div
         className={`${dims} rounded-[18px] relative transition-transform duration-300 ${
           rolling ? "animate-spin scale-110" : "-rotate-12 group-hover:-rotate-6"
         }`}
         style={{
-          background:
-            "linear-gradient(145deg, #6366f1 0%, #4338ca 45%, #1e1b4b 100%)",
+          background: "linear-gradient(145deg, #6366f1 0%, #4338ca 45%, #1e1b4b 100%)",
           boxShadow:
             "0 12px 24px rgba(0,0,0,0.65), inset 0 3px 6px rgba(255,255,255,0.45), inset -4px -6px 10px rgba(15,23,42,0.8)",
           border: "2px solid rgba(165, 180, 252, 0.55)",
         }}
       >
-        {/* Top Face White Pips (3x3 grid) */}
         <div className="w-full h-full p-2.5 sm:p-3 grid grid-cols-3 grid-rows-3 gap-1 place-items-center">
           {Array.from({ length: 9 }).map((_, idx) => {
             const hasPip = activePips.includes(idx);
@@ -262,16 +285,52 @@ function RoyalBlue3DDice({
   );
 }
 
-interface GhanaLudoBoardProps {
+export interface GhanaLudoBoardProps {
   mode: "p2p" | "ai" | "free_data";
   mySide: "creator" | "opponent";
   creatorName: string;
   opponentName: string;
-  initialState?: LudoState;
+  roomCode?: string;
+  initialState?: any;
   onStateChange?: (nextState: LudoState) => void;
   onMatchComplete?: (winnerSide: "creator" | "opponent" | "draw", finalState: LudoState) => void;
   onPointsEarned?: (points: number, reason: string) => void;
+  onInvitePlayer?: (phoneOrUser: { phone?: string; name?: string; seat?: LudoPlayerId }) => void;
   playerLevel?: number;
+}
+
+function normalizeIncomingLudoState(
+  raw: any,
+  creatorName: string,
+  opponentName: string,
+  mode: "p2p" | "ai" | "free_data"
+): LudoState {
+  if (raw && raw.engine && Array.isArray(raw.engine.players) && raw.engine.tokens) {
+    return raw as LudoState;
+  }
+  const engine = initializeGame({
+    players: ["RED", "YELLOW"],
+    playerNames: {
+      RED: creatorName || "Player 1 (Red)",
+      GREEN: "Kofi Boateng (94% Human Sense)",
+      YELLOW: opponentName || HUMAN_CHALLENGER_PERSONAS.ludo.name,
+      BLUE: "Yaw Mensah (92% Human Sense)",
+    },
+    playerMetaOverrides: {
+      RED: { isAI: false },
+      GREEN: { isAI: true },
+      YELLOW: { isAI: mode !== "p2p" },
+      BLUE: { isAI: true },
+    },
+  });
+  return {
+    engine,
+    turn: "creator",
+    winner: null,
+    moveCount: 0,
+    lastAction:
+      "Roll a 6 on the 3D Blue Dice to launch a token from your Base onto the 52-cell track!",
+  };
 }
 
 export function GhanaLudoBoard({
@@ -279,28 +338,31 @@ export function GhanaLudoBoard({
   mySide,
   creatorName,
   opponentName,
+  roomCode,
   initialState,
   onStateChange,
   onMatchComplete,
   onPointsEarned,
-  playerLevel = 1,
+  onInvitePlayer,
 }: GhanaLudoBoardProps) {
   const persona = HUMAN_CHALLENGER_PERSONAS.ludo;
   const effectiveOpponentName =
     mode === "p2p"
-      ? opponentName
+      ? opponentName || "Invited Challenger"
       : opponentName && !opponentName.toLowerCase().includes("ai")
       ? opponentName
       : persona.name;
 
-  const [game, setGame] = useState<LudoState>(() =>
-    initialState && Array.isArray(initialState.creatorTokens)
-      ? initialState
-      : INITIAL_LUDO_STATE
+  const [ludo, setLudo] = useState<LudoState>(() =>
+    normalizeIncomingLudoState(initialState, creatorName, effectiveOpponentName, mode)
   );
   const [rolling, setRolling] = useState(false);
   const [lastRolledVisual, setLastRolledVisual] = useState<number>(6);
   const [showRules, setShowRules] = useState(false);
+  const [showInviteBar, setShowInviteBar] = useState(false);
+  const [invitePhoneInput, setInvitePhoneInput] = useState("");
+  const [inviteNameInput, setInviteNameInput] = useState("");
+  const [inviteSeatColor, setInviteSeatColor] = useState<LudoPlayerId>("GREEN");
   const [soundEnabled, setSoundEnabled] = useState(
     () => getGameSensoryPreferences().soundEnabled
   );
@@ -308,335 +370,373 @@ export function GhanaLudoBoard({
     () => getGameSensoryPreferences().vibrationEnabled
   );
 
+  // Sync incoming P2P state
   useEffect(() => {
     if (
       initialState &&
-      Array.isArray(initialState.creatorTokens) &&
-      (initialState.moveCount || 0) > (game.moveCount || 0)
+      initialState.engine &&
+      (initialState.moveCount || 0) > (ludo.moveCount || 0)
     ) {
-      setGame(initialState);
-      if (initialState.diceValue) setLastRolledVisual(initialState.diceValue);
+      setLudo(initialState);
+      if (initialState.engine.diceResult) {
+        setLastRolledVisual(initialState.engine.diceResult);
+      }
     }
-  }, [initialState, game.moveCount]);
+  }, [initialState, ludo.moveCount]);
 
-  const isMyTurn = !game.winner && game.turn === mySide;
+  const engine = ludo.engine;
+  const myColor: LudoPlayerId = mySide === "creator" ? "RED" : "YELLOW";
 
-  const rewardHumanLudoMove = useCallback(
-    (prevState: LudoState, nextState: LudoState) => {
-      if (nextState.lastAction?.includes("KICK")) {
-        triggerHapticSensor("pocket_drop");
-        onPointsEarned?.(50, "Kicked Opponent Token to Yard (+50 Pts)");
-      }
-      const prevHome = (mySide === "creator" ? prevState.creatorTokens : prevState.opponentTokens).filter(
-        (p) => p === 31
-      ).length;
-      const nextHome = (mySide === "creator" ? nextState.creatorTokens : nextState.opponentTokens).filter(
-        (p) => p === 31
-      ).length;
-      if (nextHome > prevHome) {
-        triggerHapticSensor("pocket_drop");
-        onPointsEarned?.(90, "Token Reached Center Home (+90 Pts)");
-      }
-      if (nextState.winner === mySide) {
-        playLevelUpFanfare();
-        triggerHapticSensor("victory");
-        onPointsEarned?.(300, "Ghana Ludo Match Victory (+300 Pts)");
+  // In P2P mode, local user controls their side (or any non-AI seat invited locally).
+  // In AI/Free Data mode, user controls RED and AI controls the remaining active seats.
+  const isCurrentSeatHumanControlled = useMemo(() => {
+    if (engine.matchStatus !== "IN_PROGRESS") return false;
+    const activeColor = engine.currentPlayer;
+    if (mode === "p2p") {
+      if (mySide === "creator" && activeColor === "RED") return true;
+      if (mySide === "opponent" && activeColor !== "RED") return true;
+      // If creator added extra local/invited seats in the same browser session
+      const meta = engine.playerMeta[activeColor];
+      return !meta?.isAI && mySide === "creator";
+    }
+    return activeColor === "RED";
+  }, [engine, mode, mySide]);
+
+  const syncWrapperState = useCallback(
+    (nextEngine: LudoGameState, customLastAction?: string) => {
+      const latestEntry =
+        nextEngine.turnHistory[nextEngine.turnHistory.length - 1];
+      const summary =
+        customLastAction ||
+        latestEntry?.summary ||
+        ludo.lastAction ||
+        "52-Cell Ghana Ludo Match in progress.";
+
+      const mappedTurn: "creator" | "opponent" =
+        nextEngine.currentPlayer === "RED" ? "creator" : "opponent";
+      const mappedWinner: "creator" | "opponent" | null =
+        nextEngine.winner === null
+          ? null
+          : nextEngine.winner === "RED"
+          ? "creator"
+          : "opponent";
+
+      const nextWrapper: LudoState = {
+        engine: nextEngine,
+        turn: mappedTurn,
+        winner: mappedWinner,
+        moveCount: nextEngine.moveCount,
+        lastAction: summary,
+      };
+
+      setLudo(nextWrapper);
+      onStateChange?.(nextWrapper);
+
+      if (mappedWinner) {
+        playSuccessSound();
+        onMatchComplete?.(mappedWinner, nextWrapper);
       }
     },
-    [mySide, onPointsEarned]
+    [ludo.lastAction, onMatchComplete, onStateChange]
   );
 
+  // Switch between 2-Player, 3-Player, or 4-Player Ludo before move 1
+  const handleSelectPlayerCount = (count: 2 | 3 | 4) => {
+    if (engine.moveCount > 0) return;
+    const seatOrder: LudoPlayerId[] =
+      count === 2
+        ? ["RED", "YELLOW"]
+        : count === 3
+        ? ["RED", "GREEN", "YELLOW"]
+        : ["RED", "GREEN", "YELLOW", "BLUE"];
+
+    const freshEngine = initializeGame({
+      players: seatOrder,
+      playerNames: {
+        RED: creatorName || "Player 1 (Red)",
+        GREEN: engine.playerMeta.GREEN?.name || "Kofi Boateng (Green)",
+        YELLOW: effectiveOpponentName,
+        BLUE: engine.playerMeta.BLUE?.name || "Yaw Mensah (Blue)",
+      },
+      playerMetaOverrides: {
+        RED: { isAI: false },
+        GREEN: { isAI: mode !== "p2p" },
+        YELLOW: { isAI: mode !== "p2p" },
+        BLUE: { isAI: mode !== "p2p" },
+      },
+    });
+
+    syncWrapperState(
+      freshEngine,
+      `Configured ${count}-Player Ludo Table (${seatOrder.join(" vs ")}). Roll a 6 to launch from Base!`
+    );
+  };
+
+  // Invite a friend into GREEN, YELLOW, or BLUE seat
+  const handleInviteFriendToLudoSeat = () => {
+    const cleanName = inviteNameInput.trim() || `Invited (${inviteSeatColor})`;
+    const cleanPhone = invitePhoneInput.trim();
+
+    const updatedPlayers = engine.players.includes(inviteSeatColor)
+      ? engine.players
+      : [...engine.players, inviteSeatColor];
+
+    const nextEngine: LudoGameState = {
+      ...engine,
+      players: updatedPlayers,
+      playerMeta: {
+        ...engine.playerMeta,
+        [inviteSeatColor]: {
+          ...engine.playerMeta[inviteSeatColor],
+          name: cleanName,
+          invitedPhone: cleanPhone || null,
+          isAI: false,
+        },
+      },
+    };
+
+    syncWrapperState(
+      nextEngine,
+      `📲 Invited ${cleanName} to the ${inviteSeatColor} seat!`
+    );
+
+    if (cleanPhone) {
+      onInvitePlayer?.({
+        phone: cleanPhone,
+        name: cleanName,
+        seat: inviteSeatColor,
+      });
+    }
+    setInvitePhoneInput("");
+    setInviteNameInput("");
+  };
+
+  // Roll Dice Handler (Strictly validates & NEVER auto-moves tokens!)
   const handleRollDice = useCallback(() => {
-    if (game.winner || !isMyTurn || game.phase !== "roll" || rolling) return;
+    if (
+      engine.matchStatus !== "IN_PROGRESS" ||
+      !isCurrentSeatHumanControlled ||
+      engine.diceResult !== null ||
+      rolling
+    ) {
+      return;
+    }
+
     setRolling(true);
     playDiceRattleSound();
     triggerHapticSensor("dice_roll");
 
-    setTimeout(() => {
-      // Fair 1..6 dice roll with slight Medium-difficulty balance
-      const rolled = Math.floor(Math.random() * 6) + 1;
-
+    window.setTimeout(() => {
+      const rollRes = rollDice(engine, engine.currentPlayer);
       setRolling(false);
-      setLastRolledVisual(rolled);
+      if (rollRes.diceValue) {
+        setLastRolledVisual(rollRes.diceValue);
+      }
+      syncWrapperState(rollRes.state);
+    }, 420);
+  }, [engine, isCurrentSeatHumanControlled, rolling, syncWrapperState]);
 
-      const myTokens = mySide === "creator" ? game.creatorTokens : game.opponentTokens;
-      const movableIndices = myTokens
-        .map((_, idx) => idx)
-        .filter((idx) => canMoveLudoToken(myTokens, idx, rolled));
-
-      if (movableIndices.length === 0) {
-        const nextTurn: "creator" | "opponent" = mySide === "creator" ? "opponent" : "creator";
-        const skippedState: LudoState = {
-          ...game,
-          diceValue: null,
-          phase: "roll",
-          turn: nextTurn,
-          lastAction: `Rolled a ${rolled} — no valid token moves available. Turn passed!`,
-          moveCount: (game.moveCount || 0) + 1,
-        };
-        setGame(skippedState);
-        onStateChange?.(skippedState);
+  // Select Token to Move Handler (Player explicitly chooses which legal token to move)
+  const handleSelectTokenMove = useCallback(
+    (owner: LudoPlayerId, tokenIndex: number) => {
+      if (
+        engine.matchStatus !== "IN_PROGRESS" ||
+        !isCurrentSeatHumanControlled ||
+        engine.currentPlayer !== owner ||
+        engine.diceResult === null
+      ) {
         return;
       }
 
-      // If only 1 token can move (or all movable tokens are in yard), auto-move it for snappy gameplay
-      const uniquePositions = new Set(movableIndices.map((i) => myTokens[i]));
-      if (movableIndices.length === 1 || uniquePositions.size === 1) {
-        const tempState: LudoState = { ...game, diceValue: rolled, phase: "move" };
-        const autoMoved = applyLudoTokenMove(tempState, mySide, movableIndices[0]);
-        if (autoMoved) {
-          playWoodSeedClack(2);
-          rewardHumanLudoMove(game, autoMoved);
-          setGame(autoMoved);
-          onStateChange?.(autoMoved);
-          if (autoMoved.winner) {
-            playSuccessSound();
-            onMatchComplete?.(autoMoved.winner, autoMoved);
-          }
-          return;
+      const moveRes = moveToken(engine, owner, tokenIndex);
+      if (moveRes.error || !moveRes.movedMove) return;
+
+      playWoodSeedClack(tokenIndex);
+      triggerHapticSensor("seed_drop");
+
+      // Award Arena progression points for human player actions
+      if (owner === myColor) {
+        if (moveRes.capturedTokenIds.length > 0) {
+          triggerHapticSensor("pocket_drop");
+          onPointsEarned?.(
+            50 * moveRes.capturedTokenIds.length,
+            `Captured Opponent Token (+${50 * moveRes.capturedTokenIds.length} Pts)`
+          );
+        }
+        if (moveRes.movedMove.toStatus === "FINISHED") {
+          triggerHapticSensor("pocket_drop");
+          onPointsEarned?.(90, "Token Reached Final Home by Exact Roll (+90 Pts)");
+        }
+        if (moveRes.winner === myColor) {
+          playLevelUpFanfare();
+          triggerHapticSensor("victory");
+          onPointsEarned?.(300, "Ghana Ludo 4-Token Victory (+300 Pts)");
         }
       }
 
-      const moveState: LudoState = {
-        ...game,
-        diceValue: rolled,
-        phase: "move",
-        lastAction: `🎲 Rolled a ${rolled}! Tap one of your highlighted tokens on the board to move.`,
-      };
-      setGame(moveState);
-      onStateChange?.(moveState);
-    }, 450);
-  }, [game, isMyTurn, rolling, mySide, onStateChange, onMatchComplete, rewardHumanLudoMove]);
-
-  const handleSelectToken = useCallback(
-    (tokenIdx: number) => {
-      if (game.winner || !isMyTurn || game.phase !== "move") return;
-      const nextState = applyLudoTokenMove(game, mySide, tokenIdx);
-      if (!nextState) return;
-
-      playWoodSeedClack(tokenIdx);
-      triggerHapticSensor("seed_drop");
-      rewardHumanLudoMove(game, nextState);
-      setGame(nextState);
-      onStateChange?.(nextState);
-
-      if (nextState.winner) {
-        playSuccessSound();
-        onMatchComplete?.(nextState.winner, nextState);
-      }
+      syncWrapperState(moveRes.state);
     },
-    [game, isMyTurn, mySide, onStateChange, onMatchComplete, rewardHumanLudoMove]
+    [engine, isCurrentSeatHumanControlled, myColor, onPointsEarned, syncWrapperState]
   );
 
-  // Human-Sense Challenger Turn Engine (Medium Difficulty)
+  // Human-Sense Tactical AI Controller for non-human seats
   useEffect(() => {
     if (
-      (mode === "ai" || mode === "free_data") &&
-      !game.winner &&
-      game.turn === "opponent"
+      engine.matchStatus !== "IN_PROGRESS" ||
+      isCurrentSeatHumanControlled ||
+      rolling
     ) {
-      const humanDelay = 780 + Math.floor(Math.random() * 480);
-      const timer = setTimeout(() => {
-        const aiTokens = game.opponentTokens;
-        const humanTokens = game.creatorTokens;
+      return;
+    }
 
+    const activePlayer = engine.currentPlayer;
+
+    // Step 1: AI needs to roll the dice
+    if (engine.diceResult === null) {
+      const rollTimer = window.setTimeout(() => {
+        setRolling(true);
         playDiceRattleSound();
-        // Authentic fair dice roll (with slight tactical intuition on higher levels)
-        let rolled = Math.floor(Math.random() * 6) + 1;
-        if (playerLevel >= 4 && Math.random() < 0.22) {
-          rolled = 6;
-        }
+        window.setTimeout(() => {
+          const res = rollDice(engine, activePlayer);
+          setRolling(false);
+          if (res.diceValue) setLastRolledVisual(res.diceValue);
+          syncWrapperState(res.state);
+        }, 420);
+      }, 680);
+      return () => window.clearTimeout(rollTimer);
+    }
 
-        setLastRolledVisual(rolled);
-        const movable = aiTokens
-          .map((_, idx) => idx)
-          .filter((idx) => canMoveLudoToken(aiTokens, idx, rolled));
-
-        if (movable.length === 0) {
-          const passed: LudoState = {
-            ...game,
-            turn: "creator",
-            diceValue: null,
-            phase: "roll",
-            lastAction: `${effectiveOpponentName} rolled ${rolled} — no valid moves! Your turn.`,
-            moveCount: (game.moveCount || 0) + 1,
-          };
-          setGame(passed);
-          onStateChange?.(passed);
-          return;
-        }
-
-        // Human-sense tactical choice with Medium difficulty Gaussian noise
-        const tempState: LudoState = { ...game, diceValue: rolled, phase: "move" };
-        let chosenIdx = movable[0];
-        let bestScore = -Infinity;
-
-        for (const idx of movable) {
-          const sim = applyLudoTokenMove(tempState, "opponent", idx);
-          if (!sim) continue;
-          let score = sim.opponentTokens[idx] * 2 + sampleGaussianError(16);
-          if (sim.lastAction?.includes("KICK")) score += 95;
-          if (sim.opponentTokens[idx] === 31) score += 80;
-          if (aiTokens[idx] === -1 && rolled === 6) score += 45;
-
-          const absAfter = toAbsoluteSquare("opponent", sim.opponentTokens[idx]);
-          if (absAfter !== null && SAFE_ABSOLUTE_SQUARES.has(absAfter)) {
-            score += 35;
+    // Step 2: AI has rolled and has legalMoves -> score each legal move tactically
+    if (engine.legalMoves.length > 0) {
+      const moveTimer = window.setTimeout(() => {
+        const scoredMoves = engine.legalMoves.map((m) => {
+          let score = 0;
+          // High priority: Capturing an opponent token!
+          if (m.willCaptureTokenIds.length > 0) score += 160 * m.willCaptureTokenIds.length;
+          // High priority: Reaching exact FINISHED home
+          if (m.toStatus === "FINISHED") score += 140;
+          // Launching a token out of BASE on a 6
+          if (m.fromStatus === "BASE") score += 95;
+          // Entering protected HOME_PATH
+          if (m.fromStatus === "ACTIVE" && m.toStatus === "HOME_PATH") score += 85;
+          // Landing on a Safe Square or forming a Blockade with a teammate token
+          if (m.toTrackPosition !== null) {
+            if (checkSafeSquare(engine, m.toTrackPosition)) score += 45;
+            const samePlayerHere = engine.tokens[activePlayer].some(
+              (t) => t.id !== m.tokenId && t.trackPosition === m.toTrackPosition
+            );
+            if (samePlayerHere) score += 40; // Forms a Blockade!
           }
-          if (absAfter !== null && !SAFE_ABSOLUTE_SQUARES.has(absAfter)) {
-            for (const hPos of humanTokens) {
-              const hAbs = toAbsoluteSquare("creator", hPos);
-              if (hAbs !== null) {
-                const dist = (absAfter - hAbs + 28) % 28;
-                if (dist >= 1 && dist <= 5) score -= 40;
-              }
-            }
-          }
+          // Advancing furthest runner
+          score += m.toSteps * 0.8 + (Math.random() * 12 - 6);
+          return { move: m, score };
+        });
 
-          if (score > bestScore) {
-            bestScore = score;
-            chosenIdx = idx;
-          }
-        }
-
-        const nextState = applyLudoTokenMove(tempState, "opponent", chosenIdx);
-        if (nextState) {
-          playWoodSeedClack(chosenIdx);
-          setGame(nextState);
-          onStateChange?.(nextState);
-          if (nextState.winner) onMatchComplete?.(nextState.winner, nextState);
-        }
-      }, humanDelay);
-
-      return () => clearTimeout(timer);
+        scoredMoves.sort((a, b) => b.score - a.score);
+        const chosen = scoredMoves[0].move;
+        const moveRes = moveToken(engine, activePlayer, chosen.tokenIndex);
+        playWoodSeedClack(chosen.tokenIndex);
+        syncWrapperState(moveRes.state);
+      }, 650);
+      return () => window.clearTimeout(moveTimer);
     }
-  }, [mode, game, effectiveOpponentName, playerLevel, onStateChange, onMatchComplete]);
+  }, [engine, isCurrentSeatHumanControlled, rolling, syncWrapperState]);
 
-  const creatorHome = game.creatorTokens.filter((t) => t === 31).length;
-  const opponentHome = game.opponentTokens.filter((t) => t === 31).length;
-  const displayDiceVal = game.diceValue || lastRolledVisual || 6;
-
-  // Helper to render any tokens sitting on a specific (row, col) cell of the 15x15 cross track
-  const renderCellTokens = (r: number, c: number) => {
-    const creatorHere: number[] = [];
-    const opponentHere: number[] = [];
-
-    game.creatorTokens.forEach((rel, idx) => {
-      const coord = getTokenBoardCoord("creator", rel);
-      if (coord && coord[0] === r && coord[1] === c) creatorHere.push(idx);
-    });
-
-    game.opponentTokens.forEach((rel, idx) => {
-      const coord = getTokenBoardCoord("opponent", rel);
-      if (coord && coord[0] === r && coord[1] === c) opponentHere.push(idx);
-    });
-
-    if (creatorHere.length === 0 && opponentHere.length === 0) return null;
-
-    return (
-      <div className="absolute inset-0 flex items-center justify-center gap-0.5 z-20 pointer-events-auto">
-        {creatorHere.map((tIdx) => {
-          const canClick =
-            mySide === "creator" &&
-            isMyTurn &&
-            game.phase === "move" &&
-            game.diceValue !== null &&
-            canMoveLudoToken(game.creatorTokens, tIdx, game.diceValue);
-          return (
-            <button
-              key={`c-${tIdx}`}
-              type="button"
-              disabled={!canClick}
-              onClick={() => handleSelectToken(tIdx)}
-              title={`Red Token #${tIdx + 1}`}
-              className={`w-4 h-4 sm:w-5 sm:h-5 rounded-full bg-red-600 border-2 border-white shadow-[0_2px_6px_rgba(0,0,0,0.75)] flex items-center justify-center text-[8px] font-black text-white transition-transform ${
-                canClick ? "ring-2 ring-amber-300 animate-bounce scale-125 cursor-pointer" : ""
-              }`}
-            >
-              {tIdx + 1}
-            </button>
-          );
-        })}
-        {opponentHere.map((tIdx) => {
-          const canClick =
-            mySide === "opponent" &&
-            isMyTurn &&
-            game.phase === "move" &&
-            game.diceValue !== null &&
-            canMoveLudoToken(game.opponentTokens, tIdx, game.diceValue);
-          return (
-            <button
-              key={`o-${tIdx}`}
-              type="button"
-              disabled={!canClick}
-              onClick={() => handleSelectToken(tIdx)}
-              title={`Yellow Token #${tIdx + 1}`}
-              className={`w-4 h-4 sm:w-5 sm:h-5 rounded-full bg-amber-400 border-2 border-slate-950 shadow-[0_2px_6px_rgba(0,0,0,0.75)] flex items-center justify-center text-[8px] font-black text-slate-950 transition-transform ${
-                canClick ? "ring-2 ring-white animate-bounce scale-125 cursor-pointer" : ""
-              }`}
-            >
-              {tIdx + 1}
-            </button>
-          );
-        })}
-      </div>
-    );
-  };
-
-  // Determines the authentic Ludo square color for a track cell (r, c)
-  const getTrackCellStyle = (r: number, c: number) => {
-    // Green Start & Green Home Stretch
-    if ((r === 6 && c === 1) || (r === 7 && c >= 1 && c <= 5)) {
-      return "bg-[#15803d] text-white border-slate-700/60";
+  // Lookup map of legal moves for the current player keyed by tokenId
+  const legalMoveByTokenId = useMemo(() => {
+    const map = new Map<string, LudoLegalMove>();
+    for (const m of engine.legalMoves) {
+      map.set(m.tokenId, m);
     }
-    // Yellow Start & Yellow Home Stretch
-    if ((r === 1 && c === 8) || (c === 7 && r >= 1 && r <= 5)) {
-      return "bg-[#eab308] text-slate-950 border-slate-700/60";
-    }
-    // Red Start & Red Home Stretch
-    if ((r === 13 && c === 6) || (c === 7 && r >= 9 && r <= 13)) {
-      return "bg-[#dc2626] text-white border-slate-700/60";
-    }
-    // Blue Start & Blue Home Stretch
-    if ((r === 8 && c === 13) || (r === 7 && c >= 9 && c <= 13)) {
-      return "bg-[#0284c7] text-white border-slate-700/60";
-    }
-    return "bg-[#eef6fb] text-slate-700 border-slate-400/80";
-  };
+    return map;
+  }, [engine.legalMoves]);
 
-  const isStarCell = (r: number, c: number) =>
-    (r === 13 && c === 6) ||
-    (r === 6 && c === 1) ||
-    (r === 1 && c === 8) ||
-    (r === 8 && c === 13);
+  // Lookup map of destination preview coordinates for legal moves
+  const destinationPreviewCoords = useMemo(() => {
+    const coords = new Set<string>();
+    for (const m of engine.legalMoves) {
+      if (m.toStatus === "ACTIVE" && m.toTrackPosition !== null) {
+        const c = MAIN_TRACK_COORDS[m.toTrackPosition];
+        if (c) coords.add(`${c[0]}-${c[1]}`);
+      } else if (m.toStatus === "HOME_PATH" && m.toHomePathPosition >= 1 && m.toHomePathPosition <= 5) {
+        const c = HOME_PATH_COORDS[m.owner][m.toHomePathPosition - 1];
+        if (c) coords.add(`${c[0]}-${c[1]}`);
+      }
+    }
+    return coords;
+  }, [engine.legalMoves]);
+
+  // Group active/home-path tokens by (row, col) cell so we can render stacks & Blockade shields
+  const tokensByCell = useMemo(() => {
+    const map = new Map<string, LudoToken[]>();
+    for (const color of engine.players) {
+      for (const token of engine.tokens[color] || []) {
+        const coord = getTokenGridCoord(token);
+        if (!coord) continue;
+        const key = `${coord[0]}-${coord[1]}`;
+        const list = map.get(key) || [];
+        list.push(token);
+        map.set(key, list);
+      }
+    }
+    return map;
+  }, [engine.players, engine.tokens]);
 
   return (
     <div className="space-y-4">
-      {/* Top Status & Rules Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl bg-slate-900/95 border border-indigo-500/30 shadow-lg">
-        <div className="flex flex-wrap items-center gap-2.5">
+      {/* ── Top Control Header: 52-Cell Rule Badge, 2P/3P/4P Selector, Invite Players & Audio/Haptics ── */}
+      <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl bg-slate-900/95 border border-white/10 shadow-lg">
+        <div className="flex flex-wrap items-center gap-2">
           <img
             src="/ludo-challenge-icon.png"
             alt="Ghana Ludo"
             className="w-8 h-8 rounded-lg object-cover shadow-md border border-white/20"
           />
-          <Badge className="bg-gradient-to-r from-green-600 via-yellow-500 to-red-600 text-white font-black text-xs px-3 py-1 shadow">
-            🎲 GHANA LUDO ARENA
+          <Badge className="bg-amber-500 text-slate-950 font-black text-xs px-2.5 py-0.5">
+            🎲 PRO 52-CELL LUDO ENGINE
           </Badge>
-          {mode !== "p2p" && (
-            <Badge
-              variant="outline"
-              className="border-emerald-500/40 bg-emerald-500/10 text-emerald-300 text-[10px] font-bold gap-1"
-            >
-              <Brain className="w-3 h-3" />
-              {effectiveOpponentName} • {persona.humanSensePercent}% Human Sense (Medium)
-            </Badge>
-          )}
-          <span className="text-xs text-amber-200 font-semibold">
-            First to race <strong>2 tokens HOME</strong> wins!
-          </span>
+          <Badge
+            variant="outline"
+            className="border-emerald-500/40 bg-emerald-500/10 text-emerald-300 text-[10px] font-bold gap-1"
+          >
+            <Shield className="w-3 h-3" /> 8 Safe Squares • Blockades • Exact Home Roll
+          </Badge>
+
+          {/* 2P / 3P / 4P Seat Switcher (Available before first move) */}
+          <div className="inline-flex items-center rounded-xl bg-slate-950 p-1 border border-white/10 gap-1">
+            {([2, 3, 4] as const).map((cnt) => {
+              const active = engine.players.length === cnt;
+              return (
+                <button
+                  key={cnt}
+                  type="button"
+                  disabled={engine.moveCount > 0}
+                  onClick={() => handleSelectPlayerCount(cnt)}
+                  className={`px-2.5 py-1 rounded-lg text-[10px] font-black transition-all flex items-center gap-1 cursor-pointer ${
+                    active
+                      ? "bg-amber-500 text-slate-950 shadow"
+                      : "text-slate-400 hover:text-white disabled:opacity-40"
+                  }`}
+                  title="Select 2, 3, or 4 Players before the match begins"
+                >
+                  <Users className="w-3 h-3" /> {cnt}P
+                </button>
+              );
+            })}
+          </div>
         </div>
-        <div className="flex items-center gap-1.5">
+
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setShowInviteBar((v) => !v)}
+            className="h-8 rounded-xl border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 text-xs font-black gap-1.5"
+          >
+            <UserPlus className="w-3.5 h-3.5" />
+            Invite Players ({engine.players.length}/4)
+          </Button>
+
           <Button
             size="sm"
             variant="ghost"
@@ -644,8 +744,9 @@ export function GhanaLudoBoard({
             className="h-8 text-xs text-amber-300 hover:text-amber-200 gap-1"
           >
             <HelpCircle className="w-3.5 h-3.5" />
-            {showRules ? "Hide Rules" : "Ludo Rules"}
+            {showRules ? "Hide Rules" : "Rules"}
           </Button>
+
           <Button
             size="sm"
             variant="ghost"
@@ -655,11 +756,14 @@ export function GhanaLudoBoard({
               setGameSensoryPreferences({ vibrationEnabled: next });
               if (next) triggerHapticSensor("aim_tick");
             }}
-            className={`h-8 px-2 text-xs ${vibrationEnabled ? "text-emerald-300" : "text-slate-500"}`}
-            title="Toggle Haptic Vibration Sensor"
+            className={`h-8 px-2 text-xs ${
+              vibrationEnabled ? "text-emerald-300" : "text-slate-500"
+            }`}
+            title="Toggle Haptic Vibration"
           >
             <Smartphone className="w-3.5 h-3.5" />
           </Button>
+
           <Button
             size="sm"
             variant="ghost"
@@ -668,362 +772,576 @@ export function GhanaLudoBoard({
               setSoundEnabled(next);
               setGameSensoryPreferences({ soundEnabled: next });
             }}
-            className="h-8 w-8 p-0 text-amber-300"
-            title={soundEnabled ? "Mute Sound" : "Enable Sound"}
+            className="h-8 px-2 text-xs text-amber-300"
+            title="Toggle Sound"
           >
-            {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+            {soundEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
           </Button>
         </div>
       </div>
 
+      {/* ── Multi-Player Invite Console (Invite Other Players to Green / Yellow / Blue Seats) ── */}
+      {showInviteBar && (
+        <div className="p-4 rounded-2xl bg-slate-950/95 border border-amber-500/40 space-y-3 shadow-xl">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-xs font-black text-amber-300 flex items-center gap-1.5">
+                <UserPlus className="w-4 h-4" /> Invite Up to 3 Other Players to Your Ludo Table (2–4 Players)
+              </p>
+              <p className="text-[11px] text-slate-400">
+                Assign a friend to <strong>Green</strong>, <strong>Yellow</strong>, or <strong>Blue</strong> and send them an instant SMS / In-App / WhatsApp invite!
+              </p>
+            </div>
+            {roomCode && (
+              <a
+                href={`https://wa.me/?text=${encodeURIComponent(
+                  `🎲 Join my ${engine.players.length}-Player Ghana Ludo Table on SwiftData Arena!\n🔑 Room #${roomCode}\n👉 Tap to join live: ${window.location.origin}/challenges?room=${roomCode}`
+                )}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 h-8 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[11px]"
+              >
+                <MessageCircle className="w-3.5 h-3.5" /> Share Ludo Room on WhatsApp
+              </a>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+            <select
+              value={inviteSeatColor}
+              onChange={(e) => setInviteSeatColor(e.target.value as LudoPlayerId)}
+              className="h-9 rounded-xl bg-slate-900 border border-white/15 px-3 text-xs font-bold text-white"
+            >
+              <option value="GREEN">🟢 Green Seat (Player 2)</option>
+              <option value="YELLOW">🟡 Yellow Seat (Player 3)</option>
+              <option value="BLUE">🔵 Blue Seat (Player 4)</option>
+            </select>
+
+            <Input
+              placeholder="Friend's Name (e.g. Kwesi)"
+              value={inviteNameInput}
+              onChange={(e) => setInviteNameInput(e.target.value)}
+              className="h-9 rounded-xl bg-slate-900 border-white/15 text-xs text-white"
+            />
+
+            <Input
+              placeholder="Friend's Phone (0241234567)"
+              value={invitePhoneInput}
+              onChange={(e) => setInvitePhoneInput(e.target.value)}
+              className="h-9 rounded-xl bg-slate-900 border-white/15 text-xs font-mono text-white"
+            />
+
+            <Button
+              type="button"
+              onClick={handleInviteFriendToLudoSeat}
+              className="h-9 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs gap-1.5"
+            >
+              <Send className="w-3.5 h-3.5" /> Add &amp; Send Invite
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Official 13-Section Ludo Rules Drawer ── */}
       {showRules && (
-        <div className="p-3.5 rounded-xl bg-slate-900/90 border border-amber-500/30 text-xs text-slate-200 space-y-1">
-          <p className="font-black text-amber-400">🇬🇭 Ghana Ludo Official Rules:</p>
+        <div className="p-3.5 rounded-xl bg-amber-950/50 border border-amber-500/30 text-xs text-amber-100/90 space-y-1.5">
+          <p className="font-black text-amber-400">
+            🇬🇭 Complete 52-Cell Ludo Engine Rules:
+          </p>
           <ul className="list-disc pl-4 space-y-1">
-            <li>Tap the <strong>3D Blue Dice</strong> in the center of the Ludo board (or the Roll button) on your turn.</li>
-            <li>Roll a <strong>6</strong> to bring a new token out of your 2×2 Yard onto your Starting Square and earn a <strong>Bonus Roll</strong>!</li>
-            <li>Land on an opponent&apos;s token outside ⭐ Safe Start squares to <strong>KICK</strong> it back to their Yard (+50 Pts) and earn a Bonus Roll!</li>
-            <li>First player to bring <strong>2 tokens</strong> into the Center Home triangle (+90 Pts each) wins the stake or Free Data reward!</li>
+            <li>
+              <strong>Base Launch (Roll 6)</strong>: All 4 tokens start inside your Base. You must roll a <strong>6</strong> to launch a token onto your colored starting square. Rolling a 6 grants an extra roll (3 consecutive 6s forfeits your turn).
+            </li>
+            <li>
+              <strong>52-Cell Clockwise Circuit &amp; 6-Cell Private Home Path</strong>: Tokens travel clockwise around all 52 main-track squares before entering your private 6-cell Home Path.
+            </li>
+            <li>
+              <strong>Player Choice (Never Forced Auto-Move)</strong>: Whenever you have legal moves, tap the exact glowing token you wish to move.
+            </li>
+            <li>
+              <strong>Captures &amp; 8 Protected Safe Squares</strong>: Landing on a lone opponent token on a non-safe square sends it back to Base and grants a <strong>Bonus Roll</strong>! The 4 colored Start squares and 4 Star (★) squares are safe from capture.
+            </li>
+            <li>
+              <strong>Blockades (🛡️ 2+ Tokens)</strong>: Two or more tokens of the same color on a square form a Blockade that opponents cannot land on or pass!
+            </li>
+            <li>
+              <strong>Victory Condition</strong>: Bring <strong>all 4 tokens</strong> into the Center Home Triangle by <strong>exact dice roll</strong> to win!
+            </li>
           </ul>
         </div>
       )}
 
-      {/* Player Score & Turn Banner */}
-      <div className="grid grid-cols-2 gap-3">
-        {/* Creator (Red Base) */}
-        <div
-          className={`p-3 rounded-2xl border-2 transition-all flex items-center justify-between ${
-            game.turn === "creator" && !game.winner
-              ? "bg-red-950/70 border-red-500 shadow-[0_0_20px_rgba(239,68,68,0.3)]"
-              : "bg-slate-900/70 border-white/10"
-          }`}
-        >
-          <div className="flex items-center gap-2.5 min-w-0">
-            <span className="w-4 h-4 rounded-full bg-[#dc2626] ring-2 ring-white shrink-0" />
-            <div className="truncate">
-              <p className="text-[10px] font-black uppercase tracking-wider text-red-300">
-                Red Camp {mySide === "creator" ? "(YOU)" : ""}
-              </p>
-              <p className="text-xs sm:text-sm font-black text-white truncate">{creatorName}</p>
-            </div>
-          </div>
-          <Badge className="bg-red-500/20 text-red-200 border border-red-500/40 font-black shrink-0">
-            🏠 {creatorHome}/2
-          </Badge>
-        </div>
-
-        {/* Opponent (Yellow Base) */}
-        <div
-          className={`p-3 rounded-2xl border-2 transition-all flex items-center justify-between ${
-            game.turn === "opponent" && !game.winner
-              ? "bg-amber-950/70 border-yellow-400 shadow-[0_0_20px_rgba(250,204,21,0.3)]"
-              : "bg-slate-900/70 border-white/10"
-          }`}
-        >
-          <div className="flex items-center gap-2.5 min-w-0">
-            <span className="w-4 h-4 rounded-full bg-[#eab308] ring-2 ring-white shrink-0" />
-            <div className="truncate">
-              <p className="text-[10px] font-black uppercase tracking-wider text-yellow-300">
-                Yellow Camp {mySide === "opponent" ? "(YOU)" : ""}
-              </p>
-              <p className="text-xs sm:text-sm font-black text-white truncate">{effectiveOpponentName}</p>
-            </div>
-          </div>
-          <Badge className="bg-yellow-500/20 text-yellow-200 border border-yellow-500/40 font-black shrink-0">
-            🏠 {opponentHome}/2
-          </Badge>
-        </div>
-      </div>
-
-      {/* AUTHENTIC 15x15 4-CORNER LUDO BOARD WITH CENTER 3D ROYAL BLUE DICE */}
-      <div className="relative mx-auto w-full max-w-[460px] aspect-square rounded-[28px] p-2 sm:p-3 bg-slate-950 border-4 border-slate-800 shadow-[0_20px_50px_rgba(0,0,0,0.85)]">
-        <div
-          className="w-full h-full rounded-[20px] overflow-hidden border-2 border-slate-800 grid relative bg-[#eef6fb]"
-          style={{
-            gridTemplateColumns: "repeat(15, minmax(0, 1fr))",
-            gridTemplateRows: "repeat(15, minmax(0, 1fr))",
-          }}
-        >
-          {/* 1. TOP-LEFT GREEN YARD (Rows 1..6, Cols 1..6) */}
-          <div
-            style={{ gridColumn: "1 / span 6", gridRow: "1 / span 6" }}
-            className="bg-[#15803d] p-2.5 sm:p-4 flex items-center justify-center border-r-2 border-b-2 border-slate-700/70"
-          >
-            <div className="w-full h-full bg-[#f8fafc] rounded-[22%] p-2 sm:p-3 grid grid-cols-2 grid-rows-2 gap-2 sm:gap-3 place-items-center shadow-inner">
-              {[0, 1, 2, 3].map((idx) => (
-                <div
-                  key={`green-yard-${idx}`}
-                  className="w-full h-full rounded-full bg-[#15803d] shadow-[inset_0_2px_4px_rgba(0,0,0,0.35)] flex items-center justify-center"
-                >
-                  <span className="w-3/5 h-3/5 rounded-full bg-emerald-400/30 border border-white/40" />
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* 2. TOP-RIGHT YELLOW YARD — OPPONENT BASE (Rows 1..6, Cols 10..15) */}
-          <div
-            style={{ gridColumn: "10 / span 6", gridRow: "1 / span 6" }}
-            className="bg-[#eab308] p-2.5 sm:p-4 flex items-center justify-center border-l-2 border-b-2 border-slate-700/70 relative"
-          >
-            <div className="w-full h-full bg-[#f8fafc] rounded-[22%] p-2 sm:p-3 grid grid-cols-2 grid-rows-2 gap-2 sm:gap-3 place-items-center shadow-inner">
-              {game.opponentTokens.map((pos, idx) => {
-                const inYard = pos === -1;
-                const canSpawn =
-                  inYard &&
-                  mySide === "opponent" &&
-                  isMyTurn &&
-                  game.phase === "move" &&
-                  game.diceValue === 6;
-                return (
-                  <button
-                    key={`yellow-yard-${idx}`}
-                    type="button"
-                    disabled={!canSpawn}
-                    onClick={() => handleSelectToken(idx)}
-                    className={`w-full h-full rounded-full bg-[#eab308] shadow-[inset_0_2px_4px_rgba(0,0,0,0.35)] flex items-center justify-center relative transition-transform ${
-                      canSpawn ? "ring-4 ring-indigo-600 animate-pulse scale-110 cursor-pointer" : ""
-                    }`}
-                  >
-                    {inYard ? (
-                      <span className="w-4/5 h-4/5 rounded-full bg-yellow-300 border-2 border-slate-900 shadow-md flex items-center justify-center text-[10px] font-black text-slate-950">
-                        {idx + 1}
-                      </span>
-                    ) : (
-                      <span className="text-[9px] font-black text-yellow-950/60">
-                        {pos === 31 ? "🏠" : "OUT"}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* 3. BOTTOM-LEFT RED YARD — CREATOR BASE (Rows 10..15, Cols 1..6) */}
-          <div
-            style={{ gridColumn: "1 / span 6", gridRow: "10 / span 6" }}
-            className="bg-[#dc2626] p-2.5 sm:p-4 flex items-center justify-center border-r-2 border-t-2 border-slate-700/70 relative"
-          >
-            <div className="w-full h-full bg-[#f8fafc] rounded-[22%] p-2 sm:p-3 grid grid-cols-2 grid-rows-2 gap-2 sm:gap-3 place-items-center shadow-inner">
-              {game.creatorTokens.map((pos, idx) => {
-                const inYard = pos === -1;
-                const canSpawn =
-                  inYard &&
-                  mySide === "creator" &&
-                  isMyTurn &&
-                  game.phase === "move" &&
-                  game.diceValue === 6;
-                return (
-                  <button
-                    key={`red-yard-${idx}`}
-                    type="button"
-                    disabled={!canSpawn}
-                    onClick={() => handleSelectToken(idx)}
-                    className={`w-full h-full rounded-full bg-[#dc2626] shadow-[inset_0_2px_4px_rgba(0,0,0,0.35)] flex items-center justify-center relative transition-transform ${
-                      canSpawn ? "ring-4 ring-yellow-300 animate-pulse scale-110 cursor-pointer" : ""
-                    }`}
-                  >
-                    {inYard ? (
-                      <span className="w-4/5 h-4/5 rounded-full bg-red-500 border-2 border-white shadow-md flex items-center justify-center text-[10px] font-black text-white">
-                        {idx + 1}
-                      </span>
-                    ) : (
-                      <span className="text-[9px] font-black text-white/80">
-                        {pos === 31 ? "🏠" : "OUT"}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* 4. BOTTOM-RIGHT BLUE YARD (Rows 10..15, Cols 10..15) */}
-          <div
-            style={{ gridColumn: "10 / span 6", gridRow: "10 / span 6" }}
-            className="bg-[#0284c7] p-2.5 sm:p-4 flex items-center justify-center border-l-2 border-t-2 border-slate-700/70"
-          >
-            <div className="w-full h-full bg-[#f8fafc] rounded-[22%] p-2 sm:p-3 grid grid-cols-2 grid-rows-2 gap-2 sm:gap-3 place-items-center shadow-inner">
-              {[0, 1, 2, 3].map((idx) => (
-                <div
-                  key={`blue-yard-${idx}`}
-                  className="w-full h-full rounded-full bg-[#0284c7] shadow-[inset_0_2px_4px_rgba(0,0,0,0.35)] flex items-center justify-center"
-                >
-                  <span className="w-3/5 h-3/5 rounded-full bg-sky-300/30 border border-white/40" />
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* 5. CENTER 3x3 HOME TRIANGLES (Rows 7..9, Cols 7..9) */}
-          <div
-            style={{ gridColumn: "7 / span 3", gridRow: "7 / span 3" }}
-            className="relative border-2 border-slate-700/80 overflow-hidden"
-          >
-            <svg viewBox="0 0 100 100" className="w-full h-full block">
-              {/* Top Yellow Triangle */}
-              <polygon points="0,0 100,0 50,50" fill="#eab308" stroke="#334155" strokeWidth="1.5" />
-              {/* Left Green Triangle */}
-              <polygon points="0,0 0,100 50,50" fill="#15803d" stroke="#334155" strokeWidth="1.5" />
-              {/* Right Blue Triangle */}
-              <polygon points="100,0 100,100 50,50" fill="#0284c7" stroke="#334155" strokeWidth="1.5" />
-              {/* Bottom Red Triangle */}
-              <polygon points="0,100 100,100 50,50" fill="#dc2626" stroke="#334155" strokeWidth="1.5" />
-            </svg>
-          </div>
-
-          {/* 6. RENDER ALL CROSS-TRACK CELLS (Top, Left, Right, Bottom Arms) */}
-          {Array.from({ length: 15 }).map((_, r) =>
-            Array.from({ length: 15 }).map((__, c) => {
-              // Skip the 4 6x6 corner yards and the 3x3 center goal
-              const inTopLeft = r < 6 && c < 6;
-              const inTopRight = r < 6 && c >= 9;
-              const inBottomLeft = r >= 9 && c < 6;
-              const inBottomRight = r >= 9 && c >= 9;
-              const inCenter = r >= 6 && r <= 8 && c >= 6 && c <= 8;
-              if (inTopLeft || inTopRight || inBottomLeft || inBottomRight || inCenter) {
-                return null;
-              }
-
-              const cellStyle = getTrackCellStyle(r, c);
-              const star = isStarCell(r, c);
-
-              return (
-                <div
-                  key={`cell-${r}-${c}`}
-                  style={{ gridColumn: c + 1, gridRow: r + 1 }}
-                  className={`border-[0.5px] relative flex items-center justify-center select-none ${cellStyle}`}
-                >
-                  {star && (
-                    <span className="text-[9px] sm:text-[11px] opacity-85 pointer-events-none">
-                      ★
-                    </span>
-                  )}
-                  {renderCellTokens(r, c)}
-                </div>
-              );
-            })
-          )}
-
-          {/* 7. FLOATING CENTER 3D ROYAL-BLUE DICE OVERLAY (Matches Reference Image!) */}
-          <div className="absolute inset-0 pointer-events-none flex items-center justify-center z-30">
-            <div className="pointer-events-auto flex flex-col items-center">
-              <RoyalBlue3DDice
-                value={displayDiceVal}
-                rolling={rolling}
-                disabled={!isMyTurn || game.phase !== "roll" || rolling || Boolean(game.winner)}
-                onClick={handleRollDice}
-                size="lg"
-              />
-              {isMyTurn && game.phase === "roll" && !game.winner && (
-                <span className="mt-1.5 px-2.5 py-0.5 rounded-full bg-indigo-950/95 border border-indigo-400/60 text-[10px] font-black text-white shadow-lg animate-bounce">
-                  TAP DICE TO ROLL
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Action Control Bar & Quick Token Selector */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl bg-slate-900/95 border border-white/10 shadow-lg">
-        <div className="space-y-1">
-          <p className="text-xs sm:text-sm font-black text-white">
-            {game.winner
-              ? game.winner === mySide
-                ? "🏆 VICTORY! You won the Ghana Ludo Challenge!"
-                : `🏅 ${game.winner === "creator" ? creatorName : opponentName} won the Ludo match!`
-              : isMyTurn
-              ? game.phase === "roll"
-                ? "🟢 YOUR TURN — Tap the 3D Blue Dice on the board!"
-                : `🎲 Rolled ${game.diceValue}! Tap a highlighted token on the board or below.`
-              : `⏳ ${game.turn === "creator" ? creatorName : opponentName} is rolling...`}
-          </p>
-          <p className="text-xs text-amber-300/90 font-medium">{game.lastAction}</p>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <RoyalBlue3DDice
-            value={displayDiceVal}
-            rolling={rolling}
-            disabled={!isMyTurn || game.phase !== "roll" || rolling || Boolean(game.winner)}
-            onClick={handleRollDice}
-            size="md"
-          />
-          <Button
-            onClick={handleRollDice}
-            disabled={!isMyTurn || game.phase !== "roll" || rolling || Boolean(game.winner)}
-            className="h-12 px-6 rounded-2xl bg-gradient-to-r from-indigo-600 via-blue-600 to-indigo-500 hover:from-indigo-500 hover:to-blue-500 text-white font-black text-sm gap-2 shadow-lg border border-indigo-400/40"
-          >
-            {rolling ? "Rolling..." : "Roll 3D Dice"}
-          </Button>
-        </div>
-      </div>
-
-      {/* Quick Token Controls for Mobile Convenience */}
+      {/* ── Player Scorecards & Seat Status Bar (2–4 Players) ── */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-        {(mySide === "creator" ? game.creatorTokens : game.opponentTokens).map((pos, idx) => {
-          const myTokens = mySide === "creator" ? game.creatorTokens : game.opponentTokens;
-          const selectable =
-            isMyTurn &&
-            game.phase === "move" &&
-            game.diceValue !== null &&
-            canMoveLudoToken(myTokens, idx, game.diceValue);
-          const pct = pos === -1 ? 0 : Math.min(100, Math.round((pos / 31) * 100));
-          const absSq = toAbsoluteSquare(mySide, pos);
-          const isSafe = absSq !== null && SAFE_ABSOLUTE_SQUARES.has(absSq);
+        {(["RED", "GREEN", "YELLOW", "BLUE"] as LudoPlayerId[]).map((color) => {
+          const isPlaying = engine.players.includes(color);
+          const isTurn = engine.currentPlayer === color && engine.matchStatus === "IN_PROGRESS";
+          const meta = engine.playerMeta[color];
+          const colorTokens = engine.tokens[color] || [];
+          const finishedCount = colorTokens.filter((t) => t.status === "FINISHED").length;
+          const activeCount = colorTokens.filter(
+            (t) => t.status === "ACTIVE" || t.status === "HOME_PATH"
+          ).length;
+          const theme = PLAYER_THEME[color];
 
           return (
-            <button
-              key={`quick-token-${idx}`}
-              type="button"
-              disabled={!selectable}
-              onClick={() => handleSelectToken(idx)}
-              className={`p-3 rounded-xl border text-left transition-all ${
-                selectable
-                  ? "bg-indigo-600/25 border-amber-400 ring-2 ring-amber-400/50 hover:scale-[1.03] cursor-pointer"
-                  : pos === 31
-                  ? "bg-emerald-950/40 border-emerald-500/40"
-                  : "bg-slate-900/80 border-white/10"
+            <div
+              key={color}
+              className={`p-2.5 rounded-2xl border transition-all ${
+                !isPlaying
+                  ? "bg-slate-950/40 border-white/5 opacity-45"
+                  : isTurn
+                  ? `${theme.badgeBg} ring-2 ring-amber-400 shadow-lg`
+                  : "bg-slate-900/90 border-white/10"
               }`}
             >
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-xs font-black text-white flex items-center gap-1">
-                  <span
-                    className={`w-2.5 h-2.5 rounded-full ${
-                      mySide === "creator" ? "bg-red-500" : "bg-yellow-400"
-                    }`}
-                  />
-                  Token #{idx + 1}
-                  {isSafe && (
-                    <span title="On Safe Star Square">
-                      <Shield className="w-3 h-3 text-amber-400" />
-                    </span>
-                  )}
-                </span>
-                <span className="text-[10px] font-mono font-bold text-amber-300">
-                  {pos === -1 ? "Yard" : pos === 31 ? "🏠 HOME" : `${pos}/31`}
-                </span>
+              <div className="flex items-center justify-between gap-1 mb-1">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className={`w-3 h-3 rounded-full ${theme.bg} border border-white shrink-0`} />
+                  <span className="text-xs font-black text-white truncate">
+                    {meta?.name || color}
+                  </span>
+                </div>
+                {isPlaying ? (
+                  <Badge className="bg-black/40 text-white border border-white/15 text-[9px] font-mono">
+                    🏠 {finishedCount}/4
+                  </Badge>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={engine.moveCount > 0}
+                    onClick={() => {
+                      setInviteSeatColor(color);
+                      setShowInviteBar(true);
+                    }}
+                    className="text-[9px] font-bold text-amber-400 hover:underline cursor-pointer"
+                  >
+                    + Invite
+                  </button>
+                )}
               </div>
-              <div className="w-full h-1.5 rounded-full bg-black/50 overflow-hidden">
-                <div
-                  className={`h-full transition-all duration-300 ${
-                    mySide === "creator"
-                      ? "bg-gradient-to-r from-red-500 to-amber-400"
-                      : "bg-gradient-to-r from-yellow-400 to-emerald-400"
-                  }`}
-                  style={{ width: `${pct}%` }}
-                />
+
+              <div className="flex items-center justify-between text-[10px] text-slate-400">
+                <span>
+                  {isPlaying
+                    ? `On Track: ${activeCount} • Base: ${4 - finishedCount - activeCount}`
+                    : "Seat Open"}
+                </span>
+                {isTurn && (
+                  <span className="font-black text-amber-300 animate-pulse">
+                    {engine.diceResult ? `Rolled ${engine.diceResult}` : "Rolling..."}
+                  </span>
+                )}
               </div>
-              {selectable && (
-                <p className="text-[10px] font-black text-amber-300 mt-1 animate-pulse">
-                  ⚡ Tap to move (+{game.diceValue})
-                </p>
-              )}
-            </button>
+            </div>
           );
         })}
+      </div>
+
+      {/* ── Main 15x15 Ludo Cross Board & 3D Blue Dice Stage ── */}
+      <div className="p-3 sm:p-5 rounded-3xl bg-gradient-to-b from-slate-900 via-slate-950 to-slate-900 border-2 border-slate-800 shadow-[0_20px_50px_rgba(0,0,0,0.85)]">
+        <div className="relative max-w-[540px] mx-auto aspect-square rounded-2xl bg-[#eef6fb] p-1.5 sm:p-2.5 shadow-2xl border-4 border-slate-300">
+          <div className="w-full h-full grid grid-cols-15 grid-rows-15 border-2 border-slate-900 bg-white relative">
+            {/* 1. GREEN YARD (Top-Left 6x6: rows 0..5, cols 0..5) */}
+            <div
+              className="bg-[#15803d] border-r-2 border-b-2 border-slate-900 p-2 sm:p-3.5 flex items-center justify-center relative"
+              style={{ gridRow: "1 / span 6", gridColumn: "1 / span 6" }}
+            >
+              <div className="w-full h-full bg-white rounded-2xl border-2 border-slate-900 p-2 sm:p-3 grid grid-cols-2 grid-rows-2 gap-2 place-items-center shadow-inner">
+                {(engine.tokens.GREEN || []).map((tok) => {
+                  const inBase = tok.status === "BASE" && engine.players.includes("GREEN");
+                  const isLegal = legalMoveByTokenId.has(tok.id) && isCurrentSeatHumanControlled;
+                  return (
+                    <div
+                      key={tok.id}
+                      className="w-7 h-7 sm:w-10 sm:h-10 rounded-full bg-[#15803d] border-2 border-slate-900 flex items-center justify-center shadow-inner"
+                    >
+                      {inBase && (
+                        <button
+                          type="button"
+                          disabled={!isLegal}
+                          onClick={() => handleSelectTokenMove("GREEN", tok.tokenIndex)}
+                          className={`w-5 h-5 sm:w-7 sm:h-7 rounded-full bg-gradient-to-br from-emerald-300 via-emerald-500 to-green-900 border-2 border-white shadow-md flex items-center justify-center text-[9px] font-black text-white ${
+                            isLegal
+                              ? "ring-4 ring-amber-300 animate-bounce cursor-pointer"
+                              : "cursor-default"
+                          }`}
+                        >
+                          G{tok.tokenIndex + 1}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 2. YELLOW YARD (Top-Right 6x6: rows 0..5, cols 9..14) */}
+            <div
+              className="bg-[#eab308] border-l-2 border-b-2 border-slate-900 p-2 sm:p-3.5 flex items-center justify-center relative"
+              style={{ gridRow: "1 / span 6", gridColumn: "10 / span 6" }}
+            >
+              <div className="w-full h-full bg-white rounded-2xl border-2 border-slate-900 p-2 sm:p-3 grid grid-cols-2 grid-rows-2 gap-2 place-items-center shadow-inner">
+                {(engine.tokens.YELLOW || []).map((tok) => {
+                  const inBase = tok.status === "BASE" && engine.players.includes("YELLOW");
+                  const isLegal = legalMoveByTokenId.has(tok.id) && isCurrentSeatHumanControlled;
+                  return (
+                    <div
+                      key={tok.id}
+                      className="w-7 h-7 sm:w-10 sm:h-10 rounded-full bg-[#eab308] border-2 border-slate-900 flex items-center justify-center shadow-inner"
+                    >
+                      {inBase && (
+                        <button
+                          type="button"
+                          disabled={!isLegal}
+                          onClick={() => handleSelectTokenMove("YELLOW", tok.tokenIndex)}
+                          className={`w-5 h-5 sm:w-7 sm:h-7 rounded-full bg-gradient-to-br from-yellow-200 via-amber-400 to-amber-700 border-2 border-slate-950 shadow-md flex items-center justify-center text-[9px] font-black text-slate-950 ${
+                            isLegal
+                              ? "ring-4 ring-emerald-400 animate-bounce cursor-pointer"
+                              : "cursor-default"
+                          }`}
+                        >
+                          Y{tok.tokenIndex + 1}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 3. RED YARD (Bottom-Left 6x6: rows 9..14, cols 0..5) */}
+            <div
+              className="bg-[#dc2626] border-r-2 border-t-2 border-slate-900 p-2 sm:p-3.5 flex items-center justify-center relative"
+              style={{ gridRow: "10 / span 6", gridColumn: "1 / span 6" }}
+            >
+              <div className="w-full h-full bg-white rounded-2xl border-2 border-slate-900 p-2 sm:p-3 grid grid-cols-2 grid-rows-2 gap-2 place-items-center shadow-inner">
+                {(engine.tokens.RED || []).map((tok) => {
+                  const inBase = tok.status === "BASE" && engine.players.includes("RED");
+                  const isLegal = legalMoveByTokenId.has(tok.id) && isCurrentSeatHumanControlled;
+                  return (
+                    <div
+                      key={tok.id}
+                      className="w-7 h-7 sm:w-10 sm:h-10 rounded-full bg-[#dc2626] border-2 border-slate-900 flex items-center justify-center shadow-inner"
+                    >
+                      {inBase && (
+                        <button
+                          type="button"
+                          disabled={!isLegal}
+                          onClick={() => handleSelectTokenMove("RED", tok.tokenIndex)}
+                          className={`w-5 h-5 sm:w-7 sm:h-7 rounded-full bg-gradient-to-br from-red-300 via-red-600 to-red-950 border-2 border-white shadow-md flex items-center justify-center text-[9px] font-black text-white ${
+                            isLegal
+                              ? "ring-4 ring-amber-300 animate-bounce cursor-pointer"
+                              : "cursor-default"
+                          }`}
+                        >
+                          R{tok.tokenIndex + 1}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 4. BLUE YARD (Bottom-Right 6x6: rows 9..14, cols 9..14) */}
+            <div
+              className="bg-[#0284c7] border-l-2 border-t-2 border-slate-900 p-2 sm:p-3.5 flex items-center justify-center relative"
+              style={{ gridRow: "10 / span 6", gridColumn: "10 / span 6" }}
+            >
+              <div className="w-full h-full bg-white rounded-2xl border-2 border-slate-900 p-2 sm:p-3 grid grid-cols-2 grid-rows-2 gap-2 place-items-center shadow-inner">
+                {(engine.tokens.BLUE || []).map((tok) => {
+                  const inBase = tok.status === "BASE" && engine.players.includes("BLUE");
+                  const isLegal = legalMoveByTokenId.has(tok.id) && isCurrentSeatHumanControlled;
+                  return (
+                    <div
+                      key={tok.id}
+                      className="w-7 h-7 sm:w-10 sm:h-10 rounded-full bg-[#0284c7] border-2 border-slate-900 flex items-center justify-center shadow-inner"
+                    >
+                      {inBase && (
+                        <button
+                          type="button"
+                          disabled={!isLegal}
+                          onClick={() => handleSelectTokenMove("BLUE", tok.tokenIndex)}
+                          className={`w-5 h-5 sm:w-7 sm:h-7 rounded-full bg-gradient-to-br from-sky-300 via-sky-500 to-blue-950 border-2 border-white shadow-md flex items-center justify-center text-[9px] font-black text-white ${
+                            isLegal
+                              ? "ring-4 ring-amber-300 animate-bounce cursor-pointer"
+                              : "cursor-default"
+                          }`}
+                        >
+                          B{tok.tokenIndex + 1}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 5. CENTER 3x3 MULTI-COLORED HOME TRIANGLES (rows 6..8, cols 6..8) */}
+            <div
+              className="relative border-2 border-slate-900 overflow-hidden flex items-center justify-center"
+              style={{ gridRow: "7 / span 3", gridColumn: "7 / span 3" }}
+            >
+              <svg viewBox="0 0 100 100" className="w-full h-full block">
+                <polygon points="0,0 50,50 0,100" fill="#15803d" stroke="#0f172a" strokeWidth="2" />
+                <polygon points="0,0 100,0 50,50" fill="#eab308" stroke="#0f172a" strokeWidth="2" />
+                <polygon points="0,100 100,100 50,50" fill="#dc2626" stroke="#0f172a" strokeWidth="2" />
+                <polygon points="100,0 100,100 50,50" fill="#0284c7" stroke="#0f172a" strokeWidth="2" />
+              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                <span className="px-1.5 py-0.5 rounded bg-slate-950/85 text-white font-black text-[8px] sm:text-[10px] border border-white/20 shadow">
+                  HOME 4/4
+                </span>
+              </div>
+            </div>
+
+            {/* 6. RENDER ALL 52 MAIN-TRACK CELLS + 20 COLORED HOME-PATH CELLS */}
+            {Array.from({ length: 15 }).map((_, r) =>
+              Array.from({ length: 15 }).map((__, c) => {
+                const inTopLeft = r < 6 && c < 6;
+                const inTopRight = r < 6 && c > 8;
+                const inBottomLeft = r > 8 && c < 6;
+                const inBottomRight = r > 8 && c > 8;
+                const inCenter = r >= 6 && r <= 8 && c >= 6 && c <= 8;
+                if (inTopLeft || inTopRight || inBottomLeft || inBottomRight || inCenter) {
+                  return null;
+                }
+
+                // Determine cell coloring (Home Stretch or Starting Safe Square or Star Safe Square)
+                const isRedHomeStretch = c === 7 && r >= 9 && r <= 13;
+                const isYellowHomeStretch = c === 7 && r >= 1 && r <= 5;
+                const isGreenHomeStretch = r === 7 && c >= 1 && c <= 5;
+                const isBlueHomeStretch = r === 7 && c >= 9 && c <= 13;
+
+                const isRedStart = r === 13 && c === 6;
+                const isGreenStart = r === 6 && c === 1;
+                const isYellowStart = r === 1 && c === 8;
+                const isBlueStart = r === 8 && c === 13;
+
+                const isStarCell =
+                  (r === 8 && c === 2) ||
+                  (r === 2 && c === 6) ||
+                  (r === 6 && c === 12) ||
+                  (r === 12 && c === 8);
+
+                let cellBg = "bg-white";
+                if (isRedHomeStretch || isRedStart) cellBg = "bg-[#dc2626]";
+                else if (isYellowHomeStretch || isYellowStart) cellBg = "bg-[#eab308]";
+                else if (isGreenHomeStretch || isGreenStart) cellBg = "bg-[#15803d]";
+                else if (isBlueHomeStretch || isBlueStart) cellBg = "bg-[#0284c7]";
+
+                const cellKey = `${r}-${c}`;
+                const cellTokens = tokensByCell.get(cellKey) || [];
+                const isDestinationPreview = destinationPreviewCoords.has(cellKey);
+
+                // Check if this cell currently holds a Blockade (2+ tokens of same player)
+                const isBlockadeHere =
+                  cellTokens.length >= 2 &&
+                  cellTokens.every((t) => t.owner === cellTokens[0].owner);
+
+                return (
+                  <div
+                    key={cellKey}
+                    style={{ gridRow: r + 1, gridColumn: c + 1 }}
+                    className={`${cellBg} border border-slate-800/80 relative flex items-center justify-center select-none ${
+                      isDestinationPreview ? "ring-2 ring-inset ring-emerald-400 bg-emerald-100/80" : ""
+                    }`}
+                  >
+                    {/* Safe Star Marker */}
+                    {(isRedStart || isGreenStart || isYellowStart || isBlueStart || isStarCell) &&
+                      cellTokens.length === 0 && (
+                        <span
+                          className={`text-[9px] sm:text-xs font-black ${
+                            isStarCell ? "text-slate-500" : "text-white/90"
+                          }`}
+                        >
+                          ★
+                        </span>
+                      )}
+
+                    {/* Destination Preview Dot */}
+                    {isDestinationPreview && cellTokens.length === 0 && (
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
+                    )}
+
+                    {/* Tokens occupying this square */}
+                    {cellTokens.map((tok, stackIdx) => {
+                      const isLegal =
+                        legalMoveByTokenId.has(tok.id) && isCurrentSeatHumanControlled;
+                      const offsetStyle =
+                        cellTokens.length > 1
+                          ? {
+                              transform: `translate(${(stackIdx % 2 === 0 ? -1 : 1) * 3}px, ${
+                                (stackIdx < 2 ? -1 : 1) * 3
+                              }px)`,
+                            }
+                          : undefined;
+
+                      const tokenPalette =
+                        tok.owner === "RED"
+                          ? "from-red-300 via-red-600 to-red-950 text-white border-white"
+                          : tok.owner === "GREEN"
+                          ? "from-emerald-300 via-emerald-600 to-green-950 text-white border-white"
+                          : tok.owner === "YELLOW"
+                          ? "from-yellow-200 via-amber-400 to-amber-700 text-slate-950 border-slate-950"
+                          : "from-sky-300 via-sky-500 to-blue-950 text-white border-white";
+
+                      return (
+                        <button
+                          key={tok.id}
+                          type="button"
+                          disabled={!isLegal}
+                          onClick={() => handleSelectTokenMove(tok.owner, tok.tokenIndex)}
+                          style={offsetStyle}
+                          title={
+                            isLegal
+                              ? `Tap to move ${tok.owner} Token #${tok.tokenIndex + 1} by ${engine.diceResult}`
+                              : `${tok.owner} Token #${tok.tokenIndex + 1}`
+                          }
+                          className={`w-4 h-4 sm:w-6 sm:h-6 rounded-full bg-gradient-to-br ${tokenPalette} border-2 shadow-md flex items-center justify-center text-[8px] sm:text-[9px] font-black z-10 transition-transform ${
+                            isLegal
+                              ? "ring-4 ring-amber-300 animate-bounce scale-125 cursor-pointer z-20"
+                              : "cursor-default"
+                          }`}
+                        >
+                          {tok.owner[0]}
+                          {tok.tokenIndex + 1}
+                        </button>
+                      );
+                    })}
+
+                    {/* Blockade Shield Badge when 2+ same-color tokens form a wall */}
+                    {isBlockadeHere && (
+                      <span
+                        className="absolute -top-1.5 -right-1.5 px-1 rounded bg-slate-950 text-amber-300 border border-amber-400 text-[7px] font-black z-30 pointer-events-none shadow"
+                        title="Blockade Wall (Opponents cannot pass or land here)"
+                      >
+                        🛡️{cellTokens.length}x
+                      </span>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        {/* ── Interactive 3D Royal-Blue Dice Dock & Turn Action Bar ── */}
+        <div className="mt-4 p-3.5 sm:p-4 rounded-2xl bg-slate-950/90 border border-white/10 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="space-y-1 text-center sm:text-left">
+            <div className="flex items-center justify-center sm:justify-start gap-2 flex-wrap">
+              <span
+                className={`w-2.5 h-2.5 rounded-full ${
+                  isCurrentSeatHumanControlled ? "bg-emerald-400 animate-ping" : "bg-amber-400"
+                }`}
+              />
+              <span className="text-xs sm:text-sm font-black text-white">
+                {engine.winner ? (
+                  `🏆 ${engine.playerMeta[engine.winner]?.name || engine.winner} WON THE LUDO MATCH (4/4 HOME)!`
+                ) : isCurrentSeatHumanControlled ? (
+                  engine.diceResult === null ? (
+                    `🟢 YOUR TURN (${engine.playerMeta[engine.currentPlayer]?.name}) — Tap the 3D Blue Dice to Roll!`
+                  ) : (
+                    `🎯 Rolled ${engine.diceResult}! Tap any of your ${engine.legalMoves.length} highlighted ${engine.currentPlayer} token(s) to move!`
+                  )
+                ) : (
+                  `⏳ ${engine.playerMeta[engine.currentPlayer]?.name || engine.currentPlayer} is playing...`
+                )}
+              </span>
+              {engine.consecutiveSixes > 0 && (
+                <Badge className="bg-amber-500/20 text-amber-300 border border-amber-400/40 text-[10px]">
+                  🔥 Sixes Streak: {engine.consecutiveSixes}/3
+                </Badge>
+              )}
+            </div>
+            <p className="text-xs text-amber-300/90 font-medium">{ludo.lastAction}</p>
+          </div>
+
+          {/* 3D Royal-Blue Dice & Legal Token Quick-Select Pills */}
+          <div className="flex items-center gap-3">
+            {isCurrentSeatHumanControlled && engine.diceResult !== null && engine.legalMoves.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                {engine.legalMoves.map((m) => (
+                  <Button
+                    key={m.tokenId}
+                    size="sm"
+                    onClick={() => handleSelectTokenMove(m.owner, m.tokenIndex)}
+                    className="h-9 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs shadow"
+                  >
+                    Move {m.owner[0]}
+                    {m.tokenIndex + 1}{" "}
+                    {m.fromStatus === "BASE"
+                      ? "(Launch)"
+                      : m.willCaptureTokenIds.length > 0
+                      ? "(💥 Capture!)"
+                      : m.toStatus === "FINISHED"
+                      ? "(🏠 Finish!)"
+                      : `(+${engine.diceResult})`}
+                  </Button>
+                ))}
+              </div>
+            )}
+
+            <div className="flex items-center gap-3 bg-slate-900/90 px-4 py-2 rounded-2xl border border-indigo-500/30 shadow-inner">
+              <div className="text-right">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-indigo-300">
+                  {rolling
+                    ? "Rolling..."
+                    : engine.diceResult
+                    ? `Rolled: ${engine.diceResult}`
+                    : "3D Dice"}
+                </p>
+                <p className="text-[11px] font-semibold text-slate-400">
+                  {isCurrentSeatHumanControlled && engine.diceResult === null
+                    ? "Tap cube to roll"
+                    : engine.diceResult !== null
+                    ? "Choose token"
+                    : "Waiting..."}
+                </p>
+              </div>
+              <RoyalBlue3DDice
+                value={engine.diceResult || lastRolledVisual}
+                rolling={rolling}
+                disabled={
+                  !isCurrentSeatHumanControlled ||
+                  engine.diceResult !== null ||
+                  rolling ||
+                  engine.matchStatus !== "IN_PROGRESS"
+                }
+                onClick={handleRollDice}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* ── Recent Turn History Log (Section 10 Requirement) ── */}
+        {engine.turnHistory.length > 0 && (
+          <div className="mt-3 p-3 rounded-xl bg-slate-950/70 border border-white/5 space-y-1">
+            <p className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1">
+              <History className="w-3 h-3 text-amber-400" /> Validated Move History (Last 3 Turns)
+            </p>
+            <div className="space-y-1">
+              {engine.turnHistory
+                .slice(-3)
+                .reverse()
+                .map((h) => (
+                  <div
+                    key={h.moveNumber}
+                    className="flex items-center justify-between text-[11px] text-slate-300"
+                  >
+                    <span>
+                      <strong className="text-amber-300 font-mono">#{h.moveNumber}</strong>{" "}
+                      {h.summary}
+                    </span>
+                    <span className="font-mono text-[10px] text-slate-400">
+                      🎲 {h.diceValue}
+                    </span>
+                  </div>
+                ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

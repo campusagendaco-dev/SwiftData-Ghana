@@ -95,9 +95,9 @@ const GAME_CATALOG: {
   },
   {
     id: "ludo",
-    name: "Ghana Ludo (Kick)",
-    subtitle: "Roll 6 to deploy, kick opponent tokens back to yard & race 2 tokens home!",
-    badge: "Fast Action",
+    name: "Ghana Ludo (Pro 52-Cell • 2–4 Players)",
+    subtitle: "Authentic 52-cell track, 4 tokens in Base, 8 Safe Squares, Blockades (2+ tokens), Exact Home Roll & invite up to 3 friends!",
+    badge: "🎲 2–4 Players",
     emoji: "🎲",
     gradient: "from-rose-600/30 via-amber-900/20 to-slate-950 border-rose-500/40",
   },
@@ -1383,10 +1383,16 @@ export default function ChallengeArena() {
                     opponentName={
                       activeChallenge.opponent_name || HUMAN_CHALLENGER_PERSONAS.ludo.name
                     }
+                    roomCode={activeChallenge.room_code}
                     initialState={activeChallenge.board_state}
                     onStateChange={handleBoardStateChange}
                     onMatchComplete={handleMatchComplete}
                     onPointsEarned={handlePointsEarned}
+                    onInvitePlayer={({ phone }) => {
+                      if (phone) {
+                        handleSendRoomInvite(activeChallenge, { phone });
+                      }
+                    }}
                     playerLevel={levelInfo.level}
                   />
                 )}
