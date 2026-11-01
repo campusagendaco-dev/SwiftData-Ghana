@@ -35,6 +35,7 @@ import {
 import { OwareGameBoard, INITIAL_OWARE_STATE } from "@/components/games/OwareGameBoard";
 import { GhanaLudoBoard, INITIAL_LUDO_STATE } from "@/components/games/GhanaLudoBoard";
 import { DameCheckersBoard, INITIAL_DAME_STATE } from "@/components/games/DameCheckersBoard";
+import { EightBallPoolBoard, INITIAL_POOL_STATE } from "@/components/games/EightBallPoolBoard";
 import { ChallengeHowItWorks } from "@/components/games/ChallengeHowItWorks";
 import { playSuccessSound } from "@/lib/sound";
 
@@ -44,7 +45,7 @@ declare global {
   }
 }
 
-type GameType = "oware" | "ludo" | "dame";
+type GameType = "oware" | "ludo" | "dame" | "pool";
 type ChallengeMode = "p2p" | "ai" | "free_data";
 type PaymentSource = "wallet" | "momo" | "free";
 
@@ -81,6 +82,14 @@ const GAME_CATALOG: {
     gradient: "from-rose-600/30 via-amber-900/20 to-slate-950 border-rose-500/40",
   },
   {
+    id: "pool",
+    name: "8-Ball Pool (Landscape Pro)",
+    subtitle: "Turn your phone sideways! Aim the cue laser, control shot power, sink Solids or Stripes & pot the 8-Ball!",
+    badge: "📱 Rotate Phone",
+    emoji: "🎱",
+    gradient: "from-sky-600/30 via-blue-900/25 to-slate-950 border-sky-500/40",
+  },
+  {
     id: "dame",
     name: "Ghanaian Dame",
     subtitle: "8×8 Ghanaian Draughts with mandatory jump combos and Crowned Kings.",
@@ -95,6 +104,7 @@ const QUICK_STAKES = [2, 5, 10, 20, 50];
 function getInitialBoardForGame(gameType: GameType) {
   if (gameType === "oware") return INITIAL_OWARE_STATE;
   if (gameType === "ludo") return INITIAL_LUDO_STATE;
+  if (gameType === "pool") return INITIAL_POOL_STATE;
   if (gameType === "dame") return INITIAL_DAME_STATE;
   return INITIAL_DAME_STATE;
 }
@@ -1048,6 +1058,17 @@ export default function ChallengeArena() {
                     onMatchComplete={handleMatchComplete}
                   />
                 )}
+                {activeChallenge.game_type === "pool" && (
+                  <EightBallPoolBoard
+                    mode={activeChallenge.mode}
+                    mySide={mySide}
+                    creatorName={activeChallenge.creator_name}
+                    opponentName={activeChallenge.opponent_name || "Orex Grandmaster Pool AI"}
+                    initialState={activeChallenge.board_state}
+                    onStateChange={handleBoardStateChange}
+                    onMatchComplete={handleMatchComplete}
+                  />
+                )}
               </>
             )}
           </CardContent>
@@ -1063,16 +1084,16 @@ export default function ChallengeArena() {
                 Start a New Game Challenge
               </CardTitle>
               <CardDescription>
-                Choose a traditional Ghanaian game, pick your stake mode (Wallet, MoMo, or Free Data), and invite or notify players!
+                Choose a traditional Ghanaian or Pro Arena game, pick your stake mode (Wallet, MoMo, or Free Data), and invite or notify players!
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {/* 1. Choose Game */}
               <div className="space-y-2">
                 <Label className="text-xs font-bold uppercase tracking-wider text-amber-400">
-                  1. Choose Ghanaian Traditional Game
+                  1. Choose Arena Game
                 </Label>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   {GAME_CATALOG.map((g) => {
                     const active = selectedGame === g.id;
                     return (
@@ -1091,6 +1112,8 @@ export default function ChallengeArena() {
                             <img src="/ludo-challenge-icon.png" alt="Ghana Ludo" className="w-8 h-8 rounded-lg object-cover shadow-md border border-white/20" />
                           ) : g.id === "oware" ? (
                             <img src="/oware-challenge-icon.jpg" alt="Oware Abapa" className="w-8 h-8 rounded-lg object-cover shadow-md border border-amber-500/40" />
+                          ) : g.id === "pool" ? (
+                            <img src="/pool-challenge-icon.jpg" alt="8-Ball Pool" className="w-10 h-7 rounded-lg object-cover shadow-md border border-sky-400/50" />
                           ) : (
                             <span className="text-xl">{g.emoji}</span>
                           )}
@@ -1382,7 +1405,7 @@ export default function ChallengeArena() {
                 </div>
 
                 <div className="flex items-center gap-1.5 flex-wrap">
-                  {["all", "oware", "ludo", "dame"].map((g) => (
+                  {["all", "oware", "ludo", "pool", "dame"].map((g) => (
                     <button
                       key={g}
                       type="button"

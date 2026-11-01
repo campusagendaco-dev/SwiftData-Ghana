@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 
 interface ChallengeHowItWorksProps {
-  onQuickStart?: (game: "oware" | "ludo" | "dame", mode: "p2p" | "ai" | "free_data") => void;
+  onQuickStart?: (game: "oware" | "ludo" | "dame" | "pool", mode: "p2p" | "ai" | "free_data") => void;
 }
 
 const PRO_STEPS = [
@@ -32,12 +32,12 @@ const PRO_STEPS = [
     id: 0,
     num: "01",
     shortTitle: "Select Game",
-    title: "Choose Your Ghanaian Board Game",
+    title: "Choose Your Arena Game (Oware, Ludo, 8-Ball Pool & Dame)",
     description:
-      "Pick one of Ghana's three iconic strategy games. Each board is built with authentic rules and real-time synchronization.",
+      "Pick any of our 4 iconic games — including our Landscape 8-Ball Pool where you turn your phone sideways for full cue-laser precision!",
     bullets: [
-      "Ghana Oware: Play traditional Nam-Nam (4-seed relay harvest) or Abapa tournament rules.",
-      "Ghana Ludo: 15×15 4-corner board with 3D Blue Dice, Yard deployment on 6 & token kicks.",
+      "Ghana Oware & Ludo: Authentic Nam-Nam 4-seed harvest & 15×15 4-corner Ludo with 3D Blue Dice.",
+      "8-Ball Pool (Landscape Pro): Turn your phone sideways! Aim the cue laser, control power & sink the 8-Ball.",
       "Ghanaian Dame: 8×8 draughts with mandatory diagonal jump captures & Crowned Kings.",
     ],
     icon: Gamepad2,
@@ -404,17 +404,17 @@ export function ChallengeHowItWorks({ onQuickStart }: ChallengeHowItWorksProps) 
                               Live Game Selection Preview — Tap any card to select
                             </span>
                             <Badge variant="outline" className="border-amber-500/40 text-amber-300 text-[10px]">
-                              3 Traditional Games
+                              4 Pro Arena Games
                             </Badge>
                           </div>
 
-                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                             {[
                               {
                                 id: "oware" as const,
                                 name: "Ghana Oware",
                                 sub: "Nam-Nam Relay & Abapa",
-                                badge: "Most Popular",
+                                badge: "Popular",
                                 img: "/oware-challenge-icon.jpg",
                               },
                               {
@@ -425,6 +425,13 @@ export function ChallengeHowItWorks({ onQuickStart }: ChallengeHowItWorksProps) 
                                 img: "/ludo-challenge-icon.png",
                               },
                               {
+                                id: "pool" as const,
+                                name: "8-Ball Pool",
+                                sub: "Rotate Phone Sideways",
+                                badge: "📱 Landscape",
+                                img: "/pool-challenge-icon.jpg",
+                              },
+                              {
                                 id: "dame" as const,
                                 name: "Ghanaian Dame",
                                 sub: "8×8 Draughts & Kings",
@@ -432,7 +439,7 @@ export function ChallengeHowItWorks({ onQuickStart }: ChallengeHowItWorksProps) 
                                 img: null,
                               },
                             ].map((g, idx) => {
-                              const focused = demoFrame % 3 === idx;
+                              const focused = demoFrame % 4 === idx;
                               return (
                                 <motion.div
                                   key={g.id}
@@ -442,7 +449,7 @@ export function ChallengeHowItWorks({ onQuickStart }: ChallengeHowItWorksProps) 
                                   }}
                                   transition={{ type: "spring", stiffness: 300, damping: 22 }}
                                   onClick={() => {
-                                    setActiveGameDemo(g.id);
+                                    if (g.id !== "pool") setActiveGameDemo(g.id);
                                     onQuickStart?.(g.id, "p2p");
                                   }}
                                   className={`p-3.5 rounded-2xl border cursor-pointer transition-colors relative ${

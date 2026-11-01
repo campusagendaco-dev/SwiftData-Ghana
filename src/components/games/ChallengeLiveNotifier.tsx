@@ -23,6 +23,7 @@ function getGameTitle(gameType: string): string {
   if (g === "oware") return "Ghana Oware";
   if (g === "ludo") return "Ghana Ludo";
   if (g === "dame") return "Ghanaian Dame";
+  if (g === "pool") return "8-Ball Pool";
   return g.toUpperCase();
 }
 
@@ -301,6 +302,12 @@ export function ChallengeLiveNotifier() {
                 src="/oware-challenge-icon.jpg"
                 alt="Ghana Oware"
                 className="w-13 h-13 rounded-2xl object-cover border border-amber-400/50 shadow-lg"
+              />
+            ) : alert.gameType === "pool" ? (
+              <img
+                src="/pool-challenge-icon.jpg"
+                alt="8-Ball Pool"
+                className="w-13 h-13 rounded-2xl object-cover border border-sky-400/50 shadow-lg"
               />
             ) : (
               <div className="w-13 h-13 rounded-2xl bg-gradient-to-br from-emerald-500/30 to-slate-900 border border-emerald-400/50 flex items-center justify-center text-2xl shadow-lg">
