@@ -35,6 +35,7 @@ const AIConcierge = lazy(() => import("@/components/AIConcierge"));
 const AudioUnlocker = lazy(() => import("@/components/AudioUnlocker"));
 const FreeDataButton = lazy(() => import("@/components/FreeDataButton"));
 const NotificationPopup = lazy(() => import("@/components/NotificationPopup"));
+const ChallengeLiveNotifier = lazy(() => import("@/components/games/ChallengeLiveNotifier"));
 const PushNotificationPrompt = lazy(() => import("@/components/PushNotificationPrompt").then(m => ({ default: m.PushNotificationPrompt })));
 
 // Route-level code splitting — each page chunk loads only when first visited
@@ -591,6 +592,7 @@ const AppContent = () => {
           {!isDashboard && !isAdmin && <TutorialModal />}
           <AudioUnlocker />
           <NotificationPopup />
+          <ChallengeLiveNotifier />
           <AIConcierge />
           <PushNotificationPrompt variant="floating" />
           <AccountSwitcherModal />

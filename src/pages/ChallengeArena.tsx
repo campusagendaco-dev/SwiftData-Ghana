@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
@@ -25,6 +26,11 @@ import {
   Loader2,
   Crown,
   ArrowLeft,
+  BellRing,
+  Send,
+  UserPlus,
+  MessageCircle,
+  Search,
 } from "lucide-react";
 import { OwareGameBoard, INITIAL_OWARE_STATE } from "@/components/games/OwareGameBoard";
 import { GhanaLudoBoard, INITIAL_LUDO_STATE } from "@/components/games/GhanaLudoBoard";
@@ -41,6 +47,14 @@ declare global {
 type GameType = "oware" | "ludo" | "dame";
 type ChallengeMode = "p2p" | "ai" | "free_data";
 type PaymentSource = "wallet" | "momo" | "free";
+
+interface SuggestedPlayer {
+  user_id: string;
+  full_name: string;
+  masked_phone: string;
+  phone: string;
+  is_agent: boolean;
+}
 
 const GAME_CATALOG: {
   id: GameType;
@@ -88,6 +102,8 @@ function getInitialBoardForGame(gameType: GameType) {
 export default function ChallengeArena() {
   const { user, profile } = useAuth();
   const { toast } = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const roomQueryParam = (searchParams.get("room") || "").trim().toUpperCase();
 
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -116,8 +132,17 @@ export default function ChallengeArena() {
   const [stakeAmount, setStakeAmount] = useState<string>("5");
   const [playerName, setPlayerName] = useState<string>("");
   const [playerPhone, setPlayerPhone] = useState<string>("");
-  const [rewardType, setRewardType] = useState<"wallet_cash" | "data_bundle">("wallet_cash");
-  const [rewardNetwork, setRewardNetwork] = useState<string>("MTN");
+  const [rewardType] = useState<"wallet_cash" | "data_bundle">("wallet_cash");
+  const [rewardNetwork] = useState<string>("MTN");
+
+  // Invite Player & Broadcast state
+  const [invitedPhone, setInvitedPhone] = useState<string>("");
+  const [selectedInvitedUser, setSelectedInvitedUser] = useState<SuggestedPlayer | null>(null);
+  const [playerSearchQuery, setPlayerSearchQuery] = useState<string>("");
+  const [suggestedPlayers, setSuggestedPlayers] = useState<SuggestedPlayer[]>([]);
+  const [searchingPlayers, setSearchingPlayers] = useState<boolean>(false);
+  const [sendingInvite, setSendingInvite] = useState<boolean>(false);
+  const [roomInvitePhone, setRoomInvitePhone] = useState<string>("");
 
   // Active match state
   const [activeChallenge, setActiveChallenge] = useState<any | null>(null);
@@ -191,10 +216,53 @@ export default function ChallengeArena() {
     }
   }, []);
 
+  const searchPlayersToInvite = useCallback(async (query: string) => {
+    setSearchingPlayers(true);
+    try {
+      const { data } = await supabase.functions.invoke("challenge-arena", {
+        body: { action: "search_players", query },
+      });
+      if (data?.success && Array.isArray(data.players)) {
+        setSuggestedPlayers(data.players);
+      }
+    } catch (_err) {
+      // ignore search error
+    } finally {
+      setSearchingPlayers(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchWalletAndPaystackKey();
     fetchLobby();
-  }, [fetchWalletAndPaystackKey, fetchLobby]);
+    searchPlayersToInvite("");
+  }, [fetchWalletAndPaystackKey, fetchLobby, searchPlayersToInvite]);
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      if (playerSearchQuery.trim().length >= 2 || playerSearchQuery.trim().length === 0) {
+        searchPlayersToInvite(playerSearchQuery.trim());
+      }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [playerSearchQuery, searchPlayersToInvite]);
+
+  // Auto-open room if current user is creator or opponent of ?room=XXXXXX
+  useEffect(() => {
+    if (!roomQueryParam || challenges.length === 0 || activeChallenge) return;
+    const matched = challenges.find(
+      (c) => String(c.room_code || "").toUpperCase() === roomQueryParam
+    );
+    if (!matched) return;
+
+    if (user?.id && matched.creator_id === user.id) {
+      setMySide("creator");
+      setActiveChallenge(matched);
+    } else if (user?.id && matched.opponent_id === user.id) {
+      setMySide("opponent");
+      setActiveChallenge(matched);
+    }
+  }, [roomQueryParam, challenges, activeChallenge, user?.id]);
 
   // Realtime subscription to game_challenges for live 1v1 moves & open challenge board
   useEffect(() => {
@@ -205,6 +273,7 @@ export default function ChallengeArena() {
         { event: "*", schema: "public", table: "game_challenges" },
         (payload: any) => {
           const updated = payload.new;
+          const oldRow = payload.old;
           if (!updated) return;
 
           setChallenges((prev) => {
@@ -215,10 +284,33 @@ export default function ChallengeArena() {
 
           setActiveChallenge((curr: any) => {
             if (curr && curr.id === updated.id) {
+              // If opponent just joined the creator's waiting room, celebrate with sound + toast!
+              if (curr.status === "open" && updated.status === "in_progress" && updated.opponent_name) {
+                playSuccessSound();
+                toast({
+                  title: `🔥 ${updated.opponent_name} Accepted Your Challenge!`,
+                  description: `Room #${updated.room_code} is now LIVE! Make your opening move!`,
+                });
+              }
               return updated;
             }
             return curr;
           });
+
+          // If another challenge in the lobby was just accepted, show a subtle arena toast
+          if (
+            oldRow?.status === "open" &&
+            updated.status === "in_progress" &&
+            updated.opponent_name &&
+            (!activeChallenge || activeChallenge.id !== updated.id)
+          ) {
+            toast({
+              title: `⚔️ Challenge Accepted (#${updated.room_code})`,
+              description: `${updated.opponent_name} just accepted ${updated.creator_name}'s ${String(
+                updated.game_type || ""
+              ).toUpperCase()} challenge for GH₵ ${Number(updated.prize_pool || 0).toFixed(2)}!`,
+            });
+          }
         }
       )
       .subscribe();
@@ -226,7 +318,7 @@ export default function ChallengeArena() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [activeChallenge, toast]);
 
   // Load Paystack inline script if not already loaded
   const ensurePaystackLoaded = (): Promise<any> => {
@@ -317,6 +409,9 @@ export default function ChallengeArena() {
           stake_amount: numStake,
           creator_name: cleanName,
           creator_phone: playerPhone,
+          invited_phone: selectedInvitedUser?.phone || invitedPhone.trim() || undefined,
+          invited_user_id: selectedInvitedUser?.user_id || undefined,
+          invited_name: selectedInvitedUser?.full_name || undefined,
           reward_type: selectedMode === "free_data" ? "free_data" : rewardType,
           reward_network: rewardNetwork,
           reward_data_size:
@@ -336,12 +431,14 @@ export default function ChallengeArena() {
       }
 
       toast({
-        title: "🎮 Challenge Created!",
+        title: "🎮 Challenge Created & Broadcasted!",
         description: data.message,
       });
 
       setMySide("creator");
       setActiveChallenge(data.challenge);
+      setInvitedPhone("");
+      setSelectedInvitedUser(null);
       fetchWalletAndPaystackKey();
       fetchLobby(true);
     } catch (err: any) {
@@ -352,6 +449,42 @@ export default function ChallengeArena() {
       });
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleSendRoomInvite = async (
+    challenge: any,
+    opts: { phone?: string; invitedUser?: SuggestedPlayer | null; broadcastAll?: boolean }
+  ) => {
+    setSendingInvite(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("challenge-arena", {
+        body: {
+          action: "invite_player",
+          challenge_id: challenge.id,
+          invited_phone: opts.invitedUser?.phone || opts.phone?.trim() || undefined,
+          invited_user_id: opts.invitedUser?.user_id || undefined,
+          invited_name: opts.invitedUser?.full_name || undefined,
+          broadcast_all: Boolean(opts.broadcastAll),
+        },
+      });
+      if (error || !data?.success) {
+        throw new Error(data?.error || error?.message || "Failed to send invite");
+      }
+      playSuccessSound();
+      toast({
+        title: "📲 Challenge Notification Dispatched!",
+        description: data.message,
+      });
+      setRoomInvitePhone("");
+    } catch (err: any) {
+      toast({
+        title: "Invite Failed",
+        description: err.message || "Could not dispatch invite",
+        variant: "destructive",
+      });
+    } finally {
+      setSendingInvite(false);
     }
   };
 
@@ -382,12 +515,15 @@ export default function ChallengeArena() {
 
       playSuccessSound();
       toast({
-        title: "🔥 Match Started!",
+        title: "🔥 Match Started & All Users Notified!",
         description: data.message,
       });
 
       setMySide("opponent");
       setActiveChallenge(data.challenge);
+      if (roomQueryParam) {
+        setSearchParams({});
+      }
       fetchWalletAndPaystackKey();
       fetchLobby(true);
     } catch (err: any) {
@@ -520,7 +656,9 @@ export default function ChallengeArena() {
   const openChallenges = challenges.filter(
     (c) => c.status === "open" && (filterGame === "all" || c.game_type === filterGame)
   );
-  const liveMatches = challenges.filter((c) => c.status === "in_progress");
+  const invitedSpotlightChallenge = roomQueryParam
+    ? challenges.find((c) => String(c.room_code || "").toUpperCase() === roomQueryParam && c.status === "open")
+    : null;
   const remainingFreeDataToday = Math.max(
     0,
     Number(settings.daily_free_data_limit || 15) - todayFreeDataCount
@@ -539,13 +677,16 @@ export default function ChallengeArena() {
               <Badge variant="outline" className="border-emerald-500/40 bg-emerald-500/10 text-emerald-300 font-bold text-xs">
                 🎁 {remainingFreeDataToday} Free Data Rewards Available Today
               </Badge>
+              <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-300 font-bold text-xs gap-1">
+                <BellRing className="w-3 h-3" /> Live Web Push, SMS &amp; In-App Alerts Active
+              </Badge>
             </div>
             <h1 className="text-2xl sm:text-4xl font-black tracking-tight text-white">
               Play Oware, Ghana Ludo &amp; Dame — Win Cash or Free Data!
             </h1>
             <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-              Create an <strong>Open Challenge</strong> using your <strong>Wallet Balance</strong> or{" "}
-              <strong>Mobile Money (MoMo)</strong>, challenge another player live, or defeat the{" "}
+              Create an <strong>Open Challenge</strong> (auto-notifies all users via Web, SMS &amp; In-App),{" "}
+              <strong>invite a specific player</strong> by phone or username, or defeat the{" "}
               <strong>Grandmaster AI</strong> to win instant Wallet Prizes and <strong>Free Data Bundles</strong>!
             </p>
           </div>
@@ -577,6 +718,51 @@ export default function ChallengeArena() {
           </div>
         </div>
       </div>
+
+      {/* ── Deep-Link Invited Challenge Spotlight Banner (?room=XXXXXX) ── */}
+      {!activeChallenge && invitedSpotlightChallenge && (
+        <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-r from-amber-500/20 via-orange-500/15 to-emerald-500/20 border-2 border-amber-400 shadow-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 animate-in fade-in zoom-in-95 duration-300">
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Badge className="bg-amber-400 text-slate-950 font-black text-[10px] uppercase">
+                🎯 Direct Challenge Invite • Room #{invitedSpotlightChallenge.room_code}
+              </Badge>
+              <Badge className="bg-emerald-500/20 text-emerald-300 border border-emerald-400/40 font-mono text-xs">
+                Winner Takes GH₵ {Number(invitedSpotlightChallenge.prize_pool || 0).toFixed(2)}
+              </Badge>
+            </div>
+            <h2 className="text-lg sm:text-xl font-black text-white">
+              {invitedSpotlightChallenge.creator_name} challenged you to play{" "}
+              <span className="text-amber-300 uppercase">{invitedSpotlightChallenge.game_type}</span>!
+            </h2>
+            <p className="text-xs text-slate-200">
+              Required Stake: <strong className="text-amber-300 font-mono">GH₵ {Number(invitedSpotlightChallenge.stake_amount || 0).toFixed(2)}</strong> • Once you accept, the match starts immediately and all players are notified!
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+            {user && (
+              <Button
+                disabled={joiningChallengeId === invitedSpotlightChallenge.id}
+                onClick={() => handleJoinChallenge(invitedSpotlightChallenge, "wallet")}
+                className="h-11 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs gap-2 px-5 shadow-lg"
+              >
+                <Wallet className="w-4 h-4" />
+                Accept with Wallet (GH₵ {Number(invitedSpotlightChallenge.stake_amount || 0).toFixed(2)})
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              disabled={joiningChallengeId === invitedSpotlightChallenge.id}
+              onClick={() => handleJoinChallenge(invitedSpotlightChallenge, "momo")}
+              className="h-11 rounded-2xl border-amber-400 bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 font-black text-xs gap-2 px-5"
+            >
+              <Smartphone className="w-4 h-4" />
+              Accept with MoMo (GH₵ {Number(invitedSpotlightChallenge.stake_amount || 0).toFixed(2)})
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* ── Interactive 4-Step Animated Guide & Game Mechanics Preview ── */}
       {!activeChallenge && (
@@ -650,14 +836,14 @@ export default function ChallengeArena() {
                       setCopiedCode(true);
                       toast({
                         title: "Challenge Link Copied! 📋",
-                        description: `Room #${activeChallenge.room_code} link copied. Send to a friend on WhatsApp!`,
+                        description: `Room #${activeChallenge.room_code} link copied. Send to a friend on WhatsApp or SMS!`,
                       });
                       setTimeout(() => setCopiedCode(false), 2000);
                     }}
                     className="h-9 rounded-xl border-amber-500/40 bg-amber-500/10 text-amber-300 font-bold text-xs gap-1.5"
                   >
                     {copiedCode ? <Check className="w-3.5 h-3.5" /> : <Share2 className="w-3.5 h-3.5" />}
-                    Share Challenge Link
+                    Copy Invite Link
                   </Button>
                   <Button
                     size="sm"
@@ -673,16 +859,106 @@ export default function ChallengeArena() {
           </CardHeader>
 
           <CardContent className="p-4 sm:p-6 space-y-6">
-            {/* Waiting for Opponent Banner (Open P2P Challenge) */}
+            {/* Waiting for Opponent + Live Invite & Broadcast Console (Open P2P Challenge) */}
             {activeChallenge.status === "open" && (
-              <div className="p-6 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-center space-y-3">
-                <Loader2 className="w-8 h-8 text-amber-400 animate-spin mx-auto" />
-                <h3 className="text-base font-black text-white">
-                  Your Open Challenge (#{activeChallenge.room_code}) is Live on the Arena Board!
-                </h3>
-                <p className="text-xs text-slate-300 max-w-md mx-auto">
-                  As soon as another player clicks <strong>Accept Challenge</strong> in the lobby (or opens your shared link), the board will unlock automatically!
-                </p>
+              <div className="p-5 sm:p-6 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-5">
+                <div className="text-center space-y-2">
+                  <Loader2 className="w-8 h-8 text-amber-400 animate-spin mx-auto" />
+                  <h3 className="text-base sm:text-lg font-black text-white">
+                    Open Challenge #{activeChallenge.room_code} is Live &amp; Broadcasted to All Users!
+                  </h3>
+                  <p className="text-xs text-slate-300 max-w-xl mx-auto">
+                    All users have been notified via <strong>In-App Popup</strong>, <strong>Web Push</strong>, and{" "}
+                    <strong>SMS</strong>. You can also invite a specific friend by phone number or WhatsApp below — once they accept, everyone gets notified and the match starts automatically!
+                  </p>
+                </div>
+
+                {/* Direct Invite & Re-Broadcast Console */}
+                <div className="max-w-2xl mx-auto p-4 rounded-2xl bg-slate-950/90 border border-white/10 space-y-3.5">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <span className="text-xs font-black text-amber-300 flex items-center gap-1.5">
+                      <UserPlus className="w-4 h-4" /> Invite a Friend via SMS / In-App / WhatsApp
+                    </span>
+                    <Badge variant="outline" className="text-[10px] border-emerald-500/40 text-emerald-300">
+                      Instant SMS + Web + App Link
+                    </Badge>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <Input
+                      placeholder="Enter friend's Ghana phone (e.g. 0241234567)"
+                      value={roomInvitePhone}
+                      onChange={(e) => setRoomInvitePhone(e.target.value)}
+                      className="h-10 rounded-xl bg-slate-900 border-white/15 font-mono text-xs text-white flex-1"
+                    />
+                    <Button
+                      type="button"
+                      disabled={sendingInvite || !roomInvitePhone.trim()}
+                      onClick={() =>
+                        handleSendRoomInvite(activeChallenge, { phone: roomInvitePhone })
+                      }
+                      className="h-10 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs gap-1.5 shrink-0"
+                    >
+                      {sendingInvite ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                      Send SMS &amp; App Invite
+                    </Button>
+                  </div>
+
+                  {/* Quick-pick registered players */}
+                  {suggestedPlayers.length > 0 && (
+                    <div className="space-y-1.5">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        Or Click a Registered Player to Invite Directly:
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {suggestedPlayers.slice(0, 6).map((p) => (
+                          <button
+                            key={p.user_id}
+                            type="button"
+                            disabled={sendingInvite}
+                            onClick={() => handleSendRoomInvite(activeChallenge, { invitedUser: p })}
+                            className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-amber-500/20 border border-white/10 hover:border-amber-400/50 text-[11px] font-bold text-slate-200 hover:text-amber-300 transition-all flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <span>🎯 {p.full_name}</span>
+                            <span className="text-[9px] font-mono text-slate-400">({p.masked_phone})</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="pt-2 border-t border-white/10 flex flex-wrap items-center justify-between gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={sendingInvite}
+                      onClick={() => handleSendRoomInvite(activeChallenge, { broadcastAll: true })}
+                      className="h-9 rounded-xl border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 font-bold text-xs gap-1.5"
+                    >
+                      <BellRing className="w-3.5 h-3.5" />
+                      Notify All Online Users Again
+                    </Button>
+
+                    <a
+                      href={`https://wa.me/?text=${encodeURIComponent(
+                        `⚔️ I just posted a ${String(activeChallenge.game_type || "").toUpperCase()} Challenge on SwiftData Arena!\n💰 Stake: GH₵ ${Number(
+                          activeChallenge.stake_amount || 0
+                        ).toFixed(2)} | 🏆 Winner Takes: GH₵ ${Number(
+                          activeChallenge.prize_pool || 0
+                        ).toFixed(2)}\n🔑 Room #${activeChallenge.room_code}\n👉 Accept my challenge live: ${
+                          window.location.origin
+                        }/challenges?room=${activeChallenge.room_code}`
+                      )}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs shadow"
+                    >
+                      <MessageCircle className="w-3.5 h-3.5" />
+                      Invite via WhatsApp
+                    </a>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -787,7 +1063,7 @@ export default function ChallengeArena() {
                 Start a New Game Challenge
               </CardTitle>
               <CardDescription>
-                Choose a traditional Ghanaian game, pick your stake mode (Wallet, MoMo, or Free Data), and play!
+                Choose a traditional Ghanaian game, pick your stake mode (Wallet, MoMo, or Free Data), and invite or notify players!
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -847,7 +1123,7 @@ export default function ChallengeArena() {
                   >
                     <Users className="w-4 h-4 mx-auto mb-1" />
                     <span className="text-[11px] block">Open 1v1</span>
-                    <span className="text-[9px] opacity-75">vs Any Player</span>
+                    <span className="text-[9px] opacity-75">Notify All / Invite</span>
                   </button>
                   <button
                     type="button"
@@ -884,7 +1160,7 @@ export default function ChallengeArena() {
                   <Label className="text-xs font-bold uppercase tracking-wider text-amber-400">
                     3. Stake Source (Wallet Balance or Mobile Money)
                   </Label>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                     <button
                       type="button"
                       onClick={() => setPaymentSource("wallet")}
@@ -969,6 +1245,83 @@ export default function ChallengeArena() {
                 </div>
               )}
 
+              {/* 4. Invite a Specific Player & Auto-Notify All Users (When Open 1v1 mode) */}
+              {selectedMode === "p2p" && (
+                <div className="p-3.5 rounded-2xl bg-slate-950/90 border border-amber-500/30 space-y-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <Label className="text-[11px] font-black uppercase tracking-wider text-amber-300 flex items-center gap-1.5">
+                      <UserPlus className="w-3.5 h-3.5" /> 4. Invite Player &amp; Notify All Users
+                    </Label>
+                    <Badge className="bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[9px]">
+                      Web + SMS + App Alert
+                    </Badge>
+                  </div>
+
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                    Posting an Open Challenge automatically alerts <strong>all users</strong>. Optionally enter a friend&apos;s phone number or pick a player below to send them a personal SMS &amp; App invite:
+                  </p>
+
+                  {selectedInvitedUser ? (
+                    <div className="flex items-center justify-between p-2.5 rounded-xl bg-amber-500/15 border border-amber-400/50 text-xs">
+                      <div>
+                        <span className="font-black text-amber-300">🎯 Inviting: {selectedInvitedUser.full_name}</span>
+                        <span className="ml-2 font-mono text-[10px] text-slate-300">({selectedInvitedUser.masked_phone})</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedInvitedUser(null)}
+                        className="text-[10px] font-bold text-rose-300 hover:text-rose-200 underline"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <Input
+                          placeholder="Friend's Phone (Optional, e.g. 024...)"
+                          value={invitedPhone}
+                          onChange={(e) => setInvitedPhone(e.target.value)}
+                          className="h-9 rounded-xl bg-slate-900 border-white/15 text-xs font-mono text-white"
+                        />
+                        <div className="relative">
+                          <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-2.5" />
+                          <Input
+                            placeholder="Search registered player..."
+                            value={playerSearchQuery}
+                            onChange={(e) => setPlayerSearchQuery(e.target.value)}
+                            className="h-9 pl-8 rounded-xl bg-slate-900 border-white/15 text-xs text-white"
+                          />
+                        </div>
+                      </div>
+
+                      {suggestedPlayers.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 pt-1">
+                          {suggestedPlayers.slice(0, 5).map((p) => (
+                            <button
+                              key={p.user_id}
+                              type="button"
+                              onClick={() => {
+                                setSelectedInvitedUser(p);
+                                setInvitedPhone(p.phone || "");
+                              }}
+                              className="px-2 py-1 rounded-lg bg-slate-900 hover:bg-amber-500/20 border border-white/10 hover:border-amber-400/40 text-[10px] font-bold text-slate-300 hover:text-amber-300 transition-all"
+                            >
+                              + {p.full_name} ({p.masked_phone})
+                            </button>
+                          ))}
+                          {searchingPlayers && (
+                            <span className="text-[10px] text-slate-500 flex items-center gap-1">
+                              <Loader2 className="w-3 h-3 animate-spin" /> searching...
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+
               {/* Player Nickname & Phone */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
                 <div>
@@ -981,7 +1334,7 @@ export default function ChallengeArena() {
                   />
                 </div>
                 <div>
-                  <Label className="text-[11px] text-slate-400">Phone (For Prize / Data)</Label>
+                  <Label className="text-[11px] text-slate-400">Your Phone (For Turn &amp; Prize SMS)</Label>
                   <Input
                     placeholder="0241234567"
                     value={playerPhone}
@@ -1002,7 +1355,11 @@ export default function ChallengeArena() {
                   <PlusCircle className="w-4 h-4" />
                 )}
                 {selectedMode === "p2p"
-                  ? `Post Open ${selectedGame.toUpperCase()} Challenge (GH₵ ${Number(stakeAmount || 0).toFixed(2)})`
+                  ? selectedInvitedUser
+                    ? `Challenge ${selectedInvitedUser.full_name.split(" ")[0]} & Notify Arena (GH₵ ${Number(stakeAmount || 0).toFixed(2)})`
+                    : invitedPhone.trim()
+                    ? `Post & Send SMS Invite (GH₵ ${Number(stakeAmount || 0).toFixed(2)})`
+                    : `Post Open ${selectedGame.toUpperCase()} Challenge & Notify All (GH₵ ${Number(stakeAmount || 0).toFixed(2)})`
                   : selectedMode === "ai"
                   ? `Play vs Grandmaster AI (Stake GH₵ ${Number(stakeAmount || 0).toFixed(2)})`
                   : `Start Free Data ${selectedGame.toUpperCase()} Challenge`}
@@ -1020,7 +1377,7 @@ export default function ChallengeArena() {
                     Open Challenges Waiting for Opponent ({openChallenges.length})
                   </CardTitle>
                   <CardDescription>
-                    Accept any open challenge below using your Wallet Balance or Mobile Money (MoMo).
+                    Accept any open challenge below using your Wallet Balance or Mobile Money (MoMo). Once accepted, all users get notified!
                   </CardDescription>
                 </div>
 
@@ -1049,17 +1406,22 @@ export default function ChallengeArena() {
                       No open 1v1 challenges waiting right now.
                     </p>
                     <p className="text-xs text-slate-400">
-                      Create an Open Challenge on the left — or play immediately against the Grandmaster AI!
+                      Create an Open Challenge on the left to notify all users via Web, SMS &amp; In-App — or play immediately against the Grandmaster AI!
                     </p>
                   </div>
                 ) : (
                   openChallenges.map((chal) => {
                     const isMine = user && chal.creator_id === user.id;
                     const stake = Number(chal.stake_amount || 0);
+                    const isHighlighted = roomQueryParam === String(chal.room_code || "").toUpperCase();
                     return (
                       <div
                         key={chal.id}
-                        className="p-4 rounded-2xl bg-slate-950/80 border border-white/10 hover:border-amber-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-all"
+                        className={`p-4 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-all ${
+                          isHighlighted
+                            ? "bg-amber-500/15 border-2 border-amber-400 shadow-lg"
+                            : "bg-slate-950/80 border-white/10 hover:border-amber-500/40"
+                        }`}
                       >
                         <div className="space-y-1">
                           <div className="flex flex-wrap items-center gap-2">
@@ -1070,6 +1432,11 @@ export default function ChallengeArena() {
                             <span className="text-[11px] font-mono text-slate-400">
                               Room #{chal.room_code}
                             </span>
+                            {chal.metadata?.invited_name && (
+                              <Badge variant="outline" className="text-[9px] border-amber-400/40 text-amber-300">
+                                🎯 Invited: {chal.metadata.invited_name}
+                              </Badge>
+                            )}
                           </div>
                           <div className="flex flex-wrap items-center gap-3 text-xs">
                             <span className="text-slate-300">
@@ -1081,7 +1448,7 @@ export default function ChallengeArena() {
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           {isMine ? (
                             <>
                               <Button
@@ -1091,9 +1458,10 @@ export default function ChallengeArena() {
                                   setMySide("creator");
                                   setActiveChallenge(chal);
                                 }}
-                                className="h-9 rounded-xl border-amber-500/40 text-amber-300 text-xs font-bold"
+                                className="h-9 rounded-xl border-amber-500/40 text-amber-300 text-xs font-bold gap-1"
                               >
-                                Open Room
+                                <UserPlus className="w-3.5 h-3.5" />
+                                Open &amp; Invite
                               </Button>
                               <Button
                                 size="sm"
@@ -1179,4 +1547,3 @@ export default function ChallengeArena() {
     </div>
   );
 }
-

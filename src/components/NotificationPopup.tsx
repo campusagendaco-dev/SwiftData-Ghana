@@ -41,6 +41,36 @@ interface NotificationMeta {
 function getNotificationMeta(title: string, message: string, targetType: string): NotificationMeta {
   const combined = `${title || ""} ${message || ""}`.toLowerCase();
 
+  // 0. Open Challenge & Ghana Games Arena (Oware, Ludo, Dame)
+  if (
+    combined.includes("challenge") ||
+    combined.includes("oware") ||
+    combined.includes("ludo") ||
+    combined.includes("dame") ||
+    combined.includes("arena")
+  ) {
+    const roomMatch = `${title || ""} ${message || ""}`.match(/#([A-Z0-9]{4,8})/i);
+    const roomCode = roomMatch ? roomMatch[1].toUpperCase() : "";
+    const isAccepted = combined.includes("accepted") || combined.includes(" vs ");
+    return {
+      category: "Challenge Arena",
+      badgeText: isAccepted ? "🔥 Challenge Accepted & Live" : "⚔️ Open Challenge Live",
+      icon: "gift",
+      gradient: "from-amber-400 via-orange-500 to-emerald-400",
+      blobColor: "bg-amber-500/30",
+      badgeColor: "bg-amber-500/20 border-amber-400/40 text-amber-300",
+      btnGradient: "from-amber-400 via-orange-400 to-emerald-400 shadow-amber-500/30 text-slate-950",
+      actionUrl: roomCode ? `/challenges?room=${roomCode}` : "/challenges",
+      actionLabel: isAccepted
+        ? "🔥 Enter Challenge Arena Now"
+        : roomCode
+        ? `⚔️ Accept Room #${roomCode} Now`
+        : "⚔️ Open Challenge Arena",
+      emoji: combined.includes("ludo") ? "🎲" : combined.includes("oware") ? "🪨" : "⚔️",
+      tagEmoji: "🏆",
+    };
+  }
+
   // 1. ECG Electricity Prepaid
   if (combined.includes("ecg") || combined.includes("prepaid") || combined.includes("electricity") || combined.includes("meter")) {
     return {
