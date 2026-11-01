@@ -28,7 +28,7 @@ export interface LudoRuleConfig {
 }
 
 export const DEFAULT_LUDO_CONFIG: LudoRuleConfig = {
-  blockadeRulesEnabled: true,
+  blockadeRulesEnabled: false,
   protectStartingSquares: true,
   protectStarSquares: true,
   allowMultipleTokensSameSquare: true,
@@ -629,15 +629,107 @@ export function checkWinningCondition(
 
 /**
  * 12. grantExtraTurn()
- * Determines whether the player keeps their turn (rolled a 6 or captured an opponent token).
+ * Determines whether the player keeps their turn:
+ * Rolling a 6, capturing an opponent token, or reaching home gives another roll.
  */
 export function grantExtraTurn(
   diceValue: number,
   capturedCount: number,
-  hasWon: boolean
+  hasWon: boolean,
+  reachedHome: boolean = false
 ): boolean {
   if (hasWon) return false;
-  return diceValue === 6 || capturedCount > 0;
+  return diceValue === 6 || capturedCount > 0 || reachedHome;
+}
+
+/**
+ * Returns all opponent tokens currently on the 52-cell main track (progress 1..51 / stepsFromStart 0..50).
+ */
+export function getOpponentTokensOnTrack(
+  state: LudoGameState,
+  player: LudoPlayerId
+): { opponent: LudoPlayerId; tokenIndex: number; trackIndex: number }[] {
+  const tokensOnTrack: { opponent: LudoPlayerId; tokenIndex: number; trackIndex: number }[] = [];
+  for (const opponent of state.players) {
+    if (opponent === player) continue;
+    (state.tokens[opponent] || []).forEach((t, tokenIndex) => {
+      if (t.status === "ACTIVE" && t.trackPosition !== null) {
+        tokensOnTrack.push({
+          opponent,
+          tokenIndex,
+          trackIndex: t.trackPosition,
+        });
+      }
+    });
+  }
+  return tokensOnTrack;
+}
+
+/**
+ * Checks whether `trackIndex` has an opponent token 1..6 squares behind it on the 52-cell main track.
+ */
+export function isThreatened(
+  trackIndex: number,
+  opponentTokensOnTrack: { opponent: LudoPlayerId; tokenIndex: number; trackIndex: number }[]
+): boolean {
+  return opponentTokensOnTrack.some(({ trackIndex: opponentIndex }) => {
+    const distanceBehind = (trackIndex - opponentIndex + MAIN_TRACK_LENGTH) % MAIN_TRACK_LENGTH;
+    return distanceBehind >= 1 && distanceBehind <= 6;
+  });
+}
+
+/**
+ * Scores a candidate move using the reference Ludo tactical evaluation:
+ * - Base score = destination progress (1..57)
+ * - Reaching Home (57) = +100
+ * - Leaving Base (fromProgress === 0) = +40
+ * - Capturing opponent on non-safe track square = +70
+ * - Landing on safe square = +15, else if destination is threatened = -30
+ * - Escaping from a threatened non-safe origin square = +25
+ * - Small random tie-breaker (+0..4)
+ */
+export function scoreMove(
+  state: LudoGameState,
+  player: LudoPlayerId,
+  tokenIndex: number,
+  rollValue: number
+): number {
+  const token = state.tokens[player]?.[tokenIndex];
+  if (!token) return -Infinity;
+  const fromProgress = token.stepsFromStart + 1; // 0 = BASE, 1..51 = TRACK, 52..56 = HOME_COLUMN, 57 = HOME
+  const toProgress = fromProgress === 0 ? 1 : fromProgress + rollValue;
+  const opponentTokens = getOpponentTokensOnTrack(state, player);
+  let score = toProgress;
+  if (toProgress === 57) score += 100;
+  if (fromProgress === 0) score += 40;
+  if (toProgress <= 51) {
+    const destination = stepsToTrackIndex(player, toProgress - 1)!;
+    const isSafe = checkSafeSquare(state, destination);
+    if (!isSafe && opponentTokens.some((tok) => tok.trackIndex === destination)) score += 70;
+    if (isSafe) score += 15;
+    else if (isThreatened(destination, opponentTokens)) score -= 30;
+  }
+  if (fromProgress >= 1 && fromProgress <= 51) {
+    const origin = stepsToTrackIndex(player, fromProgress - 1)!;
+    if (!checkSafeSquare(state, origin) && isThreatened(origin, opponentTokens)) score += 25;
+  }
+  return score + Math.random() * 4;
+}
+
+/**
+ * Selects the highest-scoring legal token index for computer players.
+ */
+export function chooseComputerToken(
+  state: LudoGameState,
+  player: LudoPlayerId,
+  movableTokenIndexes: number[],
+  rollValue: number
+): number {
+  return movableTokenIndexes.reduce((bestIndex, tokenIndex) =>
+    scoreMove(state, player, tokenIndex, rollValue) > scoreMove(state, player, bestIndex, rollValue)
+      ? tokenIndex
+      : bestIndex
+  );
 }
 
 /**
@@ -763,10 +855,10 @@ export function rollDice(
 
   const legalMoves = calculateLegalMoves(stateWithDice, player);
 
-  // Section 2: "If no legal move exists, automatically pass turn, except when a 6 grants another roll."
+  // If no legal move exists, automatically pass turn
   if (legalMoves.length === 0) {
     const moveNumber = state.moveCount + 1;
-    const keepsTurnOnSix = diceValue === 6;
+    const playerName = state.playerMeta[player]?.name || player;
     const historyEntry: LudoTurnHistoryEntry = {
       moveNumber,
       player,
@@ -776,28 +868,10 @@ export function rollDice(
       fromSteps: null,
       toSteps: null,
       capturedTokenIds: [],
-      grantedExtraTurn: keepsTurnOnSix,
-      summary: keepsTurnOnSix
-        ? `${state.playerMeta[player]?.name || player} rolled 6 with no legal moves — rolls again!`
-        : `${state.playerMeta[player]?.name || player} rolled ${diceValue} — no legal moves available. Turn passed.`,
+      grantedExtraTurn: false,
+      summary: `${playerName} rolled a ${diceValue}: no move possible.`,
       timestamp: Date.now(),
     };
-
-    if (keepsTurnOnSix) {
-      const samePlayerReady = updateGameState(stateWithDice, {
-        diceResult: null,
-        legalMoves: [],
-        moveCount: moveNumber,
-        turnHistory: [...state.turnHistory, historyEntry],
-      });
-      return {
-        state: samePlayerReady,
-        diceValue,
-        legalMoves: [],
-        autoPassed: false,
-        tripleSixForfeited: false,
-      };
-    }
 
     const switched = switchPlayer({
       ...stateWithDice,
@@ -904,10 +978,12 @@ export function moveToken(
 
   // 3. Check winning condition (all 4 tokens in FINISHED state)
   const hasWon = checkWinningCondition(nextState, player);
+  const reachedHome = move.toStatus === "FINISHED";
   const extraTurn = grantExtraTurn(
     diceValue,
     captureResult.capturedTokenIds.length,
-    hasWon
+    hasWon,
+    reachedHome
   );
 
   // 4. Build descriptive turn history entry
@@ -917,18 +993,26 @@ export function moveToken(
 
   if (move.fromStatus === "BASE") {
     actionType = "ROLL_LAUNCH";
-    summary = `🚀 ${playerName} rolled 6 & launched Token #${tokenIndex + 1} onto Start! Bonus roll!`;
-  } else if (move.toStatus === "FINISHED") {
+    summary =
+      captureResult.capturedTokenIds.length > 0
+        ? `🚀 ${playerName} launched Token #${tokenIndex + 1}, captured ${captureResult.capturedTokenIds.join(", ")}, and rolls again!`
+        : `🚀 ${playerName} rolled 6, launched Token #${tokenIndex + 1} onto Start, and rolls again!`;
+  } else if (reachedHome) {
     actionType = "FINISH_TOKEN";
-    summary = `🏠 ${playerName} brought Token #${tokenIndex + 1} into Final Home by exact roll (${diceValue})!`;
+    summary = hasWon
+      ? `🏆 ${playerName} wins the game! All 4 tokens reached Home!`
+      : `🏠 ${playerName} brought Token #${tokenIndex + 1} into Final Home by exact roll (${diceValue}) and rolls again!`;
   } else if (captureResult.capturedTokenIds.length > 0) {
     actionType = "CAPTURE";
-    summary = `💥 CAPTURE! ${playerName} captured ${captureResult.capturedTokenIds.join(", ")} & earned a Bonus Roll!`;
+    summary = `💥 ${playerName} captured a token (${captureResult.capturedTokenIds.join(", ")}) and rolls again!`;
   } else if (move.fromStatus === "ACTIVE" && move.toStatus === "HOME_PATH") {
     actionType = "ENTER_HOME_PATH";
-    summary = `🛡️ ${playerName}'s Token #${tokenIndex + 1} entered the protected Home Path!`;
+    summary =
+      diceValue === 6
+        ? `🛡️ ${playerName}'s Token #${tokenIndex + 1} entered the Home Column and rolls again!`
+        : `🛡️ ${playerName}'s Token #${tokenIndex + 1} entered the protected Home Column!`;
   } else if (diceValue === 6) {
-    summary = `🎲 ${playerName} advanced Token #${tokenIndex + 1} by 6 — Bonus Roll!`;
+    summary = `🎲 ${playerName} advanced Token #${tokenIndex + 1} by 6 and rolls again!`;
   }
 
   const historyEntry: LudoTurnHistoryEntry = {

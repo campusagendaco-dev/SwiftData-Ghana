@@ -1,11 +1,10 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
   HelpCircle,
   Shield,
-  Brain,
   Volume2,
   VolumeX,
   Smartphone,
@@ -14,6 +13,7 @@ import {
   Send,
   History,
   MessageCircle,
+  RotateCcw,
 } from "lucide-react";
 import { playSuccessSound } from "@/lib/sound";
 import {
@@ -33,10 +33,24 @@ import {
   initializeGame,
   rollDice,
   moveToken,
-  checkBlockade,
-  checkSafeSquare,
-  FINAL_HOME_STEP,
+  validateMove,
+  enterHomePath,
+  chooseComputerToken,
 } from "@/lib/ludo-engine";
+
+const MOVE_STEP_DELAY_MS = 130;
+const SEATS_USED_BY_PLAYER_COUNT: Record<2 | 3 | 4, LudoPlayerId[]> = {
+  2: ["RED", "YELLOW"],
+  3: ["RED", "GREEN", "YELLOW"],
+  4: ["RED", "GREEN", "YELLOW", "BLUE"],
+};
+const FINISH_TRIANGLE_OFFSET: Record<LudoPlayerId, [number, number]> = {
+  GREEN: [-1, 0],
+  YELLOW: [0, -1],
+  RED: [0, 1],
+  BLUE: [1, 0],
+};
+const sleep = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
 
 // Exported compatibility wrapper state stored in `game_challenges.board_state`
 export interface LudoState {
@@ -358,6 +372,16 @@ export function GhanaLudoBoard({
   );
   const [rolling, setRolling] = useState(false);
   const [lastRolledVisual, setLastRolledVisual] = useState<number>(6);
+  const [isAnimatingMove, setIsAnimatingMove] = useState(false);
+  const [animatingTokenStep, setAnimatingTokenStep] = useState<{
+    tokenId: string;
+    owner: LudoPlayerId;
+    stepsFromStart: number;
+  } | null>(null);
+  const [opponentType, setOpponentType] = useState<"computers" | "friends">(
+    mode === "p2p" ? "friends" : "computers"
+  );
+  const gameSessionIdRef = useRef(0);
   const [showRules, setShowRules] = useState(false);
   const [showInviteBar, setShowInviteBar] = useState(false);
   const [invitePhoneInput, setInvitePhoneInput] = useState("");
@@ -377,6 +401,9 @@ export function GhanaLudoBoard({
       initialState.engine &&
       (initialState.moveCount || 0) > (ludo.moveCount || 0)
     ) {
+      gameSessionIdRef.current += 1;
+      setIsAnimatingMove(false);
+      setAnimatingTokenStep(null);
       setLudo(initialState);
       if (initialState.engine.diceResult) {
         setLastRolledVisual(initialState.engine.diceResult);
@@ -387,20 +414,41 @@ export function GhanaLudoBoard({
   const engine = ludo.engine;
   const myColor: LudoPlayerId = mySide === "creator" ? "RED" : "YELLOW";
 
-  // In P2P mode, local user controls their side (or any non-AI seat invited locally).
-  // In AI/Free Data mode, user controls RED and AI controls the remaining active seats.
+  // Resolve visual token state during step-by-step animation
+  const resolveVisualToken = useCallback(
+    (tok: LudoToken): LudoToken => {
+      if (animatingTokenStep && animatingTokenStep.tokenId === tok.id) {
+        const dest = enterHomePath(tok.owner, animatingTokenStep.stepsFromStart);
+        return {
+          ...tok,
+          status: dest.status,
+          stepsFromStart: animatingTokenStep.stepsFromStart,
+          trackPosition: dest.trackPosition,
+          homePathPosition: dest.homePathPosition,
+        };
+      }
+      return tok;
+    },
+    [animatingTokenStep]
+  );
+
+  // Determine whether the current seat is controlled by a human player
   const isCurrentSeatHumanControlled = useMemo(() => {
     if (engine.matchStatus !== "IN_PROGRESS") return false;
     const activeColor = engine.currentPlayer;
     if (mode === "p2p") {
       if (mySide === "creator" && activeColor === "RED") return true;
       if (mySide === "opponent" && activeColor !== "RED") return true;
-      // If creator added extra local/invited seats in the same browser session
       const meta = engine.playerMeta[activeColor];
       return !meta?.isAI && mySide === "creator";
     }
+    if (opponentType === "friends") {
+      return true;
+    }
+    const meta = engine.playerMeta[activeColor];
+    if (meta && meta.isAI === false) return true;
     return activeColor === "RED";
-  }, [engine, mode, mySide]);
+  }, [engine, mode, mySide, opponentType]);
 
   const syncWrapperState = useCallback(
     (nextEngine: LudoGameState, customLastAction?: string) => {
@@ -440,36 +488,56 @@ export function GhanaLudoBoard({
     [ludo.lastAction, onMatchComplete, onStateChange]
   );
 
-  // Switch between 2-Player, 3-Player, or 4-Player Ludo before move 1
+  // Start / Reset New Game with selected player count & opponent mode
+  const startNewLudoGame = useCallback(
+    (
+      count: 2 | 3 | 4 = (engine.players.length as 2 | 3 | 4) || 2,
+      nextOpponentType: "computers" | "friends" = opponentType
+    ) => {
+      gameSessionIdRef.current += 1;
+      setRolling(false);
+      setIsAnimatingMove(false);
+      setAnimatingTokenStep(null);
+      setLastRolledVisual(6);
+
+      const seatOrder = SEATS_USED_BY_PLAYER_COUNT[count] || ["RED", "YELLOW"];
+      const isComputerOpponents = mode !== "p2p" && nextOpponentType === "computers";
+
+      const freshEngine = initializeGame({
+        players: seatOrder,
+        playerNames: {
+          RED: creatorName || "Red",
+          GREEN: isComputerOpponents ? "Green (Computer)" : "Green",
+          YELLOW: isComputerOpponents ? `${effectiveOpponentName} (Computer)` : effectiveOpponentName || "Yellow",
+          BLUE: isComputerOpponents ? "Blue (Computer)" : "Blue",
+        },
+        playerMetaOverrides: {
+          RED: { isAI: false },
+          GREEN: { isAI: isComputerOpponents },
+          YELLOW: { isAI: isComputerOpponents },
+          BLUE: { isAI: isComputerOpponents },
+        },
+      });
+
+      syncWrapperState(
+        freshEngine,
+        `${freshEngine.playerMeta.RED?.name || "Red"}: roll the dice.`
+      );
+    },
+    [creatorName, effectiveOpponentName, engine.players.length, mode, opponentType, syncWrapperState]
+  );
+
+  // Switch between 2-Player, 3-Player, or 4-Player Ludo
   const handleSelectPlayerCount = (count: 2 | 3 | 4) => {
-    if (engine.moveCount > 0) return;
-    const seatOrder: LudoPlayerId[] =
-      count === 2
-        ? ["RED", "YELLOW"]
-        : count === 3
-        ? ["RED", "GREEN", "YELLOW"]
-        : ["RED", "GREEN", "YELLOW", "BLUE"];
+    if (mode === "p2p" && engine.moveCount > 0) return;
+    startNewLudoGame(count, opponentType);
+  };
 
-    const freshEngine = initializeGame({
-      players: seatOrder,
-      playerNames: {
-        RED: creatorName || "Player 1 (Red)",
-        GREEN: engine.playerMeta.GREEN?.name || "Kofi Boateng (Green)",
-        YELLOW: effectiveOpponentName,
-        BLUE: engine.playerMeta.BLUE?.name || "Yaw Mensah (Blue)",
-      },
-      playerMetaOverrides: {
-        RED: { isAI: false },
-        GREEN: { isAI: mode !== "p2p" },
-        YELLOW: { isAI: mode !== "p2p" },
-        BLUE: { isAI: mode !== "p2p" },
-      },
-    });
-
-    syncWrapperState(
-      freshEngine,
-      `Configured ${count}-Player Ludo Table (${seatOrder.join(" vs ")}). Roll a 6 to launch from Base!`
-    );
+  // Switch between Play Computers and Play Friends
+  const handleSelectOpponentType = (nextType: "computers" | "friends") => {
+    if (mode === "p2p" && engine.moveCount > 0) return;
+    setOpponentType(nextType);
+    startNewLudoGame((engine.players.length as 2 | 3 | 4) || 2, nextType);
   };
 
   // Invite a friend into GREEN, YELLOW, or BLUE seat
@@ -511,59 +579,124 @@ export function GhanaLudoBoard({
     setInviteNameInput("");
   };
 
-  // Roll Dice Handler (Strictly validates & NEVER auto-moves tokens!)
+  // 9-Frame Dice Roll Animation (matches `animateDiceRoll`: 9 frames x 70ms)
+  const animateAndExecuteRoll = useCallback(
+    async (targetEngine: LudoGameState) => {
+      const sessionId = gameSessionIdRef.current;
+      setRolling(true);
+      playDiceRattleSound();
+      triggerHapticSensor("dice_roll");
+
+      for (let frame = 0; frame < 9; frame++) {
+        setLastRolledVisual(1 + Math.floor(Math.random() * 6));
+        await sleep(70);
+        if (sessionId !== gameSessionIdRef.current) return;
+      }
+
+      const rollRes = rollDice(targetEngine, targetEngine.currentPlayer);
+      setRolling(false);
+      if (rollRes.diceValue) {
+        setLastRolledVisual(rollRes.diceValue);
+      }
+
+      const rollerName =
+        targetEngine.playerMeta[targetEngine.currentPlayer]?.name ||
+        targetEngine.currentPlayer;
+
+      if (rollRes.tripleSixForfeited) {
+        syncWrapperState(
+          rollRes.state,
+          `${rollerName} rolled three 6s in a row and loses the turn.`
+        );
+        return;
+      }
+
+      if (rollRes.autoPassed) {
+        syncWrapperState(
+          rollRes.state,
+          `${rollerName} rolled a ${rollRes.diceValue}: no move possible.`
+        );
+        return;
+      }
+
+      const customPrompt =
+        rollRes.legalMoves.length > 1 && isCurrentSeatHumanControlled
+          ? `You rolled a ${rollRes.diceValue}. Tap a glowing token to move it.`
+          : `${rollerName} rolled a ${rollRes.diceValue}.`;
+
+      syncWrapperState(rollRes.state, customPrompt);
+    },
+    [isCurrentSeatHumanControlled, syncWrapperState]
+  );
+
+  // Human Roll Dice Handler
   const handleRollDice = useCallback(() => {
     if (
       engine.matchStatus !== "IN_PROGRESS" ||
       !isCurrentSeatHumanControlled ||
       engine.diceResult !== null ||
-      rolling
+      rolling ||
+      isAnimatingMove
     ) {
       return;
     }
+    void animateAndExecuteRoll(engine);
+  }, [animateAndExecuteRoll, engine, isAnimatingMove, isCurrentSeatHumanControlled, rolling]);
 
-    setRolling(true);
-    playDiceRattleSound();
-    triggerHapticSensor("dice_roll");
+  // Step-by-Step Animated Token Movement (matches reference `moveToken`: 300ms Base launch, 130ms per step, 500ms capture pause)
+  const executeAnimatedTokenMove = useCallback(
+    async (targetEngine: LudoGameState, owner: LudoPlayerId, tokenIndex: number) => {
+      if (isAnimatingMove) return;
+      const validation = validateMove(targetEngine, owner, tokenIndex);
+      if (!validation.valid || !validation.move) return;
 
-    window.setTimeout(() => {
-      const rollRes = rollDice(engine, engine.currentPlayer);
-      setRolling(false);
-      if (rollRes.diceValue) {
-        setLastRolledVisual(rollRes.diceValue);
+      const move = validation.move;
+      const sessionId = gameSessionIdRef.current;
+      setIsAnimatingMove(true);
+
+      if (move.fromSteps === -1) {
+        setAnimatingTokenStep({
+          tokenId: move.tokenId,
+          owner,
+          stepsFromStart: 0,
+        });
+        playWoodSeedClack(0);
+        triggerHapticSensor("seed_drop");
+        await sleep(300);
+        if (sessionId !== gameSessionIdRef.current) return;
+      } else {
+        for (let step = move.fromSteps + 1; step <= move.toSteps; step++) {
+          setAnimatingTokenStep({
+            tokenId: move.tokenId,
+            owner,
+            stepsFromStart: step,
+          });
+          playWoodSeedClack(step);
+          triggerHapticSensor("seed_drop");
+          await sleep(MOVE_STEP_DELAY_MS);
+          if (sessionId !== gameSessionIdRef.current) return;
+        }
       }
-      syncWrapperState(rollRes.state);
-    }, 420);
-  }, [engine, isCurrentSeatHumanControlled, rolling, syncWrapperState]);
 
-  // Select Token to Move Handler (Player explicitly chooses which legal token to move)
-  const handleSelectTokenMove = useCallback(
-    (owner: LudoPlayerId, tokenIndex: number) => {
-      if (
-        engine.matchStatus !== "IN_PROGRESS" ||
-        !isCurrentSeatHumanControlled ||
-        engine.currentPlayer !== owner ||
-        engine.diceResult === null
-      ) {
-        return;
+      const moveRes = moveToken(targetEngine, owner, tokenIndex);
+      if (moveRes.capturedTokenIds.length > 0) {
+        triggerHapticSensor("pocket_drop");
+        await sleep(500);
+        if (sessionId !== gameSessionIdRef.current) return;
       }
 
-      const moveRes = moveToken(engine, owner, tokenIndex);
-      if (moveRes.error || !moveRes.movedMove) return;
-
-      playWoodSeedClack(tokenIndex);
-      triggerHapticSensor("seed_drop");
+      setAnimatingTokenStep(null);
+      setIsAnimatingMove(false);
 
       // Award Arena progression points for human player actions
       if (owner === myColor) {
         if (moveRes.capturedTokenIds.length > 0) {
-          triggerHapticSensor("pocket_drop");
           onPointsEarned?.(
             50 * moveRes.capturedTokenIds.length,
             `Captured Opponent Token (+${50 * moveRes.capturedTokenIds.length} Pts)`
           );
         }
-        if (moveRes.movedMove.toStatus === "FINISHED") {
+        if (moveRes.movedMove?.toStatus === "FINISHED") {
           triggerHapticSensor("pocket_drop");
           onPointsEarned?.(90, "Token Reached Final Home by Exact Roll (+90 Pts)");
         }
@@ -576,71 +709,78 @@ export function GhanaLudoBoard({
 
       syncWrapperState(moveRes.state);
     },
-    [engine, isCurrentSeatHumanControlled, myColor, onPointsEarned, syncWrapperState]
+    [isAnimatingMove, myColor, onPointsEarned, syncWrapperState]
   );
 
-  // Human-Sense Tactical AI Controller for non-human seats
+  // Select Token to Move Handler (Player taps a glowing token)
+  const handleSelectTokenMove = useCallback(
+    (owner: LudoPlayerId, tokenIndex: number) => {
+      if (
+        engine.matchStatus !== "IN_PROGRESS" ||
+        !isCurrentSeatHumanControlled ||
+        engine.currentPlayer !== owner ||
+        engine.diceResult === null ||
+        rolling ||
+        isAnimatingMove
+      ) {
+        return;
+      }
+      void executeAnimatedTokenMove(engine, owner, tokenIndex);
+    },
+    [engine, executeAnimatedTokenMove, isAnimatingMove, isCurrentSeatHumanControlled, rolling]
+  );
+
+  // Reference Turn Flow Controller:
+  // 1. If human rolled and only 1 movable token exists (`legalMoves.length === 1`), highlight for 600ms then auto-advance it.
+  // 2. If computer seat is active, roll after 700ms and pick best move via `chooseComputerToken` after 800ms (or 600ms if 1 move).
   useEffect(() => {
-    if (
-      engine.matchStatus !== "IN_PROGRESS" ||
-      isCurrentSeatHumanControlled ||
-      rolling
-    ) {
+    if (engine.matchStatus !== "IN_PROGRESS" || rolling || isAnimatingMove) {
       return;
     }
 
     const activePlayer = engine.currentPlayer;
 
-    // Step 1: AI needs to roll the dice
+    // Human turn with exactly 1 legal move -> highlight for 600ms then move automatically (matching reference `runGame`)
+    if (isCurrentSeatHumanControlled) {
+      if (engine.diceResult !== null && engine.legalMoves.length === 1) {
+        const singleMove = engine.legalMoves[0];
+        const autoSingleTimer = window.setTimeout(() => {
+          void executeAnimatedTokenMove(engine, activePlayer, singleMove.tokenIndex);
+        }, 600);
+        return () => window.clearTimeout(autoSingleTimer);
+      }
+      return;
+    }
+
+    // Computer turn Step 1: Roll dice after 700ms
     if (engine.diceResult === null) {
       const rollTimer = window.setTimeout(() => {
-        setRolling(true);
-        playDiceRattleSound();
-        window.setTimeout(() => {
-          const res = rollDice(engine, activePlayer);
-          setRolling(false);
-          if (res.diceValue) setLastRolledVisual(res.diceValue);
-          syncWrapperState(res.state);
-        }, 420);
-      }, 680);
+        void animateAndExecuteRoll(engine);
+      }, 700);
       return () => window.clearTimeout(rollTimer);
     }
 
-    // Step 2: AI has rolled and has legalMoves -> score each legal move tactically
+    // Computer turn Step 2: Choose best token using threat-aware `chooseComputerToken`
     if (engine.legalMoves.length > 0) {
+      const delayMs = engine.legalMoves.length > 1 ? 800 : 600;
       const moveTimer = window.setTimeout(() => {
-        const scoredMoves = engine.legalMoves.map((m) => {
-          let score = 0;
-          // High priority: Capturing an opponent token!
-          if (m.willCaptureTokenIds.length > 0) score += 160 * m.willCaptureTokenIds.length;
-          // High priority: Reaching exact FINISHED home
-          if (m.toStatus === "FINISHED") score += 140;
-          // Launching a token out of BASE on a 6
-          if (m.fromStatus === "BASE") score += 95;
-          // Entering protected HOME_PATH
-          if (m.fromStatus === "ACTIVE" && m.toStatus === "HOME_PATH") score += 85;
-          // Landing on a Safe Square or forming a Blockade with a teammate token
-          if (m.toTrackPosition !== null) {
-            if (checkSafeSquare(engine, m.toTrackPosition)) score += 45;
-            const samePlayerHere = engine.tokens[activePlayer].some(
-              (t) => t.id !== m.tokenId && t.trackPosition === m.toTrackPosition
-            );
-            if (samePlayerHere) score += 40; // Forms a Blockade!
-          }
-          // Advancing furthest runner
-          score += m.toSteps * 0.8 + (Math.random() * 12 - 6);
-          return { move: m, score };
-        });
-
-        scoredMoves.sort((a, b) => b.score - a.score);
-        const chosen = scoredMoves[0].move;
-        const moveRes = moveToken(engine, activePlayer, chosen.tokenIndex);
-        playWoodSeedClack(chosen.tokenIndex);
-        syncWrapperState(moveRes.state);
-      }, 650);
+        const movableIndexes = engine.legalMoves.map((m) => m.tokenIndex);
+        const chosenIndex =
+          movableIndexes.length > 1
+            ? chooseComputerToken(engine, activePlayer, movableIndexes, engine.diceResult!)
+            : movableIndexes[0];
+        void executeAnimatedTokenMove(engine, activePlayer, chosenIndex);
+      }, delayMs);
       return () => window.clearTimeout(moveTimer);
     }
-  }, [engine, isCurrentSeatHumanControlled, rolling, syncWrapperState]);
+  }, [
+    animateAndExecuteRoll,
+    engine,
+    executeAnimatedTokenMove,
+    isAnimatingMove,
+    isCurrentSeatHumanControlled,
+    rolling,
+  ]);
 
   // Lookup map of legal moves for the current player keyed by tokenId
   const legalMoveByTokenId = useMemo(() => {
@@ -666,11 +806,12 @@ export function GhanaLudoBoard({
     return coords;
   }, [engine.legalMoves]);
 
-  // Group active/home-path tokens by (row, col) cell so we can render stacks & Blockade shields
+  // Group active/home-path tokens by (row, col) cell using visual step-by-step state
   const tokensByCell = useMemo(() => {
     const map = new Map<string, LudoToken[]>();
     for (const color of engine.players) {
-      for (const token of engine.tokens[color] || []) {
+      for (const rawToken of engine.tokens[color] || []) {
+        const token = resolveVisualToken(rawToken);
         const coord = getTokenGridCoord(token);
         if (!coord) continue;
         const key = `${coord[0]}-${coord[1]}`;
@@ -680,11 +821,31 @@ export function GhanaLudoBoard({
       }
     }
     return map;
-  }, [engine.players, engine.tokens]);
+  }, [engine.players, engine.tokens, resolveVisualToken]);
+
+  // Finished tokens inside the 3x3 Center Home Triangles (progress === HOME_PROGRESS / status === "FINISHED")
+  const finishedTokensInCenter = useMemo(() => {
+    const list: { token: LudoToken; leftPct: number; topPct: number }[] = [];
+    for (const color of engine.players) {
+      const visualTokens = (engine.tokens[color] || []).map(resolveVisualToken);
+      visualTokens.forEach((tok, tokenIndex) => {
+        if (tok.status !== "FINISHED") return;
+        const finishedRank = visualTokens
+          .slice(0, tokenIndex)
+          .filter((other) => other.status === "FINISHED").length;
+        const [offsetX, offsetY] = FINISH_TRIANGLE_OFFSET[color];
+        const spread = (finishedRank - 1.5) * 13;
+        const leftPct = 50 + offsetX * 30 + (offsetX === 0 ? spread : 0);
+        const topPct = 50 + offsetY * 30 + (offsetX !== 0 ? spread : 0);
+        list.push({ token: tok, leftPct, topPct });
+      });
+    }
+    return list;
+  }, [engine.players, engine.tokens, resolveVisualToken]);
 
   return (
     <div className="space-y-4">
-      {/* ── Top Control Header: 52-Cell Rule Badge, 2P/3P/4P Selector, Invite Players & Audio/Haptics ── */}
+      {/* ── Top Control Header: 52-Cell Rule Badge, 2P/3P/4P Selector, Computers/Friends, New Game & Audio/Haptics ── */}
       <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl bg-slate-900/95 border border-white/10 shadow-lg">
         <div className="flex flex-wrap items-center gap-2">
           <img
@@ -699,10 +860,10 @@ export function GhanaLudoBoard({
             variant="outline"
             className="border-emerald-500/40 bg-emerald-500/10 text-emerald-300 text-[10px] font-bold gap-1"
           >
-            <Shield className="w-3 h-3" /> 8 Safe Squares • Blockades • Exact Home Roll
+            <Shield className="w-3 h-3" /> 8 Safe Squares • Step-by-Step • Exact Home Roll
           </Badge>
 
-          {/* 2P / 3P / 4P Seat Switcher (Available before first move) */}
+          {/* 2P / 3P / 4P Seat Switcher */}
           <div className="inline-flex items-center rounded-xl bg-slate-950 p-1 border border-white/10 gap-1">
             {([2, 3, 4] as const).map((cnt) => {
               const active = engine.players.length === cnt;
@@ -710,23 +871,60 @@ export function GhanaLudoBoard({
                 <button
                   key={cnt}
                   type="button"
-                  disabled={engine.moveCount > 0}
+                  disabled={mode === "p2p" && engine.moveCount > 0}
                   onClick={() => handleSelectPlayerCount(cnt)}
                   className={`px-2.5 py-1 rounded-lg text-[10px] font-black transition-all flex items-center gap-1 cursor-pointer ${
                     active
                       ? "bg-amber-500 text-slate-950 shadow"
                       : "text-slate-400 hover:text-white disabled:opacity-40"
                   }`}
-                  title="Select 2, 3, or 4 Players before the match begins"
+                  title="Select 2, 3, or 4 Players"
                 >
                   <Users className="w-3 h-3" /> {cnt}P
                 </button>
               );
             })}
           </div>
+
+          {/* Play Computers vs Play Friends Selector */}
+          {mode !== "p2p" && (
+            <div className="inline-flex items-center rounded-xl bg-slate-950 p-1 border border-white/10 gap-1">
+              {(["computers", "friends"] as const).map((opt) => {
+                const active = opponentType === opt;
+                return (
+                  <button
+                    key={opt}
+                    type="button"
+                    onClick={() => handleSelectOpponentType(opt)}
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-black transition-all cursor-pointer ${
+                      active
+                        ? "bg-indigo-500 text-white shadow"
+                        : "text-slate-400 hover:text-white"
+                    }`}
+                  >
+                    {opt === "computers" ? "🤖 Play Computers" : "👥 Play Friends"}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5">
+          {mode !== "p2p" && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() =>
+                startNewLudoGame((engine.players.length as 2 | 3 | 4) || 2, opponentType)
+              }
+              className="h-8 rounded-xl border-indigo-500/40 bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-200 text-xs font-black gap-1.5"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              New Game
+            </Button>
+          )}
+
           <Button
             size="sm"
             variant="outline"
@@ -842,30 +1040,30 @@ export function GhanaLudoBoard({
         </div>
       )}
 
-      {/* ── Official 13-Section Ludo Rules Drawer ── */}
+      {/* ── Official Ludo Rules Drawer ── */}
       {showRules && (
         <div className="p-3.5 rounded-xl bg-amber-950/50 border border-amber-500/30 text-xs text-amber-100/90 space-y-1.5">
           <p className="font-black text-amber-400">
-            🇬🇭 Complete 52-Cell Ludo Engine Rules:
+            🇬🇭 Complete 52-Cell Ludo Rules:
           </p>
           <ul className="list-disc pl-4 space-y-1">
             <li>
-              <strong>Base Launch (Roll 6)</strong>: All 4 tokens start inside your Base. You must roll a <strong>6</strong> to launch a token onto your colored starting square. Rolling a 6 grants an extra roll (3 consecutive 6s forfeits your turn).
+              Roll a <strong>6</strong> to bring a token out of its base onto your coloured start square.
             </li>
             <li>
-              <strong>52-Cell Clockwise Circuit &amp; 6-Cell Private Home Path</strong>: Tokens travel clockwise around all 52 main-track squares before entering your private 6-cell Home Path.
+              Move a token clockwise by the number you roll. Tap a glowing token to choose which one moves.
             </li>
             <li>
-              <strong>Player Choice (Never Forced Auto-Move)</strong>: Whenever you have legal moves, tap the exact glowing token you wish to move.
+              Landing on an opponent token sends it back to its base, unless it is on a coloured start square or a star (★) square.
             </li>
             <li>
-              <strong>Captures &amp; 8 Protected Safe Squares</strong>: Landing on a lone opponent token on a non-safe square sends it back to Base and grants a <strong>Bonus Roll</strong>! The 4 colored Start squares and 4 Star (★) squares are safe from capture.
+              Rolling a <strong>6</strong>, <strong>capturing a token</strong>, or <strong>reaching home</strong> gives you another roll. Three 6s in a row cost you the turn.
             </li>
             <li>
-              <strong>Blockades (🛡️ 2+ Tokens)</strong>: Two or more tokens of the same color on a square form a Blockade that opponents cannot land on or pass!
+              Your tokens turn into your coloured home column after one full lap. You need the exact number to reach the centre.
             </li>
             <li>
-              <strong>Victory Condition</strong>: Bring <strong>all 4 tokens</strong> into the Center Home Triangle by <strong>exact dice roll</strong> to win!
+              The first player to bring all four tokens home wins.
             </li>
           </ul>
         </div>
@@ -877,7 +1075,7 @@ export function GhanaLudoBoard({
           const isPlaying = engine.players.includes(color);
           const isTurn = engine.currentPlayer === color && engine.matchStatus === "IN_PROGRESS";
           const meta = engine.playerMeta[color];
-          const colorTokens = engine.tokens[color] || [];
+          const colorTokens = (engine.tokens[color] || []).map(resolveVisualToken);
           const finishedCount = colorTokens.filter((t) => t.status === "FINISHED").length;
           const activeCount = colorTokens.filter(
             (t) => t.status === "ACTIVE" || t.status === "HOME_PATH"
@@ -909,7 +1107,7 @@ export function GhanaLudoBoard({
                 ) : (
                   <button
                     type="button"
-                    disabled={engine.moveCount > 0}
+                    disabled={mode === "p2p" && engine.moveCount > 0}
                     onClick={() => {
                       setInviteSeatColor(color);
                       setShowInviteBar(true);
@@ -948,9 +1146,13 @@ export function GhanaLudoBoard({
               style={{ gridRow: "1 / span 6", gridColumn: "1 / span 6" }}
             >
               <div className="w-full h-full bg-white rounded-2xl border-2 border-slate-900 p-2 sm:p-3 grid grid-cols-2 grid-rows-2 gap-2 place-items-center shadow-inner">
-                {(engine.tokens.GREEN || []).map((tok) => {
+                {(engine.tokens.GREEN || []).map((rawTok) => {
+                  const tok = resolveVisualToken(rawTok);
                   const inBase = tok.status === "BASE" && engine.players.includes("GREEN");
-                  const isLegal = legalMoveByTokenId.has(tok.id) && isCurrentSeatHumanControlled;
+                  const isLegal =
+                    legalMoveByTokenId.has(tok.id) &&
+                    isCurrentSeatHumanControlled &&
+                    !isAnimatingMove;
                   return (
                     <div
                       key={tok.id}
@@ -982,9 +1184,13 @@ export function GhanaLudoBoard({
               style={{ gridRow: "1 / span 6", gridColumn: "10 / span 6" }}
             >
               <div className="w-full h-full bg-white rounded-2xl border-2 border-slate-900 p-2 sm:p-3 grid grid-cols-2 grid-rows-2 gap-2 place-items-center shadow-inner">
-                {(engine.tokens.YELLOW || []).map((tok) => {
+                {(engine.tokens.YELLOW || []).map((rawTok) => {
+                  const tok = resolveVisualToken(rawTok);
                   const inBase = tok.status === "BASE" && engine.players.includes("YELLOW");
-                  const isLegal = legalMoveByTokenId.has(tok.id) && isCurrentSeatHumanControlled;
+                  const isLegal =
+                    legalMoveByTokenId.has(tok.id) &&
+                    isCurrentSeatHumanControlled &&
+                    !isAnimatingMove;
                   return (
                     <div
                       key={tok.id}
@@ -1016,9 +1222,13 @@ export function GhanaLudoBoard({
               style={{ gridRow: "10 / span 6", gridColumn: "1 / span 6" }}
             >
               <div className="w-full h-full bg-white rounded-2xl border-2 border-slate-900 p-2 sm:p-3 grid grid-cols-2 grid-rows-2 gap-2 place-items-center shadow-inner">
-                {(engine.tokens.RED || []).map((tok) => {
+                {(engine.tokens.RED || []).map((rawTok) => {
+                  const tok = resolveVisualToken(rawTok);
                   const inBase = tok.status === "BASE" && engine.players.includes("RED");
-                  const isLegal = legalMoveByTokenId.has(tok.id) && isCurrentSeatHumanControlled;
+                  const isLegal =
+                    legalMoveByTokenId.has(tok.id) &&
+                    isCurrentSeatHumanControlled &&
+                    !isAnimatingMove;
                   return (
                     <div
                       key={tok.id}
@@ -1050,9 +1260,13 @@ export function GhanaLudoBoard({
               style={{ gridRow: "10 / span 6", gridColumn: "10 / span 6" }}
             >
               <div className="w-full h-full bg-white rounded-2xl border-2 border-slate-900 p-2 sm:p-3 grid grid-cols-2 grid-rows-2 gap-2 place-items-center shadow-inner">
-                {(engine.tokens.BLUE || []).map((tok) => {
+                {(engine.tokens.BLUE || []).map((rawTok) => {
+                  const tok = resolveVisualToken(rawTok);
                   const inBase = tok.status === "BASE" && engine.players.includes("BLUE");
-                  const isLegal = legalMoveByTokenId.has(tok.id) && isCurrentSeatHumanControlled;
+                  const isLegal =
+                    legalMoveByTokenId.has(tok.id) &&
+                    isCurrentSeatHumanControlled &&
+                    !isAnimatingMove;
                   return (
                     <div
                       key={tok.id}
@@ -1089,6 +1303,33 @@ export function GhanaLudoBoard({
                 <polygon points="0,100 100,100 50,50" fill="#dc2626" stroke="#0f172a" strokeWidth="2" />
                 <polygon points="100,0 100,100 50,50" fill="#0284c7" stroke="#0f172a" strokeWidth="2" />
               </svg>
+
+              {/* Finished tokens arranged along their home triangle edges */}
+              {finishedTokensInCenter.map(({ token: tok, leftPct, topPct }) => {
+                const tokenPalette =
+                  tok.owner === "RED"
+                    ? "from-red-300 via-red-600 to-red-950 text-white border-white"
+                    : tok.owner === "GREEN"
+                    ? "from-emerald-300 via-emerald-600 to-green-950 text-white border-white"
+                    : tok.owner === "YELLOW"
+                    ? "from-yellow-200 via-amber-400 to-amber-700 text-slate-950 border-slate-950"
+                    : "from-sky-300 via-sky-500 to-blue-950 text-white border-white";
+                return (
+                  <span
+                    key={tok.id}
+                    style={{
+                      left: `${leftPct}%`,
+                      top: `${topPct}%`,
+                      transform: "translate(-50%, -50%)",
+                    }}
+                    className={`absolute w-3.5 h-3.5 sm:w-5 sm:h-5 rounded-full bg-gradient-to-br ${tokenPalette} border shadow-md flex items-center justify-center text-[7px] sm:text-[8px] font-black z-20 pointer-events-none`}
+                  >
+                    {tok.owner[0]}
+                    {tok.tokenIndex + 1}
+                  </span>
+                );
+              })}
+
               <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                 <span className="px-1.5 py-0.5 rounded bg-slate-950/85 text-white font-black text-[8px] sm:text-[10px] border border-white/20 shadow">
                   HOME 4/4
@@ -1135,11 +1376,6 @@ export function GhanaLudoBoard({
                 const cellTokens = tokensByCell.get(cellKey) || [];
                 const isDestinationPreview = destinationPreviewCoords.has(cellKey);
 
-                // Check if this cell currently holds a Blockade (2+ tokens of same player)
-                const isBlockadeHere =
-                  cellTokens.length >= 2 &&
-                  cellTokens.every((t) => t.owner === cellTokens[0].owner);
-
                 return (
                   <div
                     key={cellKey}
@@ -1165,16 +1401,22 @@ export function GhanaLudoBoard({
                       <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
                     )}
 
-                    {/* Tokens occupying this square */}
+                    {/* Tokens occupying this square (with circular ring spread when 2+ tokens stack) */}
                     {cellTokens.map((tok, stackIdx) => {
                       const isLegal =
-                        legalMoveByTokenId.has(tok.id) && isCurrentSeatHumanControlled;
+                        legalMoveByTokenId.has(tok.id) &&
+                        isCurrentSeatHumanControlled &&
+                        !isAnimatingMove;
+                      const angle =
+                        cellTokens.length > 1
+                          ? (Math.PI * 2 * stackIdx) / cellTokens.length
+                          : 0;
                       const offsetStyle =
                         cellTokens.length > 1
                           ? {
-                              transform: `translate(${(stackIdx % 2 === 0 ? -1 : 1) * 3}px, ${
-                                (stackIdx < 2 ? -1 : 1) * 3
-                              }px)`,
+                              transform: `translate(${Math.cos(angle) * 4.5}px, ${
+                                Math.sin(angle) * 4.5
+                              }px) scale(0.86)`,
                             }
                           : undefined;
 
@@ -1210,16 +1452,6 @@ export function GhanaLudoBoard({
                         </button>
                       );
                     })}
-
-                    {/* Blockade Shield Badge when 2+ same-color tokens form a wall */}
-                    {isBlockadeHere && (
-                      <span
-                        className="absolute -top-1.5 -right-1.5 px-1 rounded bg-slate-950 text-amber-300 border border-amber-400 text-[7px] font-black z-30 pointer-events-none shadow"
-                        title="Blockade Wall (Opponents cannot pass or land here)"
-                      >
-                        🛡️{cellTokens.length}x
-                      </span>
-                    )}
                   </div>
                 );
               })
@@ -1260,28 +1492,31 @@ export function GhanaLudoBoard({
 
           {/* 3D Royal-Blue Dice & Legal Token Quick-Select Pills */}
           <div className="flex items-center gap-3">
-            {isCurrentSeatHumanControlled && engine.diceResult !== null && engine.legalMoves.length > 0 && (
-              <div className="flex flex-wrap items-center gap-1.5">
-                {engine.legalMoves.map((m) => (
-                  <Button
-                    key={m.tokenId}
-                    size="sm"
-                    onClick={() => handleSelectTokenMove(m.owner, m.tokenIndex)}
-                    className="h-9 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs shadow"
-                  >
-                    Move {m.owner[0]}
-                    {m.tokenIndex + 1}{" "}
-                    {m.fromStatus === "BASE"
-                      ? "(Launch)"
-                      : m.willCaptureTokenIds.length > 0
-                      ? "(💥 Capture!)"
-                      : m.toStatus === "FINISHED"
-                      ? "(🏠 Finish!)"
-                      : `(+${engine.diceResult})`}
-                  </Button>
-                ))}
-              </div>
-            )}
+            {isCurrentSeatHumanControlled &&
+              !isAnimatingMove &&
+              engine.diceResult !== null &&
+              engine.legalMoves.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {engine.legalMoves.map((m) => (
+                    <Button
+                      key={m.tokenId}
+                      size="sm"
+                      onClick={() => handleSelectTokenMove(m.owner, m.tokenIndex)}
+                      className="h-9 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs shadow"
+                    >
+                      Move {m.owner[0]}
+                      {m.tokenIndex + 1}{" "}
+                      {m.fromStatus === "BASE"
+                        ? "(Launch)"
+                        : m.willCaptureTokenIds.length > 0
+                        ? "(💥 Capture!)"
+                        : m.toStatus === "FINISHED"
+                        ? "(🏠 Finish!)"
+                        : `(+${engine.diceResult})`}
+                    </Button>
+                  ))}
+                </div>
+              )}
 
             <div className="flex items-center gap-3 bg-slate-900/90 px-4 py-2 rounded-2xl border border-indigo-500/30 shadow-inner">
               <div className="text-right">
@@ -1293,7 +1528,7 @@ export function GhanaLudoBoard({
                     : "3D Dice"}
                 </p>
                 <p className="text-[11px] font-semibold text-slate-400">
-                  {isCurrentSeatHumanControlled && engine.diceResult === null
+                  {isCurrentSeatHumanControlled && engine.diceResult === null && !isAnimatingMove
                     ? "Tap cube to roll"
                     : engine.diceResult !== null
                     ? "Choose token"
@@ -1301,12 +1536,13 @@ export function GhanaLudoBoard({
                 </p>
               </div>
               <RoyalBlue3DDice
-                value={engine.diceResult || lastRolledVisual}
+                value={rolling ? lastRolledVisual : engine.diceResult || lastRolledVisual}
                 rolling={rolling}
                 disabled={
                   !isCurrentSeatHumanControlled ||
                   engine.diceResult !== null ||
                   rolling ||
+                  isAnimatingMove ||
                   engine.matchStatus !== "IN_PROGRESS"
                 }
                 onClick={handleRollDice}
