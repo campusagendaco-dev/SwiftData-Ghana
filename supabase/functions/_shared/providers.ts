@@ -414,12 +414,38 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
     }
   }
 
-  // Exclude previously failed/refunded providers for this order if alternative verified active providers exist
+  // Exclude previously failed/refunded providers for this order
   if (Array.isArray(order?.metadata?.failed_provider_ids) && order.metadata.failed_provider_ids.length > 0) {
-    const untried = activeProviders.filter((p: any) => !order.metadata.failed_provider_ids.includes(p.id));
+    const failedSet = new Set(order.metadata.failed_provider_ids.map((id: any) => String(id)));
+    const untried = activeProviders.filter((p: any) => !failedSet.has(String(p.id)));
     if (untried.length > 0) {
       activeProviders = untried;
-      console.log(`[resolveProvidersForOrder] Excluded ${order.metadata.failed_provider_ids.length} failed/refunded provider(s) for order ${order?.id}. Available verified providers: ${activeProviders.map((p: any) => p.name).join(", ")}`);
+      console.log(`[resolveProvidersForOrder] Excluded ${failedSet.size} failed/refunded provider(s) for order ${order?.id}. Available verified providers: ${activeProviders.map((p: any) => p.name).join(", ")}`);
+    } else {
+      // All currently active providers have failed/refunded this order!
+      // Look up funded standby data providers (e.g. BundleZone, SwiftData Reseller API, DataMart) that have not failed on this order.
+      const { data: standbyRows } = await supabaseAdmin
+        .from("providers")
+        .select("*")
+        .eq("provider_type", providerCategory)
+        .gt("balance", 4)
+        .order("priority", { ascending: true });
+
+      const fundedStandby = (standbyRows || []).filter((p: any) => {
+        if (failedSet.has(String(p.id))) return false;
+        const ht = String(p.handler_type || "").toLowerCase();
+        if (isAffordableSmeBundle && (ht === "korba" || String(p.name || "").toLowerCase() === "korba")) return false;
+        return true;
+      });
+
+      if (fundedStandby.length > 0) {
+        activeProviders = fundedStandby;
+        console.log(`[resolveProvidersForOrder] All active providers failed/refunded for order ${order?.id}. Failing over to funded standby provider(s): ${activeProviders.map((p: any) => `${p.name} (bal: ${p.balance})`).join(" -> ")}`);
+      } else {
+        // Never re-send an order to a provider that already refunded it or when explicitly rerouting
+        activeProviders = [];
+        console.warn(`[resolveProvidersForOrder] All providers in failed_provider_ids and no funded standby providers available for order ${order?.id}.`);
+      }
     }
   }
 

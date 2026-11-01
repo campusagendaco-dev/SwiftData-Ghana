@@ -15,7 +15,7 @@ declare const Deno: any;
 function sanitizeForUser(text?: string | null): string {
   if (!text) return "";
   let clean = String(text);
-  
+
   // Scrub known provider names & aliases
   const scrubPatterns = [
     /datahub(gh)?(\.com)?/gi,
@@ -207,14 +207,14 @@ serve(async (req: Request) => {
         const handlerType = String(p.handler_type || "standard").toLowerCase();
         const envKey =
           (handlerType === "hyspeeddata" || handlerType === "swiftreseller" || handlerType === "hyspeed") ? (Deno.env.get("HYSPEEDDATA_API_KEY") || Deno.env.get("SWIFTRESELLER_API_KEY")) :
-          handlerType === "bundlezone" ? Deno.env.get("BUNDLEZONE_API_KEY") :
-          handlerType === "datahub" ? Deno.env.get("DATAHUB_API_KEY") :
-          handlerType === "datamart" ? Deno.env.get("DATAMART_API_KEY") :
-          handlerType === "spendless" ? Deno.env.get("SPENDLESS_API_KEY") :
-          handlerType === "skdataplug" ? Deno.env.get("SKDATAPLUG_API_KEY") :
-          handlerType === "qhowmenzconsult" ? Deno.env.get("QHOWMENZ_API_KEY") :
-          handlerType === "korba" ? (Deno.env.get("KORBA_SECRET_KEY") || Deno.env.get("KORBA_API_KEY")) :
-          Deno.env.get("DATA_PROVIDER_API_KEY");
+            handlerType === "bundlezone" ? Deno.env.get("BUNDLEZONE_API_KEY") :
+              handlerType === "datahub" ? Deno.env.get("DATAHUB_API_KEY") :
+                handlerType === "datamart" ? Deno.env.get("DATAMART_API_KEY") :
+                  handlerType === "spendless" ? Deno.env.get("SPENDLESS_API_KEY") :
+                    handlerType === "skdataplug" ? Deno.env.get("SKDATAPLUG_API_KEY") :
+                      handlerType === "qhowmenzconsult" ? Deno.env.get("QHOWMENZ_API_KEY") :
+                        handlerType === "korba" ? (Deno.env.get("KORBA_SECRET_KEY") || Deno.env.get("KORBA_API_KEY")) :
+                          Deno.env.get("DATA_PROVIDER_API_KEY");
         return [String(p.id), { ...p, api_key: String(envKey || p.api_key || "").trim() }];
       }));
 
@@ -287,7 +287,7 @@ serve(async (req: Request) => {
                     updated_at: new Date().toISOString()
                   }).eq("id", order.id);
 
-                  await Promise.resolve(supabaseAdmin.rpc("credit_order_profits", { p_order_id: order.id })).catch(() => {});
+                  await Promise.resolve(supabaseAdmin.rpc("credit_order_profits", { p_order_id: order.id })).catch(() => { });
                   console.log(`[check-order-status-bulk] Order ${order.id} marked FULFILLED.`);
                 }
               } else if (isFailed) {
@@ -303,12 +303,12 @@ serve(async (req: Request) => {
 
                 if (canAutoFailover) {
                   console.log(`[check-order-status-bulk] Order ${order.id} refunded/failed at ${providerInfo.name} (${rawStatus}). Initiating auto-failover to verified API provider...`);
-                  
+
                   await Promise.resolve(supabaseAdmin.from("provider_errors").insert({
                     provider_id: providerInfo.id,
                     order_id: order.id,
                     error_message: currentFailureReason,
-                  })).catch(() => {});
+                  })).catch(() => { });
 
                   const prevFailed = Array.isArray(order.metadata?.failed_provider_ids) ? order.metadata.failed_provider_ids : [];
                   const updatedFailedIds = Array.from(new Set([...prevFailed, providerInfo.id]));
@@ -353,7 +353,7 @@ serve(async (req: Request) => {
                       updated_at: new Date().toISOString(),
                     }).eq("id", order.id);
                     if (failoverDispatch.status === "fulfilled") {
-                      await Promise.resolve(supabaseAdmin.rpc("credit_order_profits", { p_order_id: order.id })).catch(() => {});
+                      await Promise.resolve(supabaseAdmin.rpc("credit_order_profits", { p_order_id: order.id })).catch(() => { });
                     }
                     console.log(`[check-order-status-bulk] Auto-failover SUCCESS for rejected/refunded order ${order.id} -> ${failoverDispatch.provider_id} (${failoverDispatch.status})`);
                   } else {
@@ -391,6 +391,7 @@ serve(async (req: Request) => {
                 processingCount++;
                 if (pRes.raw || pRes.id) {
                   await supabaseAdmin.from("orders").update({
+                    ...(pRes.ok && pRes.id && !hasActiveProviderRef ? { provider_order_id: String(pRes.id) } : {}),
                     provider_response: pRes.raw || pRes,
                     updated_at: new Date().toISOString()
                   }).eq("id", order.id);
@@ -520,14 +521,14 @@ serve(async (req: Request) => {
           const handlerType = String(prov.handler_type || "standard").toLowerCase();
           const envKey =
             (handlerType === "hyspeeddata" || handlerType === "swiftreseller" || handlerType === "hyspeed") ? (Deno.env.get("HYSPEEDDATA_API_KEY") || Deno.env.get("SWIFTRESELLER_API_KEY")) :
-            handlerType === "bundlezone" ? Deno.env.get("BUNDLEZONE_API_KEY") :
-            handlerType === "datahub" ? Deno.env.get("DATAHUB_API_KEY") :
-            handlerType === "datamart" ? Deno.env.get("DATAMART_API_KEY") :
-            handlerType === "spendless" ? Deno.env.get("SPENDLESS_API_KEY") :
-            handlerType === "skdataplug" ? Deno.env.get("SKDATAPLUG_API_KEY") :
-            handlerType === "qhowmenzconsult" ? Deno.env.get("QHOWMENZ_API_KEY") :
-            handlerType === "korba" ? (Deno.env.get("KORBA_SECRET_KEY") || Deno.env.get("KORBA_API_KEY")) :
-            Deno.env.get("DATA_PROVIDER_API_KEY");
+              handlerType === "bundlezone" ? Deno.env.get("BUNDLEZONE_API_KEY") :
+                handlerType === "datahub" ? Deno.env.get("DATAHUB_API_KEY") :
+                  handlerType === "datamart" ? Deno.env.get("DATAMART_API_KEY") :
+                    handlerType === "spendless" ? Deno.env.get("SPENDLESS_API_KEY") :
+                      handlerType === "skdataplug" ? Deno.env.get("SKDATAPLUG_API_KEY") :
+                        handlerType === "qhowmenzconsult" ? Deno.env.get("QHOWMENZ_API_KEY") :
+                          handlerType === "korba" ? (Deno.env.get("KORBA_SECRET_KEY") || Deno.env.get("KORBA_API_KEY")) :
+                            Deno.env.get("DATA_PROVIDER_API_KEY");
           providerInfo = { ...prov, api_key: String(envKey || prov.api_key || "").trim() };
         }
       }
@@ -539,7 +540,7 @@ serve(async (req: Request) => {
           const activeOrderId = hasActiveProviderRef ? order.provider_order_id : order.id;
 
           console.log(`[check-order-status] Polling provider ${providerInfo.name} (${providerInfo.handler_type}) for order ${order.id} (tx: ${activeOrderId})...`);
-          
+
           const pRes = await adapter.checkStatus(
             supabaseAdmin,
             providerInfo,
@@ -573,7 +574,7 @@ serve(async (req: Request) => {
               }).eq("id", order.id);
 
               // Idempotently credit agent profits
-              await Promise.resolve(supabaseAdmin.rpc("credit_order_profits", { p_order_id: order.id })).catch(() => {});
+              await Promise.resolve(supabaseAdmin.rpc("credit_order_profits", { p_order_id: order.id })).catch(() => { });
 
               console.log(`[check-order-status] Order ${order.id} transitioned to FULFILLED via live provider check.`);
             }
@@ -591,12 +592,12 @@ serve(async (req: Request) => {
 
             if (canAutoFailover) {
               console.log(`[check-order-status] Order ${order.id} refunded/failed at ${providerInfo.name} (${rawStatus}). Initiating auto-failover to verified API provider...`);
-              
+
               await Promise.resolve(supabaseAdmin.from("provider_errors").insert({
                 provider_id: providerInfo.id,
                 order_id: order.id,
                 error_message: currentFailureReason,
-              })).catch(() => {});
+              })).catch(() => { });
 
               const prevFailed = Array.isArray(order.metadata?.failed_provider_ids) ? order.metadata.failed_provider_ids : [];
               const updatedFailedIds = Array.from(new Set([...prevFailed, providerInfo.id]));
@@ -640,7 +641,7 @@ serve(async (req: Request) => {
                   if (newProv) providerInfo = newProv;
                 }
                 if (failoverDispatch.status === "fulfilled") {
-                  await Promise.resolve(supabaseAdmin.rpc("credit_order_profits", { p_order_id: order.id })).catch(() => {});
+                  await Promise.resolve(supabaseAdmin.rpc("credit_order_profits", { p_order_id: order.id })).catch(() => { });
                 }
                 console.log(`[check-order-status] Auto-failover SUCCESS for rejected/refunded order ${order.id} -> ${failoverDispatch.provider_id} (${failoverDispatch.status})`);
               } else {
@@ -676,6 +677,7 @@ serve(async (req: Request) => {
             // Persist latest live polling response into metadata/provider_response
             if (pRes.raw || pRes.id) {
               await supabaseAdmin.from("orders").update({
+                ...(pRes.ok && pRes.id && !hasActiveProviderRef ? { provider_order_id: String(pRes.id) } : {}),
                 provider_response: pRes.raw || pRes,
                 updated_at: new Date().toISOString()
               }).eq("id", order.id);
@@ -816,7 +818,7 @@ serve(async (req: Request) => {
         raw_status: liveProviderResult?.status,
         raw_response: liveProviderResult?.raw || liveProviderResult?.reason || liveProviderResult || null,
       } : null,
-      message: providerInfo 
+      message: providerInfo
         ? `Live status verified with ${providerInfo.name}: ${liveProviderResult?.status || currentStatus}`
         : "Order is not currently assigned to a provider.",
       sms_sent: smsSent,

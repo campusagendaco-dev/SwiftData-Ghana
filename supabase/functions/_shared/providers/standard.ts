@@ -1764,7 +1764,13 @@ export class StandardAdapter implements ProviderAdapter {
           // to another provider after 60 mins => double data delivery.
           // Duplicates that echo a DIFFERENT reference (genuine repeat purchase for the same number) are
           // left to the existing cooldown flow so that second purchase still gets delivered.
-          if (endpoint !== "status") {
+          const hasPreviouslyFailedOnThisProvider = Boolean(
+            provider?.id &&
+            Array.isArray(data?.metadata?.failed_provider_ids) &&
+            data.metadata.failed_provider_ids.includes(provider.id)
+          );
+
+          if (endpoint !== "status" && !hasPreviouslyFailedOnThisProvider) {
             try {
               const dup = JSON.parse(text);
               const ourRef = String(payload?.client_reference || payload?.reference || data?.reference || data?.orderReference || data?.order_id || data?.id || "").trim();
@@ -1795,7 +1801,7 @@ export class StandardAdapter implements ProviderAdapter {
           if (res.ok) {
             const semantic = parseProviderResponse(text, contentType);
             if (semantic.ok) {
-              const returnedId = semantic.id || String(payload?.client_reference || data.reference || data.orderReference || data.order_id || "");
+              const returnedId = semantic.id || String(payload?.client_reference || payload?.reference || data.reference || data.orderReference || data.order_id || (data as any).id || "");
               return {
                 ok: true,
                 reason: "",
@@ -1847,14 +1853,16 @@ export class StandardAdapter implements ProviderAdapter {
             lastReason = "Order not found on provider";
           }
 
-          const isAlreadyPlaced = /already placed/i.test(lastReason) || 
+          const isAlreadyPlaced = !hasPreviouslyFailedOnThisProvider && (
+            /already placed/i.test(lastReason) || 
             /currently being processed/i.test(lastReason) || 
             /ORDER_ALREADY_PENDING/i.test(lastReason) ||
             /already pending/i.test(lastReason) ||
             /duplicate/i.test(lastReason) ||
             /cooldown/i.test(lastReason) ||
             /already exist/i.test(lastReason) ||
-            /DUPLICATE_REFERENCE/i.test(lastReason);
+            /DUPLICATE_REFERENCE/i.test(lastReason)
+          );
           if (isAlreadyPlaced) {
             return { ok: true, reason: lastReason, status: "processing" };
           }

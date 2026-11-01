@@ -148,15 +148,7 @@ export function getProviderDetails(
   if (!matchedName && providerId && allProviders.length > 0) {
     const found = allProviders.find((p) => p.id === providerId);
     if (found) {
-      if (found.is_active !== false) {
-        matchedName = found.name;
-      } else if (providerOrderId || metadata?.provider_order_id) {
-        // Was actually processed by an inactive provider before it was deactivated
-        matchedName = `${found.name} (Inactive)`;
-      } else {
-        // Assigned provider is inactive AND order has no provider_order_id: ignore and let active provider resolve
-        matchedName = null;
-      }
+      matchedName = found.name;
     }
   }
 
@@ -202,6 +194,7 @@ export function getProviderDetails(
   let badgeClass = "bg-purple-500/15 text-purple-400 border-purple-500/30";
 
   if (nameUpper.includes("INACTIVE")) badgeClass = "bg-slate-500/15 text-slate-400 border-slate-500/30";
+  else if (nameUpper.includes("SWIFTDATA") || nameUpper.includes("HYSPEED")) badgeClass = "bg-emerald-500/15 text-emerald-400 border-emerald-500/30";
   else if (nameUpper.includes("DATAMART")) badgeClass = "bg-emerald-500/15 text-emerald-400 border-emerald-500/30";
   else if (nameUpper.includes("SPENDLESS")) badgeClass = "bg-sky-500/15 text-sky-400 border-sky-500/30";
   else if (nameUpper.includes("KORBA")) badgeClass = "bg-amber-500/15 text-amber-400 border-amber-500/30";

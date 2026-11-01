@@ -4,6 +4,7 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { StandardAdapter } from "../_shared/providers/standard.ts";
 import { dispatchOrderWithFailover } from "../_shared/provider_router.ts";
 import { isSentinelProviderOrderId } from "../_shared/providers.ts";
+import { executeGuestBeneficiaryRefund, isGuestOrder } from "../_shared/guest-refund.ts";
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -114,6 +115,9 @@ serve(async (req) => {
       });
     }
 
+    const isBrowserInvoke = Boolean(body && (body.order_id || body.mode));
+    const errStatus = (code: number) => (isBrowserInvoke && code === 400 ? 200 : code);
+
     // 2. SERVER-SIDE CHECK 1: Already Fulfilled / Completed / Pending
     if (order.status === "fulfilled" || order.status === "completed") {
       return new Response(JSON.stringify({
@@ -121,7 +125,7 @@ serve(async (req) => {
         error: "Order is not eligible for refund",
         details: "Server Verification Failed: Order was already fulfilled by carrier/provider. Cannot refund."
       }), {
-        status: 400,
+        status: errStatus(400),
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -134,7 +138,7 @@ serve(async (req) => {
         alreadyRefunded: true,
         message: "Order was already refunded to wallet balance."
       }), {
-        status: 400,
+        status: errStatus(400),
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -184,7 +188,7 @@ serve(async (req) => {
             success: false,
             error: `${assignedProvider.name} confirmed this order was ALREADY DELIVERED. Marked as fulfilled instead of rerouting.`,
           }), {
-            status: 400,
+            status: errStatus(400),
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
@@ -217,7 +221,7 @@ serve(async (req) => {
                 success: false,
                 error: dhRefund.reason || "Order could not be cancelled on DataHub for rerouting.",
               }), {
-                status: 400,
+                status: errStatus(400),
                 headers: { ...corsHeaders, "Content-Type": "application/json" },
               });
             }
@@ -227,7 +231,7 @@ serve(async (req) => {
             success: false,
             error: "Order is currently processing on the provider and cannot be self-rerouted yet.",
           }), {
-            status: 400,
+            status: errStatus(400),
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
@@ -274,7 +278,11 @@ serve(async (req) => {
         metadata: nextMeta,
       });
 
-      if (dispatch.ok || dispatch.status === "processing") {
+      const dispatchAccepted =
+        dispatch.ok ||
+        (dispatch.status === "processing" && !isSentinelProviderOrderId(dispatch.provider_order_id));
+
+      if (dispatchAccepted) {
         const targetStatus = dispatch.status === "fulfilled" ? "fulfilled" : "processing";
         await supabaseAdmin
           .from("orders")
@@ -292,6 +300,12 @@ serve(async (req) => {
           await Promise.resolve(supabaseAdmin.rpc("credit_order_profits", { p_order_id: order.id })).catch(() => {});
         }
 
+        let newProvName = "alternative provider";
+        if (dispatch.provider_id) {
+          const { data: np } = await supabaseAdmin.from("providers").select("name").eq("id", dispatch.provider_id).maybeSingle();
+          if (np?.name) newProvName = np.name;
+        }
+
         return new Response(JSON.stringify({
           success: true,
           rerouted: true,
@@ -299,8 +313,8 @@ serve(async (req) => {
           provider_id: dispatch.provider_id,
           provider_order_id: dispatch.provider_order_id,
           message: assignedProvider
-            ? `Skipped ${assignedProvider.name} and re-routed order to another active provider (${targetStatus}).`
-            : `Re-routed order to active provider (${targetStatus}).`,
+            ? `Skipped ${assignedProvider.name} and re-routed order to ${newProvName} (${targetStatus}).`
+            : `Re-routed order to ${newProvName} (${targetStatus}).`,
           datahub_refund: upstreamRefundData,
         }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -325,7 +339,7 @@ serve(async (req) => {
         success: false,
         error: `Skipped ${assignedProvider?.name || "previous provider"}, but alternative provider dispatch failed: ${failReason}`,
       }), {
-        status: 400,
+        status: errStatus(400),
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -366,7 +380,7 @@ serve(async (req) => {
               error: "Order is not eligible for refund",
               details: "Provider confirmed order was DELIVERED. Order marked as fulfilled instead of refunding."
             }), {
-              status: 400,
+              status: errStatus(400),
               headers: { ...corsHeaders, "Content-Type": "application/json" },
             });
           }
@@ -376,7 +390,7 @@ serve(async (req) => {
             success: false,
             error: dhRefund.reason || "Order is not eligible for refund",
           }), {
-            status: httpStatus,
+            status: isBrowserInvoke ? 200 : httpStatus,
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
@@ -424,7 +438,7 @@ serve(async (req) => {
             error: "Order is not eligible for refund",
             details: "Provider confirmed order was DELIVERED. Order marked as fulfilled instead of refunding."
           }), {
-            status: 400,
+            status: errStatus(400),
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
@@ -439,7 +453,7 @@ serve(async (req) => {
             error: "Order is not eligible for refund",
             details: "Order has already been submitted and received by an API provider. Only manual or failed orders can be refunded."
           }), {
-            status: 400,
+            status: errStatus(400),
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
@@ -464,24 +478,111 @@ serve(async (req) => {
             error: "Order is not eligible for refund",
             details: "Server Verification Failed: Provider confirmed order was DELIVERED. Order marked as fulfilled instead of refunding."
           }), {
-            status: 400,
+            status: errStatus(400),
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
       }
     }
 
-    // 5. SERVER-SIDE EXECUTION: Execute refund_failed_order RPC on Database
-    const { data: refundSuccess, error: rpcErr } = await supabaseAdmin.rpc("refund_failed_order", {
-      p_order_id: order.id
-    });
+    // 5. SERVER-SIDE EXECUTION: Execute Wallet Refund OR Paystack/Guest Refund
+    const pmLower = String(order.payment_method || "").toLowerCase().trim();
+    const isWalletPayment = pmLower === "wallet" || pmLower === "balance";
+    const hasRealAgent = Boolean(order.agent_id && order.agent_id !== "00000000-0000-0000-0000-000000000000");
 
-    if (rpcErr || !refundSuccess) {
+    if (isWalletPayment) {
+      const { data: refundSuccess, error: rpcErr } = await supabaseAdmin.rpc("refund_failed_order", {
+        p_order_id: order.id
+      });
+
+      if (rpcErr || !refundSuccess) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: rpcErr?.message || "Order is not eligible for refund"
+        }), {
+          status: errStatus(400),
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    } else if (hasRealAgent && isCallerAdmin) {
+      // Agent order paid via Paystack/MoMo: credit the agent's wallet and mark order refunded
+      const { error: creditErr } = await supabaseAdmin.rpc("credit_wallet", {
+        p_agent_id: order.agent_id,
+        p_amount: Number(order.amount || 0),
+      });
+      if (creditErr) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: creditErr.message || "Could not credit agent wallet for refund"
+        }), {
+          status: errStatus(400),
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      await supabaseAdmin
+        .from("orders")
+        .update({
+          status: "refunded",
+          auto_refunded: true,
+          refunded_at: new Date().toISOString(),
+          refund_amount: Number(order.amount || 0),
+          refund_reason: "Refunded to agent wallet by administrator",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", order.id);
+    } else if (isGuestOrder(order)) {
+      // Guest / Direct Paystack checkout order: execute Paystack MoMo refund
+      await supabaseAdmin
+        .from("orders")
+        .update({
+          status: "fulfillment_failed",
+          provider_id: null,
+          provider_order_id: "failed_api_call",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", order.id);
+
+      const guestRes = await executeGuestBeneficiaryRefund(
+        supabaseAdmin,
+        {
+          ...order,
+          status: "fulfillment_failed",
+          provider_id: null,
+          provider_order_id: "failed_api_call",
+        },
+        order.failure_reason || "Refunded by administrator"
+      );
+
+      if (!guestRes.success && !isCallerAdmin) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: guestRes.error || "Could not process Mobile Money gateway refund."
+        }), {
+          status: errStatus(400),
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      if (!guestRes.success && isCallerAdmin) {
+        // Admin forced refund even if Paystack API returned a warning: mark order refunded
+        await supabaseAdmin
+          .from("orders")
+          .update({
+            status: "refunded",
+            auto_refunded: true,
+            refunded_at: new Date().toISOString(),
+            refund_amount: Number(order.amount || 0),
+            refund_reason: `Refunded by administrator (${guestRes.error || "manual MoMo settlement"})`,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", order.id);
+      }
+    } else {
       return new Response(JSON.stringify({
         success: false,
-        error: rpcErr?.message || "Order is not eligible for refund"
+        error: "Order is not eligible for refund"
       }), {
-        status: 400,
+        status: errStatus(400),
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
