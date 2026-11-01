@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Save, AlertCircle, Phone, MessageSquare, Percent, MessageCircle, Gift, Sparkles, Video, Upload, Trash2, Trash, Loader2, Loader, Globe, Database, Plus, ExternalLink, Activity, Shield, GraduationCap, RefreshCw, Wifi, Users, TrendingUp, Wallet, Trophy, Clock, Send, Zap } from "lucide-react";
+import { Save, AlertCircle, Phone, MessageSquare, Percent, MessageCircle, Gift, Sparkles, Video, Upload, Trash2, Trash, Loader2, Loader, Globe, Database, Plus, ExternalLink, Activity, Shield, GraduationCap, RefreshCw, Wifi, Users, TrendingUp, Wallet, Trophy, Clock, Send, Zap, PauseCircle, PlayCircle } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Textarea } from "@/components/ui/textarea";
 import { logAudit } from "@/utils/auditLogger";
@@ -862,6 +862,50 @@ const AdminSettings = () => {
         description: err.message || "Could not update provider priorities",
         variant: "destructive",
       });
+    }
+  };
+
+  const handleTogglePauseProvider = async (provider: any) => {
+    const currentlyPaused = provider?.settings?.is_paused === true;
+    const nextPaused = !currentlyPaused;
+    const nextSettings = {
+      ...(provider.settings || {}),
+      is_paused: nextPaused,
+      paused_at: nextPaused ? new Date().toISOString() : null,
+    };
+
+    handleUpdateProvider(provider.id, { settings: nextSettings });
+
+    if (provider.id && !String(provider.id).startsWith("new-")) {
+      try {
+        const { error } = await supabase
+          .from("providers")
+          .update({ settings: nextSettings })
+          .eq("id", provider.id);
+        if (error) throw error;
+
+        if (nextPaused) {
+          toast({
+            title: `⏸ ${provider.name} API Paused`,
+            description: `Orders will be held from entering ${provider.name} until you click Resume API.`,
+          });
+        } else {
+          toast({
+            title: `▶ ${provider.name} API Resumed`,
+            description: `Releasing any orders held for ${provider.name}...`,
+          });
+          await supabase.functions.invoke("admin-retry-autorouter", {
+            body: { resume_api: true, resume_provider_id: provider.id },
+          });
+        }
+      } catch (err: any) {
+        console.error("Error toggling provider pause:", err);
+        toast({
+          title: "Update Failed",
+          description: err.message || "Failed to update provider pause status",
+          variant: "destructive",
+        });
+      }
     }
   };
 
@@ -2975,6 +3019,11 @@ const AdminSettings = () => {
                             onChange={(e) => handleUpdateProvider(provider.id, { name: e.target.value })}
                             className="h-8 w-44 bg-transparent border-none font-black text-sm focus:ring-0 text-foreground"
                           />
+                          {provider.settings?.is_paused === true && (
+                            <Badge className="bg-violet-500/20 text-violet-300 border border-violet-500/40 font-black text-[10px] gap-1">
+                              ⏸ API PAUSED
+                            </Badge>
+                          )}
                           {isDesignatedPrimary ? (
                             <Badge className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 hover:bg-emerald-500/25 font-black text-[10px] gap-1">
                               ★ PRIMARY (1st Choice)
@@ -2990,6 +3039,28 @@ const AdminSettings = () => {
                           )}
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className={`h-8 rounded-full font-extrabold text-[10px] gap-1.5 px-3 transition-all ${
+                              provider.settings?.is_paused === true
+                                ? "border-violet-400/60 bg-violet-500/30 text-violet-100 hover:bg-violet-500/40"
+                                : "border-violet-500/40 bg-violet-500/15 text-violet-300 hover:bg-violet-500/25"
+                            }`}
+                            onClick={() => handleTogglePauseProvider(provider)}
+                            title={
+                              provider.settings?.is_paused === true
+                                ? `Resume ${provider.name} API and release any held orders`
+                                : `Pause orders from entering ${provider.name} API`
+                            }
+                          >
+                            {provider.settings?.is_paused === true ? (
+                              <PlayCircle className="w-3.5 h-3.5" />
+                            ) : (
+                              <PauseCircle className="w-3.5 h-3.5" />
+                            )}
+                            {provider.settings?.is_paused === true ? "Resume API" : "Pause API"}
+                          </Button>
                           {!isDesignatedPrimary && (
                             <Button
                               size="sm"

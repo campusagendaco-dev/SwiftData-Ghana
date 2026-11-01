@@ -364,34 +364,62 @@ export default function AdminOrders() {
     fetchGlobalPauseState();
   }, [fetchProviders, fetchAutoRouterQueueCount, fetchGlobalPauseState]);
 
-  const handleToggleGlobalApiPause = async () => {
-    const nextPaused = !globalApiPaused;
-    const promptMsg = nextPaused
-      ? "PAUSE ALL API DISPATCH?\n\nAll newly placed orders will be held in 'Processing (API Hold)' after payment verification and will NOT enter any external API provider until you resume."
-      : "RESUME AUTOMATIC API DISPATCH?\n\nNew orders will automatically route to your active API providers again.";
-    if (!confirm(promptMsg)) return;
+  const [pausingProviderId, setPausingProviderId] = useState<string | null>(null);
 
-    setTogglingGlobalPause(true);
+  const handleTogglePauseProvider = async (prov: any) => {
+    const currentlyPaused = prov?.settings?.is_paused === true;
+    const nextPaused = !currentlyPaused;
+    setPausingProviderId(prov.id);
     try {
-      const { error } = await (supabase.from("system_settings") as any)
-        .update({ manual_fulfillment_mode: nextPaused, updated_at: new Date().toISOString() })
-        .eq("id", 1);
+      const nextSettings = {
+        ...(prov.settings || {}),
+        is_paused: nextPaused,
+        paused_at: nextPaused ? new Date().toISOString() : null,
+      };
+      const { error } = await (supabase.from("providers") as any)
+        .update({ settings: nextSettings })
+        .eq("id", prov.id);
       if (error) throw error;
 
-      setGlobalApiPaused(nextPaused);
+      setProviders((prev) =>
+        prev.map((p) => (p.id === prov.id ? { ...p, settings: nextSettings } : p))
+      );
+
       if (currentUser) {
-        await logAudit(currentUser.id, "toggle_global_api_pause", { manual_fulfillment_mode: nextPaused });
+        await logAudit(currentUser.id, nextPaused ? "admin_pause_provider_api" : "admin_resume_provider_api", {
+          provider_id: prov.id,
+          provider_name: prov.name,
+        });
       }
-      toast({
-        title: nextPaused ? "Global API Hold Activated ⏸️" : "Auto-API Dispatch Resumed ▶️",
-        description: nextPaused
-          ? "New orders will now be paused before entering any API provider."
-          : "New orders will now flow automatically to active API providers.",
-      });
+
+      if (nextPaused) {
+        toast({
+          title: `⏸ ${prov.name} API Paused`,
+          description: `Orders will now be held from entering ${prov.name} until you click Resume API.`,
+        });
+      } else {
+        toast({
+          title: `▶ ${prov.name} API Resumed`,
+          description: `Releasing any orders held for ${prov.name}...`,
+        });
+        try {
+          await supabase.functions.invoke("admin-retry-autorouter", {
+            body: { resume_api: true, resume_provider_id: prov.id },
+          });
+          await fetchOrders(true);
+          await fetchAutoRouterQueueCount();
+        } catch (err) {
+          console.warn("Auto-resume dispatch warning:", err);
+        }
+      }
     } catch (err: any) {
-      toast({ title: "Failed to toggle API Hold", description: err.message, variant: "destructive" });
+      toast({
+        title: nextPaused ? "Failed to Pause Provider API" : "Failed to Resume Provider API",
+        description: err.message || "Could not update provider pause state.",
+        variant: "destructive",
+      });
     } finally {
-      setTogglingGlobalPause(false);
+      setPausingProviderId(null);
     }
   };
 
@@ -1808,26 +1836,6 @@ export default function AdminOrders() {
 
             <Button
               size="sm"
-              onClick={handleToggleGlobalApiPause}
-              disabled={togglingGlobalPause}
-              className={cn(
-                "gap-2 h-10 rounded-xl text-xs font-extrabold transition-all active:scale-95 border",
-                globalApiPaused
-                  ? "bg-violet-600 hover:bg-violet-500 text-white border-violet-400/50 shadow-lg shadow-violet-950/50 animate-pulse"
-                  : "bg-violet-500/15 hover:bg-violet-500/25 text-violet-300 border-violet-500/30"
-              )}
-              title={
-                globalApiPaused
-                  ? "All new orders are currently held from entering API providers. Click to resume automatic API dispatch."
-                  : "Click to hold all new incoming orders from entering any API provider."
-              }
-            >
-              {togglingGlobalPause ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PauseCircle className="w-3.5 h-3.5" />}
-              {globalApiPaused ? "⏸ Global API Hold: ON" : "Pause All API Dispatch"}
-            </Button>
-
-            <Button
-              size="sm"
               variant="destructive"
               className="gap-2 h-10 rounded-xl text-xs font-bold transition-all active:scale-95"
               onClick={handleForceFulfillAllProcessing}
@@ -1853,7 +1861,7 @@ export default function AdminOrders() {
                   DataHub & Provider Balances
                 </span>
                 <span className="text-[11px] text-muted-foreground font-mono">
-                  Live Gateway Monitoring
+                  Live Gateway Monitoring & Per-Provider API Pause
                 </span>
               </div>
               <h4 className="text-sm font-black text-white mt-0.5">
@@ -1882,52 +1890,97 @@ export default function AdminOrders() {
           ) : (
             providers.map((prov) => {
               const balanceNum = Number(prov.balance || 0);
-              const isHealthy = prov.is_active && balanceNum > 50;
-              const isLow = prov.is_active && balanceNum <= 50 && balanceNum > 0;
-              const isDepleted = !prov.is_active || balanceNum <= 0;
+              const isProvPaused = prov?.settings?.is_paused === true;
+              const isHealthy = prov.is_active && !isProvPaused && balanceNum > 50;
+              const isLow = prov.is_active && !isProvPaused && balanceNum <= 50 && balanceNum > 0;
 
               return (
                 <div
                   key={prov.id}
                   className={cn(
-                    "flex items-center justify-between p-3 rounded-xl border backdrop-blur-md transition-all",
-                    isHealthy
+                    "flex flex-col justify-between gap-2.5 p-3 rounded-xl border backdrop-blur-md transition-all",
+                    isProvPaused
+                      ? "bg-violet-950/30 border-violet-500/40 hover:border-violet-500/60"
+                      : isHealthy
                       ? "bg-emerald-950/20 border-emerald-500/30 hover:border-emerald-500/50"
                       : isLow
                       ? "bg-amber-950/20 border-amber-500/30 hover:border-amber-500/50"
                       : "bg-rose-950/20 border-rose-500/30 hover:border-rose-500/50"
                   )}
                 >
-                  <div className="space-y-0.5">
-                    <div className="flex items-center gap-1.5">
-                      <span className={cn(
-                        "w-2 h-2 rounded-full",
-                        isHealthy ? "bg-emerald-400 animate-pulse" : isLow ? "bg-amber-400 animate-pulse" : "bg-rose-500"
-                      )} />
-                      <span className="text-xs font-black text-white truncate max-w-[120px]">
-                        {prov.name}
-                      </span>
-                      {prov.handler_type && (
-                        <span className="text-[9px] font-mono uppercase px-1.5 py-0.2 rounded bg-white/10 text-white/70">
-                          {prov.handler_type}
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="space-y-0.5 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className={cn(
+                          "w-2 h-2 rounded-full shrink-0",
+                          isProvPaused
+                            ? "bg-violet-400 animate-pulse"
+                            : isHealthy
+                            ? "bg-emerald-400 animate-pulse"
+                            : isLow
+                            ? "bg-amber-400 animate-pulse"
+                            : "bg-rose-500"
+                        )} />
+                        <span className="text-xs font-black text-white truncate max-w-[120px]">
+                          {prov.name}
                         </span>
-                      )}
+                        {prov.handler_type && (
+                          <span className="text-[9px] font-mono uppercase px-1.5 py-0.2 rounded bg-white/10 text-white/70 shrink-0">
+                            {prov.handler_type}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] font-mono font-bold text-white/60">
+                        {isProvPaused
+                          ? "⏸ API Paused"
+                          : prov.is_active
+                          ? prov?.settings?.is_primary_provider
+                            ? "★ Primary Active"
+                            : "Active (Failover)"
+                          : "Inactive"}
+                      </p>
                     </div>
-                    <p className="text-[11px] font-mono font-bold text-white/60">
-                      {prov.is_active ? "Active" : "Inactive"}
-                    </p>
+
+                    <div className="text-right shrink-0">
+                      <div className={cn(
+                        "text-sm font-black font-mono tracking-tight",
+                        isProvPaused ? "text-violet-300" : isHealthy ? "text-emerald-400" : isLow ? "text-amber-400" : "text-rose-400"
+                      )}>
+                        GH₵ {balanceNum.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </div>
+                      <span className="text-[10px] font-mono text-muted-foreground uppercase">
+                        API Balance
+                      </span>
+                    </div>
                   </div>
 
-                  <div className="text-right">
-                    <div className={cn(
-                      "text-sm font-black font-mono tracking-tight",
-                      isHealthy ? "text-emerald-400" : isLow ? "text-amber-400" : "text-rose-400"
-                    )}>
-                      GH₵ {balanceNum.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </div>
-                    <span className="text-[10px] font-mono text-muted-foreground uppercase">
-                      API Balance
-                    </span>
+                  <div className="flex items-center justify-end pt-1.5 border-t border-white/10">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={pausingProviderId === prov.id}
+                      onClick={() => handleTogglePauseProvider(prov)}
+                      className={cn(
+                        "text-[10px] gap-1.5 h-7 px-3 rounded-full font-extrabold transition-all",
+                        isProvPaused
+                          ? "border-violet-400/60 bg-violet-500/30 text-violet-100 hover:bg-violet-500/40 shadow-sm shadow-violet-950/50"
+                          : "border-violet-500/40 bg-violet-500/15 text-violet-300 hover:bg-violet-500/25"
+                      )}
+                      title={
+                        isProvPaused
+                          ? `Resume ${prov.name} API and release any held orders`
+                          : `Pause orders from entering ${prov.name} API`
+                      }
+                    >
+                      {pausingProviderId === prov.id ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : isProvPaused ? (
+                        <PlayCircle className="w-3.5 h-3.5" />
+                      ) : (
+                        <PauseCircle className="w-3.5 h-3.5" />
+                      )}
+                      {isProvPaused ? "Resume API" : "Pause API"}
+                    </Button>
                   </div>
                 </div>
               );
@@ -2194,28 +2247,6 @@ export default function AdminOrders() {
             >
               {bulkUpdating && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
               Apply Bulk Change
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={selectedIds.size === 0 || bulkPausing}
-              onClick={() => handleBulkPauseOrders(true)}
-              className="h-8 gap-1.5 rounded-lg text-xs font-bold border-violet-500/30 bg-violet-500/10 text-violet-300 hover:bg-violet-500/20"
-              title="Pause selected orders from entering any external API provider"
-            >
-              {bulkPausing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PauseCircle className="w-3.5 h-3.5" />}
-              Pause API ({selectedIds.size})
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={selectedIds.size === 0 || bulkPausing}
-              onClick={() => handleBulkPauseOrders(false)}
-              className="h-8 gap-1.5 rounded-lg text-xs font-bold border-violet-500/40 bg-violet-500/20 text-violet-200 hover:bg-violet-500/30"
-              title="Resume selected paused orders and dispatch them to active API providers"
-            >
-              {bulkPausing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PlayCircle className="w-3.5 h-3.5" />}
-              Resume API ({selectedIds.size})
             </Button>
             <Button
               size="sm"
@@ -2530,34 +2561,6 @@ export default function AdminOrders() {
                               {checkingStatusId === order.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Activity className="w-3 h-3" />}
                               Status
                             </Button>
-                            {canPauseOrResumeOrder(order) && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className={cn(
-                                  "text-[10px] gap-1 h-7 px-2 rounded-lg font-bold",
-                                  isOrderApiPaused(order)
-                                    ? "border-violet-500/40 bg-violet-500/20 text-violet-200 hover:bg-violet-500/30"
-                                    : "border-violet-500/30 bg-violet-500/10 text-violet-300 hover:bg-violet-500/20"
-                                )}
-                                disabled={pausingOrderId === order.id}
-                                onClick={() => handleTogglePauseOrder(order)}
-                                title={
-                                  isOrderApiPaused(order)
-                                    ? "Resume order and dispatch to active API provider"
-                                    : "Pause order and prevent it from entering any API provider"
-                                }
-                              >
-                                {pausingOrderId === order.id ? (
-                                  <Loader2 className="w-3 h-3 animate-spin" />
-                                ) : isOrderApiPaused(order) ? (
-                                  <PlayCircle className="w-3 h-3" />
-                                ) : (
-                                  <PauseCircle className="w-3 h-3" />
-                                )}
-                                {isOrderApiPaused(order) ? "Resume API" : "Pause API"}
-                              </Button>
-                            )}
                             {(order.status === "pending" || order.status === "fulfillment_failed" || order.status === "paid") && (
                               <Button
                                 size="sm"
@@ -2746,29 +2749,6 @@ export default function AdminOrders() {
                     {checkingStatusId === order.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Activity className="w-3 h-3" />}
                     Status
                   </Button>
-                  {canPauseOrResumeOrder(order) && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className={cn(
-                        "text-xs gap-1 h-8 px-2 rounded-lg font-bold",
-                        isOrderApiPaused(order)
-                          ? "border-violet-500/40 bg-violet-500/20 text-violet-200"
-                          : "border-violet-500/30 bg-violet-500/10 text-violet-300"
-                      )}
-                      disabled={pausingOrderId === order.id}
-                      onClick={() => handleTogglePauseOrder(order)}
-                    >
-                      {pausingOrderId === order.id ? (
-                        <Loader2 className="w-3 h-3 animate-spin" />
-                      ) : isOrderApiPaused(order) ? (
-                        <PlayCircle className="w-3 h-3" />
-                      ) : (
-                        <PauseCircle className="w-3 h-3" />
-                      )}
-                      {isOrderApiPaused(order) ? "Resume API" : "Pause API"}
-                    </Button>
-                  )}
                   {(order.status === "pending" || order.status === "fulfillment_failed" || order.status === "paid") && (
                     <Button
                       size="sm"

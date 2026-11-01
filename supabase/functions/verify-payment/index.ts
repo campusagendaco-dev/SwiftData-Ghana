@@ -5,7 +5,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { fetchViaDb } from "../_shared/db_proxy.ts";
 import { sendPaymentSms } from "../_shared/sms.ts";
 import { corsHeaders } from "../_shared/cors.ts";
-import { getActiveProviders, isOrderPausedFromApi, logProviderError, resolveProvidersForOrder } from "../_shared/providers.ts";
+import { getActiveProviders, getPausedTargetProvider, isOrderPausedFromApi, logProviderError, resolveProvidersForOrder } from "../_shared/providers.ts";
 import { log, notifyAdmins } from "../_shared/logger.ts";
 import { notifyApiClient } from "../_shared/webhooks.ts";
 import { getProviderAdapter } from "../_shared/providers/registry.ts";
@@ -1738,30 +1738,42 @@ serve(async (req: any) => {
     const recipient = normalizeRecipient(customerPhone);
     const effectiveOrderType = currentOrderType === "free_data_claim" ? "data" : currentOrderType;
 
-    // Check per-order admin pause BEFORE dispatching to any external provider
-    if (!resumeApi && (isOrderPausedFromApi(claimedOrder) || isOrderPausedFromApi(existingOrder))) {
-      console.log(`[verify-payment] Order ${targetReference} is paused by admin. Holding order from entering API provider.`);
+    // Check per-provider / per-order admin pause BEFORE dispatching to any external provider
+    const pausedTargetProv = await getPausedTargetProvider(
+      supabaseAdmin,
+      effectiveOrderType === "airtime" ? "airtime" : (effectiveOrderType === "utility" ? "utility" : "data")
+    );
+    const failedProvIds = Array.isArray(claimedOrder?.metadata?.failed_provider_ids)
+      ? claimedOrder.metadata.failed_provider_ids.map((id: any) => String(id))
+      : [];
+    const isTargetProviderPaused = Boolean(pausedTargetProv && !failedProvIds.includes(String(pausedTargetProv.id)));
+
+    if ((!resumeApi && (isOrderPausedFromApi(claimedOrder) || isOrderPausedFromApi(existingOrder))) || isTargetProviderPaused) {
+      const pausedProvName = pausedTargetProv?.name || "API provider";
+      console.log(`[verify-payment] Provider [${pausedProvName}] is paused by admin. Holding order ${targetReference} from entering API provider.`);
       await supabaseAdmin.from("orders").update({
         status: "processing",
+        provider_id: pausedTargetProv?.id || claimedOrder.provider_id || null,
         provider_order_id: "paused_by_admin",
-        failure_reason: "Paused by admin — held from entering API provider"
+        failure_reason: `Paused by admin — ${pausedProvName} API is currently paused`
       }).eq("id", targetReference);
 
       log(supabaseAdmin, {
         level: "info",
         source: "verify-payment",
         event: "order.paused_by_admin",
-        message: `Order paused by admin and held from entering API provider`,
+        message: `Order held from entering ${pausedProvName} (Provider API paused by admin)`,
         order_id: targetReference,
         agent_id: claimedOrder.agent_id,
-        data: { network, package_size: packageSize, amount: claimedOrder.amount }
+        data: { network, package_size: packageSize, amount: claimedOrder.amount, provider_id: pausedTargetProv?.id }
       });
 
       return new Response(JSON.stringify({
         status: "processing",
+        provider_id: pausedTargetProv?.id || null,
         provider_order_id: "paused_by_admin",
         paused: true,
-        message: "Order placed and verified. Held from entering API provider (Paused by Admin)."
+        message: `Order placed and verified. Held from entering ${pausedProvName} (Paused by Admin).`
       }), { headers: corsHeaders });
     }
 

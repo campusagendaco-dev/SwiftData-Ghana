@@ -1,4 +1,4 @@
-import { resolveProvidersForOrder, isOrderPausedFromApi, type Provider } from "./providers.ts";
+import { resolveProvidersForOrder, getPausedTargetProvider, isOrderPausedFromApi, type Provider } from "./providers.ts";
 import { getProviderAdapter } from "./providers/registry.ts";
 import { isNonRetryableTerminalError, isDuplicateOrderError, isBeneficiaryFailure } from "./providers/utils.ts";
 import { autoSubmitBeneficiaryNumber } from "./beneficiary_auto_submit.ts";
@@ -77,6 +77,18 @@ export async function dispatchOrderWithFailover(
   const activeProviders = await resolveProvidersForOrder(supabaseAdmin, order);
 
   if (!activeProviders || activeProviders.length === 0) {
+    const orderCategory = order.order_type === "airtime" ? "airtime" : (order.order_type === "utility" ? "utility" : "data");
+    const pausedTargetProv = await getPausedTargetProvider(supabaseAdmin, orderCategory);
+    if (pausedTargetProv) {
+      console.log(`[HybridRouter] Target provider [${pausedTargetProv.name}] is paused by admin. Holding order ${order.id}.`);
+      return {
+        ok: false,
+        status: "processing",
+        provider_id: pausedTargetProv.id,
+        provider_order_id: "paused_by_admin",
+        reason: `Paused by admin — ${pausedTargetProv.name} API is currently paused`,
+      };
+    }
     console.warn(`[HybridRouter] No active providers found for order ${order.id}`);
     return {
       ok: false,

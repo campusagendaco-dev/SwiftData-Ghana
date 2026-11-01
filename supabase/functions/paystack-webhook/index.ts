@@ -6,7 +6,7 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { normalizePhone, getSmsConfig, sendSmsViaTxtConnect, formatTemplate, sendPaymentSms } from "../_shared/sms.ts";
 import { sendWhatsAppMessage } from "../_shared/whatsapp.ts";
 import { notifyApiClient, notifyWalletCredit } from "../_shared/webhooks.ts";
-import { getActiveProviders, isOrderPausedFromApi, resolveProvidersForOrder } from "../_shared/providers.ts";
+import { getActiveProviders, getPausedTargetProvider, isOrderPausedFromApi, resolveProvidersForOrder } from "../_shared/providers.ts";
 import { log, notifyAdmins } from "../_shared/logger.ts";
 import { getProviderAdapter } from "../_shared/providers/registry.ts";
 import { handleGuestBeneficiaryFailure, isGuestOrder, isBeneficiaryFailure } from "../_shared/guest-refund.ts";
@@ -51,16 +51,16 @@ async function getAirtimeCredentials(supabaseAdmin: any): Promise<{ apiKey: stri
   // Try fetching from DB first
   const { data: dbSettings } = await supabaseAdmin.from("v_system_settings_with_secrets").select("*").eq("id", 1).maybeSingle();
 
-  const apiKey = Deno.env.get("AIRTIME_PROVIDER_API_KEY") || 
-                 Deno.env.get("PRIMARY_DATA_PROVIDER_API_KEY") || 
-                 dbSettings?.airtime_provider_api_key || 
-                 dbSettings?.data_provider_api_key || "";
-  
-  const baseUrl = Deno.env.get("AIRTIME_PROVIDER_BASE_URL") || 
-                  Deno.env.get("PRIMARY_DATA_PROVIDER_BASE_URL") || 
-                  dbSettings?.airtime_provider_base_url || 
-                  dbSettings?.data_provider_base_url || "";
-  
+  const apiKey = Deno.env.get("AIRTIME_PROVIDER_API_KEY") ||
+    Deno.env.get("PRIMARY_DATA_PROVIDER_API_KEY") ||
+    dbSettings?.airtime_provider_api_key ||
+    dbSettings?.data_provider_api_key || "";
+
+  const baseUrl = Deno.env.get("AIRTIME_PROVIDER_BASE_URL") ||
+    Deno.env.get("PRIMARY_DATA_PROVIDER_BASE_URL") ||
+    dbSettings?.airtime_provider_base_url ||
+    dbSettings?.data_provider_base_url || "";
+
   return { apiKey, baseUrl: (baseUrl || "").replace(/\/+$/, "") };
 }
 
@@ -249,12 +249,12 @@ async function sendWalletTopupSms(supabaseAdmin: any, userId: string, amount: nu
   try {
     const { data: profile } = await supabaseAdmin.from("profiles").select("phone").eq("user_id", userId).maybeSingle();
     const { data: wallet } = await supabaseAdmin.from("wallets").select("balance").eq("agent_id", userId).maybeSingle();
-    
+
     if (!profile?.phone) return;
 
     const { apiKey, senderId, templates } = await getSmsConfig(supabaseAdmin);
     const recipient = normalizePhone(profile.phone);
-    
+
     if (!apiKey || !recipient) return;
 
     const message = formatTemplate(templates.wallet_topup, {
@@ -506,7 +506,7 @@ async function notifyFailureAndRefund(
 
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
-    return new Response("ok", { 
+    return new Response("ok", {
       headers: corsHeaders,
       status: 200
     });
@@ -573,10 +573,10 @@ serve(async (req: Request) => {
   );
   const sig = await crypto.subtle.sign("HMAC", cryptoKey, enc.encode(rawBody));
   const hash = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, "0")).join("");
-  
+
   const hashBuf = enc.encode(hash);
   const sigBuf = enc.encode(signature);
-  
+
   function safeEqual(a: Uint8Array, b: Uint8Array): boolean {
     if (a.length !== b.length) return false;
     let diff = 0;
@@ -780,7 +780,7 @@ serve(async (req: Request) => {
     // Capture Customer and Authorization for Saved Cards
     const paystackCustomerCode = verifyData?.data?.customer?.customer_code;
     const paystackAuth = verifyData?.data?.authorization;
-    
+
     const verifiedMetadata = (verifyData?.data?.metadata || {}) as Record<string, unknown>;
     const metadata = {
       ...(webhookMetadata as Record<string, unknown>),
@@ -795,11 +795,11 @@ serve(async (req: Request) => {
           .select("paystack_saved_authorizations")
           .eq("user_id", agentIdForSavedCards)
           .maybeSingle();
-          
-        const savedAuths = Array.isArray(profile?.paystack_saved_authorizations) 
-          ? profile.paystack_saved_authorizations 
+
+        const savedAuths = Array.isArray(profile?.paystack_saved_authorizations)
+          ? profile.paystack_saved_authorizations
           : [];
-          
+
         if (paystackAuth && paystackAuth.reusable && paystackAuth.signature) {
           // Prevent duplicates by signature
           const exists = savedAuths.some((a: any) => a.signature === paystackAuth.signature);
@@ -816,12 +816,12 @@ serve(async (req: Request) => {
               brand: paystackAuth.brand,
               signature: paystackAuth.signature
             }];
-            
+
             await supabaseAdmin.from("profiles").update({
               paystack_customer_code: paystackCustomerCode,
               paystack_saved_authorizations: updatedAuths
             }).eq("user_id", agentIdForSavedCards);
-            
+
             console.log("Saved new payment authorization for user:", agentIdForSavedCards);
           }
         } else if (paystackCustomerCode) {
@@ -863,13 +863,13 @@ serve(async (req: Request) => {
       let normalizedProfit = 0;
       let normalizedParentProfit = 0;
       let resolvedCostPrice = 0;
-      
+
       const orderType = orderTypeFromMetadata || "data";
       const isApiWallet = metadata?.wallet_type === "api";
       const requestedWalletCredit = Number(metadata?.wallet_credit);
-      
+
       let walletCredit = verifiedAmount;
-      
+
       if (orderType === "wallet_topup" || orderType === "store_wallet_topup") {
         if (isApiWallet) {
           // 0% fee for API wallet top-ups
@@ -880,7 +880,7 @@ serve(async (req: Request) => {
           // Enforce dynamic standard fee for main or store wallet topups
           const divisor = 1 + PAYSTACK_DEPOSIT_FEE_PERCENT;
           const maxAllowedCredit = Number((verifiedAmount / divisor).toFixed(2));
-          
+
           walletCredit = Number.isFinite(requestedWalletCredit) && requestedWalletCredit > 0
             ? Math.min(requestedWalletCredit, maxAllowedCredit)
             : maxAllowedCredit;
@@ -926,42 +926,42 @@ serve(async (req: Request) => {
         const netPaid = verifiedAmount - paystackFeeOnVerified;
         const network = typeof metadata?.network === "string" ? metadata.network : "";
         const packageSize = typeof metadata?.package_size === "string" ? metadata.package_size : "";
-        
+
         if (network && packageSize) {
-           const { data: globalRow } = await supabaseAdmin
-             .from("global_package_settings")
-             .select("agent_price, cost_price")
-             .eq("network", network)
-             .eq("package_size", packageSize)
-             .maybeSingle();
-             
-           if (globalRow) {
-             const adminWholesale = Number(globalRow.agent_price || 0);
-             resolvedCostPrice = Number(globalRow.cost_price || adminWholesale);
-             if (adminWholesale > 0) {
-               // Total margin available above admin wholesale
-               const totalMargin = Math.max(0, netPaid - adminWholesale);
-               
-               if (verifiedParentAgentId) {
-                 const metaParentProfit = Number(metadata?.parent_profit || 0);
-                 const metaProfit = Number(metadata?.profit || 0);
-                 const totalMeta = metaParentProfit + metaProfit;
-                 
-                 if (totalMeta > 0 && totalMargin > 0) {
-                   const ratio = totalMargin / totalMeta;
-                   normalizedParentProfit = parseFloat((metaParentProfit * ratio).toFixed(2));
-                   normalizedProfit = parseFloat((metaProfit * ratio).toFixed(2));
-                 } else {
-                   normalizedProfit = parseFloat(totalMargin.toFixed(2));
-                 }
-               } else {
-                 normalizedProfit = parseFloat(totalMargin.toFixed(2));
-               }
-             }
-           }
+          const { data: globalRow } = await supabaseAdmin
+            .from("global_package_settings")
+            .select("agent_price, cost_price")
+            .eq("network", network)
+            .eq("package_size", packageSize)
+            .maybeSingle();
+
+          if (globalRow) {
+            const adminWholesale = Number(globalRow.agent_price || 0);
+            resolvedCostPrice = Number(globalRow.cost_price || adminWholesale);
+            if (adminWholesale > 0) {
+              // Total margin available above admin wholesale
+              const totalMargin = Math.max(0, netPaid - adminWholesale);
+
+              if (verifiedParentAgentId) {
+                const metaParentProfit = Number(metadata?.parent_profit || 0);
+                const metaProfit = Number(metadata?.profit || 0);
+                const totalMeta = metaParentProfit + metaProfit;
+
+                if (totalMeta > 0 && totalMargin > 0) {
+                  const ratio = totalMargin / totalMeta;
+                  normalizedParentProfit = parseFloat((metaParentProfit * ratio).toFixed(2));
+                  normalizedProfit = parseFloat((metaProfit * ratio).toFixed(2));
+                } else {
+                  normalizedProfit = parseFloat(totalMargin.toFixed(2));
+                }
+              } else {
+                normalizedProfit = parseFloat(totalMargin.toFixed(2));
+              }
+            }
+          }
         }
       } else if (orderType === "data") {
-         resolvedCostPrice = Number(metadata?.cost_price || 0);
+        resolvedCostPrice = Number(metadata?.cost_price || 0);
       }
 
       const recreatedOrder: Record<string, any> = {
@@ -977,8 +977,8 @@ serve(async (req: Request) => {
         failure_reason: null,
         network: typeof metadata?.network === "string" ? metadata.network : null,
         package_size: typeof metadata?.package_size === "string" ? metadata.package_size : null,
-        customer_phone: typeof (metadata?.customer_phone || metadata?.phone || metadata?.payment_phone || metadata?.recipient_phone) === "string" 
-          ? (metadata.customer_phone || metadata.phone || metadata.payment_phone || metadata.recipient_phone) 
+        customer_phone: typeof (metadata?.customer_phone || metadata?.phone || metadata?.payment_phone || metadata?.recipient_phone) === "string"
+          ? (metadata.customer_phone || metadata.phone || metadata.payment_phone || metadata.recipient_phone)
           : null,
         afa_full_name: typeof metadata?.afa_full_name === "string" ? metadata.afa_full_name : null,
         afa_ghana_card: typeof metadata?.afa_ghana_card === "string" ? metadata.afa_ghana_card : null,
@@ -1059,11 +1059,11 @@ serve(async (req: Request) => {
         return new Response(JSON.stringify({ received: true, error: "Currency mismatch" }), { status: 200, headers: corsHeaders });
       }
 
-      const feeToAdd = (Number(existingOrder.paystack_fee) > 0 && Math.abs(verifiedAmount - (Number(existingOrder.amount) + Number(existingOrder.paystack_fee))) <= 0.05) 
-        ? Number(existingOrder.paystack_fee) 
+      const feeToAdd = (Number(existingOrder.paystack_fee) > 0 && Math.abs(verifiedAmount - (Number(existingOrder.amount) + Number(existingOrder.paystack_fee))) <= 0.05)
+        ? Number(existingOrder.paystack_fee)
         : ((existingOrder.order_type === "wallet_topup" || existingOrder.order_type === "store_wallet_topup") ? Number(existingOrder.paystack_fee || 0) : 0);
       const expectedAmount = Number(existingOrder.amount) + feeToAdd;
-      
+
       const amountDiff = Math.abs(verifiedAmount - expectedAmount);
       if (amountDiff > 0.05) {
         console.warn(`[Webhook Security] Amount mismatch: Paid ${verifiedAmount} GHS, Expected ${expectedAmount} GHS for order: ${orderId}`);
@@ -1243,13 +1243,13 @@ serve(async (req: Request) => {
 
     if (orderType === "utility") {
       // For now, utility payments are marked as 'paid' and require manual fulfillment or an API connection
-      await supabaseAdmin.from("orders").update({ 
-        status: "paid", 
-        failure_reason: "Awaiting manual fulfillment / Token generation" 
+      await supabaseAdmin.from("orders").update({
+        status: "paid",
+        failure_reason: "Awaiting manual fulfillment / Token generation"
       }).eq("id", orderId);
-      
+
       console.log("Utility payment successful, awaiting fulfillment:", orderId);
-      
+
       return new Response(JSON.stringify({ received: true, fulfilled: false, status: "paid" }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -1338,9 +1338,9 @@ serve(async (req: Request) => {
           rawSlug = storeName.toLowerCase().replace(/[^a-z0-9]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
         }
 
-        await supabaseAdmin.from("profiles").upsert({ 
+        await supabaseAdmin.from("profiles").upsert({
           user_id: agentId,
-          is_agent: true, 
+          is_agent: true,
           agent_approved: true,
           onboarding_complete: true,
           is_sub_agent: false,
@@ -1449,7 +1449,7 @@ serve(async (req: Request) => {
       }
       const agentId = metadata?.agent_id;
       if (agentId) {
-        await supabaseAdmin.from("profiles").update({ 
+        await supabaseAdmin.from("profiles").update({
           vendor_status: "pending_approval"
         }).eq("user_id", agentId);
         await supabaseAdmin.from("orders").update({ status: "fulfilled", failure_reason: null }).eq("id", orderId);
@@ -1482,13 +1482,13 @@ serve(async (req: Request) => {
       const subAgentId = metadata?.sub_agent_id;
       const parentAgentId = metadata?.parent_agent_id;
       const activationAmount = Number(metadata?.activation_fee || existingOrder?.amount || verifiedAmount || 0);
-      
+
       const baseFee = SUB_AGENT_MINIMUM; // Reuse the previously fetched SUB_AGENT_MINIMUM
 
       // Security: Never trust client-supplied profit metadata. 
       // Activation fee base is dynamic. Anything above that is agent profit.
       const agentProfit = Math.max(0, parseFloat((activationAmount - baseFee).toFixed(2)));
-      
+
       if (subAgentId) {
         // Fetch parent's sub_agent_prices to copy as the sub agent's agent_prices
         const { data: parentProfile } = await supabaseAdmin
@@ -1542,7 +1542,7 @@ serve(async (req: Request) => {
           await supabaseAdmin.rpc("repay_credit", { p_agent_id: order.agent_id, p_amount: order.amount });
         }
         await supabaseAdmin.from("orders").update({ status: "fulfilled", failure_reason: null }).eq("id", orderId);
-        
+
         // Notify API client about wallet funding
         await notifyWalletCredit(supabaseAdmin, order.agent_id, order.amount, walletType);
 
@@ -1597,7 +1597,7 @@ serve(async (req: Request) => {
             status: "fulfillment_failed",
             failure_reason: creditRes?.error || "Automatic credit failed."
           }).eq("id", orderId);
-          
+
           return new Response(JSON.stringify({ received: true, fulfilled: false, error: creditRes?.error || "Automatic credit failed" }), {
             status: 200,
             headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -1628,7 +1628,7 @@ serve(async (req: Request) => {
           failure_reason: "Missing customer_id or agent_id for store wallet top-up."
         }).eq("id", orderId);
       }
-      
+
       return new Response(JSON.stringify({ received: true, fulfilled: true }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -1732,7 +1732,7 @@ serve(async (req: Request) => {
             provider_id: prov.id,
             order_id: orderId,
             error_message: afaResult.reason || `Rejected by ${prov.name}`,
-          })).catch(() => {});
+          })).catch(() => { });
         }
       }
 
@@ -1767,19 +1767,19 @@ serve(async (req: Request) => {
       // --- ACTIVE PROVIDER CHECK / PAUSE GATE ---
       // Fetch active providers using unified resolver.
       const activeProviders = await resolveProvidersForOrder(supabaseAdmin, existingOrder);
-      
+
       if (!activeProviders || activeProviders.length === 0) {
         console.log(`[Webhook] ALL APIs OFF for type '${orderType}'. Halting auto-fulfillment for order ${orderId}. Queueing for manual processing.`);
-        await supabaseAdmin.from("orders").update({ 
-          status: "paid", 
-          failure_reason: "Queued for manual fulfillment (All APIs toggled OFF by admin)" 
+        await supabaseAdmin.from("orders").update({
+          status: "paid",
+          failure_reason: "Queued for manual fulfillment (All APIs toggled OFF by admin)"
         }).eq("id", orderId);
-        
-        return new Response(JSON.stringify({ 
-          received: true, 
-          fulfilled: false, 
-          status: "paid", 
-          message: "Provider APIs currently OFF. Enqueued for manual review." 
+
+        return new Response(JSON.stringify({
+          received: true,
+          fulfilled: false,
+          status: "paid",
+          message: "Provider APIs currently OFF. Enqueued for manual review."
         }), {
           status: 200,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -1791,11 +1791,11 @@ serve(async (req: Request) => {
       const htPrimary = String(primaryProvider?.handler_type || "").toLowerCase();
       const envPrimaryKey = (
         htPrimary === "datahub" ? Deno.env.get("DATAHUB_API_KEY") :
-        htPrimary === "skdataplug" ? Deno.env.get("SKDATAPLUG_API_KEY") :
-        htPrimary === "bundlezone" ? Deno.env.get("BUNDLEZONE_API_KEY") :
-        htPrimary === "datamart" ? Deno.env.get("DATAMART_API_KEY") :
-        htPrimary === "spendless" ? Deno.env.get("SPENDLESS_API_KEY") :
-        Deno.env.get("DATA_PROVIDER_API_KEY")
+          htPrimary === "skdataplug" ? Deno.env.get("SKDATAPLUG_API_KEY") :
+            htPrimary === "bundlezone" ? Deno.env.get("BUNDLEZONE_API_KEY") :
+              htPrimary === "datamart" ? Deno.env.get("DATAMART_API_KEY") :
+                htPrimary === "spendless" ? Deno.env.get("SPENDLESS_API_KEY") :
+                  Deno.env.get("DATA_PROVIDER_API_KEY")
       ) || "";
       DATA_PROVIDER_API_KEY = envPrimaryKey || primaryProvider.api_key || DATA_PROVIDER_API_KEY;
       if (primaryProvider.base_url) DATA_PROVIDER_BASE_URL = primaryProvider.base_url.replace(/\/+$/, "");
@@ -1825,9 +1825,9 @@ serve(async (req: Request) => {
       : (typeof metadata?.package_size === "string" ? metadata.package_size : "");
     const customerPhone = typeof existingOrder?.customer_phone === "string" && existingOrder.customer_phone
       ? existingOrder.customer_phone
-      : (typeof (metadata?.customer_phone || metadata?.phone || metadata?.payment_phone || metadata?.recipient_phone) === "string" 
-          ? (metadata.customer_phone || metadata.phone || metadata.payment_phone || metadata.recipient_phone) 
-          : "");
+      : (typeof (metadata?.customer_phone || metadata?.phone || metadata?.payment_phone || metadata?.recipient_phone) === "string"
+        ? (metadata.customer_phone || metadata.phone || metadata.payment_phone || metadata.recipient_phone)
+        : "");
 
     // Record promo claim if a promo code was used in Paystack checkout metadata
     const candidatePromoCode = metadata?.promo_code || metadata?.promo_id;
@@ -1869,7 +1869,7 @@ serve(async (req: Request) => {
       const { apiKey: fallbackKey, baseUrl: fallbackBase } = await getAirtimeCredentials(supabaseAdmin);
       const AIRTIME_KEY = fallbackKey;
       const AIRTIME_BASE = (fallbackBase || "").replace(/\/+$/, "");
-      
+
       const airtimeNetworkKey = mapAirtimeNetworkKey(network);
       const airtimeRecipient = normalizeRecipient(customerPhone);
       const airtimeResult = await callProviderApi(
@@ -1894,7 +1894,7 @@ serve(async (req: Request) => {
         if (providerOrderId) patch.provider_order_id = providerOrderId;
 
         await supabaseAdmin.from("orders").update(patch).eq("id", orderId);
-        
+
         if (existingOrder?.agent_id && (existingOrder.profit > 0 || existingOrder.parent_profit > 0)) {
           await supabaseAdmin.rpc("credit_order_profits", { p_order_id: orderId });
         }
@@ -2022,27 +2022,27 @@ serve(async (req: Request) => {
       }
     }
 
-    const handlerType: string = baseUrlToLower.includes("datamart") 
-      ? "datamart" 
-      : baseUrlToLower.includes("datahub") 
-      ? "datahub" 
-      : baseUrlToLower.includes("spendless")
-      ? "spendless"
-      : baseUrlToLower.includes("qhowmenzconsult")
-      ? "qhowmenzconsult"
-      : baseUrlToLower.includes("skdataplug")
-      ? "skdataplug"
-      : "standard";
+    const handlerType: string = baseUrlToLower.includes("datamart")
+      ? "datamart"
+      : baseUrlToLower.includes("datahub")
+        ? "datahub"
+        : baseUrlToLower.includes("spendless")
+          ? "spendless"
+          : baseUrlToLower.includes("qhowmenzconsult")
+            ? "qhowmenzconsult"
+            : baseUrlToLower.includes("skdataplug")
+              ? "skdataplug"
+              : "standard";
 
-    const isMashUpOrder = (network || "").toUpperCase().includes("MASH") || 
-      (network || "").toUpperCase().includes("COMBO") || 
+    const isMashUpOrder = (network || "").toUpperCase().includes("MASH") ||
+      (network || "").toUpperCase().includes("COMBO") ||
       existingOrder?.network === "MTN Mash Up" ||
       (existingOrder?.metadata?.category || "").toLowerCase() === "mashup";
 
-    const networkKey = handlerType === "datamart" 
+    const networkKey = handlerType === "datamart"
       ? (isMashUpOrder ? "MTN_COMBO" : (network.toUpperCase() === "MTN" ? "YELLO" : (network.toUpperCase() === "TELECEL" ? "TELECEL" : "AT_PREMIUM")))
       : mapDataNetworkKey(network);
-    
+
     let dmComboCost: number | undefined = undefined;
     if (handlerType === "datamart" && isMashUpOrder) {
       const cleanKey = String(packageSize || "").toLowerCase().replace(/[\s\-_+]/g, "");
@@ -2114,60 +2114,60 @@ serve(async (req: Request) => {
 
     const dataPayload = handlerType === "datamart"
       ? {
-          phoneNumber: normalizeRecipient(customerPhone),
-          network: networkKey,
-          planId: dmComboCost ? String(dmComboCost) : packageSize,
-          plan: dmComboCost ? String(dmComboCost) : packageSize,
-          bundle: dmComboCost ? String(dmComboCost) : packageSize,
-          capacity: String(parseCapacity(packageSize)),
-          comboCost: dmComboCost,
-          orderReference: orderId,
-          gateway: "wallet",
-          reference: orderId,
-          ref: orderId,
-          category: isMashUpOrder ? "mashup" : undefined
-        }
+        phoneNumber: normalizeRecipient(customerPhone),
+        network: networkKey,
+        planId: dmComboCost ? String(dmComboCost) : packageSize,
+        plan: dmComboCost ? String(dmComboCost) : packageSize,
+        bundle: dmComboCost ? String(dmComboCost) : packageSize,
+        capacity: String(parseCapacity(packageSize)),
+        comboCost: dmComboCost,
+        orderReference: orderId,
+        gateway: "wallet",
+        reference: orderId,
+        ref: orderId,
+        category: isMashUpOrder ? "mashup" : undefined
+      }
       : (handlerType === "datahub" || handlerType === "spendless")
-      ? {
+        ? {
           networkKey,
           recipient: normalizeRecipient(customerPhone),
           capacity: String(parseCapacity(packageSize)),
           reference: orderId,
         }
-      : handlerType === "qhowmenzconsult"
-      ? {
-          network: networkKey === "YELLO" || networkKey.includes("MTN") 
-            ? "MTN" 
-            : (networkKey === "TELECEL" ? "Telecel" : "AirtelTigo"),
-          recipient: normalizeRecipient(customerPhone),
-          plan_id: resolvedPackageId,
-          package_id: resolvedPackageId,
-          product_id: resolvedPackageId,
-          external_id: resolvedPackageId,
-          amount: deliveryAmount,
-          reference: orderId,
-        }
-      : handlerType === "skdataplug"
-      ? {
-          recipient: normalizeRecipient(customerPhone),
-          network: skPlugNetwork,
-          gb_size: skPlugGbSize,
-          reference: orderId,
-        }
-      : {
-          networkRaw: network,
-          networkKey,
-          recipient: normalizeRecipient(customerPhone),
-          capacity: String(parseCapacity(packageSize)),
-          package_size: packageSize,
-          plan: packageSize,
-          amount: deliveryAmount,
-          order_type: "data",
-          reference: orderId,
-          orderReference: orderId,
-          order_id: orderId,
-          description: `Data: ${packageSize} for ${customerPhone}`
-        };
+        : handlerType === "qhowmenzconsult"
+          ? {
+            network: networkKey === "YELLO" || networkKey.includes("MTN")
+              ? "MTN"
+              : (networkKey === "TELECEL" ? "Telecel" : "AirtelTigo"),
+            recipient: normalizeRecipient(customerPhone),
+            plan_id: resolvedPackageId,
+            package_id: resolvedPackageId,
+            product_id: resolvedPackageId,
+            external_id: resolvedPackageId,
+            amount: deliveryAmount,
+            reference: orderId,
+          }
+          : handlerType === "skdataplug"
+            ? {
+              recipient: normalizeRecipient(customerPhone),
+              network: skPlugNetwork,
+              gb_size: skPlugGbSize,
+              reference: orderId,
+            }
+            : {
+              networkRaw: network,
+              networkKey,
+              recipient: normalizeRecipient(customerPhone),
+              capacity: String(parseCapacity(packageSize)),
+              package_size: packageSize,
+              plan: packageSize,
+              amount: deliveryAmount,
+              order_type: "data",
+              reference: orderId,
+              orderReference: orderId,
+              order_id: orderId,
+              description: `Data: ${packageSize} for ${customerPhone}`
+            };
 
     let candidateProviders: any[] = [];
     try {
@@ -2214,12 +2214,12 @@ serve(async (req: Request) => {
       const htChosen = String(chosenProvider?.handler_type || "").toLowerCase();
       const envChosenKey = (
         (htChosen === "hyspeeddata" || htChosen === "swiftreseller" || htChosen === "hyspeed") ? (Deno.env.get("HYSPEEDDATA_API_KEY") || Deno.env.get("SWIFTRESELLER_API_KEY")) :
-        htChosen === "datahub" ? Deno.env.get("DATAHUB_API_KEY") :
-        htChosen === "skdataplug" ? Deno.env.get("SKDATAPLUG_API_KEY") :
-        htChosen === "bundlezone" ? Deno.env.get("BUNDLEZONE_API_KEY") :
-        htChosen === "datamart" ? Deno.env.get("DATAMART_API_KEY") :
-        htChosen === "spendless" ? Deno.env.get("SPENDLESS_API_KEY") :
-        Deno.env.get("DATA_PROVIDER_API_KEY")
+          htChosen === "datahub" ? Deno.env.get("DATAHUB_API_KEY") :
+            htChosen === "skdataplug" ? Deno.env.get("SKDATAPLUG_API_KEY") :
+              htChosen === "bundlezone" ? Deno.env.get("BUNDLEZONE_API_KEY") :
+                htChosen === "datamart" ? Deno.env.get("DATAMART_API_KEY") :
+                  htChosen === "spendless" ? Deno.env.get("SPENDLESS_API_KEY") :
+                    Deno.env.get("DATA_PROVIDER_API_KEY")
       ) || "";
       const targetApiKey = envChosenKey || chosenProvider?.api_key || DATA_PROVIDER_API_KEY;
 
@@ -2257,40 +2257,40 @@ serve(async (req: Request) => {
 
       if (result.ok) {
         const providerOrderId = result.id;
-        
-        const patch: Record<string, any> = { 
+
+        const patch: Record<string, any> = {
           provider_id: providerId,
-          provider_order_id: providerOrderId || null, 
-          status: "processing", 
-          failure_reason: null 
+          provider_order_id: providerOrderId || null,
+          status: "processing",
+          failure_reason: null
         };
 
         await supabaseAdmin.from("orders").update(patch).eq("id", orderId);
-        
+
         if (chosenProvider?.id) {
           await supabaseAdmin.from("providers").update({ consecutive_failures: 0, disabled_reason: null }).eq("id", chosenProvider.id);
         }
 
-        log(supabaseAdmin, { 
-          level: "info", 
-          source: "paystack-webhook", 
-          event: "provider.called", 
-          message: `${providerName} accepted order`, 
-          order_id: orderId, 
-          provider_id: providerId, 
-          duration_ms: providerDuration, 
-          data: { provider: providerName, handler_type: chosenProvider?.handler_type, provider_order_id: providerOrderId, network, package_size: packageSize, recipient: normalizeRecipient(customerPhone) } 
+        log(supabaseAdmin, {
+          level: "info",
+          source: "paystack-webhook",
+          event: "provider.called",
+          message: `${providerName} accepted order`,
+          order_id: orderId,
+          provider_id: providerId,
+          duration_ms: providerDuration,
+          data: { provider: providerName, handler_type: chosenProvider?.handler_type, provider_order_id: providerOrderId, network, package_size: packageSize, recipient: normalizeRecipient(customerPhone) }
         });
 
-        log(supabaseAdmin, { 
-          level: "info", 
-          source: "paystack-webhook", 
-          event: "order.processing", 
-          message: `Order successfully bought - set as processing — provider_order_id: ${providerOrderId}`, 
-          order_id: orderId, 
-          agent_id: existingOrder?.agent_id, 
-          provider_id: providerId, 
-          data: { provider_order_id: providerOrderId, network, package_size: packageSize, amount: existingOrder?.amount } 
+        log(supabaseAdmin, {
+          level: "info",
+          source: "paystack-webhook",
+          event: "order.processing",
+          message: `Order successfully bought - set as processing — provider_order_id: ${providerOrderId}`,
+          order_id: orderId,
+          agent_id: existingOrder?.agent_id,
+          provider_id: providerId,
+          data: { provider_order_id: providerOrderId, network, package_size: packageSize, amount: existingOrder?.amount }
         });
 
         return new Response(JSON.stringify({ received: true, fulfilled: false, status: "processing" }), {
@@ -2319,10 +2319,10 @@ serve(async (req: Request) => {
 
     const result = lastResult || { ok: false, reason: "No active provider available" };
     const reasonStr = String(result.reason || "").toLowerCase();
-    const isDuplicateError = 
-      reasonStr.includes("duplicate") || 
-      reasonStr.includes("identical") || 
-      reasonStr.includes("already placed") || 
+    const isDuplicateError =
+      reasonStr.includes("duplicate") ||
+      reasonStr.includes("identical") ||
+      reasonStr.includes("already placed") ||
       reasonStr.includes("currently being processed");
 
     if (isDuplicateError) {
@@ -2370,14 +2370,14 @@ serve(async (req: Request) => {
         failure_reason: `Provider request timed out: ${result.reason || "Awaiting webhook/status check"}`
       }).eq("id", orderId);
 
-      log(supabaseAdmin, { 
-        level: "warn", 
-        source: "paystack-webhook", 
-        event: "order.timeout_processing", 
-        message: `Order timed out during provider purchase. Left in processing: ${result.reason}`, 
-        order_id: orderId, 
-        agent_id: existingOrder?.agent_id, 
-        data: { reason: result.reason, network, package_size: packageSize } 
+      log(supabaseAdmin, {
+        level: "warn",
+        source: "paystack-webhook",
+        event: "order.timeout_processing",
+        message: `Order timed out during provider purchase. Left in processing: ${result.reason}`,
+        order_id: orderId,
+        agent_id: existingOrder?.agent_id,
+        data: { reason: result.reason, network, package_size: packageSize }
       });
 
       return new Response(JSON.stringify({
@@ -2401,39 +2401,39 @@ serve(async (req: Request) => {
       console.log(`[paystack-webhook] Non-beneficiary failure on MTN guest order ${orderId}. Queuing carrier submission & sending tracking SMS...`);
       await handleGuestBeneficiaryFailure(supabaseAdmin, existingOrder, failureReason);
     } else {
-      await supabaseAdmin.from("orders").update({ 
-        status: failureStatus, 
+      await supabaseAdmin.from("orders").update({
+        status: failureStatus,
         provider_order_id: targetProviderOrderId,
-        failure_reason: failureReason 
+        failure_reason: failureReason
       }).eq("id", orderId);
     }
 
-    log(supabaseAdmin, { 
-      level: "error", 
-      source: "paystack-webhook", 
-      event: "provider.rejected", 
-      message: `${lastProviderName} rejected: ${result.reason}`, 
-      order_id: orderId, 
-      provider_id: lastProviderId, 
-      duration_ms: lastProviderDuration, 
-      data: { provider: lastProviderName, reason: result.reason } 
+    log(supabaseAdmin, {
+      level: "error",
+      source: "paystack-webhook",
+      event: "provider.rejected",
+      message: `${lastProviderName} rejected: ${result.reason}`,
+      order_id: orderId,
+      provider_id: lastProviderId,
+      duration_ms: lastProviderDuration,
+      data: { provider: lastProviderName, reason: result.reason }
     });
 
-    log(supabaseAdmin, { 
-      level: "warn", 
-      source: "paystack-webhook", 
-      event: "order.processing_failed", 
-      message: `Order provider call rejected. Sticking to processing: ${result.reason}`, 
-      order_id: orderId, 
-      agent_id: existingOrder?.agent_id, 
-      data: { reason: result.reason, network, package_size: packageSize } 
+    log(supabaseAdmin, {
+      level: "warn",
+      source: "paystack-webhook",
+      event: "order.processing_failed",
+      message: `Order provider call rejected. Sticking to processing: ${result.reason}`,
+      order_id: orderId,
+      agent_id: existingOrder?.agent_id,
+      data: { reason: result.reason, network, package_size: packageSize }
     });
-    
-    return new Response(JSON.stringify({ 
-      received: true, 
-      fulfilled: false, 
+
+    return new Response(JSON.stringify({
+      received: true,
+      fulfilled: false,
       status: failureStatus,
-      failure_reason: result.reason 
+      failure_reason: result.reason
     }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

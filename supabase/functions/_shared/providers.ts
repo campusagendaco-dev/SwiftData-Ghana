@@ -16,6 +16,47 @@ export interface Provider {
   last_synced_at?: string | null;
 }
 
+export function isProviderPaused(provider: any): boolean {
+  return Boolean(provider?.settings?.is_paused === true);
+}
+
+export async function getPausedTargetProvider(supabaseAdmin: any, type = "data"): Promise<Provider | null> {
+  try {
+    const { data: activeRows } = await supabaseAdmin
+      .from("providers")
+      .select("*")
+      .eq("is_active", true)
+      .order("priority", { ascending: true });
+
+    const relevant = (activeRows || []).filter((p: any) => {
+      if (type === "data") {
+        return (p.provider_type === "data" || !p.provider_type) && p.handler_type !== "korba" && p.name !== "Korba";
+      }
+      return p.provider_type === type;
+    });
+
+    if (relevant.length === 0) return null;
+
+    relevant.sort((a: any, b: any) => {
+      const aPrim = a.settings?.is_primary_provider === true ? 0 : 1;
+      const bPrim = b.settings?.is_primary_provider === true ? 0 : 1;
+      if (aPrim !== bPrim) return aPrim - bPrim;
+      return (a.priority || 99) - (b.priority || 99);
+    });
+
+    const topProvider = relevant[0];
+    if (topProvider && isProviderPaused(topProvider)) {
+      return topProvider;
+    }
+    if (relevant.every((p: any) => isProviderPaused(p))) {
+      return topProvider;
+    }
+  } catch (err) {
+    console.warn("[getPausedTargetProvider] Failed to check paused provider state:", err);
+  }
+  return null;
+}
+
 export async function getActiveProviders(supabaseAdmin: any, type: string): Promise<Provider[]> {
   let query = supabaseAdmin
     .from("providers")
@@ -40,8 +81,11 @@ export async function getActiveProviders(supabaseAdmin: any, type: string): Prom
     return [];
   }
 
+  // Never dispatch to any provider that has its API paused by admin (settings.is_paused === true)
+  const unpaused = (data || []).filter((p: any) => !isProviderPaused(p));
+
   // Self-Healing Dynamic Routing: Always keep designated Primary Provider first, then sort by health & priority
-  const sorted = (data || []).sort((a: any, b: any) => {
+  const sorted = unpaused.sort((a: any, b: any) => {
     const aPrimary = a.settings?.is_primary_provider === true ? 0 : 1;
     const bPrimary = b.settings?.is_primary_provider === true ? 0 : 1;
     if (aPrimary !== bPrimary) return aPrimary - bPrimary;
@@ -245,6 +289,16 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
 
   // 3. Get all active providers for this category (data, airtime, or utility)
   const providerCategory = orderType === "airtime" ? "airtime" : (orderType === "utility" ? "utility" : "data");
+  const pausedPrimary = await getPausedTargetProvider(supabaseAdmin, providerCategory);
+  const failedProviderIds = Array.isArray(order?.metadata?.failed_provider_ids)
+    ? order.metadata.failed_provider_ids.map((id: any) => String(id))
+    : [];
+  if (pausedPrimary && !failedProviderIds.includes(String(pausedPrimary.id))) {
+    console.log(
+      `[resolveProvidersForOrder] Primary/target provider [${pausedPrimary.name}] is PAUSED by admin. Holding order ${order?.id} from entering API.`
+    );
+    return [];
+  }
   let activeProviders = await getActiveProviders(supabaseAdmin, providerCategory);
 
   // 4. Exclude Spendless from airtime orders (Spendless provides Data and AFA)
@@ -442,6 +496,7 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
 
       const fundedStandby = (standbyRows || []).filter((p: any) => {
         if (failedSet.has(String(p.id))) return false;
+        if (isProviderPaused(p)) return false;
         const ht = String(p.handler_type || "").toLowerCase();
         if (isAffordableSmeBundle && (ht === "korba" || String(p.name || "").toLowerCase() === "korba")) return false;
         return true;

@@ -71,7 +71,7 @@ serve(async (req: Request) => {
     }
 
     // ── EXECUTE BATCH RETRY ─────────────────────────────────────────────────────
-    const { order_ids, limit = 25, days = 30, network } = body;
+    const { order_ids, resume_provider_id, limit = 25, days = 30, network } = body;
     let candidateOrders: any[] = [];
     const effectiveCutoff = days ? new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString() : cutoffDate;
 
@@ -84,6 +84,18 @@ serve(async (req: Request) => {
 
       if (fetchErr) throw fetchErr;
       candidateOrders = explicitOrders || [];
+    } else if (resume_provider_id) {
+      console.log(`[admin-retry-autorouter] Resuming orders held for paused provider ${resume_provider_id}...`);
+      const { data: pausedOrders, error: fetchErr } = await supabaseAdmin
+        .from("orders")
+        .select("*")
+        .eq("provider_order_id", "paused_by_admin")
+        .or(`provider_id.eq.${resume_provider_id},provider_id.is.null`)
+        .order("created_at", { ascending: true })
+        .limit(limit);
+
+      if (fetchErr) throw fetchErr;
+      candidateOrders = pausedOrders || [];
     } else {
       console.log(`[admin-retry-autorouter] Fetching up to ${limit} verified orders in Auto-Router queue with no provider...`);
       let unroutedQuery = supabaseAdmin
@@ -110,8 +122,8 @@ serve(async (req: Request) => {
     }
 
     // Strictly ensure only verified telecom orders are processed
-    const isExplicit = Array.isArray(order_ids) && order_ids.length > 0;
-    const resumeApi = body?.resume_api === true;
+    const isExplicit = (Array.isArray(order_ids) && order_ids.length > 0) || Boolean(resume_provider_id);
+    const resumeApi = body?.resume_api === true || Boolean(resume_provider_id);
     const eligibleOrders = candidateOrders.filter((o: any) => {
       // Never auto-route orders paused by admin unless resume_api: true is explicitly requested
       if (!resumeApi && isOrderPausedFromApi(o)) {
