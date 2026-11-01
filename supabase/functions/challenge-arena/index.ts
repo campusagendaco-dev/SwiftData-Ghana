@@ -21,9 +21,9 @@ async function ensureChallengeSchema(supabaseAdmin: any) {
   const sql = postgres(dbUrl, { max: 1 });
   try {
     await sql.unsafe(`
-      DROP TABLE IF EXISTS public.game_reward_claims CASCADE;
-      DROP TABLE IF EXISTS public.game_challenges CASCADE;
-      DROP TABLE IF EXISTS public.game_arena_settings CASCADE;
+      -- Ensure additive Challenge Arena tables exist
+
+
 
       CREATE TABLE IF NOT EXISTS public.game_arena_settings (
         id integer PRIMARY KEY DEFAULT 1 CHECK (id = 1),
