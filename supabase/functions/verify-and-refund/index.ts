@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { StandardAdapter } from "../_shared/providers/standard.ts";
 import { dispatchOrderWithFailover } from "../_shared/provider_router.ts";
+import { isSentinelProviderOrderId } from "../_shared/providers.ts";
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -139,31 +140,198 @@ serve(async (req) => {
     }
 
     let upstreamRefundData: any = null;
+    const isRerouteMode = mode === "refund_and_reroute" || mode === "reroute";
+    const hasProviderRef = !isSentinelProviderOrderId(order.provider_order_id);
 
-    // 4. SERVER-SIDE CHECK 3: If processing, check whether it's on DataHub (supports /order-refund) or another API provider
-    if (order.status === "processing") {
-      const hasProviderRef = Boolean(
-        order.provider_order_id &&
-        order.provider_order_id !== "" &&
-        order.provider_order_id !== "failed_api_call" &&
-        order.provider_order_id !== "timeout" &&
-        order.provider_order_id !== "manual_fulfillment_mode" &&
-        order.provider_order_id !== "refunded"
-      );
+    let assignedProvider: any = null;
+    if (order.provider_id) {
+      const { data: provRow } = await supabaseAdmin
+        .from("providers")
+        .select("*")
+        .eq("id", order.provider_id)
+        .maybeSingle();
+      assignedProvider = provRow;
+    }
 
-      let assignedProvider: any = null;
-      if (order.provider_id) {
-        const { data: provRow } = await supabaseAdmin
-          .from("providers")
-          .select("*")
-          .eq("id", order.provider_id)
-          .maybeSingle();
-        assignedProvider = provRow;
+    const handlerType = String(assignedProvider?.handler_type || "").toLowerCase();
+    const isDataHub = handlerType === "datahub" || String(assignedProvider?.name || "").toLowerCase().includes("datahub");
+
+    // 4A. UNIVERSAL REROUTE FLOW (Works for SKPlug, DataHub, DataMart, Spendless, BundleZone, HySpeedData, or stuck #dispatching orders)
+    if (isRerouteMode) {
+      const standardAdapter = new StandardAdapter();
+
+      if (assignedProvider) {
+        // 1. Live safety check: never reroute if the current provider already delivered the data!
+        const liveCheck = await standardAdapter.checkStatus(
+          supabaseAdmin,
+          assignedProvider,
+          String(order.provider_order_id || order.id),
+          order.id
+        );
+        const liveStatus = String(liveCheck.status || "").toLowerCase();
+        if (liveCheck.ok && ["fulfilled", "completed", "delivered", "success", "successful"].includes(liveStatus)) {
+          await supabaseAdmin
+            .from("orders")
+            .update({
+              status: "fulfilled",
+              failure_reason: null,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", order.id);
+          await Promise.resolve(supabaseAdmin.rpc("credit_order_profits", { p_order_id: order.id })).catch(() => {});
+
+          return new Response(JSON.stringify({
+            success: false,
+            error: `${assignedProvider.name} confirmed this order was ALREADY DELIVERED. Marked as fulfilled instead of rerouting.`,
+          }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        // 2. If DataHub and order is still active on DataHub, attempt DataHub /order-refund first
+        const isConfirmedFailedOrMissingOnProvider =
+          !hasProviderRef ||
+          ["failed", "fulfillment_failed", "refunded", "reversed", "rejected", "cancelled", "not_found"].includes(liveStatus);
+
+        if (isDataHub && hasProviderRef && !isConfirmedFailedOrMissingOnProvider) {
+          const dhMethod = req.method === "GET" ? "GET" : "POST";
+          const dhRefund = await standardAdapter.refundDataHubOrder(supabaseAdmin, assignedProvider, {
+            reference: order.id,
+            orderNumber: cleanOrderNumber || order.provider_order_id,
+            method: dhMethod,
+          });
+          if (dhRefund.ok) {
+            upstreamRefundData = dhRefund.raw || null;
+          } else {
+            const dhReason = String(dhRefund.reason || "").toLowerCase();
+            const isAlreadyRefundedOrGone =
+              dhRefund.status === "not_found" ||
+              dhReason.includes("not found") ||
+              dhReason.includes("already refunded") ||
+              dhReason.includes("refunded") ||
+              dhReason.includes("failed") ||
+              dhReason.includes("cancelled");
+            if (!isAlreadyRefundedOrGone && !isCallerAdmin) {
+              return new Response(JSON.stringify({
+                success: false,
+                error: dhRefund.reason || "Order could not be cancelled on DataHub for rerouting.",
+              }), {
+                status: 400,
+                headers: { ...corsHeaders, "Content-Type": "application/json" },
+              });
+            }
+          }
+        } else if (!isCallerAdmin && !isConfirmedFailedOrMissingOnProvider) {
+          return new Response(JSON.stringify({
+            success: false,
+            error: "Order is currently processing on the provider and cannot be self-rerouted yet.",
+          }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
       }
 
-      const handlerType = String(assignedProvider?.handler_type || "").toLowerCase();
-      const isDataHub = handlerType === "datahub" || String(assignedProvider?.name || "").toLowerCase().includes("datahub");
+      // 3. Exclude the previous provider (e.g. SKPlug) and dispatch immediately to the next active provider
+      const prevFailed = Array.isArray(order.metadata?.failed_provider_ids)
+        ? order.metadata.failed_provider_ids
+        : [];
+      const nextFailedIds = assignedProvider?.id
+        ? Array.from(new Set([...prevFailed, assignedProvider.id]))
+        : prevFailed;
 
+      const nextMeta: Record<string, any> = {
+        ...(order.metadata || {}),
+        api_paused: false,
+        failed_provider_ids: nextFailedIds,
+        last_failed_provider: assignedProvider?.name || order.metadata?.last_failed_provider || "previous_provider",
+        last_failed_reason: assignedProvider
+          ? `Rerouted away from ${assignedProvider.name} to alternative provider`
+          : "Rerouted stuck dispatching order to active provider",
+        rerouted_at: new Date().toISOString(),
+        ...(upstreamRefundData ? { datahub_refunded_at: new Date().toISOString(), datahub_refund_data: upstreamRefundData } : {}),
+      };
+
+      await supabaseAdmin
+        .from("orders")
+        .update({
+          provider_id: null,
+          provider_order_id: null,
+          status: "processing",
+          failure_reason: null,
+          metadata: nextMeta,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", order.id);
+
+      const dispatch = await dispatchOrderWithFailover(supabaseAdmin, {
+        ...order,
+        provider_id: null,
+        provider_order_id: null,
+        status: "processing",
+        failure_reason: null,
+        metadata: nextMeta,
+      });
+
+      if (dispatch.ok || dispatch.status === "processing") {
+        const targetStatus = dispatch.status === "fulfilled" ? "fulfilled" : "processing";
+        await supabaseAdmin
+          .from("orders")
+          .update({
+            status: targetStatus,
+            provider_id: dispatch.provider_id || null,
+            provider_order_id: dispatch.provider_order_id || null,
+            failure_reason: null,
+            metadata: nextMeta,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", order.id);
+
+        if (targetStatus === "fulfilled") {
+          await Promise.resolve(supabaseAdmin.rpc("credit_order_profits", { p_order_id: order.id })).catch(() => {});
+        }
+
+        return new Response(JSON.stringify({
+          success: true,
+          rerouted: true,
+          status: targetStatus,
+          provider_id: dispatch.provider_id,
+          provider_order_id: dispatch.provider_order_id,
+          message: assignedProvider
+            ? `Skipped ${assignedProvider.name} and re-routed order to another active provider (${targetStatus}).`
+            : `Re-routed order to active provider (${targetStatus}).`,
+          datahub_refund: upstreamRefundData,
+        }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // If no alternative provider could accept the order, mark as fulfillment_failed so admin sees the exact reason
+      const failReason = dispatch.reason || "No alternative active provider could accept this order.";
+      await supabaseAdmin
+        .from("orders")
+        .update({
+          status: "fulfillment_failed",
+          provider_id: dispatch.provider_id || null,
+          provider_order_id: dispatch.provider_order_id || "failed_api_call",
+          failure_reason: failReason,
+          metadata: nextMeta,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", order.id);
+
+      return new Response(JSON.stringify({
+        success: false,
+        error: `Skipped ${assignedProvider?.name || "previous provider"}, but alternative provider dispatch failed: ${failReason}`,
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // 4B. SERVER-SIDE CHECK 3 (Wallet Refund Mode): If processing, verify provider status before refunding wallet
+    if (order.status === "processing") {
       if (isDataHub && assignedProvider) {
         const standardAdapter = new StandardAdapter();
         const dhMethod = req.method === "GET" ? "GET" : "POST";
@@ -215,72 +383,6 @@ serve(async (req) => {
 
         upstreamRefundData = dhRefund.raw || null;
 
-        // If admin requested "refund_and_reroute": DataHub has refunded our provider wallet,
-        // so we can immediately fail over and dispatch to the next active provider (e.g. BundleZone)!
-        if (mode === "refund_and_reroute") {
-          const prevFailed = Array.isArray(order.metadata?.failed_provider_ids)
-            ? order.metadata.failed_provider_ids
-            : [];
-          const nextFailedIds = Array.from(new Set([...prevFailed, assignedProvider.id]));
-          const nextMeta = {
-            ...(order.metadata || {}),
-            failed_provider_ids: nextFailedIds,
-            last_failed_provider: assignedProvider.name,
-            last_failed_reason: "Self-refunded from DataHub manual processing queue for failover",
-            datahub_refunded_at: new Date().toISOString(),
-            datahub_refund_data: upstreamRefundData,
-          };
-
-          await supabaseAdmin
-            .from("orders")
-            .update({
-              provider_id: null,
-              provider_order_id: null,
-              metadata: nextMeta,
-              updated_at: new Date().toISOString(),
-            })
-            .eq("id", order.id);
-
-          const dispatch = await dispatchOrderWithFailover(supabaseAdmin, {
-            ...order,
-            provider_id: null,
-            provider_order_id: null,
-            status: "processing",
-            metadata: nextMeta,
-          });
-
-          if (dispatch.ok || dispatch.status === "processing") {
-            const targetStatus = dispatch.status === "fulfilled" ? "fulfilled" : "processing";
-            await supabaseAdmin
-              .from("orders")
-              .update({
-                status: targetStatus,
-                provider_id: dispatch.provider_id || null,
-                provider_order_id: dispatch.provider_order_id || null,
-                failure_reason: null,
-                metadata: nextMeta,
-                updated_at: new Date().toISOString(),
-              })
-              .eq("id", order.id);
-
-            if (targetStatus === "fulfilled") {
-              await Promise.resolve(supabaseAdmin.rpc("credit_order_profits", { p_order_id: order.id })).catch(() => {});
-            }
-
-            return new Response(JSON.stringify({
-              success: true,
-              rerouted: true,
-              status: targetStatus,
-              provider_id: dispatch.provider_id,
-              provider_order_id: dispatch.provider_order_id,
-              message: `Self-refunded from DataHub and re-routed to available provider (${targetStatus}).`,
-              datahub_refund: upstreamRefundData,
-            }), {
-              headers: { ...corsHeaders, "Content-Type": "application/json" },
-            });
-          }
-        }
-
         // Mark provider_order_id as refunded before executing customer/agent wallet refund
         await supabaseAdmin
           .from("orders")
@@ -295,15 +397,61 @@ serve(async (req) => {
             updated_at: new Date().toISOString(),
           })
           .eq("id", order.id);
-      } else if (hasProviderRef || order.provider_id) {
-        return new Response(JSON.stringify({
-          success: false,
-          error: "Order is not eligible for refund",
-          details: "Order has already been submitted and received by an API provider. Only manual PROCESSING orders can be self-refunded."
-        }), {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+      } else if (assignedProvider) {
+        // Non-DataHub provider (e.g. SKPlug, DataMart, Spendless, BundleZone, HySpeedData):
+        // Check live status on the provider. If provider refunded/failed/rejected it (or never received it), allow wallet refund!
+        const standardAdapter = new StandardAdapter();
+        const liveCheck = await standardAdapter.checkStatus(
+          supabaseAdmin,
+          assignedProvider,
+          String(order.provider_order_id || order.id),
+          order.id
+        );
+        const liveStatus = String(liveCheck.status || "").toLowerCase();
+        if (liveCheck.ok && ["fulfilled", "completed", "delivered", "success", "successful"].includes(liveStatus)) {
+          await supabaseAdmin
+            .from("orders")
+            .update({
+              status: "fulfilled",
+              failure_reason: null,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", order.id);
+          await Promise.resolve(supabaseAdmin.rpc("credit_order_profits", { p_order_id: order.id })).catch(() => {});
+
+          return new Response(JSON.stringify({
+            success: false,
+            error: "Order is not eligible for refund",
+            details: "Provider confirmed order was DELIVERED. Order marked as fulfilled instead of refunding."
+          }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        const isFailedOrRefundedOnProvider =
+          !hasProviderRef ||
+          ["failed", "fulfillment_failed", "refunded", "reversed", "rejected", "cancelled", "not_found"].includes(liveStatus);
+
+        if (!isFailedOrRefundedOnProvider && !isCallerAdmin) {
+          return new Response(JSON.stringify({
+            success: false,
+            error: "Order is not eligible for refund",
+            details: "Order has already been submitted and received by an API provider. Only manual or failed orders can be refunded."
+          }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        await supabaseAdmin
+          .from("orders")
+          .update({
+            provider_order_id: "refunded",
+            failure_reason: `Refunded after ${assignedProvider.name} status check (${liveStatus || "admin refund"})`,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", order.id);
       } else {
         console.log(`[verify-and-refund] Order ${order.id} is processing without provider reference. Running server-side provider verification first...`);
         const { data: verifyRes } = await supabaseAdmin.functions.invoke("verify-payment", {

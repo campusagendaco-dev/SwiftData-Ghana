@@ -68,6 +68,24 @@ export function isOrderPausedFromApi(order: any): boolean {
   );
 }
 
+export function isSentinelProviderOrderId(id?: string | null): boolean {
+  if (!id) return true;
+  const s = String(id).trim();
+  if (!s) return true;
+  return (
+    s === "dispatching" ||
+    s === "timeout" ||
+    s === "routed" ||
+    s === "duplicate_cooldown" ||
+    s === "manual_fulfillment_mode" ||
+    s === "paused_by_admin" ||
+    s === "refunded" ||
+    s === "fulfilled_manually" ||
+    s === "resolved_on_provider" ||
+    s.startsWith("failed_api_call")
+  );
+}
+
 export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): Promise<Provider[]> {
   if (isOrderPausedFromApi(order)) {
     console.log(`[resolveProvidersForOrder] Order ${order?.id} is paused by admin from entering API provider.`);
@@ -289,23 +307,19 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
 
   // 7. Check if order was ALREADY ACCEPTED by a provider.
   // Rule 1: Once an order is accepted by a provider with a valid provider-side ID,
-  // lock to assigned provider ONLY. Non-acceptance IDs (failed_api_call, timeout, manual_fulfillment_mode)
-  // or failed statuses MUST NOT lock the order so it can cascade/retry to SKPlug or other providers.
+  // lock to assigned provider ONLY. Non-acceptance IDs (failed_api_call, timeout, dispatching, manual_fulfillment_mode)
+  // or failed/refunded statuses MUST NOT lock the order so it can cascade/retry to SKPlug or other providers.
   const isRefundedStatus = order?.status === "refunded" || /refund/i.test(String(order?.failure_reason || ""));
-  const validProviderOrderId = Boolean(
-    order?.provider_order_id &&
-    !order.provider_order_id.startsWith("failed_api_call") &&
-    order.provider_order_id !== "timeout" &&
-    order.provider_order_id !== "manual_fulfillment_mode" &&
-    order.provider_order_id !== "paused_by_admin" &&
-    order.provider_order_id !== "duplicate_cooldown" &&
-    order.provider_order_id !== "refunded" &&
-    !isRefundedStatus
+  const validProviderOrderId = !isSentinelProviderOrderId(order?.provider_order_id) && !isRefundedStatus;
+  const isBlacklistedProvider = Boolean(
+    order?.provider_id &&
+    Array.isArray(order?.metadata?.failed_provider_ids) &&
+    order.metadata.failed_provider_ids.includes(order.provider_id)
   );
   const isFulfilledOrActive = ["fulfilled", "delivered", "completed"].includes(String(order?.status || "").toLowerCase()) ||
-    (order?.status === "processing" && validProviderOrderId && !order?.failure_reason && !isRefundedStatus);
+    (order?.status === "processing" && validProviderOrderId && !order?.failure_reason && !isRefundedStatus && !isBlacklistedProvider);
 
-  const isAcceptedByProvider = Boolean(order?.provider_id) && validProviderOrderId && isFulfilledOrActive;
+  const isAcceptedByProvider = Boolean(order?.provider_id) && validProviderOrderId && isFulfilledOrActive && !isBlacklistedProvider;
 
   if (isAcceptedByProvider) {
     const assigned = activeProviders.find((p: any) => p.id === order.provider_id);
@@ -332,15 +346,18 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
     }
   }
 
-  // If order was previously attempted on a provider and failed or was refunded,
+  // If order was previously attempted on a provider and failed, timed out, stalled in dispatching, or was refunded,
   // demote that failed provider to the END of activeProviders so healthy verified providers are tried first!
   const hasFailedOnAssigned = Boolean(order?.provider_id) && (
     order?.provider_order_id?.startsWith("failed_api_call") ||
     order?.provider_order_id === "refunded" ||
+    order?.provider_order_id === "dispatching" ||
+    order?.provider_order_id === "timeout" ||
     order?.status === "fulfillment_failed" ||
     order?.status === "failed" ||
     order?.status === "refunded" ||
     isRefundedStatus ||
+    isBlacklistedProvider ||
     Boolean(order?.failure_reason)
   );
 

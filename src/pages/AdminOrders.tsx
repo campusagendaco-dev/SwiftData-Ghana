@@ -972,8 +972,10 @@ export default function AdminOrders() {
 
   const handleRefund = async (orderId: string, amount: number, mode: "refund" | "refund_and_reroute" = "refund") => {
     const targetOrder = allOrders.find((o) => o.id === orderId);
+    const assignedProv = targetOrder?.provider_id ? providers.find((p) => p.id === targetOrder.provider_id) : null;
+    const provLabel = assignedProv?.name || "current provider";
     const promptMsg = mode === "refund_and_reroute"
-      ? `Self-refund order ${orderId.slice(0, 8)} from DataHub and immediately re-route to the next available API provider?`
+      ? `Verify & re-route order ${orderId.slice(0, 8)} away from ${provLabel} and immediately dispatch to the next available active API provider?`
       : `Are you sure you want to refund GH₵ ${amount.toFixed(2)} for order ${orderId.slice(0, 8)}?`;
     if (!confirm(promptMsg)) {
       return;
@@ -985,8 +987,9 @@ export default function AdminOrders() {
           body: { order_id: orderId, reference: orderId, mode },
         });
         if (edgeErr || !edgeData?.success) {
-          const errMsg = edgeData?.error || (edgeErr ? await getFunctionErrorMessage(edgeErr, "Order is not eligible for self-refund.") : "Order is not eligible for self-refund.");
-          toast({ title: "Self-Refund Rejected", description: errMsg, variant: "destructive" });
+          const defaultErr = mode === "refund_and_reroute" ? "Could not re-route order to another provider." : "Order is not eligible for self-refund.";
+          const errMsg = edgeData?.error || (edgeErr ? await getFunctionErrorMessage(edgeErr, defaultErr) : defaultErr);
+          toast({ title: mode === "refund_and_reroute" ? "Reroute Rejected" : "Self-Refund Rejected", description: errMsg, variant: "destructive" });
           setRefunding(null);
           await fetchOrders();
           return;
@@ -1001,8 +1004,8 @@ export default function AdminOrders() {
         }
         if (edgeData.rerouted) {
           toast({
-            title: "Self-Refunded & Re-routed! 🚀",
-            description: edgeData.message || "Reclaimed funds from DataHub and dispatched to next available API provider.",
+            title: "Order Re-routed! 🚀",
+            description: edgeData.message || `Skipped ${provLabel} and dispatched to next available API provider.`,
           });
         } else {
           const newBalText = edgeData.data?.newBalance !== undefined ? ` (New Wallet Balance: GH₵ ${Number(edgeData.data.newBalance).toFixed(2)})` : "";
@@ -2580,17 +2583,17 @@ export default function AdminOrders() {
                                 Refund
                               </Button>
                             )}
-                            {order.status === "processing" && !order.auto_refunded && order.provider_id && (
+                            {(order.status === "processing" || order.status === "fulfillment_failed") && !order.auto_refunded && (Boolean(order.provider_id) || order.provider_order_id === "dispatching") && (
                               <Button
                                 size="sm"
                                 variant="outline"
                                 className="text-[10px] gap-1 h-7 px-2 border-amber-500/30 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 rounded-lg font-bold"
                                 disabled={refunding === order.id}
                                 onClick={() => handleRefund(order.id, order.amount, "refund_and_reroute")}
-                                title="Self-refund from DataHub (/order-refund) and re-route to next available API provider"
+                                title="Skip current provider (e.g. SKPlug / DataHub) and immediately re-route to the next active API provider"
                               >
                                 {refunding === order.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
-                                Refund &amp; Reroute
+                                Reroute Provider
                               </Button>
                             )}
                             <button
@@ -2790,7 +2793,7 @@ export default function AdminOrders() {
                       Refund
                     </Button>
                   )}
-                  {order.status === "processing" && !order.auto_refunded && order.provider_id && (
+                  {(order.status === "processing" || order.status === "fulfillment_failed") && !order.auto_refunded && (Boolean(order.provider_id) || order.provider_order_id === "dispatching") && (
                     <Button
                       size="sm"
                       variant="outline"
@@ -2799,7 +2802,7 @@ export default function AdminOrders() {
                       onClick={() => handleRefund(order.id, order.amount, "refund_and_reroute")}
                     >
                       {refunding === order.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
-                      Refund &amp; Reroute
+                      Reroute Provider
                     </Button>
                   )}
                   <Button

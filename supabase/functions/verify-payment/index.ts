@@ -786,7 +786,7 @@ serve(async (req: any) => {
 
     const isSentinelOrderId = (id?: string | null) => {
       const s = String(id || "").toLowerCase();
-      return !s || s === "timeout" || s.startsWith("failed_api_call") || s === "manual_fulfillment_mode" || s === "paused_by_admin" || s === "duplicate_cooldown" || s === "refunded";
+      return !s || s === "dispatching" || s === "timeout" || s === "routed" || s.startsWith("failed_api_call") || s === "manual_fulfillment_mode" || s === "paused_by_admin" || s === "duplicate_cooldown" || s === "refunded";
     };
 
     // Allow verified Admin or Service Role to explicitly resume an API-paused order
@@ -956,11 +956,15 @@ serve(async (req: any) => {
     // Optimization: Skip checking provider status for freshly paid/pending orders if they haven't been submitted yet (no provider_order_id)
     // AND they are less than 20 seconds old. This avoids slow and redundant API status check calls.
     const orderAgeSec = (Date.now() - new Date(existingOrder?.created_at || 0).getTime()) / 1000;
-    const shouldCheckProvider = !!existingOrder?.provider_order_id && !isSentinelOrderId(existingOrder.provider_order_id);
+    const isStuckDispatchOnAssigned = Boolean(
+      existingOrder?.provider_id &&
+      (existingOrder?.provider_order_id === "dispatching" || existingOrder?.provider_order_id === "timeout")
+    );
+    const shouldCheckProvider = (!!existingOrder?.provider_order_id && !isSentinelOrderId(existingOrder.provider_order_id)) || isStuckDispatchOnAssigned;
 
     if ((existingOrder?.status === "pending" || existingOrder?.status === "paid" || existingOrder?.status === "fulfillment_failed" || existingOrder?.status === "processing") && isProviderOrder && shouldCheckProvider) {
       let providersToCheck: any[] = [];
-      const currentRef = String(existingOrder?.provider_order_id || "");
+      const currentRef = !isSentinelOrderId(existingOrder?.provider_order_id) ? String(existingOrder?.provider_order_id || "") : "";
 
       if (existingOrder?.provider_id) {
         const { data: assignedP } = await supabaseAdmin.from("providers").select("*").eq("id", existingOrder.provider_id).maybeSingle();
@@ -985,21 +989,22 @@ serve(async (req: any) => {
         }, "status");
         
         const rawStatus = String(checkResult.status || "").toLowerCase();
-        const isExplicitFailStatus = ["failed", "rejected", "cancelled", "declined", "refunded", "reversed"].includes(rawStatus);
+        const isExplicitFailStatus = ["failed", "fulfillment_failed", "rejected", "cancelled", "declined", "refunded", "reversed"].includes(rawStatus);
+        const isStuckDispatchNotFound = isStuckDispatchOnAssigned && rawStatus === "not_found";
 
-        if (checkResult.ok || isExplicitFailStatus || rawStatus === "failed_pending_refund" || rawStatus === "submission_unknown") {
+        if (checkResult.ok || isExplicitFailStatus || isStuckDispatchNotFound || rawStatus === "failed_pending_refund" || rawStatus === "submission_unknown") {
           const isDelivered = rawStatus === "delivered" || rawStatus === "success" || rawStatus === "successful" || rawStatus === "fulfilled" || rawStatus === "completed" || rawStatus === "sent";
           const isPendingRefund = rawStatus === "failed_pending_refund" || rawStatus === "submission_unknown";
-          const isFailed = !isPendingRefund && isExplicitFailStatus;
+          const isFailed = !isPendingRefund && (isExplicitFailStatus || isStuckDispatchNotFound);
           const isProcessing = isPendingRefund || (!isFailed && (rawStatus === "processing" || rawStatus === "pending" || rawStatus === "queued" || rawStatus === "ongoing"));
           
           if (isDelivered) {
             console.log(`[verify-payment] Found fulfilled order ${targetReference} at ${provider.name} during pre-check.`);
             const token = (checkResult as any).raw?.prepaid_token;
-            await fulfillOrder(supabaseAdmin, targetReference, provider.id, checkResult.id || existingOrder.provider_order_id || null, token || null);
-            return new Response(JSON.stringify({ status: "fulfilled", provider_order_id: checkResult.id || existingOrder.provider_order_id }), { headers: corsHeaders });
+            await fulfillOrder(supabaseAdmin, targetReference, provider.id, checkResult.id || currentRef || targetReference, token || null);
+            return new Response(JSON.stringify({ status: "fulfilled", provider_order_id: checkResult.id || currentRef || targetReference }), { headers: corsHeaders });
           } else if (isFailed) {
-            console.log(`[verify-payment] Found failed/refunded order ${targetReference} at ${provider.name} during pre-check (${rawStatus}).`);
+            console.log(`[verify-payment] Found failed/refunded/unrecorded order ${targetReference} at ${provider.name} during pre-check (${rawStatus}).`);
             const failReason = checkResult.reason || (rawStatus === "refunded" ? "Provider refunded order" : `Provider reported ${rawStatus}`);
             
             const failedIds = Array.isArray(existingOrder.metadata?.failed_provider_ids)
@@ -1013,7 +1018,7 @@ serve(async (req: any) => {
             await supabaseAdmin.from("orders").update({
               provider_id: null,
               provider_order_id: null,
-              failure_reason: `Refunded by ${provider.name}. Re-routing to alternative verified provider.`,
+              failure_reason: `Refunded/unaccepted by ${provider.name}. Re-routing to alternative verified provider.`,
               metadata: {
                 ...(existingOrder.metadata || {}),
                 failed_provider_ids: failedIds,
@@ -1035,10 +1040,10 @@ serve(async (req: any) => {
             await supabaseAdmin.from("orders").update({ 
               status: "processing", 
               provider_id: provider.id,
-              provider_order_id: checkResult.id || existingOrder.provider_order_id || null,
+              provider_order_id: checkResult.id || currentRef || targetReference,
               failure_reason: "Provider is processing the order"
             }).eq("id", targetReference);
-            return new Response(JSON.stringify({ status: "processing", provider_order_id: checkResult.id || existingOrder.provider_order_id }), { headers: corsHeaders });
+            return new Response(JSON.stringify({ status: "processing", provider_order_id: checkResult.id || currentRef || targetReference }), { headers: corsHeaders });
           }
         }
       }

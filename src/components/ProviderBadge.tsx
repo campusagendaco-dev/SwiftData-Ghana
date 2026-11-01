@@ -264,7 +264,19 @@ export function ProviderBadge({
         <span className="truncate max-w-[130px]">{details.name}</span>
       </span>
       {showRef && details.refId && (
-        <span className="text-[9px] text-muted-foreground/80 font-mono truncate max-w-[130px]" title={String(details.refId)}>
+        <span
+          className={cn(
+            "text-[9px] font-mono truncate max-w-[130px]",
+            String(details.refId) === "dispatching"
+              ? "text-amber-400/90 font-semibold"
+              : "text-muted-foreground/80"
+          )}
+          title={
+            String(details.refId) === "dispatching"
+              ? "Dispatch lock — if provider refunded or timed out, click Reroute Provider to switch gateways"
+              : String(details.refId)
+          }
+        >
           Ref: #{String(details.refId).slice(0, 12)}
         </span>
       )}

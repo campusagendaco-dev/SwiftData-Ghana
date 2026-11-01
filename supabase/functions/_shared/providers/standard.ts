@@ -1437,12 +1437,29 @@ export class StandardAdapter implements ProviderAdapter {
     providerOrderId: string,
     reference: string
   ): Promise<ProviderResponse> {
+    const isSentinelRef = (val?: string | null) => {
+      if (!val) return true;
+      const s = String(val).trim();
+      return (
+        !s ||
+        s === "dispatching" ||
+        s === "timeout" ||
+        s === "routed" ||
+        s === "duplicate_cooldown" ||
+        s === "manual_fulfillment_mode" ||
+        s === "paused_by_admin" ||
+        s === "refunded" ||
+        s === "fulfilled_manually" ||
+        s === "resolved_on_provider" ||
+        s.startsWith("failed_api_call")
+      );
+    };
     const handlerType = String(provider?.handler_type || "").toLowerCase();
     if (isHySpeedHandler(handlerType)) {
       try {
         const apiKey = Deno.env.get("HYSPEEDDATA_API_KEY") || Deno.env.get("SWIFTRESELLER_API_KEY") || provider.api_key || "";
         const hsBase = normalizeHySpeedBaseUrl(Deno.env.get("HYSPEEDDATA_BASE_URL") || provider.base_url);
-        const candidates = Array.from(new Set([providerOrderId, reference].filter(c => c && c !== "timeout" && c !== "failed_api_call" && c !== "duplicate_cooldown")));
+        const candidates = Array.from(new Set([providerOrderId, reference].filter(c => !isSentinelRef(c))));
 
         for (const cand of candidates) {
           const res = await fetch(`${hsBase}/v1/orders/${encodeURIComponent(cand)}`, {
@@ -1499,7 +1516,7 @@ export class StandardAdapter implements ProviderAdapter {
       try {
         const apiKey = Deno.env.get("BUNDLEZONE_API_KEY") || provider.api_key || "";
         const baseUrl = (Deno.env.get("BUNDLEZONE_BASE_URL") || provider.base_url || "https://bundlezone.shop").replace(/\/+$/, "");
-        const candidates = Array.from(new Set([providerOrderId, reference].filter(Boolean)));
+        const candidates = Array.from(new Set([providerOrderId, reference].filter(c => !isSentinelRef(c))));
         
         for (const cand of candidates) {
           for (const param of ["reference", "order_id"]) {
@@ -1626,7 +1643,7 @@ export class StandardAdapter implements ProviderAdapter {
       return { ok: false, status: "not_found", reason: "Order not found on Spendless." };
     }
 
-    const activeProviderOrderId = (providerOrderId && providerOrderId !== "timeout" && providerOrderId !== "failed_api_call") ? providerOrderId : reference;
+    const activeProviderOrderId = !isSentinelRef(providerOrderId) ? providerOrderId : reference;
     const data: PurchaseData = {
       recipient: "",
       amount: 0,

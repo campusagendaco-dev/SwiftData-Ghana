@@ -4,6 +4,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7";
 import { corsHeaders } from "../_shared/cors.ts";
 import { getProviderAdapter } from "../_shared/providers/registry.ts";
 import { dispatchOrderWithFailover } from "../_shared/provider_router.ts";
+import { isSentinelProviderOrderId } from "../_shared/providers.ts";
 import { isNonRetryableTerminalError } from "../_shared/providers/utils.ts";
 import { verifyAdmin } from "../_shared/auth.ts";
 import { normalizePhone, getSmsConfig, dispatchUnifiedSms } from "../_shared/sms.ts";
@@ -249,7 +250,8 @@ serve(async (req: Request) => {
               rawStatus = currentStatus;
             } else {
               const adapter = getProviderAdapter(providerInfo.handler_type);
-              const activeOrderId = order.provider_order_id || order.id;
+              const hasActiveProviderRef = !isSentinelProviderOrderId(order.provider_order_id);
+              const activeOrderId = hasActiveProviderRef ? order.provider_order_id : order.id;
 
               console.log(`[check-order-status-bulk] Checking ${providerInfo.name} for order ${order.id} (tx: ${activeOrderId})...`);
               const pRes = await adapter.checkStatus(
@@ -262,21 +264,14 @@ serve(async (req: Request) => {
               liveProviderResult = pRes;
               rawStatus = String(pRes?.status || "").toLowerCase().trim();
 
+              const orderAgeMs = Date.now() - new Date(order.updated_at || order.created_at || Date.now()).getTime();
+              const isStuckUnacceptedOnProvider = !hasActiveProviderRef && rawStatus === "not_found" && orderAgeMs > 60_000;
+
               const isDelivered = rawStatus === "delivered" || rawStatus === "successful" || rawStatus === "completed" || rawStatus === "fulfilled" || rawStatus === "000";
               const isPendingRefund = rawStatus === "failed_pending_refund" || rawStatus === "submission_unknown";
               const isRefunded = !isPendingRefund && (rawStatus === "refunded" || rawStatus === "reversed" || /refund/i.test(String(pRes?.reason || "")));
-              // Only explicit conclusive provider failures count as isFailed.
-              // Inconclusive checks (404, not_found, submission_unknown, failed_pending_refund, or pRes?.ok === false) must remain in 'processing' without triggering duplicate auto-failover!
-              const isFailed = !isPendingRefund && (rawStatus === "failed" || rawStatus === "rejected" || rawStatus === "cancelled" || rawStatus === "declined" || isRefunded);
-
-              const hasActiveProviderRef = Boolean(
-                order.provider_order_id &&
-                order.provider_order_id !== "failed_api_call" &&
-                order.provider_order_id !== "timeout" &&
-                order.provider_order_id !== "routed" &&
-                order.provider_order_id !== "duplicate_cooldown" &&
-                order.provider_order_id !== "refunded"
-              );
+              // Conclusive provider failures OR an unaccepted #dispatching/#timeout order that the provider confirms is not_found after 60s
+              const isFailed = !isPendingRefund && (rawStatus === "failed" || rawStatus === "fulfillment_failed" || rawStatus === "rejected" || rawStatus === "cancelled" || rawStatus === "declined" || isRefunded || isStuckUnacceptedOnProvider);
 
               if (isDelivered) {
                 currentStatus = "fulfilled";
@@ -540,7 +535,8 @@ serve(async (req: Request) => {
       if (providerInfo) {
         try {
           const adapter = getProviderAdapter(providerInfo.handler_type);
-          const activeOrderId = order.provider_order_id || order.id;
+          const hasActiveProviderRef = !isSentinelProviderOrderId(order.provider_order_id);
+          const activeOrderId = hasActiveProviderRef ? order.provider_order_id : order.id;
 
           console.log(`[check-order-status] Polling provider ${providerInfo.name} (${providerInfo.handler_type}) for order ${order.id} (tx: ${activeOrderId})...`);
           
@@ -554,21 +550,14 @@ serve(async (req: Request) => {
           liveProviderResult = pRes;
           const rawStatus = String(pRes?.status || "").toLowerCase().trim();
 
+          const orderAgeMs = Date.now() - new Date(order.updated_at || order.created_at || Date.now()).getTime();
+          const isStuckUnacceptedOnProvider = !hasActiveProviderRef && rawStatus === "not_found" && orderAgeMs > 60_000;
+
           const isDelivered = rawStatus === "delivered" || rawStatus === "successful" || rawStatus === "completed" || rawStatus === "fulfilled" || rawStatus === "000";
           const isPendingRefund = rawStatus === "failed_pending_refund" || rawStatus === "submission_unknown";
           const isRefunded = !isPendingRefund && (rawStatus === "refunded" || rawStatus === "reversed" || /refund/i.test(String(pRes?.reason || "")));
-          // Only explicit conclusive provider failures count as isFailed.
-          // Inconclusive checks (404, not_found, submission_unknown, failed_pending_refund, or pRes?.ok === false) must remain in 'processing' without triggering duplicate auto-failover!
-          const isFailed = !isPendingRefund && (rawStatus === "failed" || rawStatus === "rejected" || rawStatus === "cancelled" || rawStatus === "declined" || isRefunded);
-
-          const hasActiveProviderRef = Boolean(
-            order.provider_order_id &&
-            order.provider_order_id !== "failed_api_call" &&
-            order.provider_order_id !== "timeout" &&
-            order.provider_order_id !== "routed" &&
-            order.provider_order_id !== "duplicate_cooldown" &&
-            order.provider_order_id !== "refunded"
-          );
+          // Conclusive provider failures OR an unaccepted #dispatching/#timeout order that the provider confirms is not_found after 60s
+          const isFailed = !isPendingRefund && (rawStatus === "failed" || rawStatus === "fulfillment_failed" || rawStatus === "rejected" || rawStatus === "cancelled" || rawStatus === "declined" || isRefunded || isStuckUnacceptedOnProvider);
 
           if (isDelivered) {
             currentStatus = "fulfilled";

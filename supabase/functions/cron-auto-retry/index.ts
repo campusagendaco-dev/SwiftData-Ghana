@@ -153,12 +153,12 @@ serve(async (req) => {
       .gte("created_at", twoDaysAgo)
       .limit(25);
 
-    // 2. Find stuck undispatched processing orders (no provider_id or no provider_order_id assigned, or marked timeout/failed_api_call/duplicate_cooldown)
+    // 2. Find stuck undispatched processing orders (no provider_id or no provider_order_id assigned, or marked dispatching/timeout/failed_api_call/duplicate_cooldown)
     const { data: undispatchedOrders } = await supabaseAdmin
       .from("orders")
       .select("*")
       .eq("status", "processing")
-      .or("provider_id.is.null,provider_order_id.is.null,provider_order_id.eq.timeout,provider_order_id.eq.failed_api_call,provider_order_id.eq.duplicate_cooldown")
+      .or("provider_id.is.null,provider_order_id.is.null,provider_order_id.eq.dispatching,provider_order_id.eq.timeout,provider_order_id.eq.failed_api_call,provider_order_id.eq.duplicate_cooldown")
       .not("order_type", "in", excludedTypes)
       .lte("created_at", oneMinuteAgo)
       .gte("created_at", twoDaysAgo)
@@ -416,11 +416,21 @@ serve(async (req) => {
         /provider rejected|carrier dispatch rejected|provider refunded|order failed|delivery failed/i.test(failReason);
       const isRefunded = /refund/i.test(failReason) || order.status === "refunded" || isExplicitProviderRejection;
 
+      // If order is currently in "dispatching" state, wait at least 2 minutes before considering it stuck/abandoned
+      if (order.provider_order_id === "dispatching") {
+        const lastTouchMs = new Date(order.updated_at || order.created_at || 0).getTime();
+        if (Date.now() - lastTouchMs < 2 * 60 * 1000) {
+          console.log(`[cron-auto-retry] Order ${order.id} is actively dispatching (< 2 mins old). Skipping.`);
+          continue;
+        }
+      }
+
       // Anti-Duplicate Delivery Shield: If order already has an active upstream provider reference
-      // (e.g. SKP..., API_..., DH_..., 6adb...) that is NOT timeout, failed_api_call, duplicate_cooldown, or refunded,
+      // (e.g. SKP..., API_..., DH_..., 6adb...) that is NOT dispatching, timeout, failed_api_call, duplicate_cooldown, or refunded,
       // and the provider has NOT issued an explicit refund or rejection, DO NOT re-dispatch! Doing so causes double fulfillment and financial loss!
       const hasActiveProviderRef = Boolean(
         order.provider_order_id &&
+        order.provider_order_id !== "dispatching" &&
         order.provider_order_id !== "failed_api_call" &&
         order.provider_order_id !== "timeout" &&
         order.provider_order_id !== "routed" &&
