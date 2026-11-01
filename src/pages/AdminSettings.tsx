@@ -796,6 +796,75 @@ const AdminSettings = () => {
     }
   };
 
+  const handleSetPrimaryProvider = async (targetProvider: any) => {
+    const targetType = targetProvider.provider_type || "data";
+    // Sort other providers of the same type by their current priority so their relative failover order stays intact
+    const sameTypeOthers = [...providers]
+      .filter((p) => (p.provider_type || "data") === targetType && p.id !== targetProvider.id)
+      .sort((a, b) => (a.priority || 99) - (b.priority || 99));
+
+    const otherRankMap = new Map<string, number>();
+    sameTypeOthers.forEach((p, idx) => {
+      otherRankMap.set(p.id, idx + 2); // Priorities 2, 3, 4...
+    });
+
+    const updatedList = providers.map((p) => {
+      if (p.id === targetProvider.id) {
+        return {
+          ...p,
+          is_active: true,
+          priority: 1,
+          consecutive_failures: 0,
+          disabled_reason: null,
+          settings: { ...(p.settings || {}), is_primary_provider: true },
+        };
+      }
+      if ((p.provider_type || "data") === targetType) {
+        return {
+          ...p,
+          priority: otherRankMap.get(p.id) ?? (p.priority || 2),
+          settings: { ...(p.settings || {}), is_primary_provider: false },
+        };
+      }
+      return p;
+    });
+
+    setProviders(updatedList);
+
+    try {
+      const dbUpdates = updatedList
+        .filter((p) => (p.provider_type || "data") === targetType && p.id && !p.id.startsWith("new-"))
+        .map((p) =>
+          supabase
+            .from("providers")
+            .update({
+              is_active: p.is_active,
+              priority: p.priority,
+              consecutive_failures: p.id === targetProvider.id ? 0 : p.consecutive_failures,
+              disabled_reason: p.id === targetProvider.id ? null : p.disabled_reason,
+              settings: p.settings,
+            })
+            .eq("id", p.id)
+        );
+
+      const results = await Promise.all(dbUpdates);
+      const firstErr = results.find((r) => r.error)?.error;
+      if (firstErr) throw firstErr;
+
+      toast({
+        title: `★ ${targetProvider.name} Set as Primary`,
+        description: `All ${targetType.toUpperCase()} orders will go through ${targetProvider.name} first. Other active providers are now failover backups.`,
+      });
+    } catch (err: any) {
+      console.error("Error setting primary provider:", err);
+      toast({
+        title: "Failed to Set Primary Provider",
+        description: err.message || "Could not update provider priorities",
+        variant: "destructive",
+      });
+    }
+  };
+
   const handleDeleteProvider = async (id: string) => {
     if (id.startsWith("new-")) {
       setProviders(providers.filter(p => p.id !== id));
@@ -2807,13 +2876,57 @@ const AdminSettings = () => {
                   <Globe className="w-5 h-5 text-amber-500" />
                   Provider Smart Routing
                 </CardTitle>
-                <CardDescription>Manage multiple data/airtime providers and set priorities.</CardDescription>
+                <CardDescription>
+                  Click <strong>Set as Primary</strong> on the provider you want to receive 100% of orders first. All other active (switched ON) providers act strictly as automatic <strong>Failover Backups</strong> in priority order.
+                </CardDescription>
               </div>
               <Button size="sm" onClick={handleAddProvider} className="h-8 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-bold text-[10px]">
                 Add Provider
               </Button>
             </CardHeader>
             <CardContent className="space-y-4">
+              {!loadingProviders && providers.length > 0 && (() => {
+                const activeDataProviders = [...providers]
+                  .filter((p) => p.is_active && (p.provider_type || "data") === "data")
+                  .sort((a, b) => {
+                    const aPrim = a.settings?.is_primary_provider === true ? 0 : 1;
+                    const bPrim = b.settings?.is_primary_provider === true ? 0 : 1;
+                    if (aPrim !== bPrim) return aPrim - bPrim;
+                    return (a.priority || 99) - (b.priority || 99);
+                  });
+                const primaryProvider = activeDataProviders[0];
+                const failoverProviders = activeDataProviders.slice(1);
+                return (
+                  <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/25 flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-black uppercase tracking-wider text-[10px] text-emerald-400 flex items-center gap-1">
+                        <Zap className="w-3.5 h-3.5" /> Live Order Flow:
+                      </span>
+                      {primaryProvider ? (
+                        <>
+                          <Badge className="bg-emerald-500 text-white hover:bg-emerald-600 font-black text-[10px] px-2 py-0.5">
+                            ★ 1st Choice: {primaryProvider.name}
+                          </Badge>
+                          {failoverProviders.length > 0 ? (
+                            <span className="text-muted-foreground text-[11px] flex flex-wrap items-center gap-1">
+                              <span>→ Failover Backups:</span>
+                              {failoverProviders.map((fp, idx) => (
+                                <Badge key={fp.id} variant="outline" className="text-[10px] border-amber-500/30 text-amber-400 bg-amber-500/10">
+                                  #{idx + 2} {fp.name}
+                                </Badge>
+                              ))}
+                            </span>
+                          ) : (
+                            <span className="text-[11px] text-muted-foreground">(No active failover backups toggled ON)</span>
+                          )}
+                        </>
+                      ) : (
+                        <span className="text-red-400 font-bold">No active data provider is toggled ON!</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
               {loadingProviders ? (
                  <div className="flex justify-center p-4"><Loader2 className="w-6 h-6 animate-spin text-amber-500" /></div>
               ) : providers.length === 0 ? (
@@ -2822,10 +2935,32 @@ const AdminSettings = () => {
                  </div>
               ) : (
                 <div className="space-y-3">
-                  {providers.map((provider) => (
-                    <div key={provider.id} className="p-4 rounded-xl bg-muted/30 border border-border space-y-4 shadow-sm">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
+                  {providers.map((provider) => {
+                    const sameTypeActive = [...providers]
+                      .filter((p) => p.is_active && (p.provider_type || "data") === (provider.provider_type || "data"))
+                      .sort((a, b) => {
+                        const aPrim = a.settings?.is_primary_provider === true ? 0 : 1;
+                        const bPrim = b.settings?.is_primary_provider === true ? 0 : 1;
+                        if (aPrim !== bPrim) return aPrim - bPrim;
+                        return (a.priority || 99) - (b.priority || 99);
+                      });
+                    const isDesignatedPrimary =
+                      provider.is_active &&
+                      (provider.settings?.is_primary_provider === true ||
+                        (sameTypeActive[0]?.id === provider.id && !sameTypeActive.some((p) => p.settings?.is_primary_provider === true)));
+                    const failoverRank = sameTypeActive.findIndex((p) => p.id === provider.id);
+
+                    return (
+                    <div
+                      key={provider.id}
+                      className={`p-4 rounded-xl border space-y-4 shadow-sm transition-all ${
+                        isDesignatedPrimary
+                          ? "bg-emerald-500/5 border-emerald-500/40 ring-1 ring-emerald-500/20"
+                          : "bg-muted/30 border-border"
+                      }`}
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex flex-wrap items-center gap-3">
                           <div className="flex items-center gap-1">
                             <Label className="text-[10px] text-muted-foreground">Priority</Label>
                             <Input 
@@ -2838,10 +2973,35 @@ const AdminSettings = () => {
                           <Input 
                             value={provider.name || ""} 
                             onChange={(e) => handleUpdateProvider(provider.id, { name: e.target.value })}
-                            className="h-8 w-48 bg-transparent border-none font-black text-sm focus:ring-0 text-foreground"
+                            className="h-8 w-44 bg-transparent border-none font-black text-sm focus:ring-0 text-foreground"
                           />
+                          {isDesignatedPrimary ? (
+                            <Badge className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 hover:bg-emerald-500/25 font-black text-[10px] gap-1">
+                              ★ PRIMARY (1st Choice)
+                            </Badge>
+                          ) : provider.is_active ? (
+                            <Badge variant="outline" className="border-amber-500/30 bg-amber-500/10 text-amber-400 font-bold text-[10px]">
+                              Failover Backup {failoverRank > 0 ? `#${failoverRank + 1}` : ""}
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="border-border text-muted-foreground text-[10px]">
+                              Disabled
+                            </Badge>
+                          )}
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          {!isDesignatedPrimary && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-8 rounded-lg bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500 hover:text-white font-bold text-[10px] gap-1.5"
+                              onClick={() => handleSetPrimaryProvider(provider)}
+                              title="Route 100% of orders to this provider first, and use other active providers only as failover backups"
+                            >
+                              <Zap className="w-3 h-3" />
+                              Set as Primary
+                            </Button>
+                          )}
                           <Button 
                             size="sm" 
                             variant="outline" 
@@ -3066,7 +3226,8 @@ const AdminSettings = () => {
                         </div>
                       )}
                     </div>
-                  ))}
+                  );
+                  })}
                   <Button onClick={handleSaveProviders} disabled={saving} className="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold h-10 rounded-xl">
                      Save Providers & API Keys
                   </Button>

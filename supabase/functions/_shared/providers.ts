@@ -40,8 +40,11 @@ export async function getActiveProviders(supabaseAdmin: any, type: string): Prom
     return [];
   }
 
-  // Self-Healing Dynamic Routing: Temporarily prioritize healthy providers ahead of degraded ones
+  // Self-Healing Dynamic Routing: Always keep designated Primary Provider first, then sort by health & priority
   const sorted = (data || []).sort((a: any, b: any) => {
+    const aPrimary = a.settings?.is_primary_provider === true ? 0 : 1;
+    const bPrimary = b.settings?.is_primary_provider === true ? 0 : 1;
+    if (aPrimary !== bPrimary) return aPrimary - bPrimary;
     const aDegraded = (a.consecutive_failures || 0) >= 3 ? 1 : 0;
     const bDegraded = (b.consecutive_failures || 0) >= 3 ? 1 : 0;
     if (aDegraded !== bDegraded) return aDegraded - bDegraded;
@@ -268,12 +271,18 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
     activeProviders = activeProviders.filter((p: any) => p.handler_type !== "korba" && p.name !== "Korba");
   }
 
-  // 5.5. BundleZone Express Mode: When admin toggles Express Mode ON for BundleZone,
-  // route data orders directly to the Express-enabled BundleZone API provider(s) first.
+  // 5.5. Designated Primary Provider vs BundleZone Express Mode:
+  // If admin selected a specific provider as Primary, ALWAYS route to that Primary Provider first;
+  // all other active providers act strictly as failover backups!
+  const designatedPrimary = activeProviders.find((p: any) => p.settings?.is_primary_provider === true);
   const expressBzProviders = activeProviders.filter(
     (p: any) => p.handler_type === "bundlezone" && p.settings?.express_mode_enabled === true
   );
-  if (isDataOrder && expressBzProviders.length > 0) {
+  if (designatedPrimary) {
+    const failoverBackups = activeProviders.filter((p: any) => p.id !== designatedPrimary.id);
+    activeProviders = [designatedPrimary, ...failoverBackups];
+    console.log(`[resolveProvidersForOrder] Primary Provider [${designatedPrimary.name}] active: Routing order ${order?.id} to ${designatedPrimary.name} first (Failover backups: ${failoverBackups.map((p: any) => p.name).join(" -> ") || "none"}).`);
+  } else if (isDataOrder && expressBzProviders.length > 0) {
     const nonExpressProviders = activeProviders.filter(
       (p: any) => !(p.handler_type === "bundlezone" && p.settings?.express_mode_enabled === true)
     );
