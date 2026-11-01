@@ -14,6 +14,8 @@ import {
   Vibrate,
   Compass,
   Brain,
+  BellRing,
+  Hand,
 } from "lucide-react";
 import {
   playCueStrikeSound,
@@ -22,6 +24,8 @@ import {
   playPocketDropSound,
   playFoulAlertSound,
   playLevelUpFanfare,
+  playTurnNotificationSound,
+  playFineAimTickSound,
   setGameSensoryPreferences,
   getGameSensoryPreferences,
   getPlayerLevelStatus,
@@ -42,6 +46,7 @@ export interface EightBallPoolState {
   turn: "creator" | "opponent";
   creatorGroup: "solids" | "stripes" | null;
   opponentGroup: "solids" | "stripes" | null;
+  ballInHand?: boolean;
   winner: "creator" | "opponent" | "draw" | null;
   lastAction: string;
   shotCount: number;
@@ -90,10 +95,10 @@ const BALL_COLORS: Record<number, { main: string; stripe: boolean; name: string 
 
 const HUMAN_THOUGHT_PHRASES = [
   "Scanning table pockets & angles...",
-  "Checking cut angle on target ball...",
+  "Adjusting fine-aim tray for cut shot...",
   "Lining up cue stick & chalking tip...",
-  "Measuring cue ball position...",
-  "Dialing in medium stroke power...",
+  "Checking cue ball position & spin...",
+  "Pulling back right cue stick power tray...",
 ];
 
 export function createInitialPoolBalls(): PoolBall[] {
@@ -137,8 +142,9 @@ export const INITIAL_POOL_STATE: EightBallPoolState = {
   turn: "creator",
   creatorGroup: null,
   opponentGroup: null,
+  ballInHand: true,
   winner: null,
-  lastAction: "Break Shot! Aim with touch or Motion Sensor and pull power to break the rack!",
+  lastAction: "Break Shot! Use the Left Fine-Aim Tray to adjust your stick & pull down the Right Cue Tray to break!",
   shotCount: 0,
 };
 
@@ -148,12 +154,13 @@ function isBallInGroup(id: number, group: "solids" | "stripes" | null): boolean 
   return id >= 9 && id <= 15;
 }
 
-interface EightBallPoolBoardProps {
+export interface EightBallPoolBoardProps {
   mode: "p2p" | "ai" | "free_data";
   mySide: "creator" | "opponent";
   creatorName: string;
   opponentName: string;
   playerTotalPoints?: number;
+  playerLevel?: number;
   initialState?: Partial<EightBallPoolState>;
   onStateChange?: (state: EightBallPoolState) => void;
   onPointsEarned?: (points: number, reason: string) => void;
@@ -174,7 +181,7 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
   const levelInfo = getPlayerLevelStatus(playerTotalPoints);
   const displayOpponentName =
     mode === "p2p"
-      ? opponentName
+      ? opponentName || "Challenger 2"
       : `${levelInfo.persona.name} (${levelInfo.persona.city})`;
 
   const [state, setState] = useState<EightBallPoolState>(() => ({
@@ -187,13 +194,24 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
   }));
 
   const [aimAngle, setAimAngle] = useState<number>(0); // radians
-  const [shotPower, setShotPower] = useState<number>(76); // 15..100
+  const [shotPower, setShotPower] = useState<number>(65); // 15..100
+  const [isPullingPowerTray, setIsPullingPowerTray] = useState<boolean>(false);
+  const [fineWheelOffset, setFineWheelOffset] = useState<number>(0); // visual scroll offset of left fine-aim tray ticks
   const [spinOffset, setSpinOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [isDraggingCueBall, setIsDraggingCueBall] = useState<boolean>(false);
+
   const [isSimulating, setIsSimulating] = useState<boolean>(false);
   const [isOpponentAiming, setIsOpponentAiming] = useState<boolean>(false);
   const [humanThoughtText, setHumanThoughtText] = useState<string>("");
   const [potStreak, setPotStreak] = useState<number>(0);
   const [floatingRewardText, setFloatingRewardText] = useState<string | null>(null);
+
+  // Turn-change notification spotlight banner state
+  const [turnBanner, setTurnBanner] = useState<{
+    playerName: string;
+    isMe: boolean;
+    subtitle: string;
+  } | null>(null);
 
   // Sound, Vibration & Motion Sensor states
   const [soundOn, setSoundOn] = useState<boolean>(() => getGameSensoryPreferences().soundEnabled);
@@ -202,32 +220,47 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
   const [tiltDegrees, setTiltDegrees] = useState<number>(0);
   const [parallaxOffset, setParallaxOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
-  // Landscape & Fullscreen state for mobile phones
-  const [isPortraitMobile, setIsPortraitMobile] = useState<boolean>(false);
+  // Strict Portrait Restriction & Fullscreen Landscape Stage
+  const [isPortraitViewport, setIsPortraitViewport] = useState<boolean>(false);
   const [forcedLandscape, setForcedLandscape] = useState<boolean>(false);
-  const [dismissedRotatePrompt, setDismissedRotatePrompt] = useState<boolean>(false);
 
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const fineTrayRef = useRef<HTMLDivElement | null>(null);
+  const powerTrayRef = useRef<HTMLDivElement | null>(null);
+  const fineDragLastPosRef = useRef<number | null>(null);
+  const lastTickAngleRef = useRef<number>(0);
+  const prevTurnRef = useRef<"creator" | "opponent">(state.turn);
   const stateRef = useRef<EightBallPoolState>(state);
   stateRef.current = state;
 
   // Sync incoming multiplayer state when not actively animating a shot locally
   useEffect(() => {
-    if (!isSimulating && initialState && Array.isArray(initialState.balls) && initialState.balls.length === 16) {
+    if (
+      !isSimulating &&
+      initialState &&
+      Array.isArray(initialState.balls) &&
+      initialState.balls.length === 16 &&
+      (initialState.shotCount || 0) > (state.shotCount || 0)
+    ) {
       setState((prev) => ({
         ...prev,
         ...initialState,
         balls: initialState.balls!,
       }));
     }
-  }, [initialState, isSimulating]);
+  }, [initialState, isSimulating, state.shotCount]);
 
-  // Detect portrait mobile orientation
+  // Strictly detect Portrait Viewport (height > width on mobile/tablet screens)
   useEffect(() => {
     const checkOrientation = () => {
       const w = window.innerWidth;
       const h = window.innerHeight;
-      setIsPortraitMobile(w < 768 && h > w);
+      const portrait = h > w && w < 960;
+      setIsPortraitViewport(portrait);
+      // If the user physically turned their phone to landscape, clear forced 90-deg CSS rotation so native landscape shines
+      if (!portrait && forcedLandscape) {
+        setForcedLandscape(false);
+      }
     };
     checkOrientation();
     window.addEventListener("resize", checkOrientation);
@@ -236,13 +269,37 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
       window.removeEventListener("resize", checkOrientation);
       window.removeEventListener("orientationchange", checkOrientation);
     };
-  }, []);
+  }, [forcedLandscape]);
 
   const isMyTurn =
     !state.winner &&
     !isSimulating &&
     !isOpponentAiming &&
     (mode === "p2p" ? state.turn === mySide : state.turn === "creator");
+
+  // Trigger Turn Notification Banner & Acoustic Chime whenever `state.turn` or `state.shotCount` updates!
+  useEffect(() => {
+    if (state.winner || state.shotCount === 0) return;
+    const isNowMyTurn = mode === "p2p" ? state.turn === mySide : state.turn === "creator";
+    const activePlayerName = state.turn === "creator" ? creatorName : displayOpponentName;
+
+    if (prevTurnRef.current !== state.turn || state.shotCount > 0) {
+      prevTurnRef.current = state.turn;
+      playTurnNotificationSound(isNowMyTurn);
+      setTurnBanner({
+        playerName: activePlayerName,
+        isMe: isNowMyTurn,
+        subtitle: state.ballInHand
+          ? "✋ Ball-in-Hand! Drag the white cue ball to place it, then aim & shoot."
+          : state.lastAction,
+      });
+
+      const timer = window.setTimeout(() => {
+        setTurnBanner(null);
+      }, 2800);
+      return () => window.clearTimeout(timer);
+    }
+  }, [state.turn, state.shotCount, state.winner, state.ballInHand, state.lastAction, mode, mySide, creatorName, displayOpponentName]);
 
   // ── DeviceOrientation / Gyroscope Motion Sensor Fine-Aiming & 3D Parallax ──
   const toggleMotionSensor = async () => {
@@ -269,7 +326,6 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
     if (!motionSensorActive) return;
 
     const handleOrientation = (e: DeviceOrientationEvent) => {
-      // In landscape or portrait, combine gamma/beta tilt for intuitive fine-aim micro-steering
       const rawTilt =
         window.innerWidth > window.innerHeight
           ? Number(e.beta || 0)
@@ -281,8 +337,7 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
         y: Number((Math.max(-15, Math.min(15, Number(e.beta || 0) - 35)) * 0.25).toFixed(1)),
       });
 
-      // Micro-steer cue aim angle when player tilts phone beyond deadzone (1.5 deg)
-      if (Math.abs(clampedTilt) > 1.5) {
+      if (Math.abs(clampedTilt) > 1.5 && isMyTurn) {
         setAimAngle((prev) => prev + clampedTilt * 0.00045);
       }
     };
@@ -291,7 +346,7 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
     return () => {
       window.removeEventListener("deviceorientation", handleOrientation);
     };
-  }, [motionSensorActive]);
+  }, [motionSensorActive, isMyTurn]);
 
   const handleToggleSound = () => {
     const next = !soundOn;
@@ -314,10 +369,56 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
         await (screen as any).orientation.lock("landscape").catch(() => {});
       }
     } catch (_e) {
-      // Fallback to CSS 90deg landscape theatre mode
+      // Fallback to CSS 90deg landscape theatre stage
     }
     setForcedLandscape(true);
-    setDismissedRotatePrompt(true);
+    playTurnNotificationSound(true);
+  };
+
+  /**
+   * Adjusts the Pool Cue Stick angle smoothly via the Left Fine-Aiming Wheel Tray
+   */
+  const adjustStickAngleByDelta = useCallback(
+    (deltaRad: number, visualPixels = 0) => {
+      if (!isMyTurn) return;
+      setAimAngle((prev) => {
+        const next = prev + deltaRad;
+        if (Math.abs(next - lastTickAngleRef.current) >= 0.011) {
+          lastTickAngleRef.current = next;
+          playFineAimTickSound();
+        }
+        return next;
+      });
+      if (visualPixels !== 0) {
+        setFineWheelOffset((prev) => (prev + visualPixels) % 24);
+      }
+    },
+    [isMyTurn]
+  );
+
+  // Left Fine-Aiming Wheel Tray Pointer Handlers
+  const handleFineTrayPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isMyTurn) return;
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const coord = forcedLandscape && isPortraitViewport ? e.clientX : e.clientY;
+    fineDragLastPosRef.current = coord;
+  };
+
+  const handleFineTrayPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isMyTurn || fineDragLastPosRef.current === null) return;
+    e.stopPropagation();
+    const coord = forcedLandscape && isPortraitViewport ? e.clientX : e.clientY;
+    const deltaPx = coord - fineDragLastPosRef.current;
+    fineDragLastPosRef.current = coord;
+
+    // 1 pixel of drag on the fine-aim tray = 0.0032 radians (~0.18 degrees) of ultra-smooth cue stick rotation!
+    const directionSign = forcedLandscape && isPortraitViewport ? -1 : 1;
+    adjustStickAngleByDelta(deltaPx * 0.0032 * directionSign, deltaPx * directionSign);
+  };
+
+  const handleFineTrayPointerUp = () => {
+    fineDragLastPosRef.current = null;
   };
 
   /**
@@ -333,24 +434,24 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
       const cue = simBalls.find((b) => b.id === 0);
       if (!cue || cue.potted) return;
 
-      // Play initial leather cue-tip strike sound & haptic pulse!
       playCueStrikeSound(powerPercent);
 
       const maxSpeed = 23.5;
       const speed = Math.max(3.5, (powerPercent / 100) * maxSpeed);
-      cue.vx = Math.cos(angleRad) * speed;
-      cue.vy = Math.sin(angleRad) * speed;
+      // Apply subtle spin offset influence
+      const spinAngleAdjust = spinOffset.x * 0.0035;
+      const spinSpeedBoost = 1 - spinOffset.y * 0.018;
+      cue.vx = Math.cos(angleRad + spinAngleAdjust) * speed * spinSpeedBoost;
+      cue.vy = Math.sin(angleRad + spinAngleAdjust) * speed * spinSpeedBoost;
 
       const pottedThisShot: number[] = [];
       let firstContactId: number | null = null;
       const frames: { balls: PoolBall[]; events: FrameAudioEvent[] }[] = [];
       let pendingEvents: FrameAudioEvent[] = [];
 
-      // Run up to 480 physics steps
       for (let step = 0; step < 480; step++) {
         let moving = false;
 
-        // 1. Advance positions & cushion bounces
         for (const b of simBalls) {
           if (b.potted) continue;
           b.x += b.vx;
@@ -366,7 +467,6 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
             moving = true;
           }
 
-          // Check pockets first
           for (const p of POCKETS) {
             if (Math.hypot(b.x - p.x, b.y - p.y) < POCKET_R) {
               b.potted = true;
@@ -379,7 +479,6 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
           }
           if (b.potted) continue;
 
-          // Rail cushion collisions
           if (b.x < BALL_R + 6) {
             b.x = BALL_R + 6;
             b.vx = Math.abs(b.vx) * 0.84;
@@ -400,7 +499,6 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
           }
         }
 
-        // 2. Ball-to-Ball Elastic Collisions
         for (let i = 0; i < simBalls.length; i++) {
           const b1 = simBalls[i];
           if (b1.potted) continue;
@@ -418,7 +516,6 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
                 firstContactId = b1.id === 0 ? b2.id : b1.id;
               }
 
-              // Separate overlapping balls
               const overlap = (minDist - dist) / 2 + 0.05;
               const nx = dx / dist;
               const ny = dy / dist;
@@ -427,7 +524,6 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
               b2.x += nx * overlap;
               b2.y += ny * overlap;
 
-              // Elastic impulse along normal
               const kx = b1.vx - b2.vx;
               const ky = b1.vy - b2.vy;
               const p = nx * kx + ny * ky;
@@ -444,7 +540,6 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
           }
         }
 
-        // Record every 2nd physics tick for smooth 60fps playback
         if (step % 2 === 0) {
           frames.push({
             balls: simBalls.map((b) => ({
@@ -460,7 +555,6 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
         if (!moving && step > 4) break;
       }
 
-      // Evaluate 8-Ball Pool rules after all balls come to rest
       let creatorGroup = current.creatorGroup;
       let opponentGroup = current.opponentGroup;
       const otherPlayer: "creator" | "opponent" = shooter === "creator" ? "opponent" : "creator";
@@ -469,7 +563,6 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
       const cueScratched = pottedThisShot.includes(0);
       const eightBallPotted = pottedThisShot.includes(8);
 
-      // Re-spot cue ball if scratched
       if (cueScratched) {
         const cueBall = simBalls.find((b) => b.id === 0)!;
         cueBall.potted = false;
@@ -479,7 +572,6 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
         cueBall.vy = 0;
       }
 
-      // Assign groups if table was still Open and a non-8 ball was legally potted
       let newlyAssigned = false;
       if (!creatorGroup && !opponentGroup && !cueScratched && !eightBallPotted) {
         const firstObjectPot = pottedThisShot.find((id) => id >= 1 && id <= 15 && id !== 8);
@@ -504,6 +596,7 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
 
       let winner: "creator" | "opponent" | "draw" | null = null;
       let nextTurn: "creator" | "opponent" = otherPlayer;
+      let nextBallInHand = false;
       let actionSummary = "";
       const pottedOwnBalls = pottedThisShot.filter((id) =>
         isBallInGroup(id, activeShooterGroup)
@@ -523,12 +616,13 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
         }
       } else if (cueScratched) {
         nextTurn = otherPlayer;
+        nextBallInHand = true;
         actionSummary = `⚠️ Foul (Cue ball scratch)! Ball-in-hand for ${
           otherPlayer === "creator" ? creatorName : displayOpponentName
         }.`;
       } else {
         if (pottedOwnBalls.length > 0) {
-          nextTurn = shooter; // Continues break!
+          nextTurn = shooter;
           actionSummary = newlyAssigned
             ? `🔥 ${shooterLabel} potted Ball #${pottedOwnBalls[0]} and claimed ${activeShooterGroup?.toUpperCase()}! Extra shot!`
             : `🔥 ${shooterLabel} sank ${pottedOwnBalls.map((n) => `#${n}`).join(", ")}! Extra shot!`;
@@ -536,19 +630,23 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
           nextTurn = otherPlayer;
           actionSummary = `${shooterLabel} potted opponent's ball (${pottedThisShot
             .map((n) => `#${n}`)
-            .join(", ")}). Turn passes!`;
+            .join(", ")}). Next turn: ${
+            otherPlayer === "creator" ? creatorName : displayOpponentName
+          }!`;
         } else if (firstContactId === null) {
           nextTurn = otherPlayer;
-          actionSummary = `Foul — cue ball missed all object balls! Turn passes.`;
+          nextBallInHand = true;
+          actionSummary = `⚠️ Foul — cue ball missed all object balls! Ball-in-hand for ${
+            otherPlayer === "creator" ? creatorName : displayOpponentName
+          }!`;
         } else {
           nextTurn = otherPlayer;
-          actionSummary = `${shooterLabel} played a shot. Now it's ${
+          actionSummary = `${shooterLabel} completed their shot. Next turn: ${
             otherPlayer === "creator" ? creatorName : displayOpponentName
-          }'s turn!`;
+          }!`;
         }
       }
 
-      // Animate frames smoothly with real-time sound & haptic triggers
       setIsSimulating(true);
       let frameIdx = 0;
       const stepInterval = setInterval(() => {
@@ -560,7 +658,6 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
             ...(nextFrame?.events || []),
           ];
 
-          // Fire acoustic & haptic events for this keyframe
           const hasPocket = combinedEvents.some((e) => e.type === "pocket");
           if (hasPocket) {
             playPocketDropSound();
@@ -594,6 +691,7 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
             turn: nextTurn,
             creatorGroup,
             opponentGroup,
+            ballInHand: nextBallInHand,
             winner,
             lastAction: actionSummary,
             shotCount: current.shotCount + 1,
@@ -602,12 +700,11 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
           setIsSimulating(false);
           setSpinOffset({ x: 0, y: 0 });
 
-          // Award progression points to human player for potted balls & wins!
           const isHumanShot =
             (mode === "p2p" && shooter === mySide) ||
             (mode !== "p2p" && shooter === "creator");
 
-          if (cueScratched && isHumanShot) {
+          if ((cueScratched || firstContactId === null) && isHumanShot) {
             playFoulAlertSound();
             setPotStreak(0);
           } else if (isHumanShot && pottedOwnBalls.length > 0 && !eightBallPotted) {
@@ -647,6 +744,7 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
     },
     [
       isSimulating,
+      spinOffset,
       creatorName,
       displayOpponentName,
       mode,
@@ -658,7 +756,47 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
     ]
   );
 
-  // ── Human-Sense Medium Opponent ("Kwame / Kojo / Nana") with Visible Cue Sweeping & Gaussian Error ──
+  // Right Cue Stick Pull-Back Power Tray Handlers (Drag down to pull cue stick back, release to fire!)
+  const updatePowerFromPointer = (clientX: number, clientY: number) => {
+    if (!powerTrayRef.current) return 0;
+    const rect = powerTrayRef.current.getBoundingClientRect();
+    let ratio = 0;
+    if (forcedLandscape && isPortraitViewport) {
+      ratio = 1 - (clientX - rect.left) / Math.max(1, rect.width);
+    } else {
+      ratio = (clientY - rect.top) / Math.max(1, rect.height);
+    }
+    const pct = Math.round(Math.max(10, Math.min(100, ratio * 100)));
+    setShotPower(pct);
+    return pct;
+  };
+
+  const handlePowerTrayPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isMyTurn) return;
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setIsPullingPowerTray(true);
+    updatePowerFromPointer(e.clientX, e.clientY);
+  };
+
+  const handlePowerTrayPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isMyTurn || !isPullingPowerTray) return;
+    e.stopPropagation();
+    updatePowerFromPointer(e.clientX, e.clientY);
+  };
+
+  const handlePowerTrayPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isPullingPowerTray) return;
+    e.stopPropagation();
+    setIsPullingPowerTray(false);
+    const finalPct = updatePowerFromPointer(e.clientX, e.clientY);
+    // If pulled down past 20%, release snaps the cue stick forward and shoots!
+    if (isMyTurn && finalPct >= 20) {
+      executeShot(aimAngle, finalPct, state.turn);
+    }
+  };
+
+  // ── Human-Sense Medium Opponent with Visible Cue Sweeping & Gaussian Error ──
   useEffect(() => {
     if (
       (mode === "ai" || mode === "free_data") &&
@@ -679,7 +817,6 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
         return;
       }
 
-      // Identify legal target balls for opponent
       const aiGroup = current.opponentGroup;
       let targets = current.balls.filter(
         (b) => !b.potted && b.id !== 0 && b.id !== 8 && isBallInGroup(b.id, aiGroup)
@@ -691,7 +828,6 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
         targets = current.balls.filter((b) => !b.potted && b.id !== 0 && b.id !== 8);
       }
 
-      // Evaluate candidate shots like a Medium-skill club player (1-shot horizon)
       let idealAngle = 0;
       let idealPower = 68;
       let bestScore = -999999;
@@ -733,7 +869,6 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
             }
           }
 
-          // Human perception noise when comparing shots (so opponent picks natural club shots)
           const humanEvaluationNoise = (Math.random() - 0.5) * 35;
           const score =
             cutCos * 240 -
@@ -751,8 +886,6 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
         }
       }
 
-      // Apply Human Gaussian Error scaled by Level (Medium difficulty sweet spot!)
-      // Steeper cuts (>40 deg) amplify human error naturally, just like real billiards!
       const cutDifficultyFactor = chosenCutCos < 0.7 ? 1.45 : 1.0;
       const humanAngleError = sampleGaussianError(
         levelInfo.aiErrorSigmaRad * cutDifficultyFactor
@@ -763,14 +896,11 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
         Math.max(38, Math.round(idealPower + (Math.random() - 0.5) * 12))
       );
 
-      // Visibly sweep the cue stick over 12 animation steps so the player sees the human opponent aiming!
       const startAngle = aimAngle;
-      // Shortest angular distance
       const deltaAngle = Math.atan2(
         Math.sin(finalAngle - startAngle),
         Math.cos(finalAngle - startAngle)
       );
-      // Human overshoots slightly then settles on finalAngle
       const totalSweepSteps = 14;
       let sweepStep = 0;
 
@@ -778,12 +908,11 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
         sweepStep++;
         if (sweepStep <= 10) {
           const t = sweepStep / 10;
-          // Smooth ease-out with slight human overshoot at t=0.8
           const ease = t < 0.8 ? (t / 0.8) * 1.06 : 1.06 - ((t - 0.8) / 0.2) * 0.06;
           setAimAngle(startAngle + deltaAngle * ease);
           setShotPower(Math.round(35 + (finalPower - 35) * t));
         } else if (sweepStep === 11) {
-          setHumanThoughtText("Pulling back cue stick...");
+          setHumanThoughtText("Pulling back cue stick tray...");
           setAimAngle(finalAngle);
           setShotPower(finalPower);
         } else if (sweepStep >= totalSweepSteps) {
@@ -807,30 +936,76 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
     executeShot,
   ]);
 
-  // Pointer aiming on the SVG pool table (supports normal and forced 90-degree rotated landscape)
-  const updateAimFromClientPoint = (clientX: number, clientY: number) => {
-    if (!isMyTurn || !svgRef.current) return;
+  // Convert client pointer to SVG felt coordinates (accounting for 90deg forcedLandscape)
+  const clientToSvgCoords = (clientX: number, clientY: number) => {
+    if (!svgRef.current) return { svgX: 205, svgY: TABLE_H / 2 };
+    const rect = svgRef.current.getBoundingClientRect();
+    if (forcedLandscape && isPortraitViewport) {
+      const relX = (clientY - rect.top) / Math.max(1, rect.height);
+      const relY = 1 - (clientX - rect.left) / Math.max(1, rect.width);
+      return { svgX: relX * TABLE_W, svgY: relY * TABLE_H };
+    }
+    const relX = (clientX - rect.left) / Math.max(1, rect.width);
+    const relY = (clientY - rect.top) / Math.max(1, rect.height);
+    return { svgX: relX * TABLE_W, svgY: relY * TABLE_H };
+  };
+
+  // Pointer aiming OR Ball-in-Hand placement on the SVG pool table
+  const handleTablePointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (!isMyTurn) return;
     const cue = state.balls.find((b) => b.id === 0);
     if (!cue || cue.potted) return;
 
-    const rect = svgRef.current.getBoundingClientRect();
-    let svgX = 0;
-    let svgY = 0;
+    const { svgX, svgY } = clientToSvgCoords(e.clientX, e.clientY);
 
-    if (forcedLandscape && isPortraitMobile) {
-      const relX = (clientY - rect.top) / Math.max(1, rect.height);
-      const relY = 1 - (clientX - rect.left) / Math.max(1, rect.width);
-      svgX = relX * TABLE_W;
-      svgY = relY * TABLE_H;
-    } else {
-      const relX = (clientX - rect.left) / Math.max(1, rect.width);
-      const relY = (clientY - rect.top) / Math.max(1, rect.height);
-      svgX = relX * TABLE_W;
-      svgY = relY * TABLE_H;
+    // If Ball-in-Hand is active and user touches near the cue ball, let them drag & place it!
+    if (state.ballInHand && Math.hypot(svgX - cue.x, svgY - cue.y) <= BALL_R * 2.8) {
+      setIsDraggingCueBall(true);
+      e.currentTarget.setPointerCapture(e.pointerId);
+      return;
     }
 
     const angle = Math.atan2(svgY - cue.y, svgX - cue.x);
     setAimAngle(angle);
+  };
+
+  const handleTablePointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (!isMyTurn) return;
+    const cue = state.balls.find((b) => b.id === 0);
+    if (!cue || cue.potted) return;
+
+    const { svgX, svgY } = clientToSvgCoords(e.clientX, e.clientY);
+
+    if (isDraggingCueBall && state.ballInHand) {
+      const maxX = state.shotCount === 0 ? 205 : TABLE_W - BALL_R - 14;
+      const clampedX = Math.max(BALL_R + 14, Math.min(maxX, svgX));
+      const clampedY = Math.max(BALL_R + 14, Math.min(TABLE_H - BALL_R - 14, svgY));
+
+      // Ensure cue ball doesn't overlap another ball
+      const overlapsOther = state.balls.some(
+        (b) => b.id !== 0 && !b.potted && Math.hypot(b.x - clampedX, b.y - clampedY) < BALL_R * 2.1
+      );
+      if (!overlapsOther) {
+        setState((prev) => ({
+          ...prev,
+          balls: prev.balls.map((b) =>
+            b.id === 0 ? { ...b, x: Number(clampedX.toFixed(1)), y: Number(clampedY.toFixed(1)) } : b
+          ),
+        }));
+      }
+      return;
+    }
+
+    if (e.buttons === 1) {
+      const angle = Math.atan2(svgY - cue.y, svgX - cue.x);
+      setAimAngle(angle);
+    }
+  };
+
+  const handleTablePointerUp = () => {
+    if (isDraggingCueBall) {
+      setIsDraggingCueBall(false);
+    }
   };
 
   const cueBall = state.balls.find((b) => b.id === 0 && !b.potted) || {
@@ -900,626 +1075,780 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
       : [9, 10, 11, 12, 13, 14, 15];
 
   const pottedBallsList = state.balls.filter((b) => b.potted && b.id !== 0);
+  const angleDegreesDisplay = (((aimAngle * 180) / Math.PI + 360) % 360).toFixed(1);
 
   return (
     <div className="space-y-3">
-      {/* ── Mobile Portrait "Turn Phone Sideways" Interactive Banner ── */}
-      {isPortraitMobile && !forcedLandscape && !dismissedRotatePrompt && (
-        <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/20 via-sky-500/20 to-indigo-500/20 border-2 border-amber-400/60 shadow-xl flex flex-col sm:flex-row items-center justify-between gap-3 animate-in fade-in duration-300">
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-amber-500 text-slate-950 flex items-center justify-center shrink-0 shadow-lg">
-              <Smartphone className="w-6 h-6 -rotate-90 animate-pulse" />
-            </div>
-            <div>
-              <p className="text-xs font-black uppercase tracking-wider text-amber-300">
-                📱 Turn Your Phone Sideways + Enable Motion Sensor!
-              </p>
-              <p className="text-[11px] text-slate-200 leading-snug">
-                Rotate your phone to <strong>Landscape Mode</strong> or tap below to launch the full-screen horizontal tournament table with Gyro Tilt Aim!
-              </p>
-            </div>
+      {/* ── STRICT PORTRAIT MODE LOCK OVERLAY (Requires Landscape View to Play!) ── */}
+      {isPortraitViewport && !forcedLandscape ? (
+        <div className="rounded-3xl bg-gradient-to-b from-[#0f172a] via-[#111c38] to-[#090d1a] border-2 border-amber-400/70 p-6 sm:p-8 text-center space-y-5 shadow-[0_25px_70px_rgba(0,0,0,0.9)]">
+          <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-amber-400 to-orange-500 text-slate-950 flex items-center justify-center mx-auto shadow-[0_0_30px_rgba(245,158,11,0.5)]">
+            <Smartphone className="w-11 h-11 -rotate-90 animate-bounce" />
           </div>
 
-          <div className="flex items-center gap-2 w-full sm:w-auto">
+          <div className="space-y-2 max-w-md mx-auto">
+            <Badge className="bg-rose-500/20 text-rose-300 border border-rose-400/50 font-black text-xs px-3 py-1">
+              🔒 PORTRAIT MODE RESTRICTED
+            </Badge>
+            <h3 className="text-xl sm:text-2xl font-black text-white">
+              Turn Your Phone Sideways to Play 8-Ball Pool Pro!
+            </h3>
+            <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+              To give you full control over the <strong>Left Fine-Aiming Stick Tray</strong>, the{" "}
+              <strong>Right Pull-Back Cue Stick Sleeve</strong>, and the{" "}
+              <strong>Championship Blue Felt Table</strong>, 8-Ball Pool is locked to{" "}
+              <strong className="text-amber-300">Landscape Mode</strong>.
+            </p>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
             <Button
               type="button"
-              size="sm"
               onClick={handleEnterLandscapeMode}
-              className="flex-1 sm:flex-initial h-9 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs gap-1.5"
+              className="w-full sm:w-auto h-12 px-6 rounded-2xl bg-gradient-to-r from-amber-400 via-orange-500 to-amber-500 hover:from-amber-300 hover:to-orange-400 text-slate-950 font-black text-sm gap-2 shadow-xl"
             >
-              <Maximize2 className="w-3.5 h-3.5" />
-              Full Landscape Table
+              <Maximize2 className="w-4 h-4" />
+              Switch to Fullscreen Landscape Now
             </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              onClick={() => setDismissedRotatePrompt(true)}
-              className="h-9 rounded-xl text-xs text-slate-300"
-            >
-              Dismiss
-            </Button>
+          </div>
+
+          <p className="text-[11px] text-slate-400">
+            💡 Physically rotate your phone horizontally (auto-unlocks) or tap the button above if your rotation lock is on!
+          </p>
+        </div>
+      ) : (
+        /* ── Main 8-Ball Pool Landscape Studio Stage ── */
+        <div
+          className={
+            forcedLandscape && isPortraitViewport
+              ? "fixed inset-0 z-[90] bg-[#0b1324] flex items-center justify-center overflow-hidden"
+              : "relative rounded-3xl bg-gradient-to-b from-[#131e36] via-[#0d1629] to-[#090f1d] border-2 border-sky-500/30 p-3 sm:p-5 shadow-[0_25px_70px_rgba(0,0,0,0.85)] overflow-hidden"
+          }
+        >
+          <div
+            style={
+              forcedLandscape && isPortraitViewport
+                ? {
+                    width: "100vh",
+                    height: "100vw",
+                    transform: "rotate(90deg)",
+                    transformOrigin: "center center",
+                  }
+                : undefined
+            }
+            className={
+              forcedLandscape && isPortraitViewport
+                ? "p-2.5 flex flex-col justify-between bg-gradient-to-b from-[#131e36] to-[#090f1d]"
+                : "space-y-3"
+            }
+          >
+            {/* ── Animated Next Player's Turn Notification Spotlight Banner ── */}
+            {turnBanner && (
+              <div
+                className={`px-4 py-2 rounded-2xl border-2 flex items-center justify-between gap-3 animate-in slide-in-from-top-3 duration-200 shadow-xl ${
+                  turnBanner.isMe
+                    ? "bg-gradient-to-r from-emerald-950/95 via-teal-900/90 to-slate-950 border-emerald-400 text-white"
+                    : "bg-gradient-to-r from-amber-950/95 via-orange-950/90 to-slate-950 border-amber-400 text-white"
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <div
+                    className={`w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs shrink-0 ${
+                      turnBanner.isMe
+                        ? "bg-emerald-400 text-slate-950 animate-bounce"
+                        : "bg-amber-400 text-slate-950"
+                    }`}
+                  >
+                    <BellRing className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <p className="text-xs sm:text-sm font-black tracking-wide">
+                      {turnBanner.isMe
+                        ? `🟢 YOUR TURN TO SHOOT, ${turnBanner.playerName.toUpperCase()}!`
+                        : `🔔 NEXT PLAYER'S TURN: ${turnBanner.playerName.toUpperCase()} IS UP!`}
+                    </p>
+                    <p className="text-[10px] sm:text-xs text-slate-200 line-clamp-1">
+                      {turnBanner.subtitle}
+                    </p>
+                  </div>
+                </div>
+                <Badge
+                  className={
+                    turnBanner.isMe
+                      ? "bg-emerald-400 text-slate-950 font-black text-[10px]"
+                      : "bg-amber-400 text-slate-950 font-black text-[10px]"
+                  }
+                >
+                  {turnBanner.isMe ? "Aim & Pull Stick" : "Opponent Turn"}
+                </Badge>
+              </div>
+            )}
+
+            {/* ── Top Tournament HUD Bar ── */}
+            <div className="flex items-center justify-between gap-2 px-1 sm:px-2">
+              {/* Left Player (Creator / ZEE) + 7 Target Ball Slots */}
+              <div className="flex items-center gap-2 sm:gap-3">
+                <div
+                  className={`relative px-2.5 py-1.5 rounded-xl border-2 flex items-center gap-2 transition-all ${
+                    state.turn === "creator"
+                      ? "bg-emerald-950/80 border-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.4)]"
+                      : "bg-slate-900/80 border-amber-500/40 opacity-80"
+                  }`}
+                >
+                  <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-gradient-to-br from-emerald-400 to-teal-600 flex items-center justify-center text-slate-950 font-black text-xs">
+                    {creatorName.slice(0, 2).toUpperCase()}
+                  </div>
+                  <div className="leading-tight">
+                    <p className="text-[11px] sm:text-xs font-black text-white truncate max-w-[90px]">
+                      {creatorName}
+                    </p>
+                    <p className="text-[9px] font-extrabold uppercase text-emerald-300">
+                      {state.creatorGroup ? state.creatorGroup.toUpperCase() : "OPEN TABLE"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="hidden md:flex items-center gap-1">
+                  {creatorTargetIds.map((ballId) => {
+                    const ballObj = state.balls.find((b) => b.id === ballId);
+                    const isRemaining = ballObj && !ballObj.potted;
+                    const meta = BALL_COLORS[ballId];
+                    return (
+                      <div
+                        key={ballId}
+                        className={`w-5 h-5 rounded-full border flex items-center justify-center text-[8px] font-black transition-all ${
+                          state.creatorGroup && isRemaining
+                            ? "border-white/40 shadow-inner"
+                            : "border-white/15 bg-slate-900/50 text-slate-600"
+                        }`}
+                        style={
+                          state.creatorGroup && isRemaining
+                            ? {
+                                background: meta.stripe
+                                  ? `linear-gradient(180deg, #fff 22%, ${meta.main} 22%, ${meta.main} 78%, #fff 78%)`
+                                  : meta.main,
+                                color: "#ffffff",
+                              }
+                            : undefined
+                        }
+                      >
+                        {state.creatorGroup && isRemaining ? ballId : ""}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Center Turn / Sensory Controls & Motion Sensor Badge */}
+              <div className="flex flex-col items-center text-center">
+                <div className="flex items-center gap-1.5 flex-wrap justify-center">
+                  <Badge
+                    className={
+                      isMyTurn
+                        ? "bg-emerald-500 text-slate-950 font-black text-[10px] px-2.5 py-0.5 animate-pulse"
+                        : "bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold text-[10px] px-2.5 py-0.5"
+                    }
+                  >
+                    {state.winner
+                      ? `🏆 ${state.winner === "creator" ? creatorName : displayOpponentName} WINS!`
+                      : isSimulating
+                      ? "🎱 BALLS IN MOTION..."
+                      : isMyTurn
+                      ? state.ballInHand
+                        ? "✋ BALL IN HAND — DRAG CUE BALL OR AIM"
+                        : "⚡ YOUR TURN — ADJUST TRAY & PULL CUE"
+                      : `⏳ NEXT TURN: ${displayOpponentName.split(" ")[0]}`}
+                  </Badge>
+
+                  {/* Motion Sensor Tilt Aim Toggle */}
+                  <button
+                    type="button"
+                    onClick={toggleMotionSensor}
+                    title="Toggle Phone Gyroscope / Motion Sensor Fine-Aim"
+                    className={`px-2 py-1 rounded-lg border text-[10px] font-black flex items-center gap-1 transition-all cursor-pointer ${
+                      motionSensorActive
+                        ? "bg-cyan-500/20 border-cyan-400 text-cyan-300 shadow-[0_0_12px_rgba(34,211,238,0.35)]"
+                        : "bg-white/5 border-white/10 text-slate-400 hover:text-white"
+                    }`}
+                  >
+                    <Compass className={`w-3.5 h-3.5 ${motionSensorActive ? "animate-spin" : ""}`} />
+                    <span className="hidden sm:inline">
+                      {motionSensorActive ? `Gyro ${tiltDegrees > 0 ? `+${tiltDegrees}°` : `${tiltDegrees}°`}` : "Gyro Aim"}
+                    </span>
+                  </button>
+
+                  {/* Sound Toggle */}
+                  <button
+                    type="button"
+                    onClick={handleToggleSound}
+                    title={soundOn ? "Mute Billiard Audio" : "Unmute Billiard Audio"}
+                    className={`p-1.5 rounded-lg border transition-colors cursor-pointer ${
+                      soundOn
+                        ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300"
+                        : "bg-white/5 border-white/10 text-slate-500"
+                    }`}
+                  >
+                    {soundOn ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
+                  </button>
+
+                  {/* Haptic Vibration Sensor Toggle */}
+                  <button
+                    type="button"
+                    onClick={handleToggleVibe}
+                    title={vibeOn ? "Vibration Sensor Active" : "Vibration Sensor Off"}
+                    className={`p-1.5 rounded-lg border transition-colors cursor-pointer ${
+                      vibeOn
+                        ? "bg-amber-500/15 border-amber-500/40 text-amber-300"
+                        : "bg-white/5 border-white/10 text-slate-500"
+                    }`}
+                  >
+                    <Vibrate className="w-3.5 h-3.5" />
+                  </button>
+
+                  {/* Fullscreen Landscape Toggle */}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      forcedLandscape ? setForcedLandscape(false) : handleEnterLandscapeMode()
+                    }
+                    title="Toggle Fullscreen Landscape Table"
+                    className="p-1.5 rounded-lg bg-white/5 hover:bg-white/15 border border-white/10 text-sky-300 hover:text-white transition-colors cursor-pointer"
+                  >
+                    {forcedLandscape ? (
+                      <Minimize2 className="w-3.5 h-3.5" />
+                    ) : (
+                      <Maximize2 className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+                </div>
+
+                <p className="text-[10px] text-slate-300 line-clamp-1 max-w-[260px] sm:max-w-md mt-0.5">
+                  {isOpponentAiming && humanThoughtText ? `💭 ${humanThoughtText}` : state.lastAction}
+                </p>
+              </div>
+
+              {/* Right Player (Opponent) + 7 Target Ball Slots */}
+              <div className="flex items-center gap-2 sm:gap-3">
+                <div className="hidden md:flex items-center gap-1">
+                  {opponentTargetIds.map((ballId) => {
+                    const ballObj = state.balls.find((b) => b.id === ballId);
+                    const isRemaining = ballObj && !ballObj.potted;
+                    const meta = BALL_COLORS[ballId];
+                    return (
+                      <div
+                        key={ballId}
+                        className={`w-5 h-5 rounded-full border flex items-center justify-center text-[8px] font-black transition-all ${
+                          state.opponentGroup && isRemaining
+                            ? "border-white/40 shadow-inner"
+                            : "border-white/15 bg-slate-900/50 text-slate-600"
+                        }`}
+                        style={
+                          state.opponentGroup && isRemaining
+                            ? {
+                                background: meta.stripe
+                                  ? `linear-gradient(180deg, #fff 22%, ${meta.main} 22%, ${meta.main} 78%, #fff 78%)`
+                                  : meta.main,
+                                color: "#ffffff",
+                              }
+                            : undefined
+                        }
+                      >
+                        {state.opponentGroup && isRemaining ? ballId : ""}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div
+                  className={`relative px-2.5 py-1.5 rounded-xl border-2 flex items-center gap-2 transition-all ${
+                    state.turn === "opponent"
+                      ? "bg-amber-950/80 border-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.4)]"
+                      : "bg-slate-900/80 border-amber-500/40 opacity-80"
+                  }`}
+                >
+                  <div className="leading-tight text-right">
+                    <p className="text-[11px] sm:text-xs font-black text-white truncate max-w-[110px]">
+                      {displayOpponentName}
+                    </p>
+                    <p className="text-[9px] font-extrabold uppercase text-amber-300 flex items-center justify-end gap-1">
+                      {mode !== "p2p" && <Brain className="w-2.5 h-2.5 text-emerald-400" />}
+                      {state.opponentGroup
+                        ? state.opponentGroup.toUpperCase()
+                        : mode !== "p2p"
+                        ? `${levelInfo.humanSensePercent}% HUMAN SENSE`
+                        : "OPEN TABLE"}
+                    </p>
+                  </div>
+                  <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-gradient-to-br from-amber-400 to-orange-600 flex items-center justify-center text-slate-950 font-black text-xs">
+                    {mode !== "p2p"
+                      ? levelInfo.persona.avatarInitials
+                      : displayOpponentName.slice(0, 2).toUpperCase()}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* ── Main Horizontal Arena Row: Left Stick Fine-Aim Tray & Ball Return | Center Table | Right Cue-Stick Pull-Back Tray ── */}
+            <div className="flex items-stretch gap-2 sm:gap-3">
+              {/* LEFT SIDE DOCK: Cue Spin Globe + Chrome Ball Return + Interactive Fine-Aiming Stick Tray (Matches Reference Photo!) */}
+              <div className="flex flex-col items-center justify-between w-14 sm:w-16 py-0.5 shrink-0 gap-1.5 select-none">
+                {/* 1. Cue Ball Spin (English) Selector */}
+                <button
+                  type="button"
+                  disabled={!isMyTurn}
+                  onClick={() =>
+                    setSpinOffset((prev) => ({
+                      x: prev.x === 0 ? 4 : prev.x === 4 ? -4 : 0,
+                      y: prev.y === 0 ? -4 : prev.y === -4 ? 4 : 0,
+                    }))
+                  }
+                  title="Cue Ball Spin (Tap to cycle Top/Back/Side English)"
+                  className="w-10 h-10 rounded-full bg-gradient-to-br from-white via-slate-100 to-slate-300 border-2 border-slate-400 shadow-lg flex items-center justify-center relative cursor-pointer disabled:opacity-50"
+                >
+                  <span className="absolute inset-1.5 rounded-full border border-dashed border-slate-400/60" />
+                  <span
+                    className="w-2.5 h-2.5 rounded-full bg-rose-600 shadow-sm transition-transform"
+                    style={{
+                      transform: `translate(${spinOffset.x}px, ${spinOffset.y}px)`,
+                    }}
+                  />
+                </button>
+
+                {/* 2. Interactive Fine-Aiming Wheel Tray (Drag Up/Down to Micro-Adjust Pool Stick Angle!) */}
+                <div className="flex-1 w-full flex flex-col items-center">
+                  <div className="flex items-center justify-between w-full px-0.5 mb-0.5">
+                    <button
+                      type="button"
+                      disabled={!isMyTurn}
+                      onClick={() => adjustStickAngleByDelta(-0.006, -4)}
+                      className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[9px] font-black text-amber-300 border border-white/10 cursor-pointer disabled:opacity-40"
+                      title="Micro-rotate stick counter-clockwise (-0.3°)"
+                    >
+                      ▲
+                    </button>
+                    <span className="text-[8px] font-mono font-black text-sky-300">
+                      {angleDegreesDisplay}°
+                    </span>
+                    <button
+                      type="button"
+                      disabled={!isMyTurn}
+                      onClick={() => adjustStickAngleByDelta(0.006, 4)}
+                      className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[9px] font-black text-amber-300 border border-white/10 cursor-pointer disabled:opacity-40"
+                      title="Micro-rotate stick clockwise (+0.3°)"
+                    >
+                      ▼
+                    </button>
+                  </div>
+
+                  <div
+                    ref={fineTrayRef}
+                    onPointerDown={handleFineTrayPointerDown}
+                    onPointerMove={handleFineTrayPointerMove}
+                    onPointerUp={handleFineTrayPointerUp}
+                    onPointerCancel={handleFineTrayPointerUp}
+                    onWheel={(e) => {
+                      if (!isMyTurn) return;
+                      adjustStickAngleByDelta(e.deltaY * 0.0005, e.deltaY * 0.15);
+                    }}
+                    title="Drag Up/Down to Fine-Tune Pool Stick Aim!"
+                    className={`relative flex-1 w-12 sm:w-13 rounded-xl bg-gradient-to-r from-slate-300 via-white to-slate-300 border-2 ${
+                      isMyTurn
+                        ? "border-amber-400 shadow-[0_0_12px_rgba(245,158,11,0.35)] cursor-ns-resize"
+                        : "border-slate-600 opacity-60 cursor-default"
+                    } overflow-hidden flex flex-col justify-between py-1 touch-none`}
+                  >
+                    {/* 3-Rail Chrome Pipe Border Accents */}
+                    <div className="absolute inset-y-0 left-1 w-0.5 bg-slate-400/70 pointer-events-none" />
+                    <div className="absolute inset-y-0 right-1 w-0.5 bg-slate-400/70 pointer-events-none" />
+
+                    {/* Animated Scrolling Horizontal Ruler Ticks (Exact match to bottom-left tray in reference screenshot) */}
+                    <div
+                      className="w-full h-full flex flex-col justify-around items-center pointer-events-none"
+                      style={{
+                        transform: `translateY(${fineWheelOffset * 0.45}px)`,
+                      }}
+                    >
+                      {Array.from({ length: 14 }).map((_, i) => (
+                        <div
+                          key={i}
+                          className={`h-[2px] rounded-full ${
+                            i % 3 === 0 ? "w-8 bg-slate-800" : "w-5 bg-slate-500/80"
+                          }`}
+                        />
+                      ))}
+                    </div>
+
+                    {/* Center Red Hairline Indicator */}
+                    <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-[2.5px] bg-rose-600 shadow pointer-events-none" />
+                    <div className="absolute bottom-1 inset-x-0 text-center pointer-events-none">
+                      <span className="px-1 py-0.5 rounded bg-slate-950/85 text-[7px] font-black text-amber-300 uppercase tracking-tighter">
+                        AIM TRAY
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. Compact Potted Ball Return Window */}
+                <div className="w-12 h-14 rounded-xl bg-slate-950/90 border border-slate-600/70 p-1 flex flex-wrap items-center justify-center gap-0.5 overflow-hidden shadow-inner">
+                  {pottedBallsList.length === 0 ? (
+                    <span className="text-[7px] font-bold text-slate-500 text-center leading-tight">
+                      POTTED
+                      <br />
+                      RACK
+                    </span>
+                  ) : (
+                    pottedBallsList.slice(-6).map((b) => {
+                      const meta = BALL_COLORS[b.id];
+                      return (
+                        <div
+                          key={b.id}
+                          className="w-4 h-4 rounded-full border border-white/30 flex items-center justify-center text-[6px] font-black text-white shadow"
+                          style={{
+                            background: meta.stripe
+                              ? `linear-gradient(180deg, #fff 22%, ${meta.main} 22%, ${meta.main} 78%, #fff 78%)`
+                              : meta.main,
+                          }}
+                        >
+                          {b.id}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+              {/* CENTER 8-BALL POOL TABLE */}
+              <div
+                style={
+                  motionSensorActive
+                    ? {
+                        transform: `perspective(900px) rotateY(${parallaxOffset.x * 0.35}deg) rotateX(${-parallaxOffset.y * 0.35}deg)`,
+                        transition: "transform 120ms ease-out",
+                      }
+                    : undefined
+                }
+                className="flex-1 relative rounded-[26px] p-3 sm:p-5 bg-gradient-to-b from-[#9c421a] via-[#6e2a0c] to-[#4a1a06] border-4 border-[#381204] shadow-[0_20px_50px_rgba(0,0,0,0.9),inset_0_2px_6px_rgba(255,255,255,0.25)] select-none"
+              >
+                {/* Floating Live Points Earned Banner */}
+                {floatingRewardText && (
+                  <div className="absolute top-6 left-1/2 -translate-x-1/2 z-30 px-4 py-1.5 rounded-full bg-gradient-to-r from-amber-400 via-yellow-300 to-emerald-400 text-slate-950 font-black text-xs shadow-[0_10px_30px_rgba(245,158,11,0.6)] animate-bounce pointer-events-none">
+                    {floatingRewardText}
+                  </div>
+                )}
+
+                {/* Silver / Chrome Corner & Center Pocket Castings */}
+                <div className="absolute top-0 left-0 w-9 h-9 rounded-tl-[22px] rounded-br-2xl bg-gradient-to-br from-slate-200 via-slate-400 to-slate-700 border-b border-r border-slate-900 pointer-events-none" />
+                <div className="absolute top-0 right-0 w-9 h-9 rounded-tr-[22px] rounded-bl-2xl bg-gradient-to-bl from-slate-200 via-slate-400 to-slate-700 border-b border-l border-slate-900 pointer-events-none" />
+                <div className="absolute bottom-0 left-0 w-9 h-9 rounded-bl-[22px] rounded-tr-2xl bg-gradient-to-tr from-slate-200 via-slate-400 to-slate-700 border-t border-r border-slate-900 pointer-events-none" />
+                <div className="absolute bottom-0 right-0 w-9 h-9 rounded-br-[22px] rounded-tl-2xl bg-gradient-to-tl from-slate-200 via-slate-400 to-slate-700 border-t border-l border-slate-900 pointer-events-none" />
+                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-12 h-4 rounded-b-lg bg-gradient-to-b from-slate-200 via-slate-400 to-slate-700 pointer-events-none" />
+                <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-12 h-4 rounded-t-lg bg-gradient-to-t from-slate-200 via-slate-400 to-slate-700 pointer-events-none" />
+
+                {/* Interactive SVG Tournament Blue Felt Surface */}
+                <div className="relative rounded-xl overflow-hidden border-[5px] border-[#114b7a] shadow-[inset_0_0_35px_rgba(0,0,0,0.65)]">
+                  <svg
+                    ref={svgRef}
+                    viewBox={`0 0 ${TABLE_W} ${TABLE_H}`}
+                    onPointerDown={handleTablePointerDown}
+                    onPointerMove={handleTablePointerMove}
+                    onPointerUp={handleTablePointerUp}
+                    onPointerCancel={handleTablePointerUp}
+                    className="w-full h-auto block touch-none cursor-crosshair"
+                  >
+                    <defs>
+                      <radialGradient id="poolFeltBlue" cx="50%" cy="50%" r="65%">
+                        <stop offset="0%" stopColor="#2ca2ec" />
+                        <stop offset="65%" stopColor="#1d7ec2" />
+                        <stop offset="100%" stopColor="#12558a" />
+                      </radialGradient>
+                      <radialGradient id="ballHighlight" cx="32%" cy="30%" r="55%">
+                        <stop offset="0%" stopColor="rgba(255,255,255,0.65)" />
+                        <stop offset="45%" stopColor="rgba(255,255,255,0.08)" />
+                        <stop offset="100%" stopColor="rgba(0,0,0,0.45)" />
+                      </radialGradient>
+                    </defs>
+
+                    <rect x={0} y={0} width={TABLE_W} height={TABLE_H} fill="url(#poolFeltBlue)" />
+
+                    {/* Baulk Line & Foot Spot */}
+                    <line
+                      x1={205}
+                      y1={0}
+                      x2={205}
+                      y2={TABLE_H}
+                      stroke="rgba(255,255,255,0.22)"
+                      strokeWidth={1.5}
+                    />
+                    <line
+                      x1={550}
+                      y1={0}
+                      x2={550}
+                      y2={TABLE_H}
+                      stroke="rgba(255,255,255,0.08)"
+                      strokeWidth={1}
+                    />
+                    <circle cx={550} cy={TABLE_H / 2} r={3.5} fill="rgba(15,23,42,0.55)" />
+
+                    {/* 6 Deep Black Pockets */}
+                    {POCKETS.map((p, idx) => (
+                      <g key={idx}>
+                        <circle cx={p.x} cy={p.y} r={POCKET_R + 3} fill="#0f172a" opacity={0.45} />
+                        <circle cx={p.x} cy={p.y} r={POCKET_R} fill="#04070d" />
+                      </g>
+                    ))}
+
+                    {/* Glowing Laser Aiming Guideline + Cue Stick */}
+                    {showCueAndLaser && (
+                      <g>
+                        <line
+                          x1={cueBall.x}
+                          y1={cueBall.y}
+                          x2={laser.endX}
+                          y2={laser.endY}
+                          stroke={isOpponentAiming ? "rgba(251,191,36,0.32)" : "rgba(224,242,254,0.38)"}
+                          strokeWidth={BALL_R * 1.55}
+                          strokeLinecap="round"
+                        />
+                        <line
+                          x1={cueBall.x}
+                          y1={cueBall.y}
+                          x2={laser.endX}
+                          y2={laser.endY}
+                          stroke={isOpponentAiming ? "#fde047" : "#ffffff"}
+                          strokeWidth={2.5}
+                        />
+
+                        <circle
+                          cx={laser.endX}
+                          cy={laser.endY}
+                          r={BALL_R}
+                          fill="rgba(255,255,255,0.18)"
+                          stroke={isOpponentAiming ? "#fde047" : "#ffffff"}
+                          strokeWidth={2}
+                          strokeDasharray="4 3"
+                        />
+
+                        {laser.targetDeflectEnd && laser.hitBall && (
+                          <line
+                            x1={laser.hitBall.x}
+                            y1={laser.hitBall.y}
+                            x2={laser.targetDeflectEnd.x}
+                            y2={laser.targetDeflectEnd.y}
+                            stroke="#fde047"
+                            strokeWidth={2.5}
+                            strokeDasharray="5 4"
+                          />
+                        )}
+
+                        {(() => {
+                          const pullBack = 16 + (shotPower / 100) * 44;
+                          const tipX = cueBall.x - Math.cos(aimAngle) * pullBack;
+                          const tipY = cueBall.y - Math.sin(aimAngle) * pullBack;
+                          const buttX = cueBall.x - Math.cos(aimAngle) * (pullBack + 215);
+                          const buttY = cueBall.y - Math.sin(aimAngle) * (pullBack + 215);
+                          const midX = cueBall.x - Math.cos(aimAngle) * (pullBack + 98);
+                          const midY = cueBall.y - Math.sin(aimAngle) * (pullBack + 98);
+
+                          return (
+                            <g>
+                              <line
+                                x1={buttX}
+                                y1={buttY + 5}
+                                x2={tipX}
+                                y2={tipY + 5}
+                                stroke="rgba(0,0,0,0.45)"
+                                strokeWidth={8}
+                                strokeLinecap="round"
+                              />
+                              <line
+                                x1={buttX}
+                                y1={buttY}
+                                x2={midX}
+                                y2={midY}
+                                stroke="#1e1b18"
+                                strokeWidth={8}
+                                strokeLinecap="round"
+                              />
+                              <line
+                                x1={midX}
+                                y1={midY}
+                                x2={tipX}
+                                y2={tipY}
+                                stroke="#e2e8f0"
+                                strokeWidth={5.2}
+                                strokeLinecap="round"
+                              />
+                              <circle cx={tipX} cy={tipY} r={3.2} fill="#0284c7" />
+                            </g>
+                          );
+                        })()}
+                      </g>
+                    )}
+
+                    {/* Render All Active Pool Balls (0..15) */}
+                    {state.balls.map((b) => {
+                      if (b.potted) return null;
+                      const meta = BALL_COLORS[b.id] || BALL_COLORS[1];
+                      const isCueWithBallInHand = b.id === 0 && isMyTurn && state.ballInHand;
+                      return (
+                        <g key={b.id} transform={`translate(${b.x}, ${b.y})`}>
+                          {isCueWithBallInHand && (
+                            <circle
+                              cx={0}
+                              cy={0}
+                              r={BALL_R + 6}
+                              fill="none"
+                              stroke="#38bdf8"
+                              strokeWidth={2}
+                              strokeDasharray="4 3"
+                            />
+                          )}
+                          <circle cx={2.5} cy={3.5} r={BALL_R} fill="rgba(0,0,0,0.42)" />
+                          <circle
+                            cx={0}
+                            cy={0}
+                            r={BALL_R}
+                            fill={meta.stripe ? "#f8fafc" : meta.main}
+                          />
+                          {meta.stripe && (
+                            <rect
+                              x={-BALL_R + 1}
+                              y={-BALL_R * 0.52}
+                              width={BALL_R * 2 - 2}
+                              height={BALL_R * 1.04}
+                              rx={4}
+                              fill={meta.main}
+                            />
+                          )}
+                          {b.id === 0 ? (
+                            <circle cx={3} cy={-2} r={2.3} fill="#dc2626" />
+                          ) : (
+                            <>
+                              <circle cx={0} cy={0} r={5.6} fill="#ffffff" opacity={0.95} />
+                              <text
+                                x={0}
+                                y={2.8}
+                                textAnchor="middle"
+                                fontSize="7.5"
+                                fontWeight="900"
+                                fill="#0f172a"
+                              >
+                                {b.id}
+                              </text>
+                            </>
+                          )}
+                          <circle cx={0} cy={0} r={BALL_R} fill="url(#ballHighlight)" />
+                        </g>
+                      );
+                    })}
+                  </svg>
+                </div>
+              </div>
+
+              {/* RIGHT SIDE DOCK: Tapered Cue-Stick Pull-Back Sleeve Tray & Shoot Trigger (Matches Reference Photo!) */}
+              <div className="flex flex-col items-center justify-between w-16 sm:w-20 py-0.5 shrink-0 gap-1.5 select-none">
+                <div className="text-center leading-tight">
+                  <p className="text-[8px] font-black uppercase tracking-wider text-sky-300">
+                    CUE TRAY
+                  </p>
+                  <p className="text-xs font-black font-mono text-amber-400">{shotPower}%</p>
+                </div>
+
+                {/* Interactive Pull-Back Cue Stick Sleeve (Drag Down & Release to Strike!) */}
+                <div
+                  ref={powerTrayRef}
+                  onPointerDown={handlePowerTrayPointerDown}
+                  onPointerMove={handlePowerTrayPointerMove}
+                  onPointerUp={handlePowerTrayPointerUp}
+                  onPointerCancel={handlePowerTrayPointerUp}
+                  title="Drag down to pull back Pool Stick & release to shoot!"
+                  className={`relative flex-1 w-12 sm:w-14 rounded-2xl bg-gradient-to-b from-slate-900 via-slate-950 to-black border-2 ${
+                    isMyTurn
+                      ? "border-sky-400/80 shadow-[0_0_15px_rgba(56,189,248,0.3)] cursor-ns-resize"
+                      : "border-slate-700 opacity-60 cursor-default"
+                  } p-1.5 flex flex-col justify-between overflow-hidden touch-none`}
+                >
+                  {/* Top Chrome Collar (Matches right-side tray in reference screenshot) */}
+                  <div className="w-full h-3 rounded-sm bg-gradient-to-r from-slate-300 via-white to-slate-400 border border-slate-800 shadow z-10 pointer-events-none" />
+
+                  {/* Background Power Fill Glow */}
+                  <div
+                    className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-emerald-500/35 via-amber-400/45 to-rose-500/55 transition-all pointer-events-none"
+                    style={{ height: `${shotPower}%` }}
+                  />
+
+                  {/* Miniature Sliding Pool Cue Stick inside the Right Tray */}
+                  <div
+                    className="relative z-10 mx-auto w-3.5 h-full flex flex-col items-center pointer-events-none transition-transform duration-75"
+                    style={{
+                      transform: `translateY(${Math.round((shotPower / 100) * 52)}px)`,
+                    }}
+                  >
+                    {/* Blue Chalk Tip */}
+                    <div className="w-2.5 h-2 rounded-t-sm bg-sky-400 border-b border-white" />
+                    {/* Maple Shaft */}
+                    <div className="w-2.5 h-16 bg-gradient-to-r from-amber-100 via-white to-amber-200" />
+                    {/* Ebony & Gold Butt Handle */}
+                    <div className="w-3.5 flex-1 rounded-b-md bg-gradient-to-b from-amber-600 via-stone-900 to-black border border-amber-500/40" />
+                  </div>
+
+                  <div className="relative z-20 text-center pointer-events-none">
+                    <span className="px-1 py-0.5 rounded bg-black/80 text-[7px] font-black text-amber-300 uppercase">
+                      {isPullingPowerTray ? "RELEASE!" : "PULL CUE"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Instant Shoot Button (Alternative to Drag-and-Release) */}
+                <Button
+                  type="button"
+                  disabled={!isMyTurn}
+                  onClick={() => executeShot(aimAngle, shotPower, state.turn)}
+                  className="w-full h-10 rounded-xl bg-gradient-to-b from-amber-400 via-orange-500 to-amber-600 hover:from-amber-300 hover:to-orange-500 text-slate-950 font-black text-[11px] shadow-lg px-1"
+                >
+                  <Zap className="w-3.5 h-3.5 mr-0.5 shrink-0" />
+                  SHOOT
+                </Button>
+              </div>
+            </div>
+
+            {/* ── Bottom Quick Controls & Sensory Status Bar ── */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-[11px] text-slate-300">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 font-bold text-amber-300">
+                  <Crosshair className="w-3.5 h-3.5" /> Drag <strong>Left Aim Tray</strong> for fine stick angle • Drag <strong>Right Cue Tray</strong> down &amp; release to shoot!
+                </span>
+                {state.ballInHand && isMyTurn && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-sky-500/15 border border-sky-400/40 font-black text-sky-300">
+                    <Hand className="w-3.5 h-3.5" /> Ball-in-Hand: Drag white cue ball anywhere on table
+                  </span>
+                )}
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 font-bold text-emerald-300">
+                  <Sparkles className="w-3.5 h-3.5" /> +40 Pts/ball • +300 Pts/win
+                </span>
+              </div>
+
+              {state.winner && mode !== "p2p" && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    const fresh: EightBallPoolState = {
+                      ...INITIAL_POOL_STATE,
+                      balls: createInitialPoolBalls(),
+                    };
+                    setState(fresh);
+                    onStateChange?.(fresh);
+                  }}
+                  className="h-8 rounded-xl border-amber-500/40 text-amber-300 text-xs font-bold gap-1.5"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" /> Next Frame (Keep Accumulating Points)
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       )}
-
-      {/* ── Main 8-Ball Pool Studio Stage (Supports Forced 90° Landscape on Portrait Mobile) ── */}
-      <div
-        className={
-          forcedLandscape && isPortraitMobile
-            ? "fixed inset-0 z-[90] bg-[#0b1324] flex items-center justify-center overflow-hidden"
-            : "relative rounded-3xl bg-gradient-to-b from-[#131e36] via-[#0d1629] to-[#090f1d] border-2 border-sky-500/30 p-3 sm:p-5 shadow-[0_25px_70px_rgba(0,0,0,0.85)] overflow-hidden"
-        }
-      >
-        <div
-          style={
-            forcedLandscape && isPortraitMobile
-              ? {
-                  width: "100vh",
-                  height: "100vw",
-                  transform: "rotate(90deg)",
-                  transformOrigin: "center center",
-                }
-              : undefined
-          }
-          className={
-            forcedLandscape && isPortraitMobile
-              ? "p-3 flex flex-col justify-between bg-gradient-to-b from-[#131e36] to-[#090f1d]"
-              : "space-y-3"
-          }
-        >
-          {/* ── Top Tournament HUD Bar ── */}
-          <div className="flex items-center justify-between gap-2 px-1 sm:px-2">
-            {/* Left Player (Creator / ZEE) + 7 Target Ball Slots */}
-            <div className="flex items-center gap-2 sm:gap-3">
-              <div
-                className={`relative px-2.5 py-1.5 rounded-xl border-2 flex items-center gap-2 transition-all ${
-                  state.turn === "creator"
-                    ? "bg-emerald-950/80 border-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.4)]"
-                    : "bg-slate-900/80 border-amber-500/40 opacity-80"
-                }`}
-              >
-                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-gradient-to-br from-emerald-400 to-teal-600 flex items-center justify-center text-slate-950 font-black text-xs">
-                  {creatorName.slice(0, 2).toUpperCase()}
-                </div>
-                <div className="leading-tight">
-                  <p className="text-[11px] sm:text-xs font-black text-white truncate max-w-[90px]">
-                    {creatorName}
-                  </p>
-                  <p className="text-[9px] font-extrabold uppercase text-emerald-300">
-                    {state.creatorGroup ? state.creatorGroup.toUpperCase() : "OPEN TABLE"}
-                  </p>
-                </div>
-              </div>
-
-              {/* 7 Circular Ball Rack Slots (Left Player) */}
-              <div className="hidden md:flex items-center gap-1.5">
-                {creatorTargetIds.map((ballId) => {
-                  const ballObj = state.balls.find((b) => b.id === ballId);
-                  const isRemaining = ballObj && !ballObj.potted;
-                  const meta = BALL_COLORS[ballId];
-                  return (
-                    <div
-                      key={ballId}
-                      className={`w-6 h-6 rounded-full border flex items-center justify-center text-[9px] font-black transition-all ${
-                        state.creatorGroup && isRemaining
-                          ? "border-white/40 shadow-inner"
-                          : "border-white/15 bg-slate-900/50 text-slate-600"
-                      }`}
-                      style={
-                        state.creatorGroup && isRemaining
-                          ? {
-                              background: meta.stripe
-                                ? `linear-gradient(180deg, #fff 22%, ${meta.main} 22%, ${meta.main} 78%, #fff 78%)`
-                                : meta.main,
-                              color: "#ffffff",
-                            }
-                          : undefined
-                      }
-                    >
-                      {state.creatorGroup && isRemaining ? ballId : ""}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Center Turn / Sensory Controls & Motion Sensor Badge */}
-            <div className="flex flex-col items-center text-center">
-              <div className="flex items-center gap-1.5 flex-wrap justify-center">
-                <Badge
-                  className={
-                    isMyTurn
-                      ? "bg-emerald-500 text-slate-950 font-black text-[10px] px-2.5 py-0.5 animate-pulse"
-                      : "bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold text-[10px] px-2.5 py-0.5"
-                  }
-                >
-                  {state.winner
-                    ? `🏆 ${state.winner === "creator" ? creatorName : displayOpponentName} WINS!`
-                    : isSimulating
-                    ? "🎱 BALLS IN MOTION..."
-                    : isMyTurn
-                    ? "⚡ YOUR SHOT — AIM & PULL POWER"
-                    : `🧠 ${displayOpponentName.split(" ")[0]} (${levelInfo.humanSensePercent}% Human Sense)`}
-                </Badge>
-
-                {/* Motion Sensor Tilt Aim Toggle */}
-                <button
-                  type="button"
-                  onClick={toggleMotionSensor}
-                  title="Toggle Phone Gyroscope / Motion Sensor Fine-Aim"
-                  className={`px-2 py-1 rounded-lg border text-[10px] font-black flex items-center gap-1 transition-all cursor-pointer ${
-                    motionSensorActive
-                      ? "bg-cyan-500/20 border-cyan-400 text-cyan-300 shadow-[0_0_12px_rgba(34,211,238,0.35)]"
-                      : "bg-white/5 border-white/10 text-slate-400 hover:text-white"
-                  }`}
-                >
-                  <Compass className={`w-3.5 h-3.5 ${motionSensorActive ? "animate-spin" : ""}`} />
-                  <span className="hidden sm:inline">
-                    {motionSensorActive ? `Gyro ${tiltDegrees > 0 ? `+${tiltDegrees}°` : `${tiltDegrees}°`}` : "Motion Aim"}
-                  </span>
-                </button>
-
-                {/* Sound Toggle */}
-                <button
-                  type="button"
-                  onClick={handleToggleSound}
-                  title={soundOn ? "Mute Billiard Audio" : "Unmute Billiard Audio"}
-                  className={`p-1.5 rounded-lg border transition-colors cursor-pointer ${
-                    soundOn
-                      ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300"
-                      : "bg-white/5 border-white/10 text-slate-500"
-                  }`}
-                >
-                  {soundOn ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
-                </button>
-
-                {/* Haptic Vibration Sensor Toggle */}
-                <button
-                  type="button"
-                  onClick={handleToggleVibe}
-                  title={vibeOn ? "Vibration Sensor Active" : "Vibration Sensor Off"}
-                  className={`p-1.5 rounded-lg border transition-colors cursor-pointer ${
-                    vibeOn
-                      ? "bg-amber-500/15 border-amber-500/40 text-amber-300"
-                      : "bg-white/5 border-white/10 text-slate-500"
-                  }`}
-                >
-                  <Vibrate className="w-3.5 h-3.5" />
-                </button>
-
-                {/* Fullscreen Landscape Toggle */}
-                <button
-                  type="button"
-                  onClick={() =>
-                    forcedLandscape ? setForcedLandscape(false) : handleEnterLandscapeMode()
-                  }
-                  title="Toggle Fullscreen Landscape Table"
-                  className="p-1.5 rounded-lg bg-white/5 hover:bg-white/15 border border-white/10 text-sky-300 hover:text-white transition-colors cursor-pointer"
-                >
-                  {forcedLandscape ? (
-                    <Minimize2 className="w-3.5 h-3.5" />
-                  ) : (
-                    <Maximize2 className="w-3.5 h-3.5" />
-                  )}
-                </button>
-              </div>
-
-              <p className="text-[10px] text-slate-300 line-clamp-1 max-w-[260px] sm:max-w-md mt-0.5">
-                {isOpponentAiming && humanThoughtText ? `💭 ${humanThoughtText}` : state.lastAction}
-              </p>
-            </div>
-
-            {/* Right Player (Opponent / Human-Sense Persona) + 7 Target Ball Slots */}
-            <div className="flex items-center gap-2 sm:gap-3">
-              <div className="hidden md:flex items-center gap-1.5">
-                {opponentTargetIds.map((ballId) => {
-                  const ballObj = state.balls.find((b) => b.id === ballId);
-                  const isRemaining = ballObj && !ballObj.potted;
-                  const meta = BALL_COLORS[ballId];
-                  return (
-                    <div
-                      key={ballId}
-                      className={`w-6 h-6 rounded-full border flex items-center justify-center text-[9px] font-black transition-all ${
-                        state.opponentGroup && isRemaining
-                          ? "border-white/40 shadow-inner"
-                          : "border-white/15 bg-slate-900/50 text-slate-600"
-                      }`}
-                      style={
-                        state.opponentGroup && isRemaining
-                          ? {
-                              background: meta.stripe
-                                ? `linear-gradient(180deg, #fff 22%, ${meta.main} 22%, ${meta.main} 78%, #fff 78%)`
-                                : meta.main,
-                              color: "#ffffff",
-                            }
-                          : undefined
-                      }
-                    >
-                      {state.opponentGroup && isRemaining ? ballId : ""}
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div
-                className={`relative px-2.5 py-1.5 rounded-xl border-2 flex items-center gap-2 transition-all ${
-                  state.turn === "opponent"
-                    ? "bg-amber-950/80 border-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.4)]"
-                    : "bg-slate-900/80 border-amber-500/40 opacity-80"
-                }`}
-              >
-                <div className="leading-tight text-right">
-                  <p className="text-[11px] sm:text-xs font-black text-white truncate max-w-[110px]">
-                    {displayOpponentName}
-                  </p>
-                  <p className="text-[9px] font-extrabold uppercase text-amber-300 flex items-center justify-end gap-1">
-                    {mode !== "p2p" && <Brain className="w-2.5 h-2.5 text-emerald-400" />}
-                    {state.opponentGroup
-                      ? state.opponentGroup.toUpperCase()
-                      : mode !== "p2p"
-                      ? `${levelInfo.humanSensePercent}% HUMAN SENSE`
-                      : "OPEN TABLE"}
-                  </p>
-                </div>
-                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-gradient-to-br from-amber-400 to-orange-600 flex items-center justify-center text-slate-950 font-black text-xs">
-                  {mode !== "p2p"
-                    ? levelInfo.persona.avatarInitials
-                    : displayOpponentName.slice(0, 2).toUpperCase()}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* ── Main Horizontal Arena Row: Left Cue Spin & Ball Collector | Center Mahogany & Blue Pool Table | Right Cue Power Meter ── */}
-          <div className="flex items-stretch gap-2 sm:gap-3">
-            {/* Left Side: Cue Ball Spin Globe & Metallic Ball Return Collector */}
-            <div className="hidden sm:flex flex-col items-center justify-between w-14 py-1 shrink-0">
-              <button
-                type="button"
-                onClick={() =>
-                  setSpinOffset((prev) => ({
-                    x: prev.x === 0 ? 4 : prev.x === 4 ? -4 : 0,
-                    y: prev.y === 0 ? -4 : 0,
-                  }))
-                }
-                title="Cue Ball Spin (English)"
-                className="w-11 h-11 rounded-full bg-gradient-to-br from-white via-slate-100 to-slate-300 border-2 border-slate-400 shadow-lg flex items-center justify-center relative cursor-pointer"
-              >
-                <span
-                  className="w-2.5 h-2.5 rounded-full bg-rose-600 shadow-sm transition-transform"
-                  style={{
-                    transform: `translate(${spinOffset.x}px, ${spinOffset.y}px)`,
-                  }}
-                />
-              </button>
-
-              <div className="w-11 flex-1 my-2 rounded-xl bg-gradient-to-b from-slate-800/90 via-slate-900 to-slate-950 border-2 border-slate-600/60 p-1 flex flex-col items-center justify-end gap-1 overflow-hidden shadow-inner">
-                <div className="text-[8px] font-black uppercase tracking-tighter text-slate-400 mb-auto pt-1">
-                  TRAY
-                </div>
-                {pottedBallsList.slice(-6).map((b) => {
-                  const meta = BALL_COLORS[b.id];
-                  return (
-                    <div
-                      key={b.id}
-                      className="w-6 h-6 rounded-full border border-white/30 flex items-center justify-center text-[8px] font-black text-white shadow"
-                      style={{
-                        background: meta.stripe
-                          ? `linear-gradient(180deg, #fff 22%, ${meta.main} 22%, ${meta.main} 78%, #fff 78%)`
-                          : meta.main,
-                      }}
-                    >
-                      {b.id}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Center 8-Ball Pool Table (With Gyro Motion Parallax Support) */}
-            <div
-              style={
-                motionSensorActive
-                  ? {
-                      transform: `perspective(900px) rotateY(${parallaxOffset.x * 0.35}deg) rotateX(${-parallaxOffset.y * 0.35}deg)`,
-                      transition: "transform 120ms ease-out",
-                    }
-                  : undefined
-              }
-              className="flex-1 relative rounded-[26px] p-3 sm:p-5 bg-gradient-to-b from-[#9c421a] via-[#6e2a0c] to-[#4a1a06] border-4 border-[#381204] shadow-[0_20px_50px_rgba(0,0,0,0.9),inset_0_2px_6px_rgba(255,255,255,0.25)] select-none"
-            >
-              {/* Floating Live Points Earned Banner */}
-              {floatingRewardText && (
-                <div className="absolute top-6 left-1/2 -translate-x-1/2 z-30 px-4 py-1.5 rounded-full bg-gradient-to-r from-amber-400 via-yellow-300 to-emerald-400 text-slate-950 font-black text-xs shadow-[0_10px_30px_rgba(245,158,11,0.6)] animate-bounce pointer-events-none">
-                  {floatingRewardText}
-                </div>
-              )}
-
-              {/* Silver / Chrome Corner & Center Pocket Castings */}
-              <div className="absolute top-0 left-0 w-9 h-9 rounded-tl-[22px] rounded-br-2xl bg-gradient-to-br from-slate-200 via-slate-400 to-slate-700 border-b border-r border-slate-900 pointer-events-none" />
-              <div className="absolute top-0 right-0 w-9 h-9 rounded-tr-[22px] rounded-bl-2xl bg-gradient-to-bl from-slate-200 via-slate-400 to-slate-700 border-b border-l border-slate-900 pointer-events-none" />
-              <div className="absolute bottom-0 left-0 w-9 h-9 rounded-bl-[22px] rounded-tr-2xl bg-gradient-to-tr from-slate-200 via-slate-400 to-slate-700 border-t border-r border-slate-900 pointer-events-none" />
-              <div className="absolute bottom-0 right-0 w-9 h-9 rounded-br-[22px] rounded-tl-2xl bg-gradient-to-tl from-slate-200 via-slate-400 to-slate-700 border-t border-l border-slate-900 pointer-events-none" />
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-12 h-4 rounded-b-lg bg-gradient-to-b from-slate-200 via-slate-400 to-slate-700 pointer-events-none" />
-              <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-12 h-4 rounded-t-lg bg-gradient-to-t from-slate-200 via-slate-400 to-slate-700 pointer-events-none" />
-
-              {/* Interactive SVG Tournament Blue Felt Surface */}
-              <div className="relative rounded-xl overflow-hidden border-[5px] border-[#114b7a] shadow-[inset_0_0_35px_rgba(0,0,0,0.65)]">
-                <svg
-                  ref={svgRef}
-                  viewBox={`0 0 ${TABLE_W} ${TABLE_H}`}
-                  onPointerDown={(e) => updateAimFromClientPoint(e.clientX, e.clientY)}
-                  onPointerMove={(e) => {
-                    if (e.buttons === 1) updateAimFromClientPoint(e.clientX, e.clientY);
-                  }}
-                  className="w-full h-auto block touch-none cursor-crosshair"
-                >
-                  <defs>
-                    <radialGradient id="poolFeltBlue" cx="50%" cy="50%" r="65%">
-                      <stop offset="0%" stopColor="#2ca2ec" />
-                      <stop offset="65%" stopColor="#1d7ec2" />
-                      <stop offset="100%" stopColor="#12558a" />
-                    </radialGradient>
-                    <radialGradient id="ballHighlight" cx="32%" cy="30%" r="55%">
-                      <stop offset="0%" stopColor="rgba(255,255,255,0.65)" />
-                      <stop offset="45%" stopColor="rgba(255,255,255,0.08)" />
-                      <stop offset="100%" stopColor="rgba(0,0,0,0.45)" />
-                    </radialGradient>
-                  </defs>
-
-                  <rect x={0} y={0} width={TABLE_W} height={TABLE_H} fill="url(#poolFeltBlue)" />
-
-                  {/* Baulk Line & Foot Spot */}
-                  <line
-                    x1={205}
-                    y1={0}
-                    x2={205}
-                    y2={TABLE_H}
-                    stroke="rgba(255,255,255,0.22)"
-                    strokeWidth={1.5}
-                  />
-                  <line
-                    x1={550}
-                    y1={0}
-                    x2={550}
-                    y2={TABLE_H}
-                    stroke="rgba(255,255,255,0.08)"
-                    strokeWidth={1}
-                  />
-                  <circle cx={550} cy={TABLE_H / 2} r={3.5} fill="rgba(15,23,42,0.55)" />
-
-                  {/* 6 Deep Black Pockets */}
-                  {POCKETS.map((p, idx) => (
-                    <g key={idx}>
-                      <circle cx={p.x} cy={p.y} r={POCKET_R + 3} fill="#0f172a" opacity={0.45} />
-                      <circle cx={p.x} cy={p.y} r={POCKET_R} fill="#04070d" />
-                    </g>
-                  ))}
-
-                  {/* Glowing Laser Aiming Guideline + Cue Stick (Shown for both Player AND Human-Sense Opponent Aim Sweep!) */}
-                  {showCueAndLaser && (
-                    <g>
-                      <line
-                        x1={cueBall.x}
-                        y1={cueBall.y}
-                        x2={laser.endX}
-                        y2={laser.endY}
-                        stroke={isOpponentAiming ? "rgba(251,191,36,0.32)" : "rgba(224,242,254,0.38)"}
-                        strokeWidth={BALL_R * 1.55}
-                        strokeLinecap="round"
-                      />
-                      <line
-                        x1={cueBall.x}
-                        y1={cueBall.y}
-                        x2={laser.endX}
-                        y2={laser.endY}
-                        stroke={isOpponentAiming ? "#fde047" : "#ffffff"}
-                        strokeWidth={2.5}
-                      />
-
-                      <circle
-                        cx={laser.endX}
-                        cy={laser.endY}
-                        r={BALL_R}
-                        fill="rgba(255,255,255,0.18)"
-                        stroke={isOpponentAiming ? "#fde047" : "#ffffff"}
-                        strokeWidth={2}
-                        strokeDasharray="4 3"
-                      />
-
-                      {laser.targetDeflectEnd && laser.hitBall && (
-                        <line
-                          x1={laser.hitBall.x}
-                          y1={laser.hitBall.y}
-                          x2={laser.targetDeflectEnd.x}
-                          y2={laser.targetDeflectEnd.y}
-                          stroke="#fde047"
-                          strokeWidth={2.5}
-                          strokeDasharray="5 4"
-                        />
-                      )}
-
-                      {(() => {
-                        const pullBack = 18 + (shotPower / 100) * 38;
-                        const tipX = cueBall.x - Math.cos(aimAngle) * pullBack;
-                        const tipY = cueBall.y - Math.sin(aimAngle) * pullBack;
-                        const buttX = cueBall.x - Math.cos(aimAngle) * (pullBack + 210);
-                        const buttY = cueBall.y - Math.sin(aimAngle) * (pullBack + 210);
-                        const midX = cueBall.x - Math.cos(aimAngle) * (pullBack + 95);
-                        const midY = cueBall.y - Math.sin(aimAngle) * (pullBack + 95);
-
-                        return (
-                          <g>
-                            <line
-                              x1={buttX}
-                              y1={buttY + 5}
-                              x2={tipX}
-                              y2={tipY + 5}
-                              stroke="rgba(0,0,0,0.45)"
-                              strokeWidth={8}
-                              strokeLinecap="round"
-                            />
-                            <line
-                              x1={buttX}
-                              y1={buttY}
-                              x2={midX}
-                              y2={midY}
-                              stroke="#1e1b18"
-                              strokeWidth={8}
-                              strokeLinecap="round"
-                            />
-                            <line
-                              x1={midX}
-                              y1={midY}
-                              x2={tipX}
-                              y2={tipY}
-                              stroke="#e2e8f0"
-                              strokeWidth={5.2}
-                              strokeLinecap="round"
-                            />
-                            <circle cx={tipX} cy={tipY} r={3.2} fill="#0284c7" />
-                          </g>
-                        );
-                      })()}
-                    </g>
-                  )}
-
-                  {/* Render All Active Pool Balls (0..15) */}
-                  {state.balls.map((b) => {
-                    if (b.potted) return null;
-                    const meta = BALL_COLORS[b.id] || BALL_COLORS[1];
-                    return (
-                      <g key={b.id} transform={`translate(${b.x}, ${b.y})`}>
-                        <circle cx={2.5} cy={3.5} r={BALL_R} fill="rgba(0,0,0,0.42)" />
-                        <circle
-                          cx={0}
-                          cy={0}
-                          r={BALL_R}
-                          fill={meta.stripe ? "#f8fafc" : meta.main}
-                        />
-                        {meta.stripe && (
-                          <rect
-                            x={-BALL_R + 1}
-                            y={-BALL_R * 0.52}
-                            width={BALL_R * 2 - 2}
-                            height={BALL_R * 1.04}
-                            rx={4}
-                            fill={meta.main}
-                          />
-                        )}
-                        {b.id === 0 ? (
-                          <circle cx={3} cy={-2} r={2.3} fill="#dc2626" />
-                        ) : (
-                          <>
-                            <circle cx={0} cy={0} r={5.6} fill="#ffffff" opacity={0.95} />
-                            <text
-                              x={0}
-                              y={2.8}
-                              textAnchor="middle"
-                              fontSize="7.5"
-                              fontWeight="900"
-                              fill="#0f172a"
-                            >
-                              {b.id}
-                            </text>
-                          </>
-                        )}
-                        <circle cx={0} cy={0} r={BALL_R} fill="url(#ballHighlight)" />
-                      </g>
-                    );
-                  })}
-                </svg>
-              </div>
-            </div>
-
-            {/* Right Side: Cue Power Pull-Back Meter & Shoot Controls */}
-            <div className="flex flex-col items-center justify-between w-16 sm:w-20 py-1 shrink-0 gap-2">
-              <div className="text-center">
-                <p className="text-[9px] font-black uppercase tracking-wider text-sky-300">POWER</p>
-                <p className="text-xs font-black font-mono text-amber-400">{shotPower}%</p>
-              </div>
-
-              <div className="relative flex-1 w-10 rounded-2xl bg-slate-950 border-2 border-slate-700 p-1.5 flex flex-col justify-end overflow-hidden shadow-inner">
-                <div
-                  className="w-full rounded-xl bg-gradient-to-t from-emerald-500 via-amber-400 to-rose-500 transition-all"
-                  style={{ height: `${shotPower}%` }}
-                />
-                <input
-                  type="range"
-                  min={15}
-                  max={100}
-                  value={shotPower}
-                  disabled={!isMyTurn}
-                  onChange={(e) => setShotPower(Number(e.target.value))}
-                  aria-label="Cue shot power"
-                  className="absolute inset-0 opacity-0 cursor-pointer"
-                  style={{ writingMode: "vertical-lr" as any }}
-                />
-              </div>
-
-              <div className="flex items-center gap-1 w-full">
-                <button
-                  type="button"
-                  disabled={!isMyTurn}
-                  onClick={() => setAimAngle((a) => a - 0.03)}
-                  className="flex-1 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-white/10 text-[10px] font-black text-slate-200 disabled:opacity-40"
-                >
-                  ↺
-                </button>
-                <button
-                  type="button"
-                  disabled={!isMyTurn}
-                  onClick={() => setAimAngle((a) => a + 0.03)}
-                  className="flex-1 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-white/10 text-[10px] font-black text-slate-200 disabled:opacity-40"
-                >
-                  ↻
-                </button>
-              </div>
-
-              <Button
-                type="button"
-                disabled={!isMyTurn}
-                onClick={() => executeShot(aimAngle, shotPower, state.turn)}
-                className="w-full h-11 rounded-xl bg-gradient-to-b from-amber-400 via-orange-500 to-amber-600 hover:from-amber-300 hover:to-orange-500 text-slate-950 font-black text-[11px] shadow-lg px-1"
-              >
-                <Zap className="w-3.5 h-3.5 mr-0.5 shrink-0" />
-                SHOOT
-              </Button>
-            </div>
-          </div>
-
-          {/* ── Bottom Quick Controls & Sensory Status Bar ── */}
-          <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-[11px] text-slate-300">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 font-bold text-sky-300">
-                <Crosshair className="w-3.5 h-3.5" /> Touch felt or enable <strong>Motion Aim</strong> to steer laser
-              </span>
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 font-bold text-emerald-300">
-                <Sparkles className="w-3.5 h-3.5" /> +40 Pts per potted ball • +300 Pts per frame win!
-              </span>
-            </div>
-
-            {state.winner && mode !== "p2p" && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  const fresh: EightBallPoolState = {
-                    ...INITIAL_POOL_STATE,
-                    balls: createInitialPoolBalls(),
-                  };
-                  setState(fresh);
-                  onStateChange?.(fresh);
-                }}
-                className="h-8 rounded-xl border-amber-500/40 text-amber-300 text-xs font-bold gap-1.5"
-              >
-                <RotateCcw className="w-3.5 h-3.5" /> Next Frame (Keep Accumulating Points)
-              </Button>
-            )}
-          </div>
-        </div>
-      </div>
     </div>
   );
 };

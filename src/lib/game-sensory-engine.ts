@@ -403,6 +403,56 @@ export function playLevelUpFanfare() {
   } catch (_e) {}
 }
 
+/**
+ * Distinct, pleasant two-tone chime when the active turn switches to the next player!
+ * - When `isMyTurn === true`: bright ascending chime (G5 -> D6) + alert vibration
+ * - When `isMyTurn === false`: soft warm handoff tone (E5 -> B4)
+ */
+export function playTurnNotificationSound(isMyTurn = true) {
+  triggerHapticSensor(isMyTurn ? [35, 45, 75] : 18);
+  const ctx = getAudioContext();
+  if (!ctx) return;
+  try {
+    const notes = isMyTurn ? [783.99, 1174.66] : [659.25, 493.88];
+    notes.forEach((freq, idx) => {
+      const now = ctx.currentTime + idx * 0.095;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(freq, now);
+      gain.gain.setValueAtTime(isMyTurn ? 0.26 : 0.16, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.24);
+    });
+  } catch (_e) {}
+}
+
+/**
+ * Ultra-crisp mechanical precision tick when scrolling the Pool Fine-Aiming Tray wheel
+ */
+export function playFineAimTickSound() {
+  triggerHapticSensor(8);
+  const ctx = getAudioContext();
+  if (!ctx) return;
+  try {
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "triangle";
+    osc.frequency.setValueAtTime(1480, now);
+    osc.frequency.exponentialRampToValueAtTime(680, now + 0.018);
+    gain.gain.setValueAtTime(0.12, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.02);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.022);
+  } catch (_e) {}
+}
+
 // ── Human-Sense Challenger Personas & Progressive Level / Point System ───────
 
 export interface HumanChallengerPersona {

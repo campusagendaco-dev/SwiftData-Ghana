@@ -47,6 +47,7 @@ import {
   HUMAN_CHALLENGER_PERSONAS,
   getPlayerLevelStatus,
   playLevelUpFanfare,
+  playTurnNotificationSound,
   triggerHapticSensor,
   type DataTargetTier,
 } from "@/lib/game-sensory-engine";
@@ -211,6 +212,81 @@ export default function ChallengeArena() {
   const [joiningChallengeId, setJoiningChallengeId] = useState<string | null>(null);
   const [filterGame, setFilterGame] = useState<string>("all");
   const [instructionModalOpen, setInstructionModalOpen] = useState<boolean>(false);
+
+  // Overall Game Next-Player Turn Notification Banner & Nudge state
+  const [turnNotificationBanner, setTurnNotificationBanner] = useState<{
+    title: string;
+    subtitle: string;
+    isMyTurn: boolean;
+    nextPlayerName: string;
+  } | null>(null);
+  const [nudgingTurn, setNudgingTurn] = useState<boolean>(false);
+
+  const triggerOverallTurnNotification = useCallback(
+    (challengeObj: any, nextTurnSide: string, boardState?: any) => {
+      if (!challengeObj || challengeObj.game_type === "slash") return;
+      const gType = (challengeObj.game_type || "pool") as GameType;
+      const isNowMyTurn = nextTurnSide === mySide;
+
+      // Support 2-4 player Ludo seat names when available
+      const activeLudoColor = boardState?.currentPlayerColor;
+      const activeLudoSeat =
+        activeLudoColor && boardState?.players?.[activeLudoColor]
+          ? boardState.players[activeLudoColor]
+          : null;
+
+      const creatorLabel = challengeObj.creator_name || "Player 1";
+      const opponentLabel =
+        challengeObj.opponent_name ||
+        HUMAN_CHALLENGER_PERSONAS[gType]?.name ||
+        "Player 2";
+
+      const nextPlayerName =
+        activeLudoSeat?.name ||
+        (nextTurnSide === "creator" ? creatorLabel : opponentLabel);
+      const prevPlayerName =
+        nextTurnSide === "creator" ? opponentLabel : creatorLabel;
+
+      playTurnNotificationSound(isNowMyTurn);
+
+      setTurnNotificationBanner({
+        title: isNowMyTurn
+          ? `🟢 YOUR TURN TO PLAY, ${nextPlayerName.toUpperCase()}!`
+          : `🔔 NEXT PLAYER'S TURN: ${nextPlayerName.toUpperCase()} IS UP!`,
+        subtitle: isNowMyTurn
+          ? `${prevPlayerName} finished their move — step up and make your move now!`
+          : challengeObj.mode === "p2p"
+          ? `Turn handed over! ${nextPlayerName} has been notified via Live App, Web Push & SMS.`
+          : `Turn handed over! ${nextPlayerName} is lining up their next move...`,
+        isMyTurn: isNowMyTurn,
+        nextPlayerName,
+      });
+
+      if (
+        isNowMyTurn &&
+        typeof window !== "undefined" &&
+        "Notification" in window &&
+        Notification.permission === "granted" &&
+        document.hidden
+      ) {
+        try {
+          new Notification(`🟢 Your Turn in SwiftData Arena (#${challengeObj.room_code})!`, {
+            body: `${prevPlayerName} just played in ${gType.toUpperCase()}. Make your move now!`,
+          });
+        } catch {
+          // ignore browser notification error
+        }
+      }
+    },
+    [mySide]
+  );
+
+  // Auto-dismiss the spotlight banner after 4.2s while keeping the persistent turn header bar active
+  useEffect(() => {
+    if (!turnNotificationBanner) return;
+    const t = setTimeout(() => setTurnNotificationBanner(null), 4200);
+    return () => clearTimeout(t);
+  }, [turnNotificationBanner]);
 
   const levelInfo = getPlayerLevelStatus(arenaPoints);
   const selectedTargetOption =
@@ -444,6 +520,19 @@ export default function ChallengeArena() {
                   title: `🔥 ${updated.opponent_name} Accepted Your Challenge!`,
                   description: `Room #${updated.room_code} is now LIVE! Make your opening move!`,
                 });
+              }
+
+              // If turn switched via live P2P move, notify the player immediately with chime + banner!
+              const prevTurn = curr.current_turn || curr.board_state?.turn || "creator";
+              const nextTurn = updated.current_turn || updated.board_state?.turn || "creator";
+              const prevColor = curr.board_state?.currentPlayerColor;
+              const nextColor = updated.board_state?.currentPlayerColor;
+              if (
+                updated.status === "in_progress" &&
+                !updated.board_state?.winner &&
+                (prevTurn !== nextTurn || (prevColor && nextColor && prevColor !== nextColor))
+              ) {
+                triggerOverallTurnNotification(updated, nextTurn, updated.board_state);
               }
               return updated;
             }
@@ -712,9 +801,22 @@ export default function ChallengeArena() {
   const handleBoardStateChange = useCallback(
     async (nextState: any) => {
       if (!activeChallenge) return;
+      const prevTurn = activeChallenge.current_turn || activeChallenge.board_state?.turn || "creator";
+      const nextTurn = nextState.turn || "creator";
+      const prevColor = activeChallenge.board_state?.currentPlayerColor;
+      const nextColor = nextState.currentPlayerColor;
+
+      // Trigger overall game turn notification whenever the turn changes to the next player!
+      if (
+        !nextState.winner &&
+        (prevTurn !== nextTurn || (prevColor && nextColor && prevColor !== nextColor))
+      ) {
+        triggerOverallTurnNotification(activeChallenge, nextTurn, nextState);
+      }
+
       // Optimistically update local activeChallenge
       setActiveChallenge((prev: any) =>
-        prev ? { ...prev, board_state: nextState, current_turn: nextState.turn || "creator" } : prev
+        prev ? { ...prev, board_state: nextState, current_turn: nextTurn } : prev
       );
       if (activeChallenge.mode === "p2p") {
         await supabase.functions.invoke("challenge-arena", {
@@ -722,13 +824,48 @@ export default function ChallengeArena() {
             action: "sync_board",
             challenge_id: activeChallenge.id,
             board_state: nextState,
-            current_turn: nextState.turn || "creator",
+            current_turn: nextTurn,
           },
         });
       }
     },
-    [activeChallenge]
+    [activeChallenge, triggerOverallTurnNotification]
   );
+
+  const handleNudgeNextPlayer = async () => {
+    if (!activeChallenge) return;
+    setNudgingTurn(true);
+    try {
+      const currentTurnSide = activeChallenge.current_turn || activeChallenge.board_state?.turn || "creator";
+      const nextName =
+        currentTurnSide === "creator"
+          ? activeChallenge.creator_name || "Player 1"
+          : activeChallenge.opponent_name || "Opponent";
+
+      await supabase.functions.invoke("challenge-arena", {
+        body: {
+          action: "sync_board",
+          challenge_id: activeChallenge.id,
+          board_state: activeChallenge.board_state || {},
+          current_turn: currentTurnSide,
+          notify_turn: true,
+        },
+      });
+      playTurnNotificationSound(false);
+      toast({
+        title: `🔔 Next Player Notified (${nextName})!`,
+        description: `Sent an instant In-App, Web Push & SMS turn alert for Room #${activeChallenge.room_code}!`,
+      });
+    } catch (err: any) {
+      toast({
+        title: "Could Not Send Turn Alert",
+        description: err.message || "Try again in a moment",
+        variant: "destructive",
+      });
+    } finally {
+      setNudgingTurn(false);
+    }
+  };
 
   const handleMatchComplete = useCallback(
     async (winnerSide: "creator" | "opponent" | "draw", finalState: any) => {
@@ -1360,6 +1497,154 @@ export default function ChallengeArena() {
             {/* Render the Active Ghanaian Traditional Game Engine */}
             {activeChallenge.status !== "open" && (
               <>
+                {/* ── OVERALL GAME NEXT-PLAYER TURN STATUS & NOTIFICATION BAR ── */}
+                {activeChallenge.status === "in_progress" &&
+                  activeChallenge.game_type !== "slash" && (() => {
+                    const currentTurnSide =
+                      activeChallenge.current_turn ||
+                      activeChallenge.board_state?.turn ||
+                      "creator";
+                    const isCurrentlyMyTurn = currentTurnSide === mySide;
+                    const gType = (activeChallenge.game_type || "pool") as GameType;
+                    const activeLudoColor = activeChallenge.board_state?.currentPlayerColor;
+                    const activeLudoSeat =
+                      activeLudoColor && activeChallenge.board_state?.players?.[activeLudoColor]
+                        ? activeChallenge.board_state.players[activeLudoColor]
+                        : null;
+                    const nextUpName =
+                      activeLudoSeat?.name ||
+                      (currentTurnSide === "creator"
+                        ? activeChallenge.creator_name || "Player 1"
+                        : activeChallenge.opponent_name ||
+                          HUMAN_CHALLENGER_PERSONAS[gType]?.name ||
+                          "Player 2");
+
+                    return (
+                      <div className="space-y-3">
+                        {/* Animated Turn Spotlight Flash Banner (Shows on Turn Switch) */}
+                        {turnNotificationBanner && (
+                          <div
+                            className={`p-3.5 sm:p-4 rounded-2xl border-2 shadow-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in slide-in-from-top-3 duration-300 ${
+                              turnNotificationBanner.isMyTurn
+                                ? "bg-gradient-to-r from-emerald-950/95 via-teal-900/90 to-slate-950 border-emerald-400 shadow-emerald-500/20"
+                                : "bg-gradient-to-r from-amber-950/95 via-orange-950/90 to-slate-950 border-amber-400 shadow-amber-500/20"
+                            }`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div
+                                className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 font-black text-lg shadow ${
+                                  turnNotificationBanner.isMyTurn
+                                    ? "bg-emerald-400 text-slate-950 animate-bounce"
+                                    : "bg-amber-400 text-slate-950 animate-pulse"
+                                }`}
+                              >
+                                {turnNotificationBanner.isMyTurn ? "🎯" : "🔔"}
+                              </div>
+                              <div>
+                                <p className="text-xs sm:text-sm font-black tracking-wide text-white">
+                                  {turnNotificationBanner.title}
+                                </p>
+                                <p className="text-[11px] text-slate-200">
+                                  {turnNotificationBanner.subtitle}
+                                </p>
+                              </div>
+                            </div>
+                            <Badge
+                              className={
+                                turnNotificationBanner.isMyTurn
+                                  ? "bg-emerald-400 text-slate-950 font-black text-[10px]"
+                                  : "bg-amber-400 text-slate-950 font-black text-[10px]"
+                              }
+                            >
+                              {turnNotificationBanner.isMyTurn
+                                ? "⚡ YOUR MOVE NOW"
+                                : `⏳ ${turnNotificationBanner.nextPlayerName.toUpperCase()} ON CLOCK`}
+                            </Badge>
+                          </div>
+                        )}
+
+                        {/* Persistent Live Turn Tracker & Next-Player Nudge Bar */}
+                        <div
+                          className={`px-4 py-3 rounded-2xl border flex flex-wrap items-center justify-between gap-3 transition-all ${
+                            isCurrentlyMyTurn
+                              ? "bg-emerald-950/60 border-emerald-500/50"
+                              : "bg-amber-950/50 border-amber-500/45"
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span
+                              className={`w-3 h-3 rounded-full shrink-0 ${
+                                isCurrentlyMyTurn
+                                  ? "bg-emerald-400 animate-ping"
+                                  : "bg-amber-400 animate-pulse"
+                              }`}
+                            />
+                            <div>
+                              <p className="text-xs sm:text-sm font-black text-white flex items-center gap-2 flex-wrap">
+                                {isCurrentlyMyTurn ? (
+                                  <>
+                                    <span className="text-emerald-300">🟢 YOUR TURN TO PLAY</span>
+                                    <span className="text-slate-300 text-xs font-bold">
+                                      ({nextUpName})
+                                    </span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <span className="text-amber-300">
+                                      🔔 NEXT PLAYER&apos;S TURN: {nextUpName.toUpperCase()}
+                                    </span>
+                                  </>
+                                )}
+                              </p>
+                              <p className="text-[11px] text-slate-300">
+                                {isCurrentlyMyTurn
+                                  ? "It is your turn on the board — make your move now!"
+                                  : activeChallenge.mode === "p2p"
+                                  ? `Waiting for ${nextUpName} to play. Automatic In-App, Web Push & SMS turn notifications are active.`
+                                  : `${nextUpName} is calculating their next move...`}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-2">
+                            {!isCurrentlyMyTurn && activeChallenge.mode === "p2p" && (
+                              <Button
+                                type="button"
+                                size="sm"
+                                disabled={nudgingTurn}
+                                onClick={handleNudgeNextPlayer}
+                                className="h-8 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[11px] gap-1.5 px-3 shadow"
+                              >
+                                {nudgingTurn ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <BellRing className="w-3.5 h-3.5" />
+                                )}
+                                Ping {nextUpName} (SMS &amp; Push)
+                              </Button>
+                            )}
+                            {typeof window !== "undefined" &&
+                              "Notification" in window &&
+                              Notification.permission === "default" && (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    Notification.requestPermission();
+                                  }}
+                                  className="h-8 rounded-xl border-white/15 bg-white/5 hover:bg-white/10 text-slate-200 font-bold text-[10px] gap-1"
+                                >
+                                  <BellRing className="w-3 h-3 text-emerald-400" />
+                                  Enable Turn Alerts
+                                </Button>
+                              )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
                 {activeChallenge.game_type === "oware" && (
                   <OwareGameBoard
                     mode={activeChallenge.mode}

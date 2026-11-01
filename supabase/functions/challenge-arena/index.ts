@@ -1089,17 +1089,42 @@ serve(async (req: Request) => {
       });
     }
 
-    // ── 5. SYNC BOARD STATE (LIVE 1V1 REALTIME MOVES) ───────────────────────────
+    // ── 5. SYNC BOARD STATE & NEXT PLAYER TURN NOTIFICATION (LIVE REALTIME MOVES) ──
     if (action === "sync_board") {
       const challengeId = String(body.challenge_id || "").trim();
       const boardState = body.board_state || {};
       const currentTurn = String(body.current_turn || "creator");
+      const forceNotifyTurn = Boolean(body.notify_turn);
+
+      const { data: prevChallenge } = await supabaseAdmin
+        .from("game_challenges")
+        .select("*")
+        .eq("id", challengeId)
+        .maybeSingle();
+
+      const prevMeta =
+        prevChallenge?.metadata && typeof prevChallenge.metadata === "object"
+          ? prevChallenge.metadata
+          : {};
+
+      const turnChanged =
+        Boolean(prevChallenge) && String(prevChallenge.current_turn || "creator") !== currentTurn;
+
+      const nowMs = Date.now();
+      const lastTurnSmsAt = Number(prevMeta.last_turn_sms_at || 0);
+      const shouldSendTurnSms =
+        forceNotifyTurn || (turnChanged && nowMs - lastTurnSmsAt > 90_000);
+
+      const nextMeta = shouldSendTurnSms
+        ? { ...prevMeta, last_turn_sms_at: nowMs, last_turn_notified_side: currentTurn }
+        : prevMeta;
 
       const { data: updated, error: syncErr } = await supabaseAdmin
         .from("game_challenges")
         .update({
           board_state: boardState,
           current_turn: currentTurn,
+          metadata: nextMeta,
           updated_at: new Date().toISOString(),
         })
         .eq("id", challengeId)
@@ -1110,7 +1135,89 @@ serve(async (req: Request) => {
         return jsonResponse({ success: false, error: syncErr.message }, 500);
       }
 
-      return jsonResponse({ success: true, challenge: updated });
+      // Notify the next player when the turn flips in a live P2P match (or on explicit Nudge)
+      let turnNotificationSent = false;
+      if (
+        prevChallenge &&
+        prevChallenge.status === "in_progress" &&
+        (prevChallenge.mode === "p2p" || forceNotifyTurn) &&
+        (turnChanged || forceNotifyTurn) &&
+        !boardState?.winner
+      ) {
+        const gameLabel = formatGameLabel(prevChallenge.game_type);
+        const roomCode = String(prevChallenge.room_code || "");
+        const isCreatorNext = currentTurn === "creator";
+        const nextUserId = isCreatorNext ? prevChallenge.creator_id : prevChallenge.opponent_id;
+        const nextPlayerName = isCreatorNext
+          ? String(prevChallenge.creator_name || "Player 1")
+          : String(prevChallenge.opponent_name || "Challenger");
+        const prevPlayerName = isCreatorNext
+          ? String(prevChallenge.opponent_name || "Opponent")
+          : String(prevChallenge.creator_name || "Creator");
+
+        // Also check if a 3-4 player Ludo seat has a custom invited phone/name for the active color
+        const activeLudoColor = boardState?.currentPlayerColor;
+        const activeLudoSeat =
+          activeLudoColor && boardState?.players?.[activeLudoColor]
+            ? boardState.players[activeLudoColor]
+            : null;
+
+        const rawNextPhone =
+          activeLudoSeat?.invitedPhone ||
+          (isCreatorNext ? prevChallenge.creator_phone : prevChallenge.opponent_phone);
+        const cleanNextPhone = normalizePhone(rawNextPhone);
+        const displayNextName = activeLudoSeat?.name || nextPlayerName;
+
+        // 1. In-App Notification (`public.notifications`)
+        if (nextUserId) {
+          try {
+            await supabaseAdmin.from("notifications").insert({
+              title: `🟢 Your Turn in ${gameLabel} (Room #${roomCode})!`,
+              message: `${prevPlayerName} just completed their move! It is now ${displayNextName}'s turn to play in Room #${roomCode}. Tap to make your move!`,
+              target_type: "specific",
+              target_user_id: nextUserId,
+              created_by: isCreatorNext ? prevChallenge.opponent_id : prevChallenge.creator_id,
+            });
+            turnNotificationSent = true;
+          } catch (notifErr) {
+            console.warn("[challenge-arena] Turn in-app notification warning:", notifErr);
+          }
+
+          // 2. Web Push Notification (`send-push-notification`)
+          await triggerWebPush(supabaseUrl, serviceRoleKey, {
+            user_id: nextUserId,
+            title: `🟢 Your Turn in ${gameLabel} (#${roomCode})!`,
+            body: `${prevPlayerName} just played — step up and make your move now!`,
+            url: `/challenges?room=${roomCode}`,
+            tag: `challenge-turn-${roomCode}`,
+          });
+        }
+
+        // 3. SMS Turn Alert (when explicitly nudged or throttled every 90s so players who tabbed away return)
+        if (cleanNextPhone && shouldSendTurnSms) {
+          try {
+            const smsConfig = await getSmsConfig(supabaseAdmin);
+            const turnSmsBody = `SwiftData Arena: YOUR TURN in ${gameLabel} (Room #${roomCode})! ${prevPlayerName} just played. Make your move live: https://swiftdatagh.shop/challenges?room=${roomCode}`;
+            await dispatchUnifiedSms(
+              smsConfig.gateway,
+              smsConfig.apiKey,
+              smsConfig.senderId || "SwiftData",
+              cleanNextPhone,
+              turnSmsBody,
+              "broadcast"
+            );
+            turnNotificationSent = true;
+          } catch (smsErr) {
+            console.warn("[challenge-arena] Turn SMS warning:", smsErr);
+          }
+        }
+      }
+
+      return jsonResponse({
+        success: true,
+        challenge: updated,
+        turn_notified: turnNotificationSent,
+      });
     }
 
     // ── 6. COMPLETE MATCH & SETTLE PRIZE / FREE DATA REWARD ─────────────────────
