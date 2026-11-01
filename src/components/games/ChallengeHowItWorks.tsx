@@ -1,10 +1,12 @@
 import { useState, useEffect } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Play,
   Pause,
   ChevronRight,
+  ChevronLeft,
   ChevronDown,
   ChevronUp,
   Gamepad2,
@@ -16,111 +18,198 @@ import {
   Smartphone,
   CheckCircle2,
   Crown,
+  ShieldCheck,
+  ArrowRight,
+  Zap,
 } from "lucide-react";
 
 interface ChallengeHowItWorksProps {
   onQuickStart?: (game: "oware" | "ludo" | "dame", mode: "p2p" | "ai" | "free_data") => void;
 }
 
-const WALKTHROUGH_STEPS = [
+const PRO_STEPS = [
   {
-    step: 1,
-    title: "1. Pick a Ghanaian Traditional Game",
-    subtitle: "Choose Oware (Nam-Nam / Abapa), Ghana Ludo (Kick), or Ghanaian Dame.",
+    id: 0,
+    num: "01",
+    shortTitle: "Select Game",
+    title: "Choose Your Ghanaian Board Game",
+    description:
+      "Pick one of Ghana's three iconic strategy games. Each board is built with authentic rules and real-time synchronization.",
+    bullets: [
+      "Ghana Oware: Play traditional Nam-Nam (4-seed relay harvest) or Abapa tournament rules.",
+      "Ghana Ludo: 15×15 4-corner board with 3D Blue Dice, Yard deployment on 6 & token kicks.",
+      "Ghanaian Dame: 8×8 draughts with mandatory diagonal jump captures & Crowned Kings.",
+    ],
     icon: Gamepad2,
-    color: "from-amber-500 to-orange-500",
-    border: "border-amber-500/40",
-    badge: "Step 1 of 4",
+    accent: "amber",
+    gradient: "from-amber-500 to-orange-500",
+    ctaLabel: "Choose Game Below",
   },
   {
-    step: 2,
-    title: "2. Choose Your Challenge Mode",
-    subtitle: "Play Open 1v1 vs real players, Instant AI (1.8× cash), or Free Data Mode!",
+    id: 1,
+    num: "02",
+    shortTitle: "Pick Mode",
+    title: "Select How You Want to Compete",
+    description:
+      "Compete live against another user, play immediately against the Grandmaster AI, or enter the Daily Free Data Arena.",
+    bullets: [
+      "Open 1v1 Lobby: Post a challenge room or join a waiting player using a 6-digit Room Code.",
+      "Instant AI (1.8×): Zero waiting — challenge the Grandmaster AI for a 1.8× cash payout.",
+      "Free Data Mode: GH₵0.00 entry fee — defeat the Grandmaster AI to claim free data bundles.",
+    ],
     icon: Users,
-    color: "from-emerald-500 to-teal-500",
-    border: "border-emerald-500/40",
-    badge: "Step 2 of 4",
+    accent: "emerald",
+    gradient: "from-emerald-500 to-teal-500",
+    ctaLabel: "Try Free Data Mode",
   },
   {
-    step: 3,
-    title: "3. Stake Wallet Balance or MoMo",
-    subtitle: "Use your SwiftData Wallet or Mobile Money (GH₵2–GH₵200), or play Free!",
+    id: 2,
+    num: "03",
+    shortTitle: "Fund Stake",
+    title: "Stake via Wallet Balance or Mobile Money",
+    description:
+      "All stakes are held safely in automated escrow during the match and settled the second the game ends.",
+    bullets: [
+      "SwiftData Wallet: Instant 1-click deduction from your account balance (GH₵2 – GH₵200).",
+      "Mobile Money (MoMo): Pay seamlessly via Paystack (MTN, Telecel, or AirtelTigo).",
+      "100% Cancel Refund: Cancel any unjoined Open 1v1 room to get an instant full wallet refund.",
+    ],
     icon: Wallet,
-    color: "from-indigo-500 to-blue-500",
-    border: "border-indigo-500/40",
-    badge: "Step 3 of 4",
+    accent: "indigo",
+    gradient: "from-indigo-500 to-blue-500",
+    ctaLabel: "Set Your Stake",
   },
   {
-    step: 4,
-    title: "4. Win Cash or Claim Free Data!",
-    subtitle: "Win instant Wallet Cash (1.8× payout) or 1-click Data Bundles to any network!",
+    id: 3,
+    num: "04",
+    shortTitle: "Claim Prize",
+    title: "Win Instant Cash or Data Bundles",
+    description:
+      "As soon as the winning move is played, your reward is unlocked automatically with zero manual delay.",
+    bullets: [
+      "1.8× Cash Payout: Credited directly into your SwiftData Wallet balance upon victory.",
+      "Convert to Data Bundle: Swap your cash winnings into MTN, Telecel, or AirtelTigo data.",
+      "Free Data Delivery: Dispatch your won Free Data reward directly to any Ghanaian phone number.",
+    ],
     icon: Trophy,
-    color: "from-purple-500 to-pink-500",
-    border: "border-purple-500/40",
-    badge: "Step 4 of 4",
+    accent: "purple",
+    gradient: "from-purple-500 to-pink-500",
+    ctaLabel: "Start Playing Now",
   },
 ];
 
+const STEP_DURATION_MS = 5000;
+
 export function ChallengeHowItWorks({ onQuickStart }: ChallengeHowItWorksProps) {
   const [expanded, setExpanded] = useState(true);
+  const [viewTab, setViewTab] = useState<"steps" | "rules">("steps");
   const [activeStep, setActiveStep] = useState(0);
   const [autoPlay, setAutoPlay] = useState(true);
+  const [progress, setProgress] = useState(0);
   const [activeGameDemo, setActiveGameDemo] = useState<"oware" | "ludo" | "dame">("oware");
-  const [demoTick, setDemoTick] = useState(0);
+  const [demoFrame, setDemoFrame] = useState(0);
 
-  // Auto-advance the 4 onboarding steps every 4 seconds
+  // Smooth 60fps-like progress bar + auto-step advance
   useEffect(() => {
-    if (!expanded || !autoPlay) return;
-    const timer = window.setInterval(() => {
-      setActiveStep((prev) => (prev + 1) % WALKTHROUGH_STEPS.length);
-    }, 4200);
-    return () => window.clearInterval(timer);
-  }, [expanded, autoPlay]);
+    if (!expanded || viewTab !== "steps" || !autoPlay) return;
+    const interval = 50;
+    const increment = (interval / STEP_DURATION_MS) * 100;
 
-  // Continuous micro-animation tick for the visual stage (every 900ms)
+    const timer = window.setInterval(() => {
+      setProgress((prev) => {
+        if (prev + increment >= 100) {
+          setActiveStep((s) => (s + 1) % PRO_STEPS.length);
+          return 0;
+        }
+        return prev + increment;
+      });
+    }, interval);
+
+    return () => window.clearInterval(timer);
+  }, [expanded, viewTab, autoPlay]);
+
+  // Continuous animation frame counter for the visual canvas
   useEffect(() => {
     if (!expanded) return;
     const timer = window.setInterval(() => {
-      setDemoTick((t) => (t + 1) % 6);
-    }, 950);
+      setDemoFrame((f) => (f + 1) % 6);
+    }, 900);
     return () => window.clearInterval(timer);
   }, [expanded]);
 
+  const handleSelectStep = (idx: number) => {
+    setActiveStep(idx);
+    setProgress(0);
+    setAutoPlay(false);
+  };
+
+  const currentStep = PRO_STEPS[activeStep];
+
   return (
-    <div className="rounded-3xl bg-gradient-to-br from-slate-900/95 via-slate-950 to-indigo-950/40 border border-amber-500/30 shadow-2xl overflow-hidden transition-all">
-      {/* Top Bar (Always Visible) */}
-      <div className="px-4 sm:px-6 py-3.5 flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-slate-900/70">
-        <div className="flex items-center gap-2.5">
-          <span className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-amber-300">
-            <Sparkles className="w-4 h-4 animate-spin" style={{ animationDuration: "6s" }} />
-          </span>
+    <div className="rounded-3xl bg-slate-950/95 border border-white/10 shadow-[0_20px_60px_rgba(0,0,0,0.75)] overflow-hidden">
+      {/* ── Top Studio Control Bar ── */}
+      <div className="px-4 sm:px-6 py-3.5 bg-gradient-to-r from-slate-900 via-slate-900/95 to-indigo-950/60 border-b border-white/10 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-slate-950 shadow-md">
+            <Sparkles className="w-4 h-4 stroke-[2.5]" />
+          </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-xs sm:text-sm font-black text-white">
-                How to Join &amp; Win in the Challenge Arena
+              <span className="text-[10px] font-black uppercase tracking-widest text-amber-400">
+                Interactive Onboarding
               </span>
-              <Badge className="bg-amber-500/20 text-amber-300 border border-amber-400/40 text-[10px] font-black">
-                Interactive Animated Guide
-              </Badge>
+              <span className="w-1 h-1 rounded-full bg-white/30" />
+              <span className="text-[10px] font-bold text-emerald-400">30-Second Visual Guide</span>
             </div>
-            <p className="text-[11px] text-slate-400 hidden sm:block">
-              Watch the 4 quick steps below or preview how Oware, Ghana Ludo, and Dame work before you play.
-            </p>
+            <h2 className="text-sm sm:text-base font-black text-white tracking-tight">
+              How to Participate &amp; Win in the Challenge Arena
+            </h2>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        {/* Center Mode Switcher + Right Actions */}
+        <div className="flex flex-wrap items-center gap-2">
           {expanded && (
+            <div className="inline-flex items-center rounded-xl bg-slate-950/90 p-1 border border-white/10">
+              <button
+                type="button"
+                onClick={() => setViewTab("steps")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 ${
+                  viewTab === "steps"
+                    ? "bg-amber-500 text-slate-950 shadow"
+                    : "text-slate-400 hover:text-white"
+                }`}
+              >
+                <Zap className="w-3.5 h-3.5" />
+                4-Step Challenge Flow
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewTab("rules")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 ${
+                  viewTab === "rules"
+                    ? "bg-amber-500 text-slate-950 shadow"
+                    : "text-slate-400 hover:text-white"
+                }`}
+              >
+                <Gamepad2 className="w-3.5 h-3.5" />
+                Game Rules Simulator
+              </button>
+            </div>
+          )}
+
+          {expanded && viewTab === "steps" && (
             <Button
               size="sm"
               variant="ghost"
               onClick={() => setAutoPlay((a) => !a)}
-              className="h-8 text-xs text-amber-300 hover:text-amber-200 gap-1.5"
+              className="h-8 px-2.5 text-xs text-slate-300 hover:text-white gap-1.5 border border-white/10 rounded-xl"
             >
-              {autoPlay ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
-              {autoPlay ? "Pause Tour" : "Auto-Play"}
+              {autoPlay ? <Pause className="w-3.5 h-3.5 text-amber-400" /> : <Play className="w-3.5 h-3.5 text-emerald-400" />}
+              <span className="hidden sm:inline">{autoPlay ? "Pause" : "Auto-Play"}</span>
             </Button>
           )}
+
           <Button
             size="sm"
             variant="outline"
@@ -129,481 +218,738 @@ export function ChallengeHowItWorks({ onQuickStart }: ChallengeHowItWorksProps) 
           >
             {expanded ? (
               <>
-                Hide Guide <ChevronUp className="w-3.5 h-3.5" />
+                Minimize <ChevronUp className="w-3.5 h-3.5" />
               </>
             ) : (
               <>
-                Watch Quick Steps <ChevronDown className="w-3.5 h-3.5" />
+                Show Step-by-Step Guide <ChevronDown className="w-3.5 h-3.5" />
               </>
             )}
           </Button>
         </div>
       </div>
 
-      {expanded && (
-        <div className="p-4 sm:p-6 space-y-6">
-          {/* 4-Step Interactive Timeline Selector */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            {WALKTHROUGH_STEPS.map((item, idx) => {
-              const Icon = item.icon;
-              const isCurrent = activeStep === idx;
-              return (
-                <button
-                  key={item.step}
-                  type="button"
-                  onClick={() => {
-                    setActiveStep(idx);
-                    setAutoPlay(false);
-                  }}
-                  className={`p-3.5 rounded-2xl border text-left transition-all relative overflow-hidden ${
-                    isCurrent
-                      ? `bg-slate-900 ${item.border} ring-2 ring-amber-400/60 shadow-lg scale-[1.01]`
-                      : "bg-slate-950/70 border-white/10 hover:border-white/25 opacity-80 hover:opacity-100"
-                  }`}
-                >
-                  {/* Animated Progress Bar at Bottom of Active Step */}
-                  {isCurrent && autoPlay && (
-                    <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/10 overflow-hidden">
-                      <div className="h-full bg-gradient-to-r from-amber-400 to-emerald-400 animate-pulse w-full" />
-                    </div>
-                  )}
+      <AnimatePresence initial={false}>
+        {expanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.25 }}
+            className="p-4 sm:p-6 space-y-6"
+          >
+            {viewTab === "steps" ? (
+              <>
+                {/* ── Connected Horizontal Stepper Pipeline (01 ── 02 ── 03 ── 04) ── */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                  {PRO_STEPS.map((s, idx) => {
+                    const Icon = s.icon;
+                    const isActive = activeStep === idx;
+                    const isCompleted = activeStep > idx;
 
-                  <div className="flex items-center justify-between mb-2">
-                    <div
-                      className={`w-8 h-8 rounded-xl bg-gradient-to-br ${item.color} flex items-center justify-center text-slate-950 shadow-md`}
-                    >
-                      <Icon className="w-4 h-4 stroke-[2.5]" />
-                    </div>
-                    <Badge
-                      variant="outline"
-                      className={`text-[9px] font-black ${
-                        isCurrent
-                          ? "border-amber-400 text-amber-300 bg-amber-500/10"
-                          : "border-white/15 text-slate-400"
-                      }`}
-                    >
-                      {item.badge}
-                    </Badge>
-                  </div>
-                  <p className="text-xs font-black text-white">{item.title}</p>
-                  <p className="text-[11px] text-slate-400 mt-1 leading-snug">{item.subtitle}</p>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Live Animated Stage for Current Step + Mini Game Simulator */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
-            {/* Left Stage: Visual Animation of the Selected Step (7 cols) */}
-            <div className="lg:col-span-7 p-4 sm:p-5 rounded-2xl bg-slate-950/90 border border-white/10 flex flex-col justify-between space-y-4">
-              {activeStep === 0 && (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <Badge className="bg-amber-500 text-slate-950 font-black text-[10px]">
-                      STEP 1 ANIMATION • PICK YOUR GAME
-                    </Badge>
-                    <span className="text-[11px] text-amber-300 font-bold animate-pulse">
-                      👆 Tap any game below to select it!
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-2.5 pt-1">
-                    {[
-                      {
-                        id: "oware" as const,
-                        name: "Ghana Oware",
-                        tag: "Nam-Nam & Abapa",
-                        img: "/oware-challenge-icon.jpg",
-                        desc: "4-Seed Relay & 2/3 Capture",
-                      },
-                      {
-                        id: "ludo" as const,
-                        name: "Ghana Ludo",
-                        tag: "3D Dice & Kick",
-                        img: "/ludo-challenge-icon.png",
-                        desc: "Roll 6, Kick & Race Home",
-                      },
-                      {
-                        id: "dame" as const,
-                        name: "Ghana Dame",
-                        tag: "8×8 Draughts",
-                        img: null,
-                        desc: "Mandatory Jump & Kings",
-                      },
-                    ].map((g, idx) => {
-                      const highlighted = demoTick % 3 === idx;
-                      return (
-                        <div
-                          key={g.id}
-                          onClick={() => {
-                            setActiveGameDemo(g.id);
-                            onQuickStart?.(g.id, "p2p");
-                          }}
-                          className={`p-3 rounded-2xl border cursor-pointer transition-all duration-300 flex flex-col items-center text-center ${
-                            highlighted
-                              ? "bg-amber-500/15 border-amber-400 scale-105 shadow-[0_0_20px_rgba(245,158,11,0.25)]"
-                              : "bg-slate-900/80 border-white/10 hover:border-white/30"
-                          }`}
-                        >
-                          {g.img ? (
-                            <img
-                              src={g.img}
-                              alt={g.name}
-                              className="w-11 h-11 rounded-xl object-cover border border-white/20 shadow mb-2"
-                            />
-                          ) : (
-                            <div className="w-11 h-11 rounded-xl bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center text-xl mb-2">
-                              ♟️
-                            </div>
-                          )}
-                          <p className="text-xs font-black text-white">{g.name}</p>
-                          <span className="text-[9px] text-amber-300 font-bold">{g.tag}</span>
-                          <p className="text-[10px] text-slate-400 mt-1">{g.desc}</p>
+                    return (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => handleSelectStep(idx)}
+                        className={`group relative p-3.5 rounded-2xl border text-left transition-all overflow-hidden ${
+                          isActive
+                            ? "bg-slate-900 border-amber-400/70 shadow-[0_10px_30px_rgba(245,158,11,0.15)]"
+                            : isCompleted
+                            ? "bg-slate-900/60 border-emerald-500/30 hover:border-emerald-500/50"
+                            : "bg-slate-900/40 border-white/10 hover:border-white/25"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`w-7 h-7 rounded-lg font-mono text-xs font-black flex items-center justify-center transition-all ${
+                                isActive
+                                  ? `bg-gradient-to-br ${s.gradient} text-slate-950 shadow`
+                                  : isCompleted
+                                  ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40"
+                                  : "bg-slate-800 text-slate-400"
+                              }`}
+                            >
+                              {isCompleted ? <CheckCircle2 className="w-4 h-4" /> : s.num}
+                            </span>
+                            <span
+                              className={`text-xs font-black ${
+                                isActive ? "text-white" : "text-slate-300"
+                              }`}
+                            >
+                              {s.shortTitle}
+                            </span>
+                          </div>
+                          <Icon
+                            className={`w-4 h-4 ${
+                              isActive
+                                ? "text-amber-400"
+                                : isCompleted
+                                ? "text-emerald-400"
+                                : "text-slate-500"
+                            }`}
+                          />
                         </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
 
-              {activeStep === 1 && (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <Badge className="bg-emerald-500 text-slate-950 font-black text-[10px]">
-                      STEP 2 ANIMATION • 3 WAYS TO PLAY
-                    </Badge>
-                    <span className="text-[11px] text-emerald-300 font-bold">
-                      Choose 1v1 PvP, Instant AI, or Free Data!
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                    <div
-                      onClick={() => onQuickStart?.(activeGameDemo, "p2p")}
-                      className={`p-3 rounded-2xl border cursor-pointer transition-all ${
-                        demoTick % 3 === 0
-                          ? "bg-amber-500/15 border-amber-400 scale-[1.03]"
-                          : "bg-slate-900/80 border-white/10"
-                      }`}
-                    >
-                      <Users className="w-5 h-5 text-amber-400 mb-1.5" />
-                      <p className="text-xs font-black text-white">1. Open 1v1 Lobby</p>
-                      <p className="text-[10px] text-slate-300 mt-1">
-                        Post an open challenge or join a waiting player. Share your <strong>6-digit Room Code</strong> on WhatsApp!
-                      </p>
-                    </div>
-
-                    <div
-                      onClick={() => onQuickStart?.(activeGameDemo, "ai")}
-                      className={`p-3 rounded-2xl border cursor-pointer transition-all ${
-                        demoTick % 3 === 1
-                          ? "bg-emerald-500/15 border-emerald-400 scale-[1.03]"
-                          : "bg-slate-900/80 border-white/10"
-                      }`}
-                    >
-                      <Sparkles className="w-5 h-5 text-emerald-400 mb-1.5" />
-                      <p className="text-xs font-black text-white">2. Instant AI (1.8×)</p>
-                      <p className="text-[10px] text-slate-300 mt-1">
-                        No waiting! Stake GH₵2–GH₵200 against the Grandmaster AI and win <strong>1.8× Cash</strong> immediately.
-                      </p>
-                    </div>
-
-                    <div
-                      onClick={() => onQuickStart?.(activeGameDemo, "free_data")}
-                      className={`p-3 rounded-2xl border cursor-pointer transition-all ${
-                        demoTick % 3 === 2
-                          ? "bg-purple-500/15 border-purple-400 scale-[1.03]"
-                          : "bg-slate-900/80 border-white/10"
-                      }`}
-                    >
-                      <Gift className="w-5 h-5 text-purple-400 mb-1.5" />
-                      <p className="text-xs font-black text-white">3. Free Data Arena</p>
-                      <p className="text-[10px] text-slate-300 mt-1">
-                        <strong>GH₵0.00 Entry!</strong> Defeat the ruthless Grandmaster AI to claim a Free Data Bundle!
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {activeStep === 2 && (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <Badge className="bg-indigo-500 text-white font-black text-[10px]">
-                      STEP 3 ANIMATION • STAKE WALLET OR MOMO
-                    </Badge>
-                    <span className="text-[11px] text-indigo-300 font-bold">
-                      Instant Escrow Protection 🔒
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div
-                      className={`p-3.5 rounded-2xl border transition-all flex items-start gap-3 ${
-                        demoTick % 2 === 0
-                          ? "bg-emerald-500/15 border-emerald-400 ring-1 ring-emerald-400/50"
-                          : "bg-slate-900/80 border-white/10"
-                      }`}
-                    >
-                      <div className="p-2.5 rounded-xl bg-emerald-500/20 text-emerald-400">
-                        <Wallet className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <p className="text-xs font-black text-white">Option A: SwiftData Wallet</p>
-                        <p className="text-[11px] text-slate-300 mt-0.5">
-                          1-click instant entry using your account balance. If you cancel an open room before someone joins, your stake is <strong>refunded 100% instantly</strong>!
-                        </p>
-                      </div>
-                    </div>
-
-                    <div
-                      className={`p-3.5 rounded-2xl border transition-all flex items-start gap-3 ${
-                        demoTick % 2 === 1
-                          ? "bg-amber-500/15 border-amber-400 ring-1 ring-amber-400/50"
-                          : "bg-slate-900/80 border-white/10"
-                      }`}
-                    >
-                      <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-400">
-                        <Smartphone className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <p className="text-xs font-black text-white">Option B: Mobile Money (MoMo)</p>
-                        <p className="text-[11px] text-slate-300 mt-0.5">
-                          Approve via Paystack MoMo (MTN, Telecel, or AirtelTigo). Verified on the server and locked safely in the challenge pot!
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {activeStep === 3 && (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <Badge className="bg-purple-500 text-white font-black text-[10px]">
-                      STEP 4 ANIMATION • INSTANT PAYOUT OR DATA BUNDLE
-                    </Badge>
-                    <span className="text-[11px] text-purple-300 font-bold">
-                      Automatic Winner Settlement ⚡
-                    </span>
-                  </div>
-
-                  <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-950/60 via-slate-900 to-amber-950/60 border border-emerald-500/40 flex flex-col sm:flex-row items-center justify-between gap-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-2xl bg-amber-500 text-slate-950 flex items-center justify-center shadow-lg animate-bounce">
-                        <Trophy className="w-6 h-6 stroke-[2.5]" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-black text-white">
-                          Stake GH₵10.00 → Win GH₵18.00 Instant Prize!
-                        </p>
-                        <p className="text-xs text-slate-300 mt-0.5">
-                          Cash prizes credit straight to your <strong>SwiftData Wallet</strong>, OR tap{" "}
-                          <strong className="text-amber-300">&quot;Convert Prize to Data Bundle&quot;</strong> to send MTN / Telecel / AirtelTigo data to any phone number!
-                        </p>
-                      </div>
-                    </div>
-                    <Badge className="bg-emerald-500 text-slate-950 font-black text-xs px-3 py-1.5 shrink-0 gap-1">
-                      <CheckCircle2 className="w-3.5 h-3.5" /> Auto-Credited
-                    </Badge>
-                  </div>
-                </div>
-              )}
-
-              {/* Step Footer Navigation */}
-              <div className="flex items-center justify-between pt-2 border-t border-white/10">
-                <div className="flex items-center gap-1.5">
-                  {WALKTHROUGH_STEPS.map((_, idx) => (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={() => {
-                        setActiveStep(idx);
-                        setAutoPlay(false);
-                      }}
-                      className={`h-2 rounded-full transition-all ${
-                        activeStep === idx ? "w-7 bg-amber-400" : "w-2 bg-white/20"
-                      }`}
-                    />
-                  ))}
+                        {/* Smooth Progress Fill Bar */}
+                        <div className="w-full h-1 rounded-full bg-slate-800 overflow-hidden mt-2">
+                          <div
+                            className={`h-full transition-all duration-75 ${
+                              isActive
+                                ? "bg-gradient-to-r from-amber-400 to-emerald-400"
+                                : isCompleted
+                                ? "bg-emerald-500 w-full"
+                                : "w-0"
+                            }`}
+                            style={isActive ? { width: `${progress}%` } : undefined}
+                          />
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
 
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setActiveStep((prev) => (prev + 1) % WALKTHROUGH_STEPS.length)}
-                  className="h-8 text-xs font-bold text-amber-300 hover:text-amber-200 gap-1"
-                >
-                  Next Step <ChevronRight className="w-3.5 h-3.5" />
-                </Button>
-              </div>
-            </div>
-
-            {/* Right Stage: Interactive Animated Mini-Game Rules Preview (5 cols) */}
-            <div className="lg:col-span-5 p-4 sm:p-5 rounded-2xl bg-slate-950/90 border border-amber-500/30 flex flex-col justify-between space-y-3">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-black uppercase tracking-wider text-amber-400">
-                  🎬 Live Game Mechanics Preview
-                </span>
-                <div className="flex items-center gap-1 bg-slate-900 p-1 rounded-xl border border-white/10">
-                  {(["oware", "ludo", "dame"] as const).map((g) => (
-                    <button
-                      key={g}
-                      type="button"
-                      onClick={() => setActiveGameDemo(g)}
-                      className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase transition-all ${
-                        activeGameDemo === g
-                          ? "bg-amber-500 text-slate-950"
-                          : "text-slate-400 hover:text-white"
-                      }`}
-                    >
-                      {g}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Animated Oware Mini-Demo */}
-              {activeGameDemo === "oware" && (
-                <div className="p-3.5 rounded-2xl bg-[#18191c] border-2 border-[#34363c] space-y-2.5">
-                  <div className="flex items-center justify-between text-[11px]">
-                    <span className="font-black text-orange-300">🪨 Oware Nam-Nam (4-Seed Relay)</span>
-                    <Badge className="bg-amber-500 text-slate-950 font-black text-[10px]">
-                      {demoTick < 4
-                        ? `✋ Sowing Bowl #${(demoTick % 4) + 1}`
-                        : "🔥 4 Seeds = +4 Harvest!"}
-                    </Badge>
-                  </div>
-
-                  <div className="grid grid-cols-4 gap-2 py-1">
-                    {[0, 1, 2, 3].map((idx) => {
-                      const isActive = demoTick % 4 === idx;
-                      const isFourHarvest = idx === 3 && demoTick >= 3;
-                      const seedCount = isFourHarvest ? 4 : idx === 0 && demoTick > 0 ? 0 : 3 + (demoTick > idx ? 1 : 0);
-                      return (
-                        <div
-                          key={idx}
-                          className={`aspect-square rounded-full flex flex-col items-center justify-center relative border-2 transition-all ${
-                            isFourHarvest
-                              ? "border-amber-300 ring-4 ring-amber-400/50 scale-110"
-                              : isActive
-                              ? "border-emerald-400 scale-105"
-                              : "border-[#2d1206]"
-                          }`}
-                          style={{
-                            background:
-                              "radial-gradient(circle at 36% 30%, #e06d34 0%, #c64f18 55%, #4a1502 100%)",
-                          }}
-                        >
-                          <span className="text-xs font-black text-white font-mono">
-                            {isFourHarvest ? "+4🔥" : seedCount}
+                {/* ── Main Split Showcase Stage (Left: Executive Details, Right: Interactive Animated Canvas) ── */}
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={activeStep}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    transition={{ duration: 0.22 }}
+                    className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch p-4 sm:p-6 rounded-2xl bg-gradient-to-br from-slate-900/90 via-slate-950 to-slate-900/90 border border-white/10"
+                  >
+                    {/* Left Column: Step Breakdown & Action (5 cols) */}
+                    <div className="lg:col-span-5 flex flex-col justify-between space-y-4">
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2">
+                          <Badge
+                            className={`bg-gradient-to-r ${currentStep.gradient} text-slate-950 font-black text-[10px] px-2.5 py-0.5`}
+                          >
+                            STEP {currentStep.num} OF 04
+                          </Badge>
+                          <span className="text-xs font-bold text-slate-400">
+                            {currentStep.shortTitle}
                           </span>
                         </div>
-                      );
-                    })}
-                  </div>
-                  <p className="text-[11px] text-slate-300 leading-snug">
-                    Tap a bowl to sow counter-clockwise. Landing on a non-empty bowl triggers a{" "}
-                    <strong className="text-amber-300">Nam-Nam Relay Scoop</strong>; any bowl reaching{" "}
-                    <strong className="text-emerald-300">4 seeds</strong> is harvested!
-                  </p>
-                </div>
-              )}
 
-              {/* Animated Ghana Ludo Mini-Demo */}
-              {activeGameDemo === "ludo" && (
-                <div className="p-3.5 rounded-2xl bg-slate-900 border border-indigo-500/30 space-y-2.5">
-                  <div className="flex items-center justify-between text-[11px]">
-                    <span className="font-black text-indigo-300">🎲 Ghana Ludo (Kick Edition)</span>
-                    <Badge className="bg-indigo-600 text-white font-black text-[10px]">
-                      {demoTick % 2 === 0 ? "🎲 Rolled a 6! Bonus Roll!" : "💥 KICK Opponent to Yard!"}
-                    </Badge>
-                  </div>
+                        <h3 className="text-lg sm:text-xl font-black text-white leading-tight">
+                          {currentStep.title}
+                        </h3>
+                        <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                          {currentStep.description}
+                        </p>
 
-                  <div className="flex items-center justify-between gap-2 py-2 px-2 rounded-xl bg-[#eef6fb] border border-slate-400">
-                    {[0, 1, 2, 3, 4].map((step) => {
-                      const tokenAt = demoTick % 5 === step;
-                      return (
-                        <div
-                          key={step}
-                          className={`w-10 h-10 rounded-lg border flex items-center justify-center relative ${
-                            step === 0
-                              ? "bg-[#dc2626] text-white"
-                              : step === 4
-                              ? "bg-[#eab308] text-slate-950"
-                              : "bg-white text-slate-700"
-                          }`}
-                        >
-                          {tokenAt ? (
-                            <span className="w-6 h-6 rounded-full bg-red-600 border-2 border-white shadow flex items-center justify-center text-[10px] font-black text-white animate-bounce">
-                              1
-                            </span>
-                          ) : step === 3 ? (
-                            <span className="w-5 h-5 rounded-full bg-yellow-400 border border-slate-900 text-[9px] font-black text-slate-950 flex items-center justify-center">
-                              2
-                            </span>
-                          ) : (
-                            <span className="text-[10px] font-bold opacity-60">
-                              {step === 0 ? "★" : step === 4 ? "🏠" : step}
-                            </span>
-                          )}
+                        <ul className="space-y-2 pt-1">
+                          {currentStep.bullets.map((b, i) => (
+                            <li
+                              key={i}
+                              className="flex items-start gap-2 text-xs text-slate-200 leading-snug"
+                            >
+                              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                              <span>{b}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+
+                      {/* Step Navigation Controls */}
+                      <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-white/10">
+                        <div className="flex items-center gap-1.5">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() =>
+                              handleSelectStep(
+                                (activeStep - 1 + PRO_STEPS.length) % PRO_STEPS.length
+                              )
+                            }
+                            className="h-8 w-8 p-0 rounded-lg border-white/15 bg-slate-900 text-white"
+                          >
+                            <ChevronLeft className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() =>
+                              handleSelectStep((activeStep + 1) % PRO_STEPS.length)
+                            }
+                            className="h-8 px-3 rounded-lg border-white/15 bg-slate-900 text-xs font-bold text-white gap-1"
+                          >
+                            Next Step <ChevronRight className="w-3.5 h-3.5" />
+                          </Button>
                         </div>
-                      );
-                    })}
-                  </div>
-                  <p className="text-[11px] text-slate-300 leading-snug">
-                    Tap the <strong className="text-indigo-300">3D Blue Dice</strong> in the center of the board. Roll <strong className="text-amber-300">6</strong> to exit your Yard, kick opponent tokens back to base, and race <strong className="text-emerald-300">2 tokens HOME</strong>!
-                  </p>
-                </div>
-              )}
 
-              {/* Animated Ghanaian Dame Mini-Demo */}
-              {activeGameDemo === "dame" && (
-                <div className="p-3.5 rounded-2xl bg-[#2b1408] border-2 border-[#6b3719] space-y-2.5">
-                  <div className="flex items-center justify-between text-[11px]">
-                    <span className="font-black text-amber-300">♟️ Ghanaian Dame (Draughts)</span>
-                    <Badge className="bg-amber-500 text-slate-950 font-black text-[10px]">
-                      {demoTick % 2 === 0 ? "🔥 Mandatory Jump (Chop)!" : "👑 Crowned King!"}
-                    </Badge>
-                  </div>
-
-                  <div className="flex items-center justify-center gap-2 py-2">
-                    {[0, 1, 2].map((sq) => {
-                      const jumped = demoTick % 2 === 1;
-                      return (
-                        <div
-                          key={sq}
-                          className="w-11 h-11 rounded-lg bg-[#1d0c04] border border-amber-500/30 flex items-center justify-center"
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            if (activeStep === 1) onQuickStart?.(activeGameDemo, "free_data");
+                            else onQuickStart?.(activeGameDemo, "p2p");
+                          }}
+                          className={`h-8 px-3.5 rounded-lg bg-gradient-to-r ${currentStep.gradient} text-slate-950 font-black text-xs gap-1 shadow`}
                         >
-                          {sq === 0 && !jumped && (
-                            <span className="w-7 h-7 rounded-full bg-amber-400 border-2 border-white shadow" />
-                          )}
-                          {sq === 1 && !jumped && (
-                            <span className="w-7 h-7 rounded-full bg-rose-600 border-2 border-rose-200 shadow" />
-                          )}
-                          {sq === 1 && jumped && (
-                            <span className="text-[10px] font-black text-amber-400">CHOP!</span>
-                          )}
-                          {sq === 2 && jumped && (
-                            <span className="w-8 h-8 rounded-full bg-amber-400 border-2 border-white shadow flex items-center justify-center text-slate-950 animate-bounce">
-                              <Crown className="w-4 h-4 stroke-[2.5]" />
+                          {currentStep.ctaLabel} <ArrowRight className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Right Column: Live Animated Visual Stage (7 cols) */}
+                    <div className="lg:col-span-7 rounded-2xl bg-slate-950 border border-white/10 p-4 sm:p-5 flex flex-col justify-center relative overflow-hidden min-h-[230px]">
+                      {/* STEP 01 VISUAL: 3 Game Cards with Animated Focus Ring */}
+                      {activeStep === 0 && (
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="font-bold text-slate-400 uppercase tracking-wider text-[10px]">
+                              Live Game Selection Preview — Tap any card to select
                             </span>
-                          )}
+                            <Badge variant="outline" className="border-amber-500/40 text-amber-300 text-[10px]">
+                              3 Traditional Games
+                            </Badge>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            {[
+                              {
+                                id: "oware" as const,
+                                name: "Ghana Oware",
+                                sub: "Nam-Nam Relay & Abapa",
+                                badge: "Most Popular",
+                                img: "/oware-challenge-icon.jpg",
+                              },
+                              {
+                                id: "ludo" as const,
+                                name: "Ghana Ludo",
+                                sub: "3D Blue Dice & Kick",
+                                badge: "Fast Action",
+                                img: "/ludo-challenge-icon.png",
+                              },
+                              {
+                                id: "dame" as const,
+                                name: "Ghanaian Dame",
+                                sub: "8×8 Draughts & Kings",
+                                badge: "Pure Skill",
+                                img: null,
+                              },
+                            ].map((g, idx) => {
+                              const focused = demoFrame % 3 === idx;
+                              return (
+                                <motion.div
+                                  key={g.id}
+                                  animate={{
+                                    scale: focused ? 1.03 : 1,
+                                    y: focused ? -3 : 0,
+                                  }}
+                                  transition={{ type: "spring", stiffness: 300, damping: 22 }}
+                                  onClick={() => {
+                                    setActiveGameDemo(g.id);
+                                    onQuickStart?.(g.id, "p2p");
+                                  }}
+                                  className={`p-3.5 rounded-2xl border cursor-pointer transition-colors relative ${
+                                    focused
+                                      ? "bg-gradient-to-b from-amber-500/20 to-slate-900 border-amber-400 shadow-[0_8px_25px_rgba(245,158,11,0.2)]"
+                                      : "bg-slate-900/70 border-white/10 hover:border-white/25"
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between mb-2.5">
+                                    {g.img ? (
+                                      <img
+                                        src={g.img}
+                                        alt={g.name}
+                                        className="w-10 h-10 rounded-xl object-cover border border-white/20 shadow"
+                                      />
+                                    ) : (
+                                      <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center text-xl">
+                                        ♟️
+                                      </div>
+                                    )}
+                                    <Badge
+                                      className={`text-[9px] font-black ${
+                                        focused
+                                          ? "bg-amber-400 text-slate-950"
+                                          : "bg-slate-800 text-slate-300"
+                                      }`}
+                                    >
+                                      {focused ? "✓ Active" : g.badge}
+                                    </Badge>
+                                  </div>
+                                  <p className="text-xs font-black text-white">{g.name}</p>
+                                  <p className="text-[10px] text-slate-400 mt-0.5">{g.sub}</p>
+                                </motion.div>
+                              );
+                            })}
+                          </div>
                         </div>
-                      );
-                    })}
+                      )}
+
+                      {/* STEP 02 VISUAL: 3 Match Modes Pipeline */}
+                      {activeStep === 1 && (
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-slate-400 uppercase tracking-wider text-[10px]">
+                              Choose Your Arena Mode
+                            </span>
+                            <Badge variant="outline" className="border-emerald-500/40 text-emerald-300 text-[10px]">
+                              Real-Time Sync
+                            </Badge>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            {[
+                              {
+                                mode: "p2p" as const,
+                                title: "Open 1v1 PvP",
+                                tag: "Room Code #GH842K",
+                                desc: "Create or join a live table & share code on WhatsApp.",
+                                icon: Users,
+                                color: "text-amber-400 border-amber-400 bg-amber-500/15",
+                              },
+                              {
+                                mode: "ai" as const,
+                                title: "Instant AI (1.8×)",
+                                tag: "Zero Wait Time",
+                                desc: "Play vs Grandmaster AI immediately for 1.8× cash.",
+                                icon: Sparkles,
+                                color: "text-emerald-400 border-emerald-400 bg-emerald-500/15",
+                              },
+                              {
+                                mode: "free_data" as const,
+                                title: "Free Data Arena",
+                                tag: "GH₵0.00 Entry",
+                                desc: "Beat the Grandmaster AI to win a 1GB Data Bundle!",
+                                icon: Gift,
+                                color: "text-purple-400 border-purple-400 bg-purple-500/15",
+                              },
+                            ].map((m, idx) => {
+                              const MIcon = m.icon;
+                              const active = demoFrame % 3 === idx;
+                              return (
+                                <motion.div
+                                  key={m.mode}
+                                  animate={{ scale: active ? 1.03 : 1 }}
+                                  onClick={() => onQuickStart?.(activeGameDemo, m.mode)}
+                                  className={`p-3.5 rounded-2xl border cursor-pointer transition-all ${
+                                    active
+                                      ? m.color
+                                      : "bg-slate-900/70 border-white/10 text-slate-300"
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between mb-2">
+                                    <MIcon className="w-5 h-5" />
+                                    <span className="text-[9px] font-mono font-black px-2 py-0.5 rounded-full bg-black/40 border border-white/10">
+                                      {m.tag}
+                                    </span>
+                                  </div>
+                                  <p className="text-xs font-black text-white">{m.title}</p>
+                                  <p className="text-[10px] text-slate-300 mt-1 leading-snug">
+                                    {m.desc}
+                                  </p>
+                                </motion.div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* STEP 03 VISUAL: Escrow Payment Flow Diagram */}
+                      {activeStep === 2 && (
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-slate-400 uppercase tracking-wider text-[10px]">
+                              Automated Stake Escrow Architecture
+                            </span>
+                            <Badge className="bg-indigo-500/20 text-indigo-300 border border-indigo-400/40 text-[10px] gap-1">
+                              <ShieldCheck className="w-3 h-3" /> 100% Protected
+                            </Badge>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-center">
+                            {/* Funding Sources */}
+                            <div className="space-y-2">
+                              <div
+                                className={`p-2.5 rounded-xl border transition-all flex items-center gap-2.5 ${
+                                  demoFrame % 2 === 0
+                                    ? "bg-emerald-500/15 border-emerald-400"
+                                    : "bg-slate-900 border-white/10"
+                                }`}
+                              >
+                                <Wallet className="w-4 h-4 text-emerald-400 shrink-0" />
+                                <div>
+                                  <p className="text-[11px] font-black text-white">Wallet Balance</p>
+                                  <p className="text-[9px] text-slate-400">1-Click Instant</p>
+                                </div>
+                              </div>
+                              <div
+                                className={`p-2.5 rounded-xl border transition-all flex items-center gap-2.5 ${
+                                  demoFrame % 2 === 1
+                                    ? "bg-amber-500/15 border-amber-400"
+                                    : "bg-slate-900 border-white/10"
+                                }`}
+                              >
+                                <Smartphone className="w-4 h-4 text-amber-400 shrink-0" />
+                                <div>
+                                  <p className="text-[11px] font-black text-white">Paystack MoMo</p>
+                                  <p className="text-[9px] text-slate-400">MTN • Telecel • AT</p>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Center Escrow Vault */}
+                            <div className="p-3.5 rounded-2xl bg-indigo-950/50 border-2 border-indigo-400/60 text-center space-y-1 shadow-lg">
+                              <ShieldCheck className="w-6 h-6 text-indigo-300 mx-auto animate-pulse" />
+                              <p className="text-[10px] font-bold uppercase text-indigo-300">
+                                Escrow Pot Locked
+                              </p>
+                              <p className="text-base font-black text-white font-mono">
+                                GH₵ 20.00
+                              </p>
+                              <span className="text-[9px] text-slate-400 block">
+                                Held safely during match
+                              </span>
+                            </div>
+
+                            {/* Winner Release */}
+                            <div className="p-3.5 rounded-2xl bg-emerald-950/40 border border-emerald-500/40 text-center space-y-1">
+                              <Trophy className="w-6 h-6 text-amber-400 mx-auto" />
+                              <p className="text-[10px] font-bold uppercase text-emerald-300">
+                                Winner Payout
+                              </p>
+                              <p className="text-base font-black text-emerald-400 font-mono">
+                                GH₵ 18.00
+                              </p>
+                              <span className="text-[9px] text-slate-400 block">
+                                Instant Wallet / Data
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* STEP 04 VISUAL: Instant Cash or Data Bundle Conversion */}
+                      {activeStep === 3 && (
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-slate-400 uppercase tracking-wider text-[10px]">
+                              Dual Winner Reward Options
+                            </span>
+                            <Badge className="bg-emerald-500 text-slate-950 font-black text-[10px]">
+                              Instant Settlement
+                            </Badge>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div
+                              className={`p-4 rounded-2xl border transition-all ${
+                                demoFrame % 2 === 0
+                                  ? "bg-emerald-950/60 border-emerald-400 shadow-lg"
+                                  : "bg-slate-900/70 border-white/10"
+                              }`}
+                            >
+                              <div className="flex items-center justify-between mb-2">
+                                <Badge className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px]">
+                                  Option 1 • Cash Prize
+                                </Badge>
+                                <Wallet className="w-4 h-4 text-emerald-400" />
+                              </div>
+                              <p className="text-base font-black text-white font-mono">
+                                +GH₵ 18.00 Credited
+                              </p>
+                              <p className="text-[11px] text-slate-300 mt-1">
+                                Automatically added to your SwiftData Wallet the moment you win a staked match.
+                              </p>
+                            </div>
+
+                            <div
+                              className={`p-4 rounded-2xl border transition-all ${
+                                demoFrame % 2 === 1
+                                  ? "bg-purple-950/60 border-purple-400 shadow-lg"
+                                  : "bg-slate-900/70 border-white/10"
+                              }`}
+                            >
+                              <div className="flex items-center justify-between mb-2">
+                                <Badge className="bg-purple-500/20 text-purple-300 border border-purple-500/40 text-[10px]">
+                                  Option 2 • Data Bundle
+                                </Badge>
+                                <Gift className="w-4 h-4 text-purple-400" />
+                              </div>
+                              <p className="text-base font-black text-white">
+                                🎁 1GB Free Data Bundle
+                              </p>
+                              <p className="text-[11px] text-slate-300 mt-1">
+                                Enter any MTN, Telecel, or AirtelTigo number to dispatch your data bundle reward!
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </motion.div>
+                </AnimatePresence>
+              </>
+            ) : (
+              /* ── TAB 2: PRO INTERACTIVE GAME RULES SIMULATOR (Oware • Ludo • Dame) ── */
+              <div className="space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    {(
+                      [
+                        { id: "oware", label: "🪨 Ghana Oware (Nam-Nam & Abapa)" },
+                        { id: "ludo", label: "🎲 Ghana Ludo (Kick Edition)" },
+                        { id: "dame", label: "♟️ Ghanaian Dame (Draughts)" },
+                      ] as const
+                    ).map((tab) => (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => setActiveGameDemo(tab.id)}
+                        className={`px-3.5 py-2 rounded-xl text-xs font-black border transition-all ${
+                          activeGameDemo === tab.id
+                            ? "bg-amber-500 text-slate-950 border-amber-400 shadow"
+                            : "bg-slate-900 border-white/10 text-slate-300 hover:text-white"
+                        }`}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
                   </div>
-                  <p className="text-[11px] text-slate-200 leading-snug">
-                    Move diagonally on dark squares. Jumping an exposed opponent piece is{" "}
-                    <strong className="text-amber-300">mandatory</strong>. Reach the far row to crown a{" "}
-                    <strong className="text-emerald-300">King (👑)</strong>!
-                  </p>
+
+                  <Button
+                    size="sm"
+                    onClick={() => onQuickStart?.(activeGameDemo, "p2p")}
+                    className="h-9 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs gap-1.5"
+                  >
+                    Play {activeGameDemo.toUpperCase()} Now <ArrowRight className="w-3.5 h-3.5" />
+                  </Button>
                 </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+
+                {/* Game-Specific Visual Simulator Grid */}
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-center p-4 sm:p-5 rounded-2xl bg-slate-900/90 border border-white/10">
+                  {/* Left: 3 Rule Cards (6 cols) */}
+                  <div className="lg:col-span-6 space-y-2.5">
+                    {activeGameDemo === "oware" && (
+                      <>
+                        <div className="p-3 rounded-xl bg-slate-950 border border-amber-500/30">
+                          <p className="text-xs font-black text-amber-400">
+                            1. Counter-Clockwise Nam-Nam Relay Sowing
+                          </p>
+                          <p className="text-[11px] text-slate-300 mt-0.5">
+                            Tap any of your 6 terracotta bowls to scoop all seeds and drop them one-by-one counter-clockwise. If your last seed lands in a bowl that already has seeds, you scoop them up and continue sowing!
+                          </p>
+                        </div>
+                        <div className="p-3 rounded-xl bg-slate-950 border border-emerald-500/30">
+                          <p className="text-xs font-black text-emerald-400">
+                            2. The 4-Seed Harvest Rule (+4 🔥)
+                          </p>
+                          <p className="text-[11px] text-slate-300 mt-0.5">
+                            Whenever any bowl reaches <strong>4 seeds</strong> during sowing, the row owner harvests them. If your <strong>very last seed</strong> makes 4 in ANY bowl, <strong>YOU capture those 4 seeds</strong>!
+                          </p>
+                        </div>
+                        <div className="p-3 rounded-xl bg-slate-950 border border-white/10">
+                          <p className="text-xs font-black text-white">
+                            3. Abapa Tournament Switcher Available
+                          </p>
+                          <p className="text-[11px] text-slate-300 mt-0.5">
+                            Prefer international tournament rules? Toggle <strong>🏆 Abapa (2/3 Capture)</strong> at the top of the Oware board before the first move.
+                          </p>
+                        </div>
+                      </>
+                    )}
+
+                    {activeGameDemo === "ludo" && (
+                      <>
+                        <div className="p-3 rounded-xl bg-slate-950 border border-indigo-500/30">
+                          <p className="text-xs font-black text-indigo-400">
+                            1. Roll 6 on the 3D Blue Dice to Deploy
+                          </p>
+                          <p className="text-[11px] text-slate-300 mt-0.5">
+                            Each player starts with 1 active token on their ★ Start square and 3 in the Yard. Roll a <strong>6</strong> to deploy a token from your Yard and earn a <strong>Bonus Roll</strong>!
+                          </p>
+                        </div>
+                        <div className="p-3 rounded-xl bg-slate-950 border border-red-500/30">
+                          <p className="text-xs font-black text-red-400">
+                            2. Kick Opponent Tokens Back to Yard (💥)
+                          </p>
+                          <p className="text-[11px] text-slate-300 mt-0.5">
+                            Land on an opponent&apos;s token outside the 4 ★ Safe Star squares to kick it back to their Yard and earn an immediate Bonus Roll!
+                          </p>
+                        </div>
+                        <div className="p-3 rounded-xl bg-slate-950 border border-emerald-500/30">
+                          <p className="text-xs font-black text-emerald-400">
+                            3. Race 2 Tokens into Center Home (🏠)
+                          </p>
+                          <p className="text-[11px] text-slate-300 mt-0.5">
+                            First player to guide <strong>2 tokens</strong> up their colored Home Stretch into the Center Triangle wins!
+                          </p>
+                        </div>
+                      </>
+                    )}
+
+                    {activeGameDemo === "dame" && (
+                      <>
+                        <div className="p-3 rounded-xl bg-slate-950 border border-amber-500/30">
+                          <p className="text-xs font-black text-amber-400">
+                            1. Diagonal Movement on Dark Squares
+                          </p>
+                          <p className="text-[11px] text-slate-300 mt-0.5">
+                            Tap any glowing piece to highlight its valid diagonal moves in green, then tap the target square.
+                          </p>
+                        </div>
+                        <div className="p-3 rounded-xl bg-slate-950 border border-rose-500/30">
+                          <p className="text-xs font-black text-rose-400">
+                            2. Mandatory Jump Capture (&quot;Chop&quot;)
+                          </p>
+                          <p className="text-[11px] text-slate-300 mt-0.5">
+                            Whenever an opponent piece can be jumped diagonally (forward or backward), the jump is <strong>mandatory</strong>!
+                          </p>
+                        </div>
+                        <div className="p-3 rounded-xl bg-slate-950 border border-emerald-500/30">
+                          <p className="text-xs font-black text-emerald-400">
+                            3. Crowned Kings (👑)
+                          </p>
+                          <p className="text-[11px] text-slate-300 mt-0.5">
+                            Reach the far back row to crown your piece a King that moves and captures in all 4 diagonal directions.
+                          </p>
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Right: Live Animated Board Simulation Stage (6 cols) */}
+                  <div className="lg:col-span-6 p-4 rounded-2xl bg-slate-950 border border-white/10">
+                    {activeGameDemo === "oware" && (
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-black text-orange-300">
+                            Live Sowing Demo (Hinged Ebony &amp; Terracotta Bowls)
+                          </span>
+                          <Badge className="bg-amber-500 text-slate-950 font-black text-[10px]">
+                            {demoFrame < 4
+                              ? `✋ Dropping seed in Bowl #${(demoFrame % 4) + 1}`
+                              : "🔥 Bowl #4 reached 4 seeds → +4 Harvest!"}
+                          </Badge>
+                        </div>
+                        <div className="p-3 rounded-3xl bg-[#18191c] border-2 border-[#34363c] grid grid-cols-4 gap-3">
+                          {[0, 1, 2, 3].map((idx) => {
+                            const active = demoFrame % 4 === idx;
+                            const harvested = idx === 3 && demoFrame >= 3;
+                            const seeds = harvested ? 4 : idx === 0 && demoFrame > 0 ? 0 : 3 + (demoFrame > idx ? 1 : 0);
+                            return (
+                              <div
+                                key={idx}
+                                className={`aspect-square rounded-full flex flex-col items-center justify-center relative border-2 transition-all ${
+                                  harvested
+                                    ? "border-amber-300 ring-4 ring-amber-400/50 scale-105"
+                                    : active
+                                    ? "border-emerald-400 scale-105"
+                                    : "border-[#2d1206]"
+                                }`}
+                                style={{
+                                  background:
+                                    "radial-gradient(circle at 36% 30%, #e06d34 0%, #c64f18 55%, #4a1502 100%)",
+                                }}
+                              >
+                                <span className="text-xs sm:text-sm font-black text-white font-mono">
+                                  {harvested ? "+4🔥" : seeds}
+                                </span>
+                                <span className="text-[9px] text-amber-200/80 font-mono">
+                                  Bowl #{idx + 1}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {activeGameDemo === "ludo" && (
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-black text-indigo-300">
+                            Live 15×15 Track &amp; 3D Blue Dice Demo
+                          </span>
+                          <Badge className="bg-indigo-600 text-white font-black text-[10px]">
+                            {demoFrame % 2 === 0 ? "🎲 Rolled 6 → Bonus Turn!" : "💥 Kicked Yellow Token!"}
+                          </Badge>
+                        </div>
+                        <div className="grid grid-cols-5 gap-2 p-3 rounded-2xl bg-[#eef6fb] border-2 border-slate-400">
+                          {[0, 1, 2, 3, 4].map((step) => {
+                            const redHere = demoFrame % 5 === step;
+                            return (
+                              <div
+                                key={step}
+                                className={`h-14 rounded-xl border flex flex-col items-center justify-center relative ${
+                                  step === 0
+                                    ? "bg-[#dc2626] text-white"
+                                    : step === 4
+                                    ? "bg-[#15803d] text-white"
+                                    : "bg-white text-slate-800"
+                                }`}
+                              >
+                                {redHere ? (
+                                  <span className="w-7 h-7 rounded-full bg-red-600 border-2 border-white shadow-md flex items-center justify-center text-xs font-black text-white animate-bounce">
+                                    R1
+                                  </span>
+                                ) : step === 3 ? (
+                                  <span className="w-6 h-6 rounded-full bg-yellow-400 border border-slate-900 flex items-center justify-center text-[10px] font-black text-slate-950">
+                                    Y1
+                                  </span>
+                                ) : (
+                                  <span className="text-xs font-black opacity-75">
+                                    {step === 0 ? "★ START" : step === 4 ? "🏠 HOME" : `Step ${step}`}
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {activeGameDemo === "dame" && (
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-black text-amber-300">
+                            Live Mandatory Jump (&quot;Chop&quot;) &amp; King Demo
+                          </span>
+                          <Badge className="bg-amber-500 text-slate-950 font-black text-[10px]">
+                            {demoFrame % 2 === 0 ? "Select Gold Piece" : "🔥 Jumped & Crowned King!"}
+                          </Badge>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2.5 p-3 rounded-2xl bg-[#2b1408] border-2 border-[#6b3719]">
+                          {[0, 1, 2].map((sq) => {
+                            const jumped = demoFrame % 2 === 1;
+                            return (
+                              <div
+                                key={sq}
+                                className="h-14 rounded-xl bg-[#1a0b04] border border-amber-500/30 flex items-center justify-center"
+                              >
+                                {sq === 0 && !jumped && (
+                                  <span className="w-8 h-8 rounded-full bg-amber-400 border-2 border-white shadow" />
+                                )}
+                                {sq === 1 && !jumped && (
+                                  <span className="w-8 h-8 rounded-full bg-rose-600 border-2 border-rose-200 shadow" />
+                                )}
+                                {sq === 1 && jumped && (
+                                  <span className="text-xs font-black text-amber-400">CHOP! 🔥</span>
+                                )}
+                                {sq === 2 && jumped && (
+                                  <span className="w-9 h-9 rounded-full bg-amber-400 border-2 border-white shadow flex items-center justify-center text-slate-950 animate-bounce">
+                                    <Crown className="w-4 h-4 stroke-[2.5]" />
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
