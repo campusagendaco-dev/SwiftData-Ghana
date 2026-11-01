@@ -822,6 +822,8 @@ export default function ChallengeArena() {
                         <div className="flex items-center justify-between mb-1">
                           {g.id === "ludo" ? (
                             <img src="/ludo-challenge-icon.png" alt="Ghana Ludo" className="w-8 h-8 rounded-lg object-cover shadow-md border border-white/20" />
+                          ) : g.id === "oware" ? (
+                            <img src="/oware-challenge-icon.jpg" alt="Oware Abapa" className="w-8 h-8 rounded-lg object-cover shadow-md border border-amber-500/40" />
                           ) : (
                             <span className="text-xl">{g.emoji}</span>
                           )}

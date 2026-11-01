@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Sparkles, Trophy, RotateCcw, Volume2, VolumeX, HelpCircle } from "lucide-react";
+import { Volume2, VolumeX, HelpCircle } from "lucide-react";
 import { playSound, playSuccessSound } from "@/lib/sound";
 
 export interface OwareState {
@@ -166,6 +166,82 @@ function pickBestAiMove(state: OwareState): number {
   return bestPit;
 }
 
+/**
+ * Authentic Olive-Green & Sage-Grey Nickernut Seed Pebble (matches reference photo)
+ */
+const SEED_PALETTES = [
+  "radial-gradient(circle at 32% 28%, #b8c470 0%, #8b9a46 58%, #546022 100%)", // Olive green
+  "radial-gradient(circle at 32% 28%, #d2d1c5 0%, #a5a392 58%, #696759 100%)", // Sage pebble grey
+  "radial-gradient(circle at 32% 28%, #aebc62 0%, #7d8c38 58%, #4a551c 100%)", // Deep olive
+  "radial-gradient(circle at 32% 28%, #c5c8a8 0%, #969b74 58%, #5e6342 100%)", // Moss grey-green
+  "radial-gradient(circle at 32% 28%, #dcdad0 0%, #b2afa0 58%, #757264 100%)", // Warm stone grey
+];
+
+const SEED_OFFSETS: { x: number; y: number; rot: number }[] = [
+  { x: -24, y: -20, rot: -15 },
+  { x: 22, y: -18, rot: 25 },
+  { x: -18, y: 22, rot: 12 },
+  { x: 20, y: 20, rot: -28 },
+  { x: 0, y: 0, rot: 8 },
+  { x: 0, y: -28, rot: -5 },
+  { x: -28, y: 2, rot: 35 },
+  { x: 28, y: 3, rot: -18 },
+  { x: 2, y: 28, rot: 20 },
+  { x: -12, y: -8, rot: 42 },
+  { x: 13, y: -7, rot: -32 },
+  { x: -9, y: 12, rot: 15 },
+];
+
+function NickernutSeedCluster({ count, pitSeedOffset }: { count: number; pitSeedOffset: number }) {
+  const visibleCount = Math.min(count, 12);
+  return (
+    <div className="relative w-full h-full flex items-center justify-center pointer-events-none">
+      {Array.from({ length: visibleCount }).map((_, idx) => {
+        const pos = SEED_OFFSETS[idx % SEED_OFFSETS.length];
+        const bg = SEED_PALETTES[(pitSeedOffset + idx) % SEED_PALETTES.length];
+        return (
+          <span
+            key={idx}
+            className="absolute w-3.5 h-3 sm:w-4 sm:h-3.5 rounded-[52%_48%_48%_52%] shadow-[0_3px_5px_rgba(0,0,0,0.75),inset_0_1px_2px_rgba(255,255,255,0.45)] border border-black/30"
+            style={{
+              background: bg,
+              transform: `translate(${pos.x}%, ${pos.y}%) rotate(${pos.rot}deg)`,
+            }}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * Brushed Brass/Copper Folding Hinge between the two Black Ebony Board Halves (matches reference photo)
+ */
+function BrassHinge() {
+  return (
+    <div
+      className="w-8 sm:w-10 h-6 sm:h-7 rounded-[3px] flex flex-col justify-between p-0.5 shadow-[0_2px_6px_rgba(0,0,0,0.85)] border border-amber-900/80 z-20"
+      style={{
+        background:
+          "linear-gradient(135deg, #f6d38b 0%, #c88a3b 45%, #8f5616 75%, #e7b563 100%)",
+      }}
+    >
+      {/* Top Hinge Leaf Screws */}
+      <div className="flex items-center justify-between px-0.5">
+        <span className="w-1.5 h-1.5 rounded-full bg-[#2b1806] shadow-inner border border-amber-300/40" />
+        <span className="w-1.5 h-1.5 rounded-full bg-[#2b1806] shadow-inner border border-amber-300/40" />
+      </div>
+      {/* Center Hinge Knuckle Barrel */}
+      <div className="w-full h-1.5 rounded-full bg-gradient-to-r from-[#5a3209] via-[#f7d894] to-[#5a3209] border-y border-black/50" />
+      {/* Bottom Hinge Leaf Screws */}
+      <div className="flex items-center justify-between px-0.5">
+        <span className="w-1.5 h-1.5 rounded-full bg-[#2b1806] shadow-inner border border-amber-300/40" />
+        <span className="w-1.5 h-1.5 rounded-full bg-[#2b1806] shadow-inner border border-amber-300/40" />
+      </div>
+    </div>
+  );
+}
+
 interface OwareGameBoardProps {
   mode: "p2p" | "ai" | "free_data";
   mySide: "creator" | "opponent";
@@ -258,16 +334,29 @@ export function OwareGameBoard({
 
   const isMyTurn = !game.winner && game.turn === mySide;
 
+  // Shared Terracotta Carved Bowl styling matching the reference photo
+  const terracottaBowlStyle = {
+    background:
+      "radial-gradient(circle at 36% 30%, #e06d34 0%, #c64f18 48%, #8e2e07 82%, #4a1502 100%)",
+    boxShadow:
+      "inset 0 8px 16px rgba(0,0,0,0.75), inset 0 -3px 8px rgba(251,146,60,0.28), 0 2px 6px rgba(0,0,0,0.9)",
+  };
+
   return (
     <div className="space-y-4">
       {/* Top Status & Score Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl bg-amber-950/40 border border-amber-500/30">
+      <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl bg-slate-900/95 border border-amber-500/30 shadow-lg">
         <div className="flex items-center gap-3">
-          <Badge className="bg-amber-500 text-slate-950 font-black text-xs px-3 py-1">
-            🪨 OWARE ABAPA
+          <img
+            src="/oware-challenge-icon.jpg"
+            alt="Ghanaian Oware Board"
+            className="w-8 h-8 rounded-lg object-cover shadow-md border border-amber-500/40"
+          />
+          <Badge className="bg-gradient-to-r from-orange-600 to-amber-500 text-white font-black text-xs px-3 py-1">
+            🪨 OWARE ABAPA ARENA
           </Badge>
           <span className="text-xs text-amber-200/90 font-semibold">
-            First to <strong>25 seeds</strong> wins!
+            First to capture <strong>25 nickernut seeds</strong> wins!
           </span>
         </div>
 
@@ -297,16 +386,16 @@ export function OwareGameBoard({
         <div className="p-3.5 rounded-xl bg-amber-950/60 border border-amber-500/30 text-xs text-amber-100/90 space-y-1.5">
           <p className="font-black text-amber-400">🇬🇭 Traditional Ghanaian Oware (Abapa Rules):</p>
           <ul className="list-disc pl-4 space-y-1">
-            <li>Click any of your glowing pits to pick up all seeds and sow them <strong>counter-clockwise</strong> one by one.</li>
-            <li>If your <strong>last seed</strong> lands in your opponent&apos;s row and makes that pit have <strong>2 or 3 seeds</strong>, you capture them into your Kulo storehouse!</li>
-            <li>Consecutive preceding opponent pits with 2 or 3 seeds are also captured in a combo chain.</li>
+            <li>Tap any of your carved terracotta bowls on your plank to scoop up all nickernut seeds and sow them <strong>counter-clockwise</strong> one by one.</li>
+            <li>If your <strong>last seed</strong> lands in your opponent&apos;s row and brings that bowl to <strong>2 or 3 seeds</strong>, you capture them into your Kulo storehouse!</li>
+            <li>Consecutive preceding opponent bowls with 2 or 3 seeds are also captured in a combo chain.</li>
             <li>Capture <strong>25 or more seeds</strong> first to win the challenge pot or Free Data Bundle!</li>
           </ul>
         </div>
       )}
 
       {/* Turn Banner */}
-      <div className="flex items-center justify-between px-4 py-2.5 rounded-xl bg-slate-900/80 border border-white/10">
+      <div className="flex items-center justify-between px-4 py-2.5 rounded-xl bg-slate-900/90 border border-white/10">
         <div className="flex items-center gap-2">
           <span
             className={`w-2.5 h-2.5 rounded-full ${
@@ -321,7 +410,7 @@ export function OwareGameBoard({
                 ? "🏆 YOU WON THE OWARE CHALLENGE!"
                 : `🏅 ${game.winner === "creator" ? creatorName : opponentName} Won!`
               : isMyTurn
-              ? "🟢 YOUR TURN — Tap one of your pits to sow seeds!"
+              ? "🟢 YOUR TURN — Tap one of your terracotta bowls to sow seeds!"
               : `⏳ Waiting for ${game.turn === "creator" ? creatorName : opponentName} to play...`}
           </span>
         </div>
@@ -330,40 +419,59 @@ export function OwareGameBoard({
           <Badge variant="outline" className="text-[11px] border-amber-500/40 text-amber-300 bg-amber-500/10">
             {game.lastMove.captured > 0
               ? `🔥 Captured +${game.lastMove.captured} seeds!`
-              : `Sowed Pit #${game.lastMove.pit + 1}`}
+              : `Sowed Bowl #${game.lastMove.pit + 1}`}
           </Badge>
         )}
       </div>
 
-      {/* Carved Royal Mahogany Oware Board */}
-      <div className="relative p-4 sm:p-6 rounded-3xl bg-gradient-to-b from-[#4a2511] via-[#381b0c] to-[#261107] border-4 border-[#6e3b1e] shadow-2xl">
+      {/* AUTHENTIC HINGED MATTE-BLACK EBONY & CARVED TERRACOTTA OWARE BOARD */}
+      <div className="relative p-3 sm:p-5 rounded-[36px] bg-slate-950/90 border border-white/10 shadow-2xl">
         <div className="grid grid-cols-1 lg:grid-cols-8 gap-4 items-center">
-          {/* Opponent Kulo Storehouse (Left) */}
-          <div className="flex lg:flex-col items-center justify-between lg:justify-center p-4 rounded-2xl bg-[#1f0d05]/90 border-2 border-amber-600/40 shadow-inner min-h-[110px] lg:min-h-[240px]">
-            <div className="text-center">
-              <p className="text-[10px] uppercase tracking-wider font-extrabold text-amber-400/80 truncate max-w-[110px]">
+          {/* Opponent Kulo Storehouse (Left Ebony Bowl) */}
+          <div
+            className="flex lg:flex-col items-center justify-between lg:justify-center p-3.5 rounded-[36px] border-2 border-[#35373d] shadow-[0_14px_28px_rgba(0,0,0,0.85),inset_0_2px_3px_rgba(255,255,255,0.08)] min-h-[115px] lg:min-h-[270px]"
+            style={{
+              background: "linear-gradient(180deg, #242529 0%, #17181b 55%, #101114 100%)",
+            }}
+          >
+            <div className="text-center mb-2">
+              <p className="text-[10px] uppercase tracking-wider font-extrabold text-orange-300 truncate max-w-[115px]">
                 {opponentName}
               </p>
-              <p className="text-3xl font-black text-amber-300 font-mono mt-1">
+              <p className="text-2xl sm:text-3xl font-black text-white font-mono">
                 {game.scores.opponent}
               </p>
-              <span className="text-[10px] text-amber-200/60">Captured Seeds</span>
+              <span className="text-[9px] text-slate-400 font-semibold">Captured Seeds</span>
+            </div>
+            <div
+              className="w-16 h-16 sm:w-20 sm:h-20 rounded-full border-2 border-[#3a1a08] relative flex items-center justify-center"
+              style={terracottaBowlStyle}
+            >
+              <NickernutSeedCluster count={game.scores.opponent} pitSeedOffset={20} />
             </div>
           </div>
 
-          {/* 12 Pits (2 Rows of 6) */}
-          <div className="lg:col-span-6 space-y-5">
-            {/* North Row (Opponent Pits 11..6) */}
-            <div>
-              <div className="flex items-center justify-between mb-1.5 px-1">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-300/70">
-                  {opponentName}&apos;s Row (North)
+          {/* TWO HINGED MATTE-BLACK EBONY PLANKS WITH BRASS HINGES & 12 TERRACOTTA BOWLS */}
+          <div className="lg:col-span-6 relative space-y-1.5">
+            {/* TOP EBONY PLANK — Opponent's 6 Carved Terracotta Bowls (North: 11..6) */}
+            <div
+              className="relative px-3.5 sm:px-6 py-3.5 sm:py-5 rounded-[44px] sm:rounded-[64px] border-2 border-[#34363c] shadow-[0_14px_28px_rgba(0,0,0,0.9),inset_0_2px_4px_rgba(255,255,255,0.1)]"
+              style={{
+                background: "linear-gradient(180deg, #26272b 0%, #191a1d 55%, #121316 100%)",
+              }}
+            >
+              <div className="flex items-center justify-between mb-2 px-3">
+                <span className="text-[10px] font-black uppercase tracking-wider text-orange-300/90">
+                  {opponentName}&apos;s Plank (North Row)
                 </span>
                 {mySide === "opponent" && isMyTurn && (
-                  <span className="text-[10px] font-black text-emerald-400">Tap a pit below ↓</span>
+                  <span className="text-[10px] font-black text-emerald-400 animate-pulse">
+                    Tap a bowl below ↓
+                  </span>
                 )}
               </div>
-              <div className="grid grid-cols-6 gap-2 sm:gap-3">
+
+              <div className="grid grid-cols-6 gap-2 sm:gap-3.5">
                 {northIndices.map((pitIdx) => {
                   const count = game.pits[pitIdx];
                   const canClick = mySide === "opponent" && isMyTurn && count > 0;
@@ -377,24 +485,25 @@ export function OwareGameBoard({
                       onMouseEnter={() => setHoveredPit(pitIdx)}
                       onMouseLeave={() => setHoveredPit(null)}
                       onClick={() => handlePitClick(pitIdx)}
-                      className={`group relative aspect-square rounded-full flex flex-col items-center justify-center p-2 transition-all border-2 shadow-inner ${
+                      style={terracottaBowlStyle}
+                      className={`group relative aspect-square rounded-full flex flex-col items-center justify-center p-1.5 transition-all border-[3px] ${
                         canClick
-                          ? "bg-[#1d0c04] border-emerald-400/70 hover:scale-105 hover:border-emerald-300 cursor-pointer ring-2 ring-emerald-500/20"
+                          ? "border-emerald-400 hover:scale-105 cursor-pointer ring-4 ring-emerald-500/25"
                           : isLastMoved
-                          ? "bg-[#2b1408] border-amber-400/70"
-                          : "bg-[#1a0b04] border-[#5c3018] opacity-90 cursor-default"
+                          ? "border-amber-300 ring-2 ring-amber-400/40"
+                          : "border-[#2d1206] cursor-default"
                       }`}
                     >
-                      {/* Visual Seeds inside Pit */}
-                      <div className="flex flex-wrap items-center justify-center gap-1 max-w-[80%]">
-                        {Array.from({ length: Math.min(count, 9) }).map((_, sIdx) => (
-                          <span
-                            key={sIdx}
-                            className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-gradient-to-br from-amber-200 via-amber-400 to-amber-700 shadow-sm border border-amber-900/50"
-                          />
-                        ))}
-                      </div>
-                      <span className="mt-1 px-2 py-0.5 rounded-full bg-black/70 text-amber-200 font-mono font-black text-xs sm:text-sm">
+                      <NickernutSeedCluster count={count} pitSeedOffset={pitIdx * 3} />
+
+                      {/* Seed Count Badge */}
+                      <span
+                        className={`absolute -bottom-1.5 px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-black font-mono shadow-md border ${
+                          count > 0
+                            ? "bg-[#18191c] text-[#d9e298] border-[#4b5320]"
+                            : "bg-black/80 text-slate-500 border-white/10"
+                        }`}
+                      >
                         {count}
                       </span>
                     </button>
@@ -403,12 +512,24 @@ export function OwareGameBoard({
               </div>
             </div>
 
-            {/* Center Carved Divider */}
-            <div className="h-1.5 rounded-full bg-gradient-to-r from-transparent via-amber-600/40 to-transparent" />
+            {/* CENTER FOLD SEAM WITH 2 AUTHENTIC BRASS HINGES (Matches Reference Photo!) */}
+            <div className="relative h-2 flex items-center justify-between px-12 sm:px-20 pointer-events-none z-20">
+              <div className="absolute inset-x-6 top-1/2 -translate-y-1/2 h-[3px] bg-black shadow-[0_1px_2px_rgba(255,255,255,0.08)]" />
+              <BrassHinge />
+              <span className="px-3 py-0.5 rounded-full bg-[#141518] border border-white/10 text-[9px] font-bold uppercase tracking-widest text-amber-400/70">
+                ↺ Counter-Clockwise Abapa Flow ↺
+              </span>
+              <BrassHinge />
+            </div>
 
-            {/* South Row (Creator Pits 0..5) */}
-            <div>
-              <div className="grid grid-cols-6 gap-2 sm:gap-3">
+            {/* BOTTOM EBONY PLANK — Creator's 6 Carved Terracotta Bowls (South: 0..5) */}
+            <div
+              className="relative px-3.5 sm:px-6 py-3.5 sm:py-5 rounded-[44px] sm:rounded-[64px] border-2 border-[#34363c] shadow-[0_16px_32px_rgba(0,0,0,0.95),inset_0_2px_4px_rgba(255,255,255,0.1)]"
+              style={{
+                background: "linear-gradient(180deg, #26272b 0%, #191a1d 55%, #121316 100%)",
+              }}
+            >
+              <div className="grid grid-cols-6 gap-2 sm:gap-3.5">
                 {southIndices.map((pitIdx) => {
                   const count = game.pits[pitIdx];
                   const canClick = mySide === "creator" && isMyTurn && count > 0;
@@ -422,57 +543,79 @@ export function OwareGameBoard({
                       onMouseEnter={() => setHoveredPit(pitIdx)}
                       onMouseLeave={() => setHoveredPit(null)}
                       onClick={() => handlePitClick(pitIdx)}
-                      className={`group relative aspect-square rounded-full flex flex-col items-center justify-center p-2 transition-all border-2 shadow-inner ${
+                      style={terracottaBowlStyle}
+                      className={`group relative aspect-square rounded-full flex flex-col items-center justify-center p-1.5 transition-all border-[3px] ${
                         canClick
-                          ? "bg-[#1d0c04] border-emerald-400/80 hover:scale-105 hover:border-emerald-300 cursor-pointer ring-2 ring-emerald-500/25"
+                          ? "border-emerald-400 hover:scale-105 cursor-pointer ring-4 ring-emerald-500/30"
                           : isLastMoved
-                          ? "bg-[#2b1408] border-amber-400/70"
-                          : "bg-[#1a0b04] border-[#5c3018] opacity-90 cursor-default"
+                          ? "border-amber-300 ring-2 ring-amber-400/40"
+                          : "border-[#2d1206] cursor-default"
                       }`}
                     >
-                      <div className="flex flex-wrap items-center justify-center gap-1 max-w-[80%]">
-                        {Array.from({ length: Math.min(count, 9) }).map((_, sIdx) => (
-                          <span
-                            key={sIdx}
-                            className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-gradient-to-br from-amber-200 via-amber-400 to-amber-700 shadow-sm border border-amber-900/50"
-                          />
-                        ))}
-                      </div>
-                      <span className="mt-1 px-2 py-0.5 rounded-full bg-black/70 text-emerald-300 font-mono font-black text-xs sm:text-sm">
+                      <NickernutSeedCluster count={count} pitSeedOffset={pitIdx * 5 + 1} />
+
+                      {/* Seed Count Badge */}
+                      <span
+                        className={`absolute -bottom-1.5 px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-black font-mono shadow-md border ${
+                          canClick
+                            ? "bg-emerald-500 text-slate-950 border-white"
+                            : count > 0
+                            ? "bg-[#18191c] text-[#d9e298] border-[#4b5320]"
+                            : "bg-black/80 text-slate-500 border-white/10"
+                        }`}
+                      >
                         {count}
                       </span>
                     </button>
                   );
                 })}
               </div>
-              <div className="flex items-center justify-between mt-1.5 px-1">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-300/80">
-                  {creatorName}&apos;s Row (South)
+
+              <div className="flex items-center justify-between mt-3 px-3">
+                <span className="text-[10px] font-black uppercase tracking-wider text-orange-300/90">
+                  {creatorName}&apos;s Plank (South Row {mySide === "creator" ? "• YOU" : ""})
                 </span>
                 {mySide === "creator" && isMyTurn && (
                   <span className="text-[10px] font-black text-emerald-400 animate-pulse">
-                    ↑ Tap any pit with seeds to sow
+                    Tap any glowing terracotta bowl ↑
                   </span>
                 )}
               </div>
             </div>
           </div>
 
-          {/* Creator Kulo Storehouse (Right) */}
-          <div className="flex lg:flex-col items-center justify-between lg:justify-center p-4 rounded-2xl bg-[#1f0d05]/90 border-2 border-emerald-500/40 shadow-inner min-h-[110px] lg:min-h-[240px]">
-            <div className="text-center">
-              <p className="text-[10px] uppercase tracking-wider font-extrabold text-emerald-400 truncate max-w-[110px]">
+          {/* Creator Kulo Storehouse (Right Ebony Bowl) */}
+          <div
+            className="flex lg:flex-col items-center justify-between lg:justify-center p-3.5 rounded-[36px] border-2 border-[#35373d] shadow-[0_14px_28px_rgba(0,0,0,0.85),inset_0_2px_3px_rgba(255,255,255,0.08)] min-h-[115px] lg:min-h-[270px]"
+            style={{
+              background: "linear-gradient(180deg, #242529 0%, #17181b 55%, #101114 100%)",
+            }}
+          >
+            <div className="text-center mb-2">
+              <p className="text-[10px] uppercase tracking-wider font-extrabold text-emerald-400 truncate max-w-[115px]">
                 {creatorName}
               </p>
-              <p className="text-3xl font-black text-emerald-300 font-mono mt-1">
+              <p className="text-2xl sm:text-3xl font-black text-emerald-300 font-mono">
                 {game.scores.creator}
               </p>
-              <span className="text-[10px] text-emerald-200/60">Captured Seeds</span>
+              <span className="text-[9px] text-slate-400 font-semibold">Captured Seeds</span>
+            </div>
+            <div
+              className="w-16 h-16 sm:w-20 sm:h-20 rounded-full border-2 border-[#3a1a08] relative flex items-center justify-center"
+              style={terracottaBowlStyle}
+            >
+              <NickernutSeedCluster count={game.scores.creator} pitSeedOffset={40} />
             </div>
           </div>
         </div>
+
+        {/* Hover Move Preview Bar */}
+        {hoveredPit !== null && isMyTurn && game.pits[hoveredPit] > 0 && (
+          <div className="mt-3 text-center text-xs text-amber-200/90 font-semibold">
+            Sowing <strong>{game.pits[hoveredPit]} nickernut seeds</strong> from Bowl #{hoveredPit + 1} counter-clockwise...
+          </div>
+        )}
       </div>
     </div>
   );
 }
-
