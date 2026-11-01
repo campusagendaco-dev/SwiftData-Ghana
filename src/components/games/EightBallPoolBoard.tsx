@@ -962,144 +962,164 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
     }
   };
 
+  const aimAngleRef = useRef(aimAngle);
+  aimAngleRef.current = aimAngle;
+  const executeShotRef = useRef(executeShot);
+  executeShotRef.current = executeShot;
+
   // ── Human-Sense Medium Opponent with Visible Cue Sweeping & Gaussian Error ──
   useEffect(() => {
     if (
-      (mode === "ai" || mode === "free_data") &&
-      state.turn === "opponent" &&
-      !state.winner &&
-      !isSimulating &&
-      !isOpponentAiming
+      (mode !== "ai" && mode !== "free_data") ||
+      state.turn !== "opponent" ||
+      Boolean(state.winner) ||
+      isSimulating
     ) {
-      setIsOpponentAiming(true);
-      const phrase =
-        HUMAN_THOUGHT_PHRASES[Math.floor(Math.random() * HUMAN_THOUGHT_PHRASES.length)];
-      setHumanThoughtText(phrase);
+      return;
+    }
 
-      const current = stateRef.current;
-      const cue = current.balls.find((b) => b.id === 0);
-      if (!cue) {
-        setIsOpponentAiming(false);
-        return;
-      }
+    setIsOpponentAiming(true);
+    const phrase =
+      HUMAN_THOUGHT_PHRASES[Math.floor(Math.random() * HUMAN_THOUGHT_PHRASES.length)];
+    setHumanThoughtText(phrase);
 
-      const aiGroup = current.opponentGroup;
-      let targets = current.balls.filter(
-        (b) => !b.potted && b.id !== 0 && b.id !== 8 && isBallInGroup(b.id, aiGroup)
-      );
-      if (aiGroup && targets.length === 0) {
-        targets = current.balls.filter((b) => !b.potted && b.id === 8);
-      }
-      if (targets.length === 0) {
-        targets = current.balls.filter((b) => !b.potted && b.id !== 0 && b.id !== 8);
-      }
+    const current = stateRef.current;
+    const cue = current.balls.find((b) => b.id === 0);
+    if (!cue) {
+      setIsOpponentAiming(false);
+      return;
+    }
 
-      let idealAngle = 0;
-      let idealPower = 68;
-      let bestScore = -999999;
-      let chosenCutCos = 0.8;
+    const aiGroup = current.opponentGroup;
+    let targets = current.balls.filter(
+      (b) => !b.potted && b.id !== 0 && b.id !== 8 && isBallInGroup(b.id, aiGroup)
+    );
+    if (aiGroup && targets.length === 0) {
+      targets = current.balls.filter((b) => !b.potted && b.id === 8);
+    }
+    if (targets.length === 0) {
+      targets = current.balls.filter((b) => !b.potted && b.id !== 0 && b.id !== 8);
+    }
+    if (targets.length === 0) {
+      targets = current.balls.filter((b) => !b.potted && b.id !== 0);
+    }
 
-      for (const t of targets) {
-        for (const p of POCKETS) {
-          const toPocketX = p.x - t.x;
-          const toPocketY = p.y - t.y;
-          const distToPocket = Math.hypot(toPocketX, toPocketY);
-          if (distToPocket < 1) continue;
+    let idealAngle = 0;
+    let idealPower = 68;
+    let bestScore = -999999;
+    let chosenCutCos = 0.8;
 
-          const ux = toPocketX / distToPocket;
-          const uy = toPocketY / distToPocket;
-          const ghostX = t.x - ux * (BALL_R * 1.96);
-          const ghostY = t.y - uy * (BALL_R * 1.96);
+    for (const t of targets) {
+      for (const p of POCKETS) {
+        const toPocketX = p.x - t.x;
+        const toPocketY = p.y - t.y;
+        const distToPocket = Math.hypot(toPocketX, toPocketY);
+        if (distToPocket < 1) continue;
 
-          const toGhostX = ghostX - cue.x;
-          const toGhostY = ghostY - cue.y;
-          const distToGhost = Math.hypot(toGhostX, toGhostY);
-          if (distToGhost < 1) continue;
+        const ux = toPocketX / distToPocket;
+        const uy = toPocketY / distToPocket;
+        const ghostX = t.x - ux * (BALL_R * 1.96);
+        const ghostY = t.y - uy * (BALL_R * 1.96);
 
-          const gx = toGhostX / distToGhost;
-          const gy = toGhostY / distToGhost;
+        const toGhostX = ghostX - cue.x;
+        const toGhostY = ghostY - cue.y;
+        const distToGhost = Math.hypot(toGhostX, toGhostY);
+        if (distToGhost < 1) continue;
 
-          const cutCos = gx * ux + gy * uy;
-          if (cutCos < 0.25) continue;
+        const gx = toGhostX / distToGhost;
+        const gy = toGhostY / distToGhost;
 
-          let obstructed = false;
-          for (const other of current.balls) {
-            if (other.potted || other.id === 0 || other.id === t.id) continue;
-            const proj = (other.x - cue.x) * gx + (other.y - cue.y) * gy;
-            if (proj > 0 && proj < distToGhost) {
-              const perpDist = Math.abs((other.x - cue.x) * -gy + (other.y - cue.y) * gx);
-              if (perpDist < BALL_R * 1.95) {
-                obstructed = true;
-                break;
-              }
+        const cutCos = gx * ux + gy * uy;
+        if (cutCos < 0.15) continue;
+
+        let obstructed = false;
+        for (const other of current.balls) {
+          if (other.potted || other.id === 0 || other.id === t.id) continue;
+          const proj = (other.x - cue.x) * gx + (other.y - cue.y) * gy;
+          if (proj > 0 && proj < distToGhost) {
+            const perpDist = Math.abs((other.x - cue.x) * -gy + (other.y - cue.y) * gx);
+            if (perpDist < BALL_R * 1.95) {
+              obstructed = true;
+              break;
             }
           }
+        }
 
-          const humanEvaluationNoise = (Math.random() - 0.5) * 35;
-          const score =
-            cutCos * 240 -
-            distToPocket * 0.2 -
-            distToGhost * 0.14 -
-            (obstructed ? 380 : 0) +
-            humanEvaluationNoise;
+        const humanEvaluationNoise = (Math.random() - 0.5) * 35;
+        const score =
+          cutCos * 240 -
+          distToPocket * 0.2 -
+          distToGhost * 0.14 -
+          (obstructed ? 380 : 0) +
+          humanEvaluationNoise;
 
-          if (score > bestScore) {
-            bestScore = score;
-            idealAngle = Math.atan2(toGhostY, toGhostX);
-            idealPower = Math.min(88, Math.max(44, 40 + (distToGhost + distToPocket) * 0.06));
-            chosenCutCos = cutCos;
-          }
+        if (score > bestScore) {
+          bestScore = score;
+          idealAngle = Math.atan2(toGhostY, toGhostX);
+          idealPower = Math.min(88, Math.max(44, 40 + (distToGhost + distToPocket) * 0.06));
+          chosenCutCos = cutCos;
         }
       }
-
-      const cutDifficultyFactor = chosenCutCos < 0.7 ? 1.45 : 1.0;
-      const humanAngleError = sampleGaussianError(
-        levelInfo.aiErrorSigmaRad * cutDifficultyFactor
-      );
-      const finalAngle = idealAngle + humanAngleError;
-      const finalPower = Math.min(
-        95,
-        Math.max(38, Math.round(idealPower + (Math.random() - 0.5) * 12))
-      );
-
-      const startAngle = aimAngle;
-      const deltaAngle = Math.atan2(
-        Math.sin(finalAngle - startAngle),
-        Math.cos(finalAngle - startAngle)
-      );
-      const totalSweepSteps = 14;
-      let sweepStep = 0;
-
-      const sweepInterval = setInterval(() => {
-        sweepStep++;
-        if (sweepStep <= 10) {
-          const t = sweepStep / 10;
-          const ease = t < 0.8 ? (t / 0.8) * 1.06 : 1.06 - ((t - 0.8) / 0.2) * 0.06;
-          setAimAngle(startAngle + deltaAngle * ease);
-          setShotPower(Math.round(35 + (finalPower - 35) * t));
-        } else if (sweepStep === 11) {
-          setHumanThoughtText("Pulling back cue stick tray...");
-          setAimAngle(finalAngle);
-          setShotPower(finalPower);
-        } else if (sweepStep >= totalSweepSteps) {
-          clearInterval(sweepInterval);
-          setIsOpponentAiming(false);
-          setHumanThoughtText("");
-          executeShot(finalAngle, finalPower, "opponent");
-        }
-      }, 115);
-
-      return () => clearInterval(sweepInterval);
     }
+
+    // Fallback if all pocket cuts were steep: aim directly at the nearest legal target ball
+    if (bestScore === -999999 && targets.length > 0) {
+      const nearestTarget = [...targets].sort(
+        (a, b) =>
+          Math.hypot(a.x - cue.x, a.y - cue.y) - Math.hypot(b.x - cue.x, b.y - cue.y)
+      )[0];
+      idealAngle = Math.atan2(nearestTarget.y - cue.y, nearestTarget.x - cue.x);
+      idealPower = 66;
+    }
+
+    const cutDifficultyFactor = chosenCutCos < 0.7 ? 1.45 : 1.0;
+    const humanAngleError = sampleGaussianError(
+      levelInfo.aiErrorSigmaRad * cutDifficultyFactor
+    );
+    const finalAngle = idealAngle + humanAngleError;
+    const finalPower = Math.min(
+      95,
+      Math.max(38, Math.round(idealPower + (Math.random() - 0.5) * 12))
+    );
+
+    const startAngle = aimAngleRef.current;
+    const deltaAngle = Math.atan2(
+      Math.sin(finalAngle - startAngle),
+      Math.cos(finalAngle - startAngle)
+    );
+    const totalSweepSteps = 14;
+    let sweepStep = 0;
+
+    const sweepInterval = window.setInterval(() => {
+      sweepStep++;
+      if (sweepStep <= 10) {
+        const t = sweepStep / 10;
+        const ease = t < 0.8 ? (t / 0.8) * 1.06 : 1.06 - ((t - 0.8) / 0.2) * 0.06;
+        setAimAngle(startAngle + deltaAngle * ease);
+        setShotPower(Math.round(35 + (finalPower - 35) * t));
+      } else if (sweepStep === 11) {
+        setHumanThoughtText("Pulling back cue stick tray...");
+        setAimAngle(finalAngle);
+        setShotPower(finalPower);
+      } else if (sweepStep >= totalSweepSteps) {
+        window.clearInterval(sweepInterval);
+        setIsOpponentAiming(false);
+        setHumanThoughtText("");
+        executeShotRef.current(finalAngle, finalPower, "opponent");
+      }
+    }, 105);
+
+    return () => {
+      window.clearInterval(sweepInterval);
+      setIsOpponentAiming(false);
+    };
   }, [
     mode,
     state.turn,
     state.winner,
+    state.shotCount,
     isSimulating,
-    isOpponentAiming,
-    aimAngle,
     levelInfo.aiErrorSigmaRad,
-    executeShot,
   ]);
 
   // Convert client pointer to SVG felt coordinates (accounting for 90deg forcedLandscape)
