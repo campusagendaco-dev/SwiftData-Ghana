@@ -31,6 +31,9 @@ import {
   UserPlus,
   MessageCircle,
   Search,
+  Brain,
+  Zap,
+  Compass,
 } from "lucide-react";
 import { OwareGameBoard, INITIAL_OWARE_STATE } from "@/components/games/OwareGameBoard";
 import { GhanaLudoBoard, INITIAL_LUDO_STATE } from "@/components/games/GhanaLudoBoard";
@@ -38,6 +41,14 @@ import { DameCheckersBoard, INITIAL_DAME_STATE } from "@/components/games/DameCh
 import { EightBallPoolBoard, INITIAL_POOL_STATE } from "@/components/games/EightBallPoolBoard";
 import { ChallengeHowItWorks } from "@/components/games/ChallengeHowItWorks";
 import { playSuccessSound } from "@/lib/sound";
+import {
+  DATA_TARGET_CATALOG,
+  HUMAN_CHALLENGER_PERSONAS,
+  getPlayerLevelStatus,
+  playLevelUpFanfare,
+  triggerHapticSensor,
+  type DataTargetTier,
+} from "@/lib/game-sensory-engine";
 
 declare global {
   interface Window {
@@ -164,9 +175,130 @@ export default function ChallengeArena() {
   const [claimNetwork, setClaimNetwork] = useState("MTN");
   const [claimingReward, setClaimingReward] = useState(false);
 
+  // Level & Target Data Bundle Accumulation State (Medium Difficulty Progression)
+  const [arenaPoints, setArenaPoints] = useState<number>(() => {
+    try {
+      const saved = Number(window.localStorage.getItem("swiftdata_arena_points_v1"));
+      return Number.isFinite(saved) && saved >= 0 ? saved : 120; // Start new players with 120 welcome points!
+    } catch {
+      return 120;
+    }
+  });
+  const [targetDataSize, setTargetDataSize] = useState<DataTargetTier>(() => {
+    try {
+      const saved = window.localStorage.getItem("swiftdata_target_data_v1") as DataTargetTier;
+      return saved === "1GB" || saved === "2GB" || saved === "5GB" ? saved : "1GB";
+    } catch {
+      return "1GB";
+    }
+  });
+  const [lastPointsPopup, setLastPointsPopup] = useState<{ pts: number; reason: string } | null>(
+    null
+  );
+  const [claimingPointsBundle, setClaimingPointsBundle] = useState(false);
+
   // Join challenge modal state for MoMo / Guest
   const [joiningChallengeId, setJoiningChallengeId] = useState<string | null>(null);
   const [filterGame, setFilterGame] = useState<string>("all");
+
+  const levelInfo = getPlayerLevelStatus(arenaPoints);
+  const selectedTargetOption =
+    DATA_TARGET_CATALOG.find((t) => t.size === targetDataSize) || DATA_TARGET_CATALOG[0];
+  const targetProgressPercent = Math.min(
+    100,
+    Math.round((arenaPoints / selectedTargetOption.pointsRequired) * 100)
+  );
+  const canRedeemTargetBundle = arenaPoints >= selectedTargetOption.pointsRequired;
+
+  const handleSelectTargetData = (tier: DataTargetTier) => {
+    setTargetDataSize(tier);
+    try {
+      window.localStorage.setItem("swiftdata_target_data_v1", tier);
+    } catch {
+      // ignore storage error
+    }
+  };
+
+  const handlePointsEarned = useCallback(
+    (pts: number, reason: string) => {
+      if (!pts || pts <= 0) return;
+      setArenaPoints((prev) => {
+        const prevLevel = getPlayerLevelStatus(prev).level;
+        const nextTotal = prev + pts;
+        const nextLevelInfo = getPlayerLevelStatus(nextTotal);
+        try {
+          window.localStorage.setItem("swiftdata_arena_points_v1", String(nextTotal));
+        } catch {
+          // ignore
+        }
+        if (nextLevelInfo.level > prevLevel) {
+          playLevelUpFanfare();
+          triggerHapticSensor("level_up");
+          toast({
+            title: `🎖️ LEVEL UP! Level ${nextLevelInfo.level} • ${nextLevelInfo.title}`,
+            description: `You now have ${nextTotal.toLocaleString()} Arena Points toward your ${targetDataSize} Free Data target!`,
+          });
+        }
+        return nextTotal;
+      });
+      setLastPointsPopup({ pts, reason });
+    },
+    [targetDataSize, toast]
+  );
+
+  const handleRedeemPointsBundle = async () => {
+    if (!canRedeemTargetBundle) return;
+    if (!claimPhone || claimPhone.replace(/\D/g, "").length < 9) {
+      toast({
+        title: "Valid Phone Number Required",
+        description: "Enter a 10-digit Ghana number (e.g. 0241234567) to receive your Free Data Bundle.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setClaimingPointsBundle(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("challenge-arena", {
+        body: {
+          action: "claim_points_reward",
+          phone: claimPhone,
+          network: claimNetwork,
+          target_data_size: selectedTargetOption.size,
+          points_spent: selectedTargetOption.pointsRequired,
+          player_level: levelInfo.level,
+          winner_name: (playerName || profile?.full_name || "Arena Champion").trim(),
+        },
+      });
+      if (error || !data?.success) {
+        throw new Error(data?.error || error?.message || "Could not redeem points reward");
+      }
+
+      playLevelUpFanfare();
+      triggerHapticSensor("victory");
+      const remainingPts = Math.max(0, arenaPoints - selectedTargetOption.pointsRequired);
+      setArenaPoints(remainingPts);
+      try {
+        window.localStorage.setItem("swiftdata_arena_points_v1", String(remainingPts));
+      } catch {
+        // ignore
+      }
+
+      toast({
+        title: `🎁 ${selectedTargetOption.size} Free Data Bundle Redeemed!`,
+        description: data.message,
+      });
+      fetchLobby(true);
+    } catch (err: any) {
+      toast({
+        title: "Redemption Failed",
+        description: err.message || "Could not redeem points bundle",
+        variant: "destructive",
+      });
+    } finally {
+      setClaimingPointsBundle(false);
+    }
+  };
 
   useEffect(() => {
     if (profile?.full_name && !playerName) {
@@ -426,7 +558,7 @@ export default function ChallengeArena() {
           reward_network: rewardNetwork,
           reward_data_size:
             selectedMode === "free_data"
-              ? settings.free_data_package_size || "1GB"
+              ? targetDataSize || settings.free_data_package_size || "1GB"
               : numStake >= 15
               ? "5GB"
               : numStake >= 8
@@ -692,12 +824,12 @@ export default function ChallengeArena() {
               </Badge>
             </div>
             <h1 className="text-2xl sm:text-4xl font-black tracking-tight text-white">
-              Play Oware, Ghana Ludo &amp; Dame — Win Cash or Free Data!
+              Play 8-Ball Pool, Oware, Ludo &amp; Dame — Win Cash or Target Free Data!
             </h1>
             <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
               Create an <strong>Open Challenge</strong> (auto-notifies all users via Web, SMS &amp; In-App),{" "}
-              <strong>invite a specific player</strong> by phone or username, or defeat the{" "}
-              <strong>Grandmaster AI</strong> to win instant Wallet Prizes and <strong>Free Data Bundles</strong>!
+              <strong>invite a friend</strong>, or challenge our <strong>91%–95% Human-Sense Champions (Medium Difficulty)</strong>{" "}
+              with <strong>Gyro Motion Sensors</strong>, <strong>3D Audio</strong> &amp; <strong>Haptic Vibration</strong> to level up and accumulate points toward your <strong>1GB, 2GB, or 5GB Free Data Bundle</strong>!
             </p>
           </div>
 
@@ -727,6 +859,143 @@ export default function ChallengeArena() {
             </Button>
           </div>
         </div>
+      </div>
+
+      {/* ── PRO LEVEL & TARGET DATA BUNDLE ACCUMULATION CONSOLE (1GB / 2GB / 5GB) ── */}
+      <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-slate-900/95 via-sky-950/40 to-purple-950/40 border border-sky-500/35 shadow-xl space-y-4">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          {/* Player Level & Human-Sense Difficulty Badge */}
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="px-3.5 py-2 rounded-2xl bg-amber-500/15 border border-amber-400/50 flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-amber-500 text-slate-950 font-black flex items-center justify-center text-sm shadow">
+                L{levelInfo.level}
+              </div>
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-wider text-amber-300">
+                  Level {levelInfo.level} • {levelInfo.title}
+                </p>
+                <p className="text-xs font-black text-white font-mono">
+                  ⚡ {arenaPoints.toLocaleString()} Total Arena Points
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge className="bg-emerald-500/15 text-emerald-300 border border-emerald-500/40 text-[11px] font-bold gap-1 px-2.5 py-1">
+                <Brain className="w-3.5 h-3.5" />
+                {HUMAN_CHALLENGER_PERSONAS[selectedGame].name} •{" "}
+                {HUMAN_CHALLENGER_PERSONAS[selectedGame].humanSensePercent}% Human Sense (Medium)
+              </Badge>
+              <Badge className="bg-sky-500/15 text-sky-300 border border-sky-500/40 text-[11px] font-bold gap-1 px-2.5 py-1">
+                <Compass className="w-3.5 h-3.5" />
+                Gyro Motion + Sound + Haptic Sensors Active
+              </Badge>
+              {lastPointsPopup && (
+                <Badge className="bg-amber-400 text-slate-950 font-black text-[11px] animate-bounce px-2.5 py-1">
+                  +{lastPointsPopup.pts} PTS • {lastPointsPopup.reason}
+                </Badge>
+              )}
+            </div>
+          </div>
+
+          {/* Target Data Bundle Selector (1GB / 2GB / 5GB) */}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[11px] font-black uppercase tracking-wider text-purple-300 flex items-center gap-1">
+              <Zap className="w-3.5 h-3.5 text-amber-400" /> Target Free Data Goal:
+            </span>
+            <div className="inline-flex items-center rounded-2xl bg-slate-950 p-1 border border-white/15 gap-1">
+              {DATA_TARGET_CATALOG.map((tier) => {
+                const active = targetDataSize === tier.size;
+                return (
+                  <button
+                    key={tier.size}
+                    type="button"
+                    onClick={() => handleSelectTargetData(tier.size)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
+                      active
+                        ? "bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 shadow"
+                        : "text-slate-300 hover:text-white"
+                    }`}
+                  >
+                    <span>🎁 {tier.size}</span>
+                    <span className="text-[10px] font-mono opacity-85">
+                      ({tier.pointsRequired.toLocaleString()} Pts)
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* Animated Target Data Progress Bar */}
+        <div className="space-y-1.5">
+          <div className="flex flex-wrap items-center justify-between text-xs gap-2">
+            <span className="font-bold text-slate-200">
+              Progress to{" "}
+              <strong className="text-amber-300">{selectedTargetOption.label}</strong> (Earn{" "}
+              <span className="text-emerald-300 font-semibold">+40 Pts/ball</span>,{" "}
+              <span className="text-emerald-300 font-semibold">+15 Pts/seed</span>,{" "}
+              <span className="text-emerald-300 font-semibold">+50 Pts/kick</span>,{" "}
+              <span className="text-emerald-300 font-semibold">+300 Pts/win</span>)
+            </span>
+            <span className="font-mono font-black text-amber-300">
+              {arenaPoints.toLocaleString()} / {selectedTargetOption.pointsRequired.toLocaleString()} PTS (
+              {targetProgressPercent}%)
+            </span>
+          </div>
+          <div className="w-full h-3.5 rounded-full bg-slate-950 border border-white/15 overflow-hidden p-0.5">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-sky-500 via-emerald-400 to-amber-400 transition-all duration-500 shadow-[0_0_12px_rgba(52,211,153,0.6)]"
+              style={{ width: `${targetProgressPercent}%` }}
+            />
+          </div>
+        </div>
+
+        {/* Instant Target Data Bundle Redemption Panel (Unlocks at 100% Points!) */}
+        {canRedeemTargetBundle && (
+          <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-950/90 via-teal-950/80 to-slate-950 border-2 border-emerald-400 shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div className="space-y-0.5">
+              <p className="text-sm font-black text-white flex items-center gap-1.5">
+                🎉 Target Reached! Redeem Your {selectedTargetOption.label} Now!
+              </p>
+              <p className="text-xs text-emerald-200">
+                You accumulated {arenaPoints.toLocaleString()} Points (Level {levelInfo.level}). Enter your Ghana phone number below to claim your{" "}
+                <strong>{selectedTargetOption.size} Data Bundle</strong>!
+              </p>
+            </div>
+            <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
+              <select
+                value={claimNetwork}
+                onChange={(e) => setClaimNetwork(e.target.value)}
+                className="h-10 rounded-xl bg-slate-950 border border-emerald-500/40 px-3 text-xs font-bold text-white"
+              >
+                <option value="MTN">MTN</option>
+                <option value="TELECEL">Telecel</option>
+                <option value="AT">AirtelTigo</option>
+              </select>
+              <Input
+                placeholder="0241234567"
+                value={claimPhone}
+                onChange={(e) => setClaimPhone(e.target.value)}
+                className="h-10 w-40 rounded-xl bg-slate-950 border-emerald-500/40 text-xs font-mono text-white"
+              />
+              <Button
+                type="button"
+                disabled={claimingPointsBundle}
+                onClick={handleRedeemPointsBundle}
+                className="h-10 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs gap-1.5 px-4 shrink-0"
+              >
+                {claimingPointsBundle ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Gift className="w-4 h-4" />
+                )}
+                Redeem {selectedTargetOption.size} Data
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── Deep-Link Invited Challenge Spotlight Banner (?room=XXXXXX) ── */}
@@ -972,53 +1241,99 @@ export default function ChallengeArena() {
               </div>
             )}
 
-            {/* Winner Reward Claim Banner (for Free Data or MoMo Data Bundle Winners) */}
+            {/* Winner Reward Claim / Point Accumulation Banner */}
             {activeChallenge.status === "completed" &&
               activeChallenge.winner_side === mySide &&
               !activeChallenge.reward_claimed && (
                 <div className="p-5 rounded-2xl bg-gradient-to-r from-emerald-950/90 via-teal-950/80 to-slate-900 border-2 border-emerald-400/60 space-y-4">
-                  <div className="flex items-center gap-3">
-                    <div className="p-3 rounded-2xl bg-emerald-500 text-slate-950">
-                      <Gift className="w-6 h-6" />
+                  {activeChallenge.mode === "free_data" && !canRedeemTargetBundle ? (
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div className="space-y-1">
+                        <h3 className="text-base sm:text-lg font-black text-white flex items-center gap-2">
+                          🏆 Victory! +300 Arena Points Added (Level {levelInfo.level} • {levelInfo.title})
+                        </h3>
+                        <p className="text-xs text-emerald-200">
+                          You now have{" "}
+                          <strong className="text-amber-300 font-mono">
+                            {arenaPoints.toLocaleString()} /{" "}
+                            {selectedTargetOption.pointsRequired.toLocaleString()} PTS (
+                            {targetProgressPercent}%)
+                          </strong>{" "}
+                          toward your <strong>{selectedTargetOption.label}</strong>! Need{" "}
+                          <strong className="text-amber-300 font-mono">
+                            {Math.max(
+                              0,
+                              selectedTargetOption.pointsRequired - arenaPoints
+                            ).toLocaleString()}{" "}
+                            more points
+                          </strong>{" "}
+                          to unlock instant redemption.
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        disabled={submitting}
+                        onClick={handleCreateChallenge}
+                        className="h-11 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs gap-2 px-5 shrink-0 shadow-lg"
+                      >
+                        <Zap className="w-4 h-4" />
+                        Play Next Level Match (+300 Pts)
+                      </Button>
                     </div>
-                    <div>
-                      <h3 className="text-base sm:text-lg font-black text-white">
-                        🎉 Congratulations! Claim Your{" "}
-                        {activeChallenge.mode === "free_data"
-                          ? `Free ${activeChallenge.reward_data_size || "1GB"} Data Bundle`
-                          : `GH₵ ${Number(activeChallenge.prize_pool || 0).toFixed(2)} Winner Prize`}
-                      </h3>
-                      <p className="text-xs text-emerald-200">
-                        Enter the Ghana phone number and network where we should send your reward:
-                      </p>
-                    </div>
-                  </div>
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-3">
+                        <div className="p-3 rounded-2xl bg-emerald-500 text-slate-950">
+                          <Gift className="w-6 h-6" />
+                        </div>
+                        <div>
+                          <h3 className="text-base sm:text-lg font-black text-white">
+                            🎉 Congratulations! Claim Your{" "}
+                            {activeChallenge.mode === "free_data"
+                              ? `Free ${selectedTargetOption.size} Data Bundle`
+                              : `GH₵ ${Number(activeChallenge.prize_pool || 0).toFixed(2)} Winner Prize`}
+                          </h3>
+                          <p className="text-xs text-emerald-200">
+                            Enter the Ghana phone number and network where we should send your reward:
+                          </p>
+                        </div>
+                      </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <select
-                      value={claimNetwork}
-                      onChange={(e) => setClaimNetwork(e.target.value)}
-                      className="h-11 rounded-xl bg-slate-950 border border-emerald-500/40 px-3 text-xs font-bold text-white"
-                    >
-                      <option value="MTN">MTN Data</option>
-                      <option value="TELECEL">Telecel Data</option>
-                      <option value="AT">AirtelTigo Data</option>
-                    </select>
-                    <Input
-                      placeholder="Recipient Phone (e.g. 0241234567)"
-                      value={claimPhone}
-                      onChange={(e) => setClaimPhone(e.target.value)}
-                      className="h-11 rounded-xl bg-slate-950 border-emerald-500/40 text-white font-mono"
-                    />
-                    <Button
-                      onClick={handleClaimDataReward}
-                      disabled={claimingReward}
-                      className="h-11 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs gap-2"
-                    >
-                      {claimingReward ? <Loader2 className="w-4 h-4 animate-spin" /> : <Gift className="w-4 h-4" />}
-                      Claim Data Bundle Now
-                    </Button>
-                  </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <select
+                          value={claimNetwork}
+                          onChange={(e) => setClaimNetwork(e.target.value)}
+                          className="h-11 rounded-xl bg-slate-950 border border-emerald-500/40 px-3 text-xs font-bold text-white"
+                        >
+                          <option value="MTN">MTN Data</option>
+                          <option value="TELECEL">Telecel Data</option>
+                          <option value="AT">AirtelTigo Data</option>
+                        </select>
+                        <Input
+                          placeholder="Recipient Phone (e.g. 0241234567)"
+                          value={claimPhone}
+                          onChange={(e) => setClaimPhone(e.target.value)}
+                          className="h-11 rounded-xl bg-slate-950 border-emerald-500/40 text-white font-mono"
+                        />
+                        <Button
+                          onClick={
+                            activeChallenge.mode === "free_data"
+                              ? handleRedeemPointsBundle
+                              : handleClaimDataReward
+                          }
+                          disabled={claimingReward || claimingPointsBundle}
+                          className="h-11 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs gap-2"
+                        >
+                          {claimingReward || claimingPointsBundle ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Gift className="w-4 h-4" />
+                          )}
+                          Claim {selectedTargetOption.size} Data Bundle Now
+                        </Button>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
 
@@ -1030,10 +1345,14 @@ export default function ChallengeArena() {
                     mode={activeChallenge.mode}
                     mySide={mySide}
                     creatorName={activeChallenge.creator_name}
-                    opponentName={activeChallenge.opponent_name || "Nana Oware AI"}
+                    opponentName={
+                      activeChallenge.opponent_name || HUMAN_CHALLENGER_PERSONAS.oware.name
+                    }
                     initialState={activeChallenge.board_state}
                     onStateChange={handleBoardStateChange}
                     onMatchComplete={handleMatchComplete}
+                    onPointsEarned={handlePointsEarned}
+                    playerLevel={levelInfo.level}
                   />
                 )}
                 {activeChallenge.game_type === "ludo" && (
@@ -1041,10 +1360,14 @@ export default function ChallengeArena() {
                     mode={activeChallenge.mode}
                     mySide={mySide}
                     creatorName={activeChallenge.creator_name}
-                    opponentName={activeChallenge.opponent_name || "Grandmaster Ludo AI"}
+                    opponentName={
+                      activeChallenge.opponent_name || HUMAN_CHALLENGER_PERSONAS.ludo.name
+                    }
                     initialState={activeChallenge.board_state}
                     onStateChange={handleBoardStateChange}
                     onMatchComplete={handleMatchComplete}
+                    onPointsEarned={handlePointsEarned}
+                    playerLevel={levelInfo.level}
                   />
                 )}
                 {activeChallenge.game_type === "dame" && (
@@ -1052,10 +1375,14 @@ export default function ChallengeArena() {
                     mode={activeChallenge.mode}
                     mySide={mySide}
                     creatorName={activeChallenge.creator_name}
-                    opponentName={activeChallenge.opponent_name || "Grandmaster Dame AI"}
+                    opponentName={
+                      activeChallenge.opponent_name || HUMAN_CHALLENGER_PERSONAS.dame.name
+                    }
                     initialState={activeChallenge.board_state}
                     onStateChange={handleBoardStateChange}
                     onMatchComplete={handleMatchComplete}
+                    onPointsEarned={handlePointsEarned}
+                    playerLevel={levelInfo.level}
                   />
                 )}
                 {activeChallenge.game_type === "pool" && (
@@ -1063,10 +1390,14 @@ export default function ChallengeArena() {
                     mode={activeChallenge.mode}
                     mySide={mySide}
                     creatorName={activeChallenge.creator_name}
-                    opponentName={activeChallenge.opponent_name || "Orex Grandmaster Pool AI"}
+                    opponentName={
+                      activeChallenge.opponent_name || HUMAN_CHALLENGER_PERSONAS.pool.name
+                    }
                     initialState={activeChallenge.board_state}
                     onStateChange={handleBoardStateChange}
                     onMatchComplete={handleMatchComplete}
+                    onPointsEarned={handlePointsEarned}
+                    playerLevel={levelInfo.level}
                   />
                 )}
               </>
@@ -1157,9 +1488,9 @@ export default function ChallengeArena() {
                         : "bg-slate-950/60 border-white/10 text-slate-400"
                     }`}
                   >
-                    <Bot className="w-4 h-4 mx-auto mb-1" />
-                    <span className="text-[11px] block">Instant AI</span>
-                    <span className="text-[9px] opacity-75">1.8× Payout</span>
+                    <Brain className="w-4 h-4 mx-auto mb-1" />
+                    <span className="text-[11px] block">Human Sense</span>
+                    <span className="text-[9px] opacity-75">1.8× • Medium</span>
                   </button>
                   <button
                     type="button"
@@ -1172,7 +1503,7 @@ export default function ChallengeArena() {
                   >
                     <Gift className="w-4 h-4 mx-auto mb-1" />
                     <span className="text-[11px] block">Free Data</span>
-                    <span className="text-[9px] opacity-75">Win {settings.free_data_package_size || "1GB"}</span>
+                    <span className="text-[9px] opacity-75">Target {targetDataSize}</span>
                   </button>
                 </div>
               </div>
@@ -1257,13 +1588,12 @@ export default function ChallengeArena() {
                   </div>
                 </div>
               ) : (
-                <div className="p-3.5 rounded-2xl bg-purple-500/10 border border-purple-500/30 text-xs text-purple-200 space-y-1">
+                <div className="p-3.5 rounded-2xl bg-purple-500/10 border border-purple-500/30 text-xs text-purple-200 space-y-1.5">
                   <p className="font-black text-purple-300 flex items-center gap-1.5">
-                    <Gift className="w-4 h-4" /> Free Data Challenge Mode
+                    <Gift className="w-4 h-4" /> Free Data Level &amp; Point Accumulation ({targetDataSize} Goal)
                   </p>
                   <p>
-                    Defeat the Grandmaster AI in <strong>{selectedGame.toUpperCase()}</strong> and claim a{" "}
-                    <strong>Free {settings.free_data_package_size || "1GB"} Data Bundle</strong> to any network!
+                    Play against <strong>{HUMAN_CHALLENGER_PERSONAS[selectedGame].name}</strong> ({HUMAN_CHALLENGER_PERSONAS[selectedGame].humanSensePercent}% Human Sense • Medium Difficulty). Every potted ball, harvested seed, token kick &amp; victory adds points toward your <strong>{selectedTargetOption.label}</strong> ({arenaPoints.toLocaleString()} / {selectedTargetOption.pointsRequired.toLocaleString()} Pts)!
                   </p>
                 </div>
               )}
@@ -1384,8 +1714,8 @@ export default function ChallengeArena() {
                     ? `Post & Send SMS Invite (GH₵ ${Number(stakeAmount || 0).toFixed(2)})`
                     : `Post Open ${selectedGame.toUpperCase()} Challenge & Notify All (GH₵ ${Number(stakeAmount || 0).toFixed(2)})`
                   : selectedMode === "ai"
-                  ? `Play vs Grandmaster AI (Stake GH₵ ${Number(stakeAmount || 0).toFixed(2)})`
-                  : `Start Free Data ${selectedGame.toUpperCase()} Challenge`}
+                  ? `Play vs ${HUMAN_CHALLENGER_PERSONAS[selectedGame].name} (${HUMAN_CHALLENGER_PERSONAS[selectedGame].humanSensePercent}% Human Sense • GH₵ ${Number(stakeAmount || 0).toFixed(2)})`
+                  : `Start ${selectedGame.toUpperCase()} Level Match (Target ${targetDataSize} Free Data)`}
               </Button>
             </CardContent>
           </Card>

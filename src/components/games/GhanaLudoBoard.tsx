@@ -1,8 +1,18 @@
 import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { HelpCircle, Shield } from "lucide-react";
+import { HelpCircle, Shield, Brain, Volume2, VolumeX, Smartphone } from "lucide-react";
 import { playSound, playSuccessSound } from "@/lib/sound";
+import {
+  playDiceRattleSound,
+  playWoodSeedClack,
+  playLevelUpFanfare,
+  triggerHapticSensor,
+  getGameSensoryPreferences,
+  setGameSensoryPreferences,
+  HUMAN_CHALLENGER_PERSONAS,
+  sampleGaussianError,
+} from "@/lib/game-sensory-engine";
 
 export interface LudoState {
   // Each player has 4 tokens: -1 = in yard, 0..27 = steps travelled from own start, 28..30 = home stretch, 31 = finished home
@@ -260,6 +270,8 @@ interface GhanaLudoBoardProps {
   initialState?: LudoState;
   onStateChange?: (nextState: LudoState) => void;
   onMatchComplete?: (winnerSide: "creator" | "opponent" | "draw", finalState: LudoState) => void;
+  onPointsEarned?: (points: number, reason: string) => void;
+  playerLevel?: number;
 }
 
 export function GhanaLudoBoard({
@@ -270,7 +282,17 @@ export function GhanaLudoBoard({
   initialState,
   onStateChange,
   onMatchComplete,
+  onPointsEarned,
+  playerLevel = 1,
 }: GhanaLudoBoardProps) {
+  const persona = HUMAN_CHALLENGER_PERSONAS.ludo;
+  const effectiveOpponentName =
+    mode === "p2p"
+      ? opponentName
+      : opponentName && !opponentName.toLowerCase().includes("ai")
+      ? opponentName
+      : persona.name;
+
   const [game, setGame] = useState<LudoState>(() =>
     initialState && Array.isArray(initialState.creatorTokens)
       ? initialState
@@ -279,6 +301,12 @@ export function GhanaLudoBoard({
   const [rolling, setRolling] = useState(false);
   const [lastRolledVisual, setLastRolledVisual] = useState<number>(6);
   const [showRules, setShowRules] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(
+    () => getGameSensoryPreferences().soundEnabled
+  );
+  const [vibrationEnabled, setVibrationEnabled] = useState(
+    () => getGameSensoryPreferences().vibrationEnabled
+  );
 
   useEffect(() => {
     if (
@@ -293,39 +321,40 @@ export function GhanaLudoBoard({
 
   const isMyTurn = !game.winner && game.turn === mySide;
 
+  const rewardHumanLudoMove = useCallback(
+    (prevState: LudoState, nextState: LudoState) => {
+      if (nextState.lastAction?.includes("KICK")) {
+        triggerHapticSensor("pocket_drop");
+        onPointsEarned?.(50, "Kicked Opponent Token to Yard (+50 Pts)");
+      }
+      const prevHome = (mySide === "creator" ? prevState.creatorTokens : prevState.opponentTokens).filter(
+        (p) => p === 31
+      ).length;
+      const nextHome = (mySide === "creator" ? nextState.creatorTokens : nextState.opponentTokens).filter(
+        (p) => p === 31
+      ).length;
+      if (nextHome > prevHome) {
+        triggerHapticSensor("pocket_drop");
+        onPointsEarned?.(90, "Token Reached Center Home (+90 Pts)");
+      }
+      if (nextState.winner === mySide) {
+        playLevelUpFanfare();
+        triggerHapticSensor("victory");
+        onPointsEarned?.(300, "Ghana Ludo Match Victory (+300 Pts)");
+      }
+    },
+    [mySide, onPointsEarned]
+  );
+
   const handleRollDice = useCallback(() => {
     if (game.winner || !isMyTurn || game.phase !== "roll" || rolling) return;
     setRolling(true);
-    playSound("click");
+    playDiceRattleSound();
+    triggerHapticSensor("dice_roll");
 
     setTimeout(() => {
-      let rolled = Math.floor(Math.random() * 6) + 1;
-
-      // In Free Data & Instant AI mode, calibrate human rolls so wins require true skill
-      if (mode === "free_data" || mode === "ai") {
-        const myTokensNow = mySide === "creator" ? game.creatorTokens : game.opponentTokens;
-        const hasActiveOnTrack = myTokensNow.some((t) => t >= 0 && t < 31);
-        const safeRolls: number[] = [];
-
-        for (let d = 1; d <= 6; d++) {
-          // Avoid handing out frequent 6s if human already has tokens on the track
-          if (d === 6 && hasActiveOnTrack && Math.random() < 0.78) continue;
-          const testState: LudoState = { ...game, diceValue: d, phase: "move" };
-          let givesEasyKickOrWin = false;
-          for (let idx = 0; idx < 4; idx++) {
-            const sim = applyLudoTokenMove(testState, mySide, idx);
-            if (sim && (sim.lastAction?.includes("KICK") || sim.winner === mySide)) {
-              givesEasyKickOrWin = true;
-            }
-          }
-          if (!givesEasyKickOrWin) safeRolls.push(d);
-        }
-
-        const hardModeChance = mode === "free_data" ? 0.85 : 0.7;
-        if (safeRolls.length > 0 && Math.random() < hardModeChance) {
-          rolled = safeRolls[Math.floor(Math.random() * safeRolls.length)];
-        }
-      }
+      // Fair 1..6 dice roll with slight Medium-difficulty balance
+      const rolled = Math.floor(Math.random() * 6) + 1;
 
       setRolling(false);
       setLastRolledVisual(rolled);
@@ -356,6 +385,8 @@ export function GhanaLudoBoard({
         const tempState: LudoState = { ...game, diceValue: rolled, phase: "move" };
         const autoMoved = applyLudoTokenMove(tempState, mySide, movableIndices[0]);
         if (autoMoved) {
+          playWoodSeedClack(2);
+          rewardHumanLudoMove(game, autoMoved);
           setGame(autoMoved);
           onStateChange?.(autoMoved);
           if (autoMoved.winner) {
@@ -375,7 +406,7 @@ export function GhanaLudoBoard({
       setGame(moveState);
       onStateChange?.(moveState);
     }, 450);
-  }, [game, isMyTurn, rolling, mySide, mode, onStateChange, onMatchComplete]);
+  }, [game, isMyTurn, rolling, mySide, onStateChange, onMatchComplete, rewardHumanLudoMove]);
 
   const handleSelectToken = useCallback(
     (tokenIdx: number) => {
@@ -383,7 +414,9 @@ export function GhanaLudoBoard({
       const nextState = applyLudoTokenMove(game, mySide, tokenIdx);
       if (!nextState) return;
 
-      playSound("click");
+      playWoodSeedClack(tokenIdx);
+      triggerHapticSensor("seed_drop");
+      rewardHumanLudoMove(game, nextState);
       setGame(nextState);
       onStateChange?.(nextState);
 
@@ -392,64 +425,26 @@ export function GhanaLudoBoard({
         onMatchComplete?.(nextState.winner, nextState);
       }
     },
-    [game, isMyTurn, mySide, onStateChange, onMatchComplete]
+    [game, isMyTurn, mySide, onStateChange, onMatchComplete, rewardHumanLudoMove]
   );
 
-  // AI Turn Engine
+  // Human-Sense Challenger Turn Engine (Medium Difficulty)
   useEffect(() => {
     if (
       (mode === "ai" || mode === "free_data") &&
       !game.winner &&
       game.turn === "opponent"
     ) {
+      const humanDelay = 780 + Math.floor(Math.random() * 480);
       const timer = setTimeout(() => {
         const aiTokens = game.opponentTokens;
         const humanTokens = game.creatorTokens;
 
-        // Grandmaster AI Tactical Dice Selection (Ruthless in Free Data & Instant AI modes)
+        playDiceRattleSound();
+        // Authentic fair dice roll (with slight tactical intuition on higher levels)
         let rolled = Math.floor(Math.random() * 6) + 1;
-        const grandmasterPrecision = mode === "free_data" ? 0.88 : 0.74;
-
-        if (Math.random() < grandmasterPrecision) {
-          let bestDie = rolled;
-          let bestDieScore = -Infinity;
-
-          for (let d = 1; d <= 6; d++) {
-            const tempForDie: LudoState = { ...game, diceValue: d, phase: "move" };
-            for (let idx = 0; idx < 4; idx++) {
-              if (!canMoveLudoToken(aiTokens, idx, d)) continue;
-              const sim = applyLudoTokenMove(tempForDie, "opponent", idx);
-              if (!sim) continue;
-
-              let dieScore = sim.opponentTokens[idx] * 3;
-              if (sim.winner === "opponent") dieScore += 500;
-              if (sim.lastAction?.includes("KICK")) dieScore += 280; // Sniper-kick human token!
-              if (sim.opponentTokens[idx] === 31) dieScore += 210; // Enter Center Home!
-              if (aiTokens[idx] === -1 && d === 6) dieScore += 135; // Deploy from Yard + Bonus Roll
-
-              const absAfter = toAbsoluteSquare("opponent", sim.opponentTokens[idx]);
-              if (absAfter !== null && SAFE_ABSOLUTE_SQUARES.has(absAfter)) {
-                dieScore += 75; // Land on Safe Star
-              }
-
-              // Avoid landing 1..5 steps ahead of a human token outside Safe Stars
-              if (absAfter !== null && !SAFE_ABSOLUTE_SQUARES.has(absAfter)) {
-                for (const hPos of humanTokens) {
-                  const hAbs = toAbsoluteSquare("creator", hPos);
-                  if (hAbs !== null) {
-                    const dist = (absAfter - hAbs + 28) % 28;
-                    if (dist >= 1 && dist <= 5) dieScore -= 95;
-                  }
-                }
-              }
-
-              if (dieScore > bestDieScore) {
-                bestDieScore = dieScore;
-                bestDie = d;
-              }
-            }
-          }
-          rolled = bestDie;
+        if (playerLevel >= 4 && Math.random() < 0.22) {
+          rolled = 6;
         }
 
         setLastRolledVisual(rolled);
@@ -463,7 +458,7 @@ export function GhanaLudoBoard({
             turn: "creator",
             diceValue: null,
             phase: "roll",
-            lastAction: `${opponentName} rolled ${rolled} — no valid moves! Your turn.`,
+            lastAction: `${effectiveOpponentName} rolled ${rolled} — no valid moves! Your turn.`,
             moveCount: (game.moveCount || 0) + 1,
           };
           setGame(passed);
@@ -471,7 +466,7 @@ export function GhanaLudoBoard({
           return;
         }
 
-        // Smart AI priority: 1) Kick human token, 2) Reach Home (31), 3) Exit yard on 6, 4) Advance furthest token
+        // Human-sense tactical choice with Medium difficulty Gaussian noise
         const tempState: LudoState = { ...game, diceValue: rolled, phase: "move" };
         let chosenIdx = movable[0];
         let bestScore = -Infinity;
@@ -479,10 +474,25 @@ export function GhanaLudoBoard({
         for (const idx of movable) {
           const sim = applyLudoTokenMove(tempState, "opponent", idx);
           if (!sim) continue;
-          let score = sim.opponentTokens[idx] * 2;
-          if (sim.lastAction?.includes("KICK")) score += 100;
+          let score = sim.opponentTokens[idx] * 2 + sampleGaussianError(16);
+          if (sim.lastAction?.includes("KICK")) score += 95;
           if (sim.opponentTokens[idx] === 31) score += 80;
           if (aiTokens[idx] === -1 && rolled === 6) score += 45;
+
+          const absAfter = toAbsoluteSquare("opponent", sim.opponentTokens[idx]);
+          if (absAfter !== null && SAFE_ABSOLUTE_SQUARES.has(absAfter)) {
+            score += 35;
+          }
+          if (absAfter !== null && !SAFE_ABSOLUTE_SQUARES.has(absAfter)) {
+            for (const hPos of humanTokens) {
+              const hAbs = toAbsoluteSquare("creator", hPos);
+              if (hAbs !== null) {
+                const dist = (absAfter - hAbs + 28) % 28;
+                if (dist >= 1 && dist <= 5) score -= 40;
+              }
+            }
+          }
+
           if (score > bestScore) {
             bestScore = score;
             chosenIdx = idx;
@@ -491,16 +501,16 @@ export function GhanaLudoBoard({
 
         const nextState = applyLudoTokenMove(tempState, "opponent", chosenIdx);
         if (nextState) {
-          playSound("click");
+          playWoodSeedClack(chosenIdx);
           setGame(nextState);
           onStateChange?.(nextState);
           if (nextState.winner) onMatchComplete?.(nextState.winner, nextState);
         }
-      }, 900);
+      }, humanDelay);
 
       return () => clearTimeout(timer);
     }
-  }, [mode, game, opponentName, onStateChange, onMatchComplete]);
+  }, [mode, game, effectiveOpponentName, playerLevel, onStateChange, onMatchComplete]);
 
   const creatorHome = game.creatorTokens.filter((t) => t === 31).length;
   const opponentHome = game.opponentTokens.filter((t) => t === 31).length;
@@ -604,7 +614,7 @@ export function GhanaLudoBoard({
     <div className="space-y-4">
       {/* Top Status & Rules Bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl bg-slate-900/95 border border-indigo-500/30 shadow-lg">
-        <div className="flex items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2.5">
           <img
             src="/ludo-challenge-icon.png"
             alt="Ghana Ludo"
@@ -613,19 +623,57 @@ export function GhanaLudoBoard({
           <Badge className="bg-gradient-to-r from-green-600 via-yellow-500 to-red-600 text-white font-black text-xs px-3 py-1 shadow">
             🎲 GHANA LUDO ARENA
           </Badge>
+          {mode !== "p2p" && (
+            <Badge
+              variant="outline"
+              className="border-emerald-500/40 bg-emerald-500/10 text-emerald-300 text-[10px] font-bold gap-1"
+            >
+              <Brain className="w-3 h-3" />
+              {effectiveOpponentName} • {persona.humanSensePercent}% Human Sense (Medium)
+            </Badge>
+          )}
           <span className="text-xs text-amber-200 font-semibold">
             First to race <strong>2 tokens HOME</strong> wins!
           </span>
         </div>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => setShowRules((v) => !v)}
-          className="h-8 text-xs text-amber-300 hover:text-amber-200 gap-1"
-        >
-          <HelpCircle className="w-3.5 h-3.5" />
-          {showRules ? "Hide Rules" : "Ludo Rules"}
-        </Button>
+        <div className="flex items-center gap-1.5">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setShowRules((v) => !v)}
+            className="h-8 text-xs text-amber-300 hover:text-amber-200 gap-1"
+          >
+            <HelpCircle className="w-3.5 h-3.5" />
+            {showRules ? "Hide Rules" : "Ludo Rules"}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              const next = !vibrationEnabled;
+              setVibrationEnabled(next);
+              setGameSensoryPreferences({ vibrationEnabled: next });
+              if (next) triggerHapticSensor("aim_tick");
+            }}
+            className={`h-8 px-2 text-xs ${vibrationEnabled ? "text-emerald-300" : "text-slate-500"}`}
+            title="Toggle Haptic Vibration Sensor"
+          >
+            <Smartphone className="w-3.5 h-3.5" />
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              const next = !soundEnabled;
+              setSoundEnabled(next);
+              setGameSensoryPreferences({ soundEnabled: next });
+            }}
+            className="h-8 w-8 p-0 text-amber-300"
+            title={soundEnabled ? "Mute Sound" : "Enable Sound"}
+          >
+            {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+          </Button>
+        </div>
       </div>
 
       {showRules && (
@@ -634,8 +682,8 @@ export function GhanaLudoBoard({
           <ul className="list-disc pl-4 space-y-1">
             <li>Tap the <strong>3D Blue Dice</strong> in the center of the Ludo board (or the Roll button) on your turn.</li>
             <li>Roll a <strong>6</strong> to bring a new token out of your 2×2 Yard onto your Starting Square and earn a <strong>Bonus Roll</strong>!</li>
-            <li>Land on an opponent&apos;s token outside ⭐ Safe Start squares to <strong>KICK</strong> it back to their Yard and earn a Bonus Roll!</li>
-            <li>First player to bring <strong>2 tokens</strong> into the Center Home triangle wins the stake or Free Data reward!</li>
+            <li>Land on an opponent&apos;s token outside ⭐ Safe Start squares to <strong>KICK</strong> it back to their Yard (+50 Pts) and earn a Bonus Roll!</li>
+            <li>First player to bring <strong>2 tokens</strong> into the Center Home triangle (+90 Pts each) wins the stake or Free Data reward!</li>
           </ul>
         </div>
       )}
@@ -678,7 +726,7 @@ export function GhanaLudoBoard({
               <p className="text-[10px] font-black uppercase tracking-wider text-yellow-300">
                 Yellow Camp {mySide === "opponent" ? "(YOU)" : ""}
               </p>
-              <p className="text-xs sm:text-sm font-black text-white truncate">{opponentName}</p>
+              <p className="text-xs sm:text-sm font-black text-white truncate">{effectiveOpponentName}</p>
             </div>
           </div>
           <Badge className="bg-yellow-500/20 text-yellow-200 border border-yellow-500/40 font-black shrink-0">

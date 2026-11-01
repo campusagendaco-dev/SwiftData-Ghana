@@ -808,6 +808,14 @@ serve(async (req: Request) => {
 
       const isImmediateStart = mode === "ai" || mode === "free_data";
       const roomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+      const humanSenseChallengerMap: Record<string, string> = {
+        pool: "Kwame Asante (92% Human Sense)",
+        oware: "Kojo Mensah (94% Human Sense)",
+        ludo: "Ama Serwaa (91% Human Sense)",
+        dame: "Kofi Boateng (95% Human Sense)",
+      };
+      const challengerPersonaName =
+        humanSenseChallengerMap[gameType] || "Kojo Mensah (94% Human Sense)";
 
       const { data: created, error: insertErr } = await supabaseAdmin
         .from("game_challenges")
@@ -822,7 +830,7 @@ serve(async (req: Request) => {
           creator_payment_source: paymentSource,
           creator_paystack_ref: verifiedPaystackRef,
           opponent_id: null,
-          opponent_name: isImmediateStart ? "Nana Oware AI (Grandmaster)" : null,
+          opponent_name: isImmediateStart ? challengerPersonaName : null,
           opponent_payment_source: isImmediateStart ? "ai" : null,
           stake_amount: rawStake,
           prize_pool: netPrizePool,
@@ -869,7 +877,7 @@ serve(async (req: Request) => {
         challenge: created,
         notifications: notifyStats,
         message: isImmediateStart
-          ? "Match started against Grandmaster AI! Good luck!"
+          ? `Match started against ${challengerPersonaName} (Medium Difficulty)! Earn points & win!`
           : invitedPhone || invitedName
           ? `Open Challenge #${roomCode} posted! All users notified + direct invite sent to ${invitedName || invitedPhone}!`
           : `Open Challenge #${roomCode} posted! All users have been notified via In-App, Web Push & SMS!`,
@@ -1323,6 +1331,93 @@ serve(async (req: Request) => {
         success: true,
         claim,
         message: `🎁 Your ${network} ${dataSize} reward claim for ${phone} has been submitted!`,
+      });
+    }
+
+    // ── 7B. CLAIM ACCUMULATED LEVEL & TARGET POINTS DATA BUNDLE REWARD ──────────
+    if (action === "claim_points_reward") {
+      const phone = String(body.phone || "").replace(/\D+/g, "");
+      const network = String(body.network || "MTN").toUpperCase();
+      const targetSize = String(body.target_data_size || "1GB").toUpperCase();
+      const pointsSpent = Math.max(1000, Number(body.points_spent || 1000));
+      const playerLevel = Math.max(1, Number(body.player_level || 1));
+      const winnerName = String(
+        body.winner_name || authUser?.user_metadata?.full_name || "Arena Champion"
+      )
+        .trim()
+        .slice(0, 40);
+
+      if (!phone || phone.length < 9) {
+        return jsonResponse(
+          {
+            success: false,
+            error: "Please enter a valid 10-digit Ghana phone number (e.g. 0241234567)",
+          },
+          400
+        );
+      }
+
+      const requiredMap: Record<string, number> = {
+        "1GB": 1000,
+        "2GB": 2000,
+        "5GB": 4500,
+      };
+      const requiredPts = requiredMap[targetSize] || 1000;
+      if (pointsSpent < requiredPts) {
+        return jsonResponse(
+          {
+            success: false,
+            error: `You need at least ${requiredPts.toLocaleString()} Points to redeem the ${targetSize} Free Data Bundle.`,
+          },
+          400
+        );
+      }
+
+      const todayStart = new Date();
+      todayStart.setUTCHours(0, 0, 0, 0);
+      const { count: todayClaims } = await supabaseAdmin
+        .from("game_reward_claims")
+        .select("id", { count: "exact", head: true })
+        .eq("reward_type", "free_data")
+        .gte("created_at", todayStart.toISOString());
+
+      if ((todayClaims || 0) >= Number(settings.daily_free_data_limit || 15)) {
+        return jsonResponse(
+          {
+            success: false,
+            error:
+              "Today's Free Data pool has been fully claimed! Your points are safe — redeem tomorrow at midnight.",
+          },
+          400
+        );
+      }
+
+      const { data: claim, error: claimErr } = await supabaseAdmin
+        .from("game_reward_claims")
+        .insert({
+          challenge_id: null,
+          user_id: authUser?.id || null,
+          winner_name: winnerName,
+          winner_phone: phone,
+          network,
+          reward_type: "free_data",
+          cash_amount: 0,
+          data_package_size: targetSize,
+          status: "pending",
+          notes: `Redeemed ${requiredPts.toLocaleString()} Arena Points (Level ${playerLevel}) for ${targetSize} Free Data`,
+        })
+        .select("*")
+        .single();
+
+      if (claimErr) {
+        return jsonResponse({ success: false, error: claimErr.message }, 500);
+      }
+
+      return jsonResponse({
+        success: true,
+        claim,
+        points_deducted: requiredPts,
+        message: `🎁 Congratulations! Redeemed ${requiredPts.toLocaleString()} Points for ${network} ${targetSize} Free Data to ${phone}!`,
       });
     }
 

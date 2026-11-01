@@ -1,8 +1,17 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Volume2, VolumeX, HelpCircle, Sparkles, Flame } from "lucide-react";
+import { Volume2, VolumeX, HelpCircle, Sparkles, Flame, Smartphone, Brain } from "lucide-react";
 import { playSound, playSuccessSound } from "@/lib/sound";
+import {
+  playWoodSeedClack,
+  playLevelUpFanfare,
+  triggerHapticSensor,
+  getGameSensoryPreferences,
+  setGameSensoryPreferences,
+  HUMAN_CHALLENGER_PERSONAS,
+  sampleGaussianError,
+} from "@/lib/game-sensory-engine";
 
 export type OwareRuleVariant = "nam-nam" | "abapa";
 
@@ -521,8 +530,8 @@ function minimaxOware(
   }
 }
 
-/** Choose best AI move using deep Alpha-Beta Pruning Grandmaster lookahead */
-function pickBestAiMove(state: OwareState): number {
+/** Choose best Human-Sense Challenger move (Medium Difficulty with natural human hand-eye variance) */
+function pickBestAiMove(state: OwareState, playerLevel = 1): number {
   const validPits: number[] = [];
   for (let i = 6; i <= 11; i++) {
     if (state.pits[i] > 0 && simulateOwareMove(state, i, "opponent")) {
@@ -531,22 +540,27 @@ function pickBestAiMove(state: OwareState): number {
   }
   if (validPits.length === 0) return -1;
 
+  // Medium difficulty lookahead (depth 2..3 depending on player level) + human intuition variance
+  const searchDepth = playerLevel >= 5 ? 3 : 2;
+  const noiseSigma = Math.max(18, 42 - playerLevel * 3);
+
   let bestPit = validPits[0];
   let bestScore = -Infinity;
-  const searchDepth = (state.variant || "nam-nam") === "nam-nam" ? 4 : 5;
 
   for (const pit of validPits) {
     const sim1 = simulateOwareMove(state, pit, "opponent");
     if (!sim1) continue;
-    const score = minimaxOware(
+    const rawScore = minimaxOware(
       sim1,
       searchDepth,
       -Infinity,
       Infinity,
       sim1.turn === "opponent"
     );
-    if (score > bestScore) {
-      bestScore = score;
+    // Add natural human evaluation jitter so opponent plays like a 94% Human Sense club player
+    const humanScore = rawScore + sampleGaussianError(noiseSigma);
+    if (humanScore > bestScore) {
+      bestScore = humanScore;
       bestPit = pit;
     }
   }
@@ -635,6 +649,8 @@ interface OwareGameBoardProps {
   initialState?: OwareState;
   onStateChange?: (nextState: OwareState) => void;
   onMatchComplete?: (winnerSide: "creator" | "opponent" | "draw", finalState: OwareState) => void;
+  onPointsEarned?: (points: number, reason: string) => void;
+  playerLevel?: number;
 }
 
 export function OwareGameBoard({
@@ -645,7 +661,17 @@ export function OwareGameBoard({
   initialState,
   onStateChange,
   onMatchComplete,
+  onPointsEarned,
+  playerLevel = 1,
 }: OwareGameBoardProps) {
+  const persona = HUMAN_CHALLENGER_PERSONAS.oware;
+  const effectiveOpponentName =
+    mode === "p2p"
+      ? opponentName
+      : opponentName && !opponentName.toLowerCase().includes("ai")
+      ? opponentName
+      : persona.name;
+
   const [game, setGame] = useState<OwareState>(() =>
     initialState && Array.isArray(initialState.pits) && initialState.pits.length === 12
       ? { variant: "nam-nam", ...initialState }
@@ -655,7 +681,10 @@ export function OwareGameBoard({
   const [isAnimating, setIsAnimating] = useState(false);
   const [hoveredPit, setHoveredPit] = useState<number | null>(null);
   const [showRules, setShowRules] = useState(false);
-  const [muted, setMuted] = useState(false);
+  const [muted, setMuted] = useState(() => !getGameSensoryPreferences().soundEnabled);
+  const [vibrationEnabled, setVibrationEnabled] = useState(
+    () => getGameSensoryPreferences().vibrationEnabled
+  );
   const animTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -682,7 +711,8 @@ export function OwareGameBoard({
     (
       steps: OwareAnimationStep[],
       finalState: OwareState,
-      isLocalMove: boolean
+      isLocalMove: boolean,
+      moverSide: "creator" | "opponent" = mySide
     ) => {
       if (steps.length === 0) {
         setGame(finalState);
@@ -712,8 +742,25 @@ export function OwareGameBoard({
           setIsAnimating(false);
           setGame(finalState);
           if (isLocalMove) onStateChange?.(finalState);
+
+          // Award points when the human player harvests seeds
+          if (moverSide === mySide && (finalState.lastMove?.captured || 0) > 0) {
+            const capturedCount = finalState.lastMove?.captured || 0;
+            onPointsEarned?.(
+              capturedCount * 15,
+              `Harvested ${capturedCount} Oware seeds (+${capturedCount * 15} Pts)`
+            );
+          }
+
           if (finalState.winner) {
-            if (!muted) playSuccessSound();
+            if (!muted) {
+              playSuccessSound();
+              if (finalState.winner === mySide) playLevelUpFanfare();
+            }
+            if (finalState.winner === mySide) {
+              triggerHapticSensor("victory");
+              onPointsEarned?.(300, "Oware Match Victory (+300 Pts)");
+            }
             onMatchComplete?.(finalState.winner, finalState);
           }
           return;
@@ -723,8 +770,13 @@ export function OwareGameBoard({
         setAnimStep(currentFrame);
 
         if (!muted) {
-          if (currentFrame.harvestedPit !== undefined) playSuccessSound();
-          else playSound("click");
+          if (currentFrame.harvestedPit !== undefined) {
+            playSuccessSound();
+            triggerHapticSensor("pocket_drop");
+          } else {
+            playWoodSeedClack(cursor);
+            triggerHapticSensor("seed_drop");
+          }
         }
 
         cursor += 1;
@@ -733,7 +785,7 @@ export function OwareGameBoard({
 
       tick();
     },
-    [muted, onStateChange, onMatchComplete]
+    [muted, mySide, onStateChange, onMatchComplete, onPointsEarned]
   );
 
   const variant: OwareRuleVariant = game.variant || "nam-nam";
@@ -760,12 +812,12 @@ export function OwareGameBoard({
 
       if (!simResult) return;
 
-      playAnimatedMove(simResult.steps, simResult.nextState, true);
+      playAnimatedMove(simResult.steps, simResult.nextState, true, mySide);
     },
     [game, isAnimating, mySide, variant, playAnimatedMove]
   );
 
-  // Trigger AI move when playing vs AI / Free Data mode
+  // Trigger Human-Sense Challenger move when playing vs Challenger / Free Data mode
   useEffect(() => {
     if (
       !isAnimating &&
@@ -773,8 +825,9 @@ export function OwareGameBoard({
       !game.winner &&
       game.turn === "opponent"
     ) {
+      const humanDelay = 680 + Math.floor(Math.random() * 480);
       const timer = window.setTimeout(() => {
-        const aiPit = pickBestAiMove(game);
+        const aiPit = pickBestAiMove(game, playerLevel);
         if (aiPit === -1) return;
         const simResult =
           variant === "nam-nam"
@@ -782,12 +835,12 @@ export function OwareGameBoard({
             : simulateAbapaMoveWithSteps(game, aiPit, "opponent", true);
         if (!simResult) return;
 
-        playAnimatedMove(simResult.steps, simResult.nextState, true);
-      }, 650);
+        playAnimatedMove(simResult.steps, simResult.nextState, true, "opponent");
+      }, humanDelay);
 
       return () => window.clearTimeout(timer);
     }
-  }, [mode, game, isAnimating, variant, playAnimatedMove]);
+  }, [mode, game, isAnimating, variant, playerLevel, playAnimatedMove]);
 
   // Display state (either live animation frame or settled game state)
   const displayPits = animStep ? animStep.pits : game.pits;
@@ -821,6 +874,15 @@ export function OwareGameBoard({
           <Badge className="bg-gradient-to-r from-orange-600 to-amber-500 text-white font-black text-xs px-3 py-1">
             🪨 GHANA OWARE ({variant === "nam-nam" ? "NAM-NAM RELAY" : "ABAPA TOURNAMENT"})
           </Badge>
+          {mode !== "p2p" && (
+            <Badge
+              variant="outline"
+              className="border-emerald-500/40 bg-emerald-500/10 text-emerald-300 text-[10px] font-bold gap-1"
+            >
+              <Brain className="w-3 h-3" />
+              {effectiveOpponentName} • {persona.humanSensePercent}% Human Sense (Medium)
+            </Badge>
+          )}
 
           {/* Rule Variant Switcher (Available before first move) */}
           <div className="inline-flex items-center rounded-xl bg-slate-950 p-1 border border-white/10">
@@ -866,7 +928,27 @@ export function OwareGameBoard({
           <Button
             size="sm"
             variant="ghost"
-            onClick={() => setMuted((m) => !m)}
+            onClick={() => {
+              const next = !vibrationEnabled;
+              setVibrationEnabled(next);
+              setGameSensoryPreferences({ vibrationEnabled: next });
+              if (next) triggerHapticSensor("aim_tick");
+            }}
+            className={`h-8 px-2 text-xs gap-1 ${
+              vibrationEnabled ? "text-emerald-300" : "text-slate-500"
+            }`}
+            title="Toggle Haptic Vibration Sensor"
+          >
+            <Smartphone className="w-3.5 h-3.5" />
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              const nextMuted = !muted;
+              setMuted(nextMuted);
+              setGameSensoryPreferences({ soundEnabled: !nextMuted });
+            }}
             className="h-8 w-8 p-0 text-amber-300"
             title={muted ? "Unmute" : "Mute"}
           >
@@ -939,12 +1021,12 @@ export function OwareGameBoard({
               ) : game.winner === mySide ? (
                 "🏆 VICTORY! YOU WON THE OWARE CHALLENGE!"
               ) : (
-                `🏅 ${game.winner === "creator" ? creatorName : opponentName} Won the Oware Match!`
+                `🏅 ${game.winner === "creator" ? creatorName : effectiveOpponentName} Won the Oware Match!`
               )
             ) : isMyTurn ? (
               "🟢 YOUR TURN — Tap any of your glowing terracotta bowls to sow!"
             ) : (
-              `⏳ ${game.turn === "creator" ? creatorName : opponentName} is sowing...`
+              `⏳ ${game.turn === "creator" ? creatorName : effectiveOpponentName} is sowing...`
             )}
           </span>
         </div>
@@ -982,7 +1064,7 @@ export function OwareGameBoard({
           >
             <div className="text-center mb-2">
               <p className="text-[10px] uppercase tracking-wider font-extrabold text-orange-300 truncate max-w-[115px]">
-                {opponentName}
+                {effectiveOpponentName}
               </p>
               <p className="text-2xl sm:text-3xl font-black text-white font-mono">
                 {displayScores.opponent}
@@ -1009,7 +1091,7 @@ export function OwareGameBoard({
             >
               <div className="flex items-center justify-between mb-2 px-3">
                 <span className="text-[10px] font-black uppercase tracking-wider text-orange-300/90">
-                  ← {opponentName}&apos;s Row (Counter-Clockwise 12 → 7)
+                  ← {effectiveOpponentName}&apos;s Row (Counter-Clockwise 12 → 7)
                 </span>
                 {mySide === "opponent" && isMyTurn && (
                   <span className="text-[10px] font-black text-emerald-400 animate-pulse">

@@ -1,8 +1,17 @@
 import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Crown, HelpCircle } from "lucide-react";
+import { Crown, HelpCircle, Brain, Volume2, VolumeX, Smartphone } from "lucide-react";
 import { playSound, playSuccessSound } from "@/lib/sound";
+import {
+  playWoodSeedClack,
+  playLevelUpFanfare,
+  triggerHapticSensor,
+  getGameSensoryPreferences,
+  setGameSensoryPreferences,
+  HUMAN_CHALLENGER_PERSONAS,
+  sampleGaussianError,
+} from "@/lib/game-sensory-engine";
 
 export interface DamePiece {
   side: "creator" | "opponent";
@@ -245,15 +254,18 @@ function minimaxDame(
   }
 }
 
-function pickBestDameAiMove(state: DameState, legal: DameMove[]): DameMove {
+function pickBestDameAiMove(state: DameState, legal: DameMove[], playerLevel = 1): DameMove {
   let bestMove = legal[0];
   let bestScore = -Infinity;
+  const searchDepth = playerLevel >= 5 ? 3 : 2;
+  const noiseSigma = Math.max(16, 38 - playerLevel * 3);
 
   for (const m of legal) {
     const sim = applyDameMove(state, m, "opponent");
-    const score = minimaxDame(sim, 4, -Infinity, Infinity, false);
-    if (score > bestScore) {
-      bestScore = score;
+    const rawScore = minimaxDame(sim, searchDepth, -Infinity, Infinity, false);
+    const humanScore = rawScore + sampleGaussianError(noiseSigma);
+    if (humanScore > bestScore) {
+      bestScore = humanScore;
       bestMove = m;
     }
   }
@@ -269,6 +281,8 @@ interface DameCheckersBoardProps {
   initialState?: DameState;
   onStateChange?: (nextState: DameState) => void;
   onMatchComplete?: (winnerSide: "creator" | "opponent" | "draw", finalState: DameState) => void;
+  onPointsEarned?: (points: number, reason: string) => void;
+  playerLevel?: number;
 }
 
 export function DameCheckersBoard({
@@ -279,12 +293,28 @@ export function DameCheckersBoard({
   initialState,
   onStateChange,
   onMatchComplete,
+  onPointsEarned,
+  playerLevel = 1,
 }: DameCheckersBoardProps) {
+  const persona = HUMAN_CHALLENGER_PERSONAS.dame;
+  const effectiveOpponentName =
+    mode === "p2p"
+      ? opponentName
+      : opponentName && !opponentName.toLowerCase().includes("ai")
+      ? opponentName
+      : persona.name;
+
   const [game, setGame] = useState<DameState>(() =>
     initialState && Array.isArray(initialState.board) ? initialState : INITIAL_DAME_STATE
   );
   const [selectedSq, setSelectedSq] = useState<{ r: number; c: number } | null>(null);
   const [showRules, setShowRules] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(
+    () => getGameSensoryPreferences().soundEnabled
+  );
+  const [vibrationEnabled, setVibrationEnabled] = useState(
+    () => getGameSensoryPreferences().vibrationEnabled
+  );
 
   useEffect(() => {
     if (
@@ -311,13 +341,26 @@ export function DameCheckersBoard({
       const chosenMove = selectedMoves.find((m) => m.toR === r && m.toC === c);
       if (chosenMove) {
         const nextState = applyDameMove(game, chosenMove, mySide);
-        if (chosenMove.captured) playSuccessSound();
-        else playSound("click");
+        if (chosenMove.captured) {
+          playSuccessSound();
+          triggerHapticSensor("pocket_drop");
+          onPointsEarned?.(35, "Captured Opponent Dame Piece (+35 Pts)");
+        } else {
+          playWoodSeedClack(r + c);
+          triggerHapticSensor("seed_drop");
+        }
 
         setSelectedSq(null);
         setGame(nextState);
         onStateChange?.(nextState);
-        if (nextState.winner) onMatchComplete?.(nextState.winner, nextState);
+        if (nextState.winner) {
+          if (nextState.winner === mySide) {
+            playLevelUpFanfare();
+            triggerHapticSensor("victory");
+            onPointsEarned?.(300, "Ghanaian Dame Match Victory (+300 Pts)");
+          }
+          onMatchComplete?.(nextState.winner, nextState);
+        }
         return;
       }
 
@@ -326,16 +369,18 @@ export function DameCheckersBoard({
       if (hasMoveFromHere) {
         setSelectedSq({ r, c });
         playSound("click");
+        triggerHapticSensor("aim_tick");
       } else {
         setSelectedSq(null);
       }
     },
-    [isMyTurn, game, selectedMoves, allLegalMoves, mySide, onStateChange, onMatchComplete]
+    [isMyTurn, game, selectedMoves, allLegalMoves, mySide, onStateChange, onMatchComplete, onPointsEarned]
   );
 
-  // Grandmaster AI Opponent Turn
+  // Human-Sense Challenger Opponent Turn (Medium Difficulty)
   useEffect(() => {
     if ((mode === "ai" || mode === "free_data") && !game.winner && game.turn === "opponent") {
+      const humanDelay = 720 + Math.floor(Math.random() * 480);
       const timer = setTimeout(() => {
         const legal = getLegalDameMoves(game.board, "opponent");
         if (legal.length === 0) {
@@ -345,38 +390,76 @@ export function DameCheckersBoard({
           return;
         }
 
-        const bestMove = pickBestDameAiMove(game, legal);
+        const bestMove = pickBestDameAiMove(game, legal, playerLevel);
         const nextState = applyDameMove(game, bestMove, "opponent");
-        playSound("click");
+        playWoodSeedClack(bestMove.toR + bestMove.toC);
         setGame(nextState);
         onStateChange?.(nextState);
         if (nextState.winner) onMatchComplete?.(nextState.winner, nextState);
-      }, 850);
+      }, humanDelay);
 
       return () => clearTimeout(timer);
     }
-  }, [mode, game, onStateChange, onMatchComplete]);
+  }, [mode, game, playerLevel, onStateChange, onMatchComplete]);
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl bg-amber-950/40 border border-amber-500/30">
-        <div className="flex items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2.5">
           <Badge className="bg-amber-500 text-slate-950 font-black text-xs px-3 py-1">
             ♟️ GHANAIAN DAME (DRAUGHTS)
           </Badge>
+          {mode !== "p2p" && (
+            <Badge
+              variant="outline"
+              className="border-emerald-500/40 bg-emerald-500/10 text-emerald-300 text-[10px] font-bold gap-1"
+            >
+              <Brain className="w-3 h-3" />
+              {effectiveOpponentName} • {persona.humanSensePercent}% Human Sense (Medium)
+            </Badge>
+          )}
           <span className="text-xs text-amber-200 font-semibold">
-            Mandatory jumps & Crowned Kings!
+            Mandatory jumps &amp; Crowned Kings!
           </span>
         </div>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => setShowRules((v) => !v)}
-          className="h-8 text-xs text-amber-300 gap-1"
-        >
-          <HelpCircle className="w-3.5 h-3.5" />
-          {showRules ? "Hide Rules" : "Dame Rules"}
-        </Button>
+        <div className="flex items-center gap-1.5">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setShowRules((v) => !v)}
+            className="h-8 text-xs text-amber-300 gap-1"
+          >
+            <HelpCircle className="w-3.5 h-3.5" />
+            {showRules ? "Hide Rules" : "Dame Rules"}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              const next = !vibrationEnabled;
+              setVibrationEnabled(next);
+              setGameSensoryPreferences({ vibrationEnabled: next });
+              if (next) triggerHapticSensor("aim_tick");
+            }}
+            className={`h-8 px-2 text-xs ${vibrationEnabled ? "text-emerald-300" : "text-slate-500"}`}
+            title="Toggle Haptic Vibration Sensor"
+          >
+            <Smartphone className="w-3.5 h-3.5" />
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              const next = !soundEnabled;
+              setSoundEnabled(next);
+              setGameSensoryPreferences({ soundEnabled: next });
+            }}
+            className="h-8 w-8 p-0 text-amber-300"
+            title={soundEnabled ? "Mute Sound" : "Enable Sound"}
+          >
+            {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+          </Button>
+        </div>
       </div>
 
       {showRules && (
@@ -384,8 +467,8 @@ export function DameCheckersBoard({
           <p className="font-black text-amber-400">🇬🇭 Ghanaian Dame Rules:</p>
           <ul className="list-disc pl-4 space-y-1">
             <li>Tap any of your glowing pieces, then tap a highlighted green target square to move diagonally.</li>
-            <li><strong>Mandatory Capture</strong>: Whenever a jump over an opponent piece is available, it is automatically highlighted for capture!</li>
-            <li>Reach the opposite back row to crown your piece a <strong>King (👑)</strong> that moves & jumps in all 4 diagonal directions!</li>
+            <li><strong>Mandatory Capture</strong>: Whenever a jump over an opponent piece is available, it is automatically highlighted for capture (+35 Pts)!</li>
+            <li>Reach the opposite back row to crown your piece a <strong>King (👑)</strong> that moves &amp; jumps in all 4 diagonal directions!</li>
           </ul>
         </div>
       )}
@@ -397,17 +480,17 @@ export function DameCheckersBoard({
             🟡 {creatorName}: {game.capturedCount.creator}/12 Captured
           </Badge>
           <Badge className="bg-rose-500/20 text-rose-300 border border-rose-500/40 font-black">
-            🔴 {opponentName}: {game.capturedCount.opponent}/12 Captured
+            🔴 {effectiveOpponentName}: {game.capturedCount.opponent}/12 Captured
           </Badge>
         </div>
         <span className="font-black text-white">
           {game.winner
             ? game.winner === mySide
               ? "🏆 YOU WON THE DAME CHALLENGE!"
-              : `🏅 ${game.winner === "creator" ? creatorName : opponentName} Won!`
+              : `🏅 ${game.winner === "creator" ? creatorName : effectiveOpponentName} Won!`
             : isMyTurn
             ? "🟢 YOUR TURN — Select a glowing piece"
-            : `⏳ ${game.turn === "creator" ? creatorName : opponentName}'s turn...`}
+            : `⏳ ${game.turn === "creator" ? creatorName : effectiveOpponentName}'s turn...`}
         </span>
       </div>
 
