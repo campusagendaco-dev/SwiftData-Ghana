@@ -668,10 +668,6 @@ async function verifyPaystackReference(
     secretKey = settings?.paystack_secret_key?.trim() || "";
   }
 
-  if (!secretKey) {
-    return { ok: false, amountGhs: 0, reason: "Payment gateway secret key is not configured" };
-  }
-
   // Prevent replay of the same Paystack reference across multiple challenges
   const { data: existingCreatorRef } = await supabaseAdmin
     .from("game_challenges")
@@ -681,6 +677,31 @@ async function verifyPaystackReference(
 
   if (existingCreatorRef && existingCreatorRef.length > 0) {
     return { ok: false, amountGhs: 0, reason: "This Mobile Money reference has already been used for a challenge" };
+  }
+
+  // 1. Check if reference was already verified via SwiftData's PaystackMomoCheckout (`orders` table)
+  try {
+    const { data: orderRow } = await supabaseAdmin
+      .from("orders")
+      .select("id, status, amount, paystack_verified_amount")
+      .or(`id.eq.${reference},provider_order_id.eq.${reference}`)
+      .maybeSingle();
+
+    if (
+      orderRow &&
+      ["paid", "processing", "fulfilled"].includes(String(orderRow.status || "").toLowerCase())
+    ) {
+      const verifiedAmt = Number(orderRow.paystack_verified_amount || orderRow.amount || 0);
+      if (verifiedAmt + 0.05 >= expectedAmountGhs) {
+        return { ok: true, amountGhs: verifiedAmt };
+      }
+    }
+  } catch (_err) {
+    // continue to direct Paystack API check
+  }
+
+  if (!secretKey) {
+    return { ok: false, amountGhs: 0, reason: "Payment gateway secret key is not configured" };
   }
 
   const res = await fetch(`https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`, {
@@ -849,34 +870,42 @@ serve(async (req: Request) => {
       }
 
       const mode = String(body.mode || "p2p").toLowerCase(); // 'p2p' | 'ai' | 'free_data'
-      const paymentSource = mode === "free_data" ? "free" : String(body.payment_source || "wallet").toLowerCase();
       const rawStake = mode === "free_data" ? 0 : Math.max(0, Number(body.stake_amount || 0));
+      const paymentSource =
+        mode === "free_data" || rawStake === 0
+          ? "free"
+          : String(body.payment_source || "wallet").toLowerCase();
       const creatorName = String(body.creator_name || authUser?.user_metadata?.full_name || "Ghana Champion").trim().slice(0, 40);
       const creatorPhone = String(body.creator_phone || "").trim().slice(0, 15);
       const invitedPhone = String(body.invited_phone || "").trim().slice(0, 15);
       const invitedUserId = body.invited_user_id ? String(body.invited_user_id).trim() : null;
       const invitedName = body.invited_name ? String(body.invited_name).trim() : null;
 
-      const rewardType = mode === "free_data"
-        ? "free_data"
-        : String(body.reward_type || "wallet_cash");
+      const rewardType =
+        mode === "free_data" || rawStake === 0
+          ? "free_data"
+          : String(body.reward_type || "wallet_cash");
       const rewardNetwork = String(body.reward_network || "MTN").toUpperCase();
-      const rewardDataSize = mode === "free_data"
-        ? String(settings.free_data_package_size || "1GB")
-        : String(body.reward_data_size || "1GB");
+      const rewardDataSize =
+        mode === "free_data" || rawStake === 0
+          ? String(settings.free_data_package_size || "1GB")
+          : String(body.reward_data_size || "1GB");
 
       if (mode !== "free_data") {
-        if (rawStake < Number(settings.min_stake_ghs || 1)) {
-          return jsonResponse({
-            success: false,
-            error: `Minimum challenge stake is GH₵ ${Number(settings.min_stake_ghs || 1).toFixed(2)}`,
-          }, 400);
-        }
-        if (rawStake > Number(settings.max_stake_ghs || 200)) {
-          return jsonResponse({
-            success: false,
-            error: `Maximum challenge stake is GH₵ ${Number(settings.max_stake_ghs || 200).toFixed(2)}`,
-          }, 400);
+        // Allow rawStake === 0 in 'p2p' mode for Free 1v1 Friendly Online Rooms!
+        if (rawStake > 0 || mode === "ai") {
+          if (rawStake < Number(settings.min_stake_ghs || 1)) {
+            return jsonResponse({
+              success: false,
+              error: `Minimum challenge stake is GH₵ ${Number(settings.min_stake_ghs || 1).toFixed(2)}`,
+            }, 400);
+          }
+          if (rawStake > Number(settings.max_stake_ghs || 200)) {
+            return jsonResponse({
+              success: false,
+              error: `Maximum challenge stake is GH₵ ${Number(settings.max_stake_ghs || 200).toFixed(2)}`,
+            }, 400);
+          }
         }
       } else if (!settings.free_data_rewards_enabled) {
         return jsonResponse({

@@ -67,6 +67,7 @@ import {
   GameInstructionPromptModal,
   ChallengeHowItWorks,
 } from "@/components/games/ChallengeHowItWorks";
+import { PaystackMomoCheckout } from "@/components/PaystackMomoCheckout";
 import { playSuccessSound } from "@/lib/sound";
 import {
   DATA_TARGET_CATALOG,
@@ -842,41 +843,21 @@ export default function ChallengeArena() {
     };
   }, [activeChallenge, toast, triggerOverallTurnNotification]);
 
-  const loadPaystackInline = (): Promise<any> => {
-    return new Promise((resolve, reject) => {
-      if (window.PaystackPop) return resolve(window.PaystackPop);
-      const script = document.createElement("script");
-      script.src = "https://js.paystack.co/v1/inline.js";
-      script.async = true;
-      script.onload = () => resolve(window.PaystackPop);
-      script.onerror = () => reject(new Error("Could not load Paystack checkout"));
-      document.body.appendChild(script);
-    });
-  };
+  const [momoCheckoutState, setMomoCheckoutState] = useState<{
+    isOpen: boolean;
+    amount: number;
+    resolve?: (reference: string) => void;
+    reject?: (err: Error) => void;
+  }>({ isOpen: false, amount: 0 });
 
-  const triggerMoMoStakeCheckout = async (amountGhs: number): Promise<string> => {
-    if (!paystackPublicKey) {
-      throw new Error("Paystack public key is not configured yet.");
-    }
-    const PaystackPop = await loadPaystackInline();
-    const ref = `CHAL_${Date.now()}_${Math.random().toString(36).slice(2, 7).toUpperCase()}`;
-
+  const triggerMoMoStakeCheckout = (amountGhs: number): Promise<string> => {
     return new Promise((resolve, reject) => {
-      const handler = PaystackPop.setup({
-        key: paystackPublicKey,
-        email: user?.email || `${(playerPhone || "0240000000").replace(/\D/g, "")}@swiftdatagh.shop`,
-        amount: Math.round(amountGhs * 100),
-        currency: "GHS",
-        ref,
-        channels: ["mobile_money", "card"],
-        callback: (response: any) => {
-          resolve(response.reference || ref);
-        },
-        onClose: () => {
-          reject(new Error("MoMo payment cancelled"));
-        },
+      setMomoCheckoutState({
+        isOpen: true,
+        amount: amountGhs,
+        resolve,
+        reject,
       });
-      handler.openIframe();
     });
   };
 
@@ -884,20 +865,31 @@ export default function ChallengeArena() {
     gameToStart: GameType = selectedGame,
     modeToStart: ChallengeMode = selectedMode
   ) => {
-    const stake = modeToStart === "free_data" ? 0 : Number(stakeAmount || 0);
-    if (modeToStart !== "free_data" && (isNaN(stake) || stake < Number(settings.min_stake_ghs || 2))) {
+    const rawStakeInput = Number(stakeAmount || 0);
+    const stake =
+      modeToStart === "free_data" ? 0 : Math.max(0, isNaN(rawStakeInput) ? 0 : rawStakeInput);
+    const minStakeRequired = Number(settings.min_stake_ghs || 2);
+
+    // Allow stake === 0 in "p2p" mode for Free 1v1 Friendly Online Rooms!
+    if (
+      (modeToStart === "ai" || (modeToStart === "p2p" && stake > 0)) &&
+      stake < minStakeRequired
+    ) {
       toast({
         title: "Minimum Stake Required",
-        description: `Minimum stake is GH₵ ${Number(settings.min_stake_ghs || 2).toFixed(2)}`,
+        description: `Minimum cash stake is GH₵ ${minStakeRequired.toFixed(
+          2
+        )} (or choose Free ₵0 in Play Friend mode).`,
         variant: "destructive",
       });
       return;
     }
 
-    if (modeToStart !== "free_data" && paymentSource === "wallet" && !user) {
+    if (modeToStart !== "free_data" && stake > 0 && paymentSource === "wallet" && !user) {
       toast({
-        title: "Sign in for Wallet Stake, or Choose MoMo",
-        description: "Guests can stake directly with Mobile Money (MoMo) or play Free Data mode!",
+        title: "Sign in for Wallet Stake, or Choose MoMo / Free 1v1",
+        description:
+          "Guests can stake directly with Mobile Money (MoMo) or play Free 1v1 / Free Data mode!",
         variant: "destructive",
       });
       return;
@@ -911,17 +903,20 @@ export default function ChallengeArena() {
       }
 
       const initialBoard = getInitialBoardForGame(gameToStart);
+      const effectivePaymentSource =
+        modeToStart === "free_data" || stake === 0 ? "free" : paymentSource;
       const { data, error } = await supabase.functions.invoke("challenge-arena", {
         body: {
           action: "create_challenge",
           game_type: gameToStart,
           mode: modeToStart,
           stake_amount: stake,
-          payment_source: modeToStart === "free_data" ? "free" : paymentSource,
+          payment_source: effectivePaymentSource,
           paystack_reference: paystackRef,
           creator_name: (playerName || profile?.full_name || "Ghana Champion").trim(),
           creator_phone: playerPhone || profile?.phone || "",
-          reward_type: modeToStart === "free_data" ? "data_bundle" : rewardType,
+          reward_type:
+            modeToStart === "free_data" || stake === 0 ? "data_bundle" : rewardType,
           reward_network: rewardNetwork,
           board_state: initialBoard,
           invited_phone: selectedInvitedUser?.phone || invitedPhone.trim() || undefined,
@@ -1398,6 +1393,11 @@ export default function ChallengeArena() {
   const openLaunchSheetForGame = (gId: GameType, defaultMode: ChallengeMode = "free_data") => {
     setSelectedGame(gId);
     setSelectedMode(defaultMode);
+    if (defaultMode === "p2p") {
+      setStakeAmount("0");
+    } else if (defaultMode === "ai" && Number(stakeAmount || 0) <= 0) {
+      setStakeAmount("5");
+    }
     setLaunchModalOpen(true);
   };
 
@@ -1417,6 +1417,41 @@ export default function ChallengeArena() {
           : "min-h-[100dvh] w-full bg-gradient-to-b from-[#0b111e] via-[#090e1a] to-[#050811] text-white overscroll-none"
       }
     >
+      {/* ── Official SwiftData Paystack / Korba Mobile Money Checkout Modal ── */}
+      <PaystackMomoCheckout
+        isOpen={momoCheckoutState.isOpen}
+        onClose={() => {
+          const rej = momoCheckoutState.reject;
+          setMomoCheckoutState({ isOpen: false, amount: 0 });
+          rej?.(new Error("MoMo payment cancelled"));
+        }}
+        amount={momoCheckoutState.amount}
+        email={
+          profile?.email ||
+          user?.email ||
+          `${(playerPhone || "0240000000").replace(/\D/g, "")}@swiftdatagh.shop`
+        }
+        recipientPhone={playerPhone || profile?.phone || ""}
+        recipientNetwork={rewardNetwork || "MTN"}
+        metadata={{
+          order_type: "challenge_stake",
+          game_type: selectedGame,
+          mode: selectedMode,
+          agent_id: user?.id || null,
+          bypass_beneficiary: true,
+        }}
+        onSuccess={(reference: string) => {
+          const res = momoCheckoutState.resolve;
+          setMomoCheckoutState({ isOpen: false, amount: 0 });
+          res?.(reference);
+        }}
+        onFailure={(errMsg: string) => {
+          const rej = momoCheckoutState.reject;
+          setMomoCheckoutState({ isOpen: false, amount: 0 });
+          rej?.(new Error(errMsg || "MoMo payment failed"));
+        }}
+      />
+
       {/* ── On-Select Game Instruction Modal (Live Gameplay Video + 4 Steps) ── */}
       <GameInstructionPromptModal
         gameType={selectedGame}
@@ -1842,6 +1877,15 @@ export default function ChallengeArena() {
                                     Cancel
                                   </Button>
                                 </>
+                              ) : stake === 0 ? (
+                                <Button
+                                  size="sm"
+                                  disabled={joiningChallengeId === chal.id}
+                                  onClick={() => handleJoinChallenge(chal, "wallet")}
+                                  className="h-8 flex-1 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs"
+                                >
+                                  Accept &amp; Play (Free)
+                                </Button>
                               ) : (
                                 <>
                                   {user && (
@@ -2111,7 +2155,10 @@ export default function ChallengeArena() {
 
               <button
                 type="button"
-                onClick={() => setSelectedMode("p2p")}
+                onClick={() => {
+                  setSelectedMode("p2p");
+                  setStakeAmount("0");
+                }}
                 className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${
                   selectedMode === "p2p"
                     ? "bg-emerald-500/20 border-emerald-400 text-white ring-1 ring-emerald-400"
@@ -2120,12 +2167,15 @@ export default function ChallengeArena() {
               >
                 <Users className="w-4 h-4 text-emerald-400 mb-1" />
                 <p className="text-xs font-black">Play Friend</p>
-                <p className="text-[10px] opacity-80">Online Room Code</p>
+                <p className="text-[10px] opacity-80">Free or Staked 1v1</p>
               </button>
 
               <button
                 type="button"
-                onClick={() => setSelectedMode("ai")}
+                onClick={() => {
+                  setSelectedMode("ai");
+                  if (Number(stakeAmount || 0) <= 0) setStakeAmount("5");
+                }}
                 className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${
                   selectedMode === "ai"
                     ? "bg-sky-500/20 border-sky-400 text-white ring-1 ring-sky-400"
@@ -2157,53 +2207,71 @@ export default function ChallengeArena() {
               </div>
             ) : (
               <div className="space-y-3 p-3.5 rounded-2xl bg-white/[0.03] border border-white/10">
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setPaymentSource("wallet")}
-                    className={`p-2.5 rounded-xl border text-left flex items-center gap-2 cursor-pointer ${
-                      paymentSource === "wallet"
-                        ? "bg-emerald-500/15 border-emerald-400 text-emerald-300"
-                        : "bg-slate-950 border-white/10 text-slate-400"
-                    }`}
-                  >
-                    <Wallet className="w-4 h-4 shrink-0" />
-                    <div>
-                      <p className="text-xs font-black">Wallet</p>
-                      <p className="text-[10px]">GH₵ {walletBalance.toFixed(2)}</p>
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPaymentSource("momo")}
-                    className={`p-2.5 rounded-xl border text-left flex items-center gap-2 cursor-pointer ${
-                      paymentSource === "momo"
-                        ? "bg-amber-500/15 border-amber-400 text-amber-300"
-                        : "bg-slate-950 border-white/10 text-slate-400"
-                    }`}
-                  >
-                    <Smartphone className="w-4 h-4 shrink-0" />
-                    <div>
-                      <p className="text-xs font-black">MoMo</p>
-                      <p className="text-[10px]">MTN / Telecel / AT</p>
-                    </div>
-                  </button>
-                </div>
+                {Number(stakeAmount || 0) > 0 && (
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPaymentSource("wallet")}
+                      className={`p-2.5 rounded-xl border text-left flex items-center gap-2 cursor-pointer ${
+                        paymentSource === "wallet"
+                          ? "bg-emerald-500/15 border-emerald-400 text-emerald-300"
+                          : "bg-slate-950 border-white/10 text-slate-400"
+                      }`}
+                    >
+                      <Wallet className="w-4 h-4 shrink-0" />
+                      <div>
+                        <p className="text-xs font-black">Wallet</p>
+                        <p className="text-[10px]">GH₵ {walletBalance.toFixed(2)}</p>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPaymentSource("momo")}
+                      className={`p-2.5 rounded-xl border text-left flex items-center gap-2 cursor-pointer ${
+                        paymentSource === "momo"
+                          ? "bg-amber-500/15 border-amber-400 text-amber-300"
+                          : "bg-slate-950 border-white/10 text-slate-400"
+                      }`}
+                    >
+                      <Smartphone className="w-4 h-4 shrink-0" />
+                      <div>
+                        <p className="text-xs font-black">MoMo</p>
+                        <p className="text-[10px]">MTN / Telecel / AT</p>
+                      </div>
+                    </button>
+                  </div>
+                )}
 
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="text-slate-400">Stake Amount (GH₵)</span>
+                    <span className="text-slate-400">
+                      {selectedMode === "p2p" ? "Room Type / Stake" : "Stake Amount (GH₵)"}
+                    </span>
                     <span className="font-mono font-black text-emerald-400">
-                      Winner Pot: GH₵{" "}
-                      {(
-                        Number(stakeAmount || 0) *
-                        (selectedMode === "p2p"
-                          ? 2 * (1 - Number(settings.house_commission_percent || 10) / 100)
-                          : 1.8)
-                      ).toFixed(2)}
+                      {Number(stakeAmount || 0) === 0
+                        ? "🎁 Friendly 1v1 (+35 Arena Pts)"
+                        : `Winner Pot: GH₵ ${(
+                            Number(stakeAmount || 0) *
+                            (selectedMode === "p2p"
+                              ? 2 * (1 - Number(settings.house_commission_percent || 10) / 100)
+                              : 1.8)
+                          ).toFixed(2)}`}
                     </span>
                   </div>
-                  <div className="flex gap-1.5">
+                  <div className="flex gap-1.5 flex-wrap">
+                    {selectedMode === "p2p" && (
+                      <button
+                        type="button"
+                        onClick={() => setStakeAmount("0")}
+                        className={`flex-1 min-w-[68px] py-1.5 rounded-xl border text-xs font-black cursor-pointer ${
+                          Number(stakeAmount || 0) === 0
+                            ? "bg-emerald-500 text-slate-950 border-emerald-300"
+                            : "bg-slate-950 border-white/10 text-emerald-300"
+                        }`}
+                      >
+                        Free 1v1
+                      </button>
+                    )}
                     {QUICK_STAKES.map((amt) => (
                       <button
                         key={amt}
@@ -2292,9 +2360,11 @@ export default function ChallengeArena() {
                       {selectedMode === "free_data"
                         ? `Play ${selectedGameMeta.shortTitle} Now`
                         : selectedMode === "p2p"
-                        ? `Create ${selectedGameMeta.shortTitle} Room (GH₵ ${Number(
-                            stakeAmount || 0
-                          ).toFixed(2)})`
+                        ? Number(stakeAmount || 0) === 0
+                          ? `Create Free ${selectedGameMeta.shortTitle} Room`
+                          : `Create ${selectedGameMeta.shortTitle} Room (GH₵ ${Number(
+                              stakeAmount || 0
+                            ).toFixed(2)})`
                         : `Play vs Champion (GH₵ ${Number(stakeAmount || 0).toFixed(2)})`}
                     </span>
                     <ArrowRight className="w-4 h-4" />
@@ -3684,6 +3754,15 @@ export default function ChallengeArena() {
                             className="h-8 rounded-full border-amber-400/40 text-amber-300 text-xs font-bold"
                           >
                             Open Room
+                          </Button>
+                        ) : stake === 0 ? (
+                          <Button
+                            size="sm"
+                            disabled={joiningChallengeId === chal.id}
+                            onClick={() => handleJoinChallenge(chal, "wallet")}
+                            className="h-8 rounded-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs px-4"
+                          >
+                            Accept &amp; Play (Free)
                           </Button>
                         ) : (
                           <>
