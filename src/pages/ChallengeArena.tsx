@@ -761,12 +761,15 @@ export default function ChallengeArena() {
 
   // Realtime subscription to game_challenges for live 1v1 moves & open challenge board
   useEffect(() => {
-    const channel = supabase
-      .channel("challenge_arena_live")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "game_challenges" },
-        (payload: any) => {
+    const uid = `${Math.random().toString(36).slice(2, 9)}_${Date.now()}`;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    try {
+      channel = supabase
+        .channel(`challenge_arena_live_${uid}`)
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "game_challenges" },
+          (payload: any) => {
           const updated = payload.new;
           const oldRow = payload.old;
           if (!updated) return;
@@ -819,9 +822,18 @@ export default function ChallengeArena() {
         }
       )
       .subscribe();
+    } catch {
+      // ignore realtime channel collision
+    }
 
     return () => {
-      supabase.removeChannel(channel);
+      if (channel) {
+        try {
+          supabase.removeChannel(channel);
+        } catch {
+          // ignore cleanup warning
+        }
+      }
     };
   }, [activeChallenge, toast, triggerOverallTurnNotification]);
 

@@ -835,18 +835,30 @@ export const DailyStoriesBar: React.FC<DailyStoriesBarProps> = ({
 
   useEffect(() => {
     fetchStories();
-    const channel = supabase
-      .channel("arena-daily-stories-sync")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "game_user_stories" },
-        () => {
-          fetchStories();
-        }
-      )
-      .subscribe();
+    const uid = `${Math.random().toString(36).slice(2, 9)}_${Date.now()}`;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    try {
+      channel = supabase
+        .channel(`arena-daily-stories-sync-${uid}`)
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "game_user_stories" },
+          () => {
+            fetchStories();
+          }
+        )
+        .subscribe();
+    } catch {
+      // Prevent duplicate subscription crashes
+    }
+
+    const handleLocalStorySync = () => {
+      fetchStories();
+    };
+    window.addEventListener("swiftdata-stories-updated", handleLocalStorySync);
 
     return () => {
+      window.removeEventListener("swiftdata-stories-updated", handleLocalStorySync);
       safeRemoveChannel(channel);
     };
   }, [fetchStories]);

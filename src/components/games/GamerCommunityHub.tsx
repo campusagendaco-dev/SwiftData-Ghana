@@ -253,49 +253,61 @@ export function GamerCommunityHub({
 
   // Realtime subscription to `game_community_messages` and `game_community_presence`
   useEffect(() => {
-    const msgChannel = supabase
-      .channel(`arena-community-msgs-${activeRoomCode || "global"}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "game_community_messages",
-        },
-        (payload: any) => {
-          if (payload.eventType === "INSERT" && payload.new) {
-            const incoming = payload.new as CommunityChatMessage;
-            setMessages((prev) => {
-              if (prev.some((m) => m.id === incoming.id)) return prev;
-              return [...prev, incoming];
-            });
-            if (incoming.sender_name !== playerName) {
-              playTurnNotificationSound(false);
-            }
-          } else if (payload.eventType === "UPDATE" && payload.new) {
-            const updated = payload.new as CommunityChatMessage;
-            setMessages((prev) =>
-              prev.map((m) => (m.id === updated.id ? updated : m))
-            );
-          }
-        }
-      )
-      .subscribe();
+    const uid = `${Math.random().toString(36).slice(2, 9)}_${Date.now()}`;
+    let msgChannel: ReturnType<typeof supabase.channel> | null = null;
+    let presChannel: ReturnType<typeof supabase.channel> | null = null;
 
-    const presChannel = supabase
-      .channel("arena-community-presence")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "game_community_presence",
-        },
-        () => {
-          fetchCommunityHub(true);
-        }
-      )
-      .subscribe();
+    try {
+      msgChannel = supabase
+        .channel(`arena-community-msgs-${activeRoomCode || "global"}-${uid}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "game_community_messages",
+          },
+          (payload: any) => {
+            if (payload.eventType === "INSERT" && payload.new) {
+              const incoming = payload.new as CommunityChatMessage;
+              setMessages((prev) => {
+                if (prev.some((m) => m.id === incoming.id)) return prev;
+                return [...prev, incoming];
+              });
+              if (incoming.sender_name !== playerName) {
+                playTurnNotificationSound(false);
+              }
+            } else if (payload.eventType === "UPDATE" && payload.new) {
+              const updated = payload.new as CommunityChatMessage;
+              setMessages((prev) =>
+                prev.map((m) => (m.id === updated.id ? updated : m))
+              );
+            }
+          }
+        )
+        .subscribe();
+    } catch {
+      // ignore realtime channel collision
+    }
+
+    try {
+      presChannel = supabase
+        .channel(`arena-community-presence-${uid}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "game_community_presence",
+          },
+          () => {
+            fetchCommunityHub(true);
+          }
+        )
+        .subscribe();
+    } catch {
+      // ignore realtime channel collision
+    }
 
     return () => {
       safeRemoveChannel(msgChannel);
@@ -1231,22 +1243,28 @@ export function GamerCommunityPreviewCard({
 
   useEffect(() => {
     loadPreview();
-    const previewChannel = supabase
-      .channel("lobby-community-preview")
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "game_community_messages",
-        },
-        (payload: any) => {
-          if (payload.new) {
-            setRecentMessages((prev) => [...prev.slice(-1), payload.new]);
+    const uid = `${Math.random().toString(36).slice(2, 9)}_${Date.now()}`;
+    let previewChannel: ReturnType<typeof supabase.channel> | null = null;
+    try {
+      previewChannel = supabase
+        .channel(`lobby-community-preview-${uid}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "game_community_messages",
+          },
+          (payload: any) => {
+            if (payload.new) {
+              setRecentMessages((prev) => [...prev.slice(-1), payload.new]);
+            }
           }
-        }
-      )
-      .subscribe();
+        )
+        .subscribe();
+    } catch {
+      // ignore realtime channel collision
+    }
     return () => safeRemoveChannel(previewChannel);
   }, [loadPreview]);
 
