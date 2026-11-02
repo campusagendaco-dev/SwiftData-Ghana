@@ -57,6 +57,11 @@ import {
   GamerCommunityHub,
   GamerCommunityPreviewCard,
 } from "@/components/games/GamerCommunityHub";
+import {
+  DailyStoriesBar,
+  VerifiedGamerAvatar,
+  GamerAvatarPickerGrid,
+} from "@/components/games/DailyStoriesBar";
 import { GameInstructionPromptModal } from "@/components/games/ChallengeHowItWorks";
 import { playSuccessSound } from "@/lib/sound";
 import {
@@ -259,6 +264,21 @@ export default function ChallengeArena() {
   const [stakeAmount, setStakeAmount] = useState<string>("5");
   const [playerName, setPlayerName] = useState<string>("");
   const [playerPhone, setPlayerPhone] = useState<string>("");
+  const [playerAvatarId, setPlayerAvatarId] = useState<string>(() => {
+    try {
+      return localStorage.getItem("swiftdata_gamer_avatar_id") || "royal_headband";
+    } catch {
+      return "royal_headband";
+    }
+  });
+  const handleSelectGamerAvatar = useCallback((nextAvatarId: string) => {
+    setPlayerAvatarId(nextAvatarId);
+    try {
+      localStorage.setItem("swiftdata_gamer_avatar_id", nextAvatarId);
+    } catch {
+      // ignore storage errors
+    }
+  }, []);
   const [rewardType] = useState<"wallet_cash" | "data_bundle">("wallet_cash");
   const [rewardNetwork] = useState<string>("MTN");
 
@@ -1299,9 +1319,13 @@ export default function ChallengeArena() {
             {/* Drawer Header */}
             <div className="p-4 border-b border-white/10 flex items-center justify-between bg-[#0f172a]">
               <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 text-slate-950 font-black text-base flex items-center justify-center shadow-lg">
-                  {displayFirstName.slice(0, 2).toUpperCase()}
-                </div>
+                <VerifiedGamerAvatar
+                  avatarId={playerAvatarId}
+                  seedName={displayFirstName}
+                  size={48}
+                  showVerifiedBadge={true}
+                  glow={true}
+                />
                 <div>
                   <div className="flex items-center gap-2">
                     <p className="text-sm font-black text-white">{displayFirstName}</p>
@@ -1405,9 +1429,13 @@ export default function ChallengeArena() {
                     </div>
                   </div>
 
-                  {/* Player Identity Settings */}
-                  <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 space-y-3">
-                    <p className="text-xs font-black uppercase tracking-wider text-amber-300">
+                  {/* Player Identity & 4x5 Glossy Avatar Picker Grid */}
+                  <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 space-y-3.5">
+                    <GamerAvatarPickerGrid
+                      selectedAvatarId={playerAvatarId}
+                      onSelectAvatar={handleSelectGamerAvatar}
+                    />
+                    <p className="text-xs font-black uppercase tracking-wider text-amber-300 pt-1">
                       Gamer Identity &amp; SMS Alert Number
                     </p>
                     <div className="space-y-2">
@@ -2150,6 +2178,7 @@ export default function ChallengeArena() {
               currentUserId={user?.id || null}
               playerName={displayFirstName}
               playerPhone={playerPhone || profile?.phone || ""}
+              playerAvatarId={playerAvatarId}
               playerLevel={levelInfo.level}
               playerTitle={levelInfo.title}
               activeRoomCode={activeChallenge?.room_code || null}
@@ -2743,12 +2772,16 @@ export default function ChallengeArena() {
                   setProfileDrawerTab("profile");
                   setProfileDrawerOpen(true);
                 }}
-                className="group flex items-center gap-2.5 pl-1.5 pr-3.5 py-1.5 rounded-full bg-white/[0.07] hover:bg-white/[0.12] border border-white/15 transition-all cursor-pointer shadow-lg"
-                title="Open Gamer Profile, Settings, Online Rooms & Help"
+                className="group flex items-center gap-2.5 pl-1 pr-3.5 py-1 rounded-full bg-white/[0.07] hover:bg-white/[0.12] border border-white/15 transition-all cursor-pointer shadow-lg"
+                title="Open Gamer Profile, Avatar Grid, Settings, Online Rooms & Help"
               >
-                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 text-slate-950 font-black text-xs flex items-center justify-center shadow">
-                  {displayFirstName.slice(0, 2).toUpperCase()}
-                </div>
+                <VerifiedGamerAvatar
+                  avatarId={playerAvatarId}
+                  seedName={displayFirstName}
+                  size={38}
+                  showVerifiedBadge={true}
+                  glow={true}
+                />
                 <div className="text-left leading-tight">
                   <div className="flex items-center gap-1.5">
                     <span className="text-xs font-black text-white">{displayFirstName}</span>
@@ -2757,7 +2790,7 @@ export default function ChallengeArena() {
                     </span>
                   </div>
                   <span className="text-[10px] text-slate-400 flex items-center gap-1">
-                    Menu • Help • Settings
+                    Avatar • Menu • Settings
                   </span>
                 </div>
               </button>
@@ -2855,6 +2888,32 @@ export default function ChallengeArena() {
               </button>
             </div>
           </div>
+
+          {/* 2A. Gamer Daily Life Stories (Photos, Videos & Statuses + Glossy Avatars) */}
+          <DailyStoriesBar
+            currentUserId={user?.id || null}
+            playerName={displayFirstName}
+            playerPhone={playerPhone || profile?.phone || ""}
+            playerAvatarId={playerAvatarId}
+            playerLevel={levelInfo.level}
+            playerTitle={levelInfo.title}
+            favoriteGame={selectedGame}
+            activeRoomCode={activeChallenge?.room_code || null}
+            onJoinRoomCode={(code) => handleJoinByRoomCode(code)}
+            onChallengeStoryAuthor={(author) => {
+              setSelectedInvitedUser({
+                user_id: author.user_id || "",
+                full_name: author.display_name,
+                masked_phone: "Story Gamer",
+                phone: "",
+                is_agent: false,
+              });
+              openLaunchSheetForGame(
+                (author.favorite_game as GameType) || "oware",
+                "p2p"
+              );
+            }}
+          />
 
           {/* 2B. Live Gamer Chat & Community Hub Preview Card */}
           <GamerCommunityPreviewCard

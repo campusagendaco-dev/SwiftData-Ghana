@@ -24,6 +24,7 @@ import {
   playTurnNotificationSound,
   triggerHapticSensor,
 } from "@/lib/game-sensory-engine";
+import { VerifiedGamerAvatar, DailyStoriesBar } from "./DailyStoriesBar";
 
 export type CommunityGameType =
   | "oware"
@@ -39,6 +40,7 @@ export interface CommunityChatMessage {
   sender_id?: string | null;
   sender_name: string;
   sender_phone_masked?: string | null;
+  avatar_id?: string | null;
   sender_level: number;
   sender_title: string;
   favorite_game: string;
@@ -61,6 +63,7 @@ export interface CommunityGamerProfile {
   display_name: string;
   masked_phone?: string;
   raw_phone?: string;
+  avatar_id?: string | null;
   player_level: number;
   player_title: string;
   favorite_game: string;
@@ -130,6 +133,7 @@ interface GamerCommunityHubProps {
   currentUserId?: string | null;
   playerName: string;
   playerPhone: string;
+  playerAvatarId?: string;
   playerLevel: number;
   playerTitle: string;
   activeRoomCode?: string | null;
@@ -149,6 +153,7 @@ export function GamerCommunityHub({
   currentUserId,
   playerName,
   playerPhone,
+  playerAvatarId = "royal_headband",
   playerLevel,
   playerTitle,
   activeRoomCode,
@@ -216,6 +221,7 @@ export function GamerCommunityHub({
             action: "heartbeat_presence",
             display_name: playerName || "Ghana Champion",
             phone: playerPhone || "",
+            avatar_id: playerAvatarId,
             player_level: playerLevel,
             player_title: playerTitle,
             favorite_game: nextFav || myFavoriteGame,
@@ -227,7 +233,7 @@ export function GamerCommunityHub({
         // ignore heartbeat network blip
       }
     },
-    [activeRoomCode, myFavoriteGame, myStatus, playerLevel, playerName, playerPhone, playerTitle]
+    [activeRoomCode, myFavoriteGame, myStatus, playerAvatarId, playerLevel, playerName, playerPhone, playerTitle]
   );
 
   useEffect(() => {
@@ -333,6 +339,7 @@ export function GamerCommunityHub({
       channel: activeChannel,
       sender_id: currentUserId || null,
       sender_name: playerName || "Ghana Champion",
+      avatar_id: playerAvatarId,
       sender_level: playerLevel,
       sender_title: playerTitle,
       favorite_game: myFavoriteGame,
@@ -362,6 +369,7 @@ export function GamerCommunityHub({
           channel: activeChannel,
           sender_name: playerName || "Ghana Champion",
           sender_phone: playerPhone || "",
+          avatar_id: playerAvatarId,
           sender_level: playerLevel,
           sender_title: playerTitle,
           favorite_game: myFavoriteGame,
@@ -662,6 +670,30 @@ export function GamerCommunityHub({
         </div>
       )}
 
+      {/* ── Daily Life Stories Strip Inside Community Hub ── */}
+      <div className="px-3 py-2 bg-[#0b1120] border-b border-white/10 shrink-0">
+        <DailyStoriesBar
+          currentUserId={currentUserId}
+          playerName={playerName}
+          playerPhone={playerPhone}
+          playerAvatarId={playerAvatarId}
+          playerLevel={playerLevel}
+          playerTitle={playerTitle}
+          favoriteGame={myFavoriteGame}
+          activeRoomCode={activeRoomCode}
+          onJoinRoomCode={onJoinByRoomCode}
+          onChallengeStoryAuthor={(author) => {
+            onQuickCreateChallenge(
+              (author.favorite_game as CommunityGameType) || "oware",
+              {
+                user_id: author.user_id,
+                full_name: author.display_name,
+              }
+            );
+          }}
+        />
+      </div>
+
       {/* ── TAB 1 & TAB 3: LIVE CHAT STREAM (GLOBAL LOUNGE OR MATCH ROOM CHAT) ── */}
       {(activeTab === "chat" || activeTab === "room") && (
         <>
@@ -775,6 +807,12 @@ export function GamerCommunityHub({
                     }`}
                   >
                     <div className="flex items-center gap-1.5 mb-1 px-1">
+                      <VerifiedGamerAvatar
+                        avatarId={msg.avatar_id}
+                        seedName={msg.sender_name}
+                        size={26}
+                        showVerifiedBadge={true}
+                      />
                       <span className="text-[11px] font-black text-white">
                         {msg.sender_name}
                       </span>
@@ -1049,11 +1087,14 @@ export function GamerCommunityHub({
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       <div className="relative">
-                        <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-600 text-slate-950 font-black text-xs flex items-center justify-center shadow">
-                          {gamer.display_name.slice(0, 2).toUpperCase()}
-                        </div>
+                        <VerifiedGamerAvatar
+                          avatarId={gamer.avatar_id}
+                          seedName={gamer.display_name}
+                          size={44}
+                          showVerifiedBadge={true}
+                        />
                         <span
-                          className={`w-3 h-3 rounded-full border-2 border-[#0a0f1c] absolute -bottom-0.5 -right-0.5 ${
+                          className={`w-3 h-3 rounded-full border-2 border-[#0a0f1c] absolute -top-0.5 -left-0.5 ${
                             isLooking
                               ? "bg-emerald-400"
                               : gamer.is_online_now
@@ -1233,9 +1274,13 @@ export function GamerCommunityPreviewCard({
               <div
                 key={g.player_key}
                 title={`${g.display_name} (Lv.${g.player_level})`}
-                className="w-7 h-7 rounded-full bg-gradient-to-br from-amber-400 to-rose-500 border-2 border-[#0e1526] text-slate-950 font-black text-[10px] flex items-center justify-center"
               >
-                {g.display_name.slice(0, 2).toUpperCase()}
+                <VerifiedGamerAvatar
+                  avatarId={g.avatar_id}
+                  seedName={g.display_name}
+                  size={34}
+                  showVerifiedBadge={true}
+                />
               </div>
             ))}
           </div>

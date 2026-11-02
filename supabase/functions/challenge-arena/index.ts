@@ -187,6 +187,54 @@ async function ensureChallengeSchema(supabaseAdmin: any) {
         ON public.game_community_presence FOR SELECT
         USING (true);
 
+      ALTER TABLE public.game_community_messages ADD COLUMN IF NOT EXISTS avatar_id text DEFAULT 'blue_band';
+      ALTER TABLE public.game_community_presence ADD COLUMN IF NOT EXISTS avatar_id text DEFAULT 'blue_band';
+
+      CREATE TABLE IF NOT EXISTS public.game_user_stories (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id uuid,
+        player_key text NOT NULL,
+        author_name text NOT NULL DEFAULT 'Ghana Gamer',
+        author_phone_masked text,
+        author_level integer NOT NULL DEFAULT 1,
+        author_title text NOT NULL DEFAULT 'Arena Challenger',
+        avatar_id text NOT NULL DEFAULT 'blue_band',
+        media_type text NOT NULL DEFAULT 'text' CHECK (media_type IN ('text', 'image', 'video')),
+        media_url text,
+        caption text,
+        bg_gradient text NOT NULL DEFAULT 'from-indigo-600 via-purple-700 to-slate-950',
+        attached_room_code text,
+        attached_game_type text,
+        views_count integer NOT NULL DEFAULT 0,
+        reactions jsonb NOT NULL DEFAULT '{}'::jsonb,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        expires_at timestamptz NOT NULL DEFAULT (now() + interval '24 hours')
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_game_user_stories_expires ON public.game_user_stories(expires_at DESC, created_at DESC);
+
+      ALTER TABLE public.game_user_stories ENABLE ROW LEVEL SECURITY;
+
+      DROP POLICY IF EXISTS "Anyone can view game user stories" ON public.game_user_stories;
+      CREATE POLICY "Anyone can view game user stories"
+        ON public.game_user_stories FOR SELECT
+        USING (true);
+
+      -- Ensure public storage bucket 'arena-stories' exists for user photo & video stories
+      INSERT INTO storage.buckets (id, name, public, file_size_limit)
+      VALUES ('arena-stories', 'arena-stories', true, 20971520)
+      ON CONFLICT (id) DO UPDATE SET public = true;
+
+      DROP POLICY IF EXISTS "Public read arena stories media" ON storage.objects;
+      CREATE POLICY "Public read arena stories media"
+        ON storage.objects FOR SELECT
+        USING (bucket_id = 'arena-stories');
+
+      DROP POLICY IF EXISTS "Public upload arena stories media" ON storage.objects;
+      CREATE POLICY "Public upload arena stories media"
+        ON storage.objects FOR INSERT
+        WITH CHECK (bucket_id = 'arena-stories');
+
       DO $$
       BEGIN
         IF NOT EXISTS (
@@ -206,6 +254,12 @@ async function ensureChallengeSchema(supabaseAdmin: any) {
           WHERE pubname = 'supabase_realtime' AND tablename = 'game_community_presence'
         ) THEN
           ALTER PUBLICATION supabase_realtime ADD TABLE public.game_community_presence;
+        END IF;
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_publication_tables
+          WHERE pubname = 'supabase_realtime' AND tablename = 'game_user_stories'
+        ) THEN
+          ALTER PUBLICATION supabase_realtime ADD TABLE public.game_user_stories;
         END IF;
       END $$;
     `);
@@ -1794,7 +1848,27 @@ serve(async (req: Request) => {
       const gamers: any[] = [];
       const nowMs = Date.now();
 
-      for (const p of presenceRows || []) {
+      const avatarCatalogIds = [
+        "royal_headband",
+        "teal_calm",
+        "orange_beam",
+        "red_wink",
+        "purple_joy",
+        "emerald_zen",
+        "sky_bun",
+        "crimson_smile",
+        "magenta_cool",
+        "cobalt_band",
+        "jade_grin",
+        "violet_laugh",
+        "indigo_bun",
+        "ocean_band",
+        "amethyst_zen",
+        "cerulean_bun",
+      ];
+
+      for (let i = 0; i < (presenceRows || []).length; i++) {
+        const p = presenceRows![i];
         const key = String(p.user_id || p.player_key);
         if (seenKeys.has(key)) continue;
         seenKeys.add(key);
@@ -1806,6 +1880,7 @@ serve(async (req: Request) => {
           display_name: p.display_name || "Ghana Gamer",
           masked_phone: p.masked_phone || "Arena Player",
           raw_phone: p.raw_phone || "",
+          avatar_id: p.avatar_id || avatarCatalogIds[i % avatarCatalogIds.length],
           player_level: Number(p.player_level || 1),
           player_title: p.player_title || "Arena Challenger",
           favorite_game: p.favorite_game || "oware",
@@ -1833,6 +1908,7 @@ serve(async (req: Request) => {
           display_name: prof.full_name || "SwiftData Gamer",
           masked_phone: maskedPhone,
           raw_phone: rawPhone,
+          avatar_id: avatarCatalogIds[idx % avatarCatalogIds.length],
           player_level: (idx % 5) + 2,
           player_title: prof.is_agent ? "Pro Arena Host" : "Skill Contender",
           favorite_game: defaultGames[idx % defaultGames.length],
@@ -1870,6 +1946,7 @@ serve(async (req: Request) => {
       )
         ? String(body.status)
         : "online";
+      const avatarId = String(body.avatar_id || "royal_headband").trim().slice(0, 120);
 
       const { data: upserted } = await supabaseAdmin
         .from("game_community_presence")
@@ -1879,6 +1956,7 @@ serve(async (req: Request) => {
           display_name: displayName,
           masked_phone: maskedPhone,
           raw_phone: rawPhone || null,
+          avatar_id: avatarId,
           player_level: Math.max(1, Number(body.player_level || 1)),
           player_title: String(body.player_title || "Arena Challenger").slice(0, 40),
           favorite_game: String(body.favorite_game || "oware").toLowerCase(),
@@ -1912,6 +1990,7 @@ serve(async (req: Request) => {
         rawPhone.length >= 7
           ? `${rawPhone.slice(0, 4)}***${rawPhone.slice(-3)}`
           : null;
+      const avatarId = String(body.avatar_id || "royal_headband").trim().slice(0, 120);
       const messageType = [
         "chat",
         "challenge_card",
@@ -1926,6 +2005,7 @@ serve(async (req: Request) => {
         sender_id: authUser?.id || null,
         sender_name: senderName,
         sender_phone_masked: maskedPhone,
+        avatar_id: avatarId,
         sender_level: Math.max(1, Number(body.sender_level || 1)),
         sender_title: String(body.sender_title || "Arena Challenger").slice(0, 40),
         favorite_game: String(body.favorite_game || "oware").toLowerCase(),
@@ -1960,6 +2040,7 @@ serve(async (req: Request) => {
         display_name: senderName,
         masked_phone: maskedPhone || "Arena Gamer",
         raw_phone: rawPhone || null,
+        avatar_id: avatarId,
         player_level: insertPayload.sender_level,
         player_title: insertPayload.sender_title,
         favorite_game: insertPayload.favorite_game,
@@ -2031,6 +2112,140 @@ serve(async (req: Request) => {
         success: true,
         message_row: updatedMsg,
       });
+    }
+
+    // ── 10. DAILY LIFE STORIES (IMAGES, VIDEOS & TEXT) ─────────────────────────
+    if (action === "get_stories") {
+      const nowIso = new Date().toISOString();
+      const { data: stories } = await supabaseAdmin
+        .from("game_user_stories")
+        .select("*")
+        .gt("expires_at", nowIso)
+        .order("created_at", { ascending: false })
+        .limit(40);
+
+      return jsonResponse({
+        success: true,
+        stories: stories || [],
+      });
+    }
+
+    if (action === "create_story") {
+      const authorName = String(
+        body.author_name || authUser?.user_metadata?.full_name || "Ghana Gamer"
+      )
+        .trim()
+        .slice(0, 40);
+      const rawPhone = String(body.author_phone || "").trim();
+      const maskedPhone =
+        rawPhone.length >= 7
+          ? `${rawPhone.slice(0, 4)}***${rawPhone.slice(-3)}`
+          : "Verified Gamer";
+      const avatarId = String(body.avatar_id || "royal_headband").trim().slice(0, 120);
+      const mediaType = ["image", "video", "text"].includes(String(body.media_type || ""))
+        ? String(body.media_type)
+        : "text";
+      const mediaUrl = body.media_url ? String(body.media_url).trim() : null;
+      const caption = String(body.caption || "").trim().slice(0, 280);
+      const bgGradient = String(
+        body.bg_gradient || "from-indigo-600 via-purple-600 to-pink-600"
+      )
+        .trim()
+        .slice(0, 100);
+      const roomCode = body.room_code ? String(body.room_code).trim().toUpperCase().slice(0, 12) : null;
+      const gameType = body.game_type ? String(body.game_type).trim().toLowerCase().slice(0, 20) : null;
+
+      if (mediaType !== "text" && !mediaUrl) {
+        return jsonResponse({ success: false, error: "Please attach an image or video for this story." }, 400);
+      }
+      if (mediaType === "text" && !caption) {
+        return jsonResponse({ success: false, error: "Please write a message for your status story." }, 400);
+      }
+
+      const { data: createdStory, error: storyErr } = await supabaseAdmin
+        .from("game_user_stories")
+        .insert({
+          user_id: authUser?.id || null,
+          author_name: authorName,
+          author_phone_masked: maskedPhone,
+          avatar_id: avatarId,
+          author_level: Math.max(1, Number(body.author_level || 1)),
+          author_title: String(body.author_title || "Arena Challenger").slice(0, 40),
+          favorite_game: String(body.favorite_game || "oware").toLowerCase(),
+          media_type: mediaType,
+          media_url: mediaUrl,
+          caption: caption || null,
+          bg_gradient: bgGradient,
+          room_code: roomCode,
+          game_type: gameType,
+        })
+        .select("*")
+        .single();
+
+      if (storyErr) {
+        return jsonResponse({ success: false, error: storyErr.message }, 500);
+      }
+
+      return jsonResponse({
+        success: true,
+        story: createdStory,
+      });
+    }
+
+    if (action === "react_story") {
+      const storyId = String(body.story_id || "").trim();
+      const emoji = body.emoji ? String(body.emoji).trim().slice(0, 8) : null;
+      const incrementView = Boolean(body.increment_view);
+
+      if (!storyId) {
+        return jsonResponse({ success: false, error: "Missing story_id" }, 400);
+      }
+
+      const { data: existing } = await supabaseAdmin
+        .from("game_user_stories")
+        .select("id, views_count, reactions")
+        .eq("id", storyId)
+        .maybeSingle();
+
+      if (!existing) {
+        return jsonResponse({ success: false, error: "Story not found" }, 404);
+      }
+
+      const nextViews = incrementView
+        ? Number(existing.views_count || 0) + 1
+        : Number(existing.views_count || 0);
+      const prevReactions =
+        existing.reactions && typeof existing.reactions === "object"
+          ? { ...existing.reactions }
+          : {};
+      if (emoji) {
+        prevReactions[emoji] = Number(prevReactions[emoji] || 0) + 1;
+      }
+
+      const { data: updatedStory } = await supabaseAdmin
+        .from("game_user_stories")
+        .update({
+          views_count: nextViews,
+          reactions: prevReactions,
+        })
+        .eq("id", storyId)
+        .select("*")
+        .single();
+
+      return jsonResponse({
+        success: true,
+        story: updatedStory,
+      });
+    }
+
+    if (action === "delete_story") {
+      const storyId = String(body.story_id || "").trim();
+      if (!storyId) {
+        return jsonResponse({ success: false, error: "Missing story_id" }, 400);
+      }
+
+      await supabaseAdmin.from("game_user_stories").delete().eq("id", storyId);
+      return jsonResponse({ success: true });
     }
 
     return jsonResponse({ success: false, error: `Unknown action: ${action}` }, 400);
