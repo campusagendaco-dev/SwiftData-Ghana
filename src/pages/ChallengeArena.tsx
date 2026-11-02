@@ -63,7 +63,10 @@ import {
   VerifiedGamerAvatar,
   GamerAvatarPickerGrid,
 } from "@/components/games/DailyStoriesBar";
-import { GameInstructionPromptModal } from "@/components/games/ChallengeHowItWorks";
+import {
+  GameInstructionPromptModal,
+  ChallengeHowItWorks,
+} from "@/components/games/ChallengeHowItWorks";
 import { playSuccessSound } from "@/lib/sound";
 import {
   DATA_TARGET_CATALOG,
@@ -1414,12 +1417,15 @@ export default function ChallengeArena() {
           : "min-h-[100dvh] w-full bg-gradient-to-b from-[#0b111e] via-[#090e1a] to-[#050811] text-white overscroll-none"
       }
     >
-      {/* ── On-Select Game Instruction Modal (Skip or Follow 4 Steps) ── */}
+      {/* ── On-Select Game Instruction Modal (Live Gameplay Video + 4 Steps) ── */}
       <GameInstructionPromptModal
         gameType={selectedGame}
         open={instructionModalOpen}
         onSkip={() => setInstructionModalOpen(false)}
-        onStartGame={() => setInstructionModalOpen(false)}
+        onStartGame={() => {
+          setInstructionModalOpen(false);
+          openLaunchSheetForGame(selectedGame, selectedMode);
+        }}
       />
 
       {/* ── TOP-LEFT GAMER PROFILE, SETTINGS, ONLINE ROOMS & HELP DRAWER ── */}
@@ -2270,7 +2276,7 @@ export default function ChallengeArena() {
                 className="h-12 px-4 rounded-2xl border-white/15 bg-white/5 hover:bg-white/10 text-slate-200 font-bold text-xs gap-1.5"
               >
                 <HelpCircle className="w-4 h-4 text-amber-400" />
-                Rules
+                🎬 Video &amp; Rules
               </Button>
               <Button
                 type="button"
@@ -3301,14 +3307,30 @@ export default function ChallengeArena() {
               <p className="text-xs sm:text-sm text-slate-300 max-w-lg leading-relaxed">
                 Our own board game. Beat Kofi, Ama and Nana, or send a friend a code and play online.
               </p>
-              <div className="pt-1">
+              <div className="pt-1 flex flex-wrap items-center gap-2.5">
                 <span className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-[#f59e0b] group-hover:bg-[#fbbf24] text-slate-950 font-black text-sm shadow-lg transition-all">
                   <span>Play now</span>
                   <ArrowRight className="w-4 h-4" />
                 </span>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedGame("oware");
+                    setInstructionModalOpen(true);
+                  }}
+                  className="inline-flex items-center gap-2 px-5 py-3 rounded-full bg-slate-950/90 hover:bg-slate-900 border border-amber-400/50 text-amber-300 font-black text-xs sm:text-sm shadow-lg transition-all cursor-pointer"
+                >
+                  <span>🎬 Watch Gameplay Video</span>
+                </button>
               </div>
             </div>
           </div>
+
+          {/* 4B. Live Gameplay Video Showcase (Starting from Oware -> All 7 Games) */}
+          <ChallengeHowItWorks
+            onQuickStart={(g, m) => openLaunchSheetForGame(g, m)}
+          />
 
           {/* 5. "All games" Grid Section */}
           <div className="space-y-4">
