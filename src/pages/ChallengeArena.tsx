@@ -309,7 +309,8 @@ export default function ChallengeArena() {
   const [profileDrawerOpen, setProfileDrawerOpen] = useState<boolean>(false);
   const [profileDrawerTab, setProfileDrawerTab] = useState<ProfileDrawerTab>("profile");
   const [communityModalOpen, setCommunityModalOpen] = useState<boolean>(false);
-  const [communityModalTab, setCommunityModalTab] = useState<"chat" | "gamers" | "room">("chat");
+  const [communityModalTab, setCommunityModalTab] = useState<"chat" | "dms" | "gamers" | "room">("chat");
+  const [initialDmPartner, setInitialDmPartner] = useState<any | null>(null);
   const [launchModalOpen, setLaunchModalOpen] = useState<boolean>(false);
   const [roomCodeInput, setRoomCodeInput] = useState<string>("");
   const [soundEnabled, setSoundEnabled] = useState<boolean>(
@@ -2232,7 +2233,11 @@ export default function ChallengeArena() {
               activeChallenge={activeChallenge}
               openChallenges={openChallenges}
               defaultTab={communityModalTab}
-              onClose={() => setCommunityModalOpen(false)}
+              initialDmPartner={initialDmPartner}
+              onClose={() => {
+                setCommunityModalOpen(false);
+                setInitialDmPartner(null);
+              }}
               onJoinByRoomCode={(code) => handleJoinByRoomCode(code)}
               onJoinChallengeObject={(chal) => {
                 setCommunityModalOpen(false);
@@ -2925,13 +2930,27 @@ export default function ChallengeArena() {
               <button
                 type="button"
                 onClick={() => {
+                  setInitialDmPartner(null);
+                  setCommunityModalTab("dms");
+                  setCommunityModalOpen(true);
+                }}
+                className="px-4 py-2 rounded-full bg-gradient-to-r from-pink-500/25 via-rose-500/25 to-amber-500/25 hover:from-pink-500/35 hover:to-amber-500/35 border border-pink-400/50 text-xs sm:text-sm font-black text-pink-200 flex items-center gap-2 transition-all cursor-pointer shadow-[0_0_20px_rgba(236,72,153,0.2)]"
+              >
+                <span>✈️</span>
+                <span>Text Gamers (DMs)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setInitialDmPartner(null);
                   setCommunityModalTab("chat");
                   setCommunityModalOpen(true);
                 }}
                 className="px-4 py-2 rounded-full bg-amber-500/15 hover:bg-amber-500/25 border border-amber-400/40 text-xs sm:text-sm font-bold text-amber-300 flex items-center gap-2 transition-all cursor-pointer"
               >
                 <span>💬</span>
-                <span>Gamer Chat Hub</span>
+                <span>SwiftGram Feed</span>
               </button>
 
               <button
@@ -2988,17 +3007,43 @@ export default function ChallengeArena() {
             }}
           />
 
-          {/* 2B. Live Gamer Chat & Community Hub Preview Card */}
+          {/* 2B. Live SwiftGram Gamer Feed & 1-on-1 Direct Messaging Card */}
           <GamerCommunityPreviewCard
+            currentUserId={user?.id || null}
+            playerName={displayFirstName}
+            playerPhone={playerPhone || profile?.phone || ""}
+            playerAvatarId={playerAvatarId}
+            playerLevel={levelInfo.level}
+            playerTitle={levelInfo.title}
             onOpenChat={() => {
+              setInitialDmPartner(null);
               setCommunityModalTab("chat");
               setCommunityModalOpen(true);
             }}
+            onOpenDirectMessages={(targetGamer) => {
+              setInitialDmPartner(targetGamer || null);
+              setCommunityModalTab("dms");
+              setCommunityModalOpen(true);
+            }}
             onOpenMeetGamers={() => {
+              setInitialDmPartner(null);
               setCommunityModalTab("gamers");
               setCommunityModalOpen(true);
             }}
             onJoinByRoomCode={(code) => handleJoinByRoomCode(code)}
+            onQuickChallengeGamer={(g) => {
+              setSelectedInvitedUser({
+                user_id: g.user_id || "",
+                full_name: g.display_name,
+                masked_phone: g.masked_phone || "",
+                phone: g.raw_phone || "",
+                is_agent: false,
+              });
+              openLaunchSheetForGame(
+                (g.favorite_game as GameType) || "oware",
+                "p2p"
+              );
+            }}
           />
 
           {/* 3. Live / Accepted Match Alert (Only shown when user has an active or invited room) */}

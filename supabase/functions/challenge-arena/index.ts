@@ -1840,13 +1840,14 @@ serve(async (req: Request) => {
       });
     }
 
-    // ── 9. GAMER COMMUNITY HUB & LIVE CHAT ROOM ACTIONS ─────────────────────────
+    // ── 9. GAMER COMMUNITY HUB & LIVE CHAT ROOM + IG DIRECT MESSAGES (DMs) ──────
     if (action === "get_community_hub") {
       const roomCode = String(body.room_code || "").trim().toUpperCase();
       const channels = roomCode ? ["global", `room:${roomCode}`] : ["global"];
 
       const [
-        { data: messages },
+        { data: globalAndRoomMessages },
+        { data: dmMessages },
         { data: presenceRows },
         { data: profileRows },
       ] = await Promise.all([
@@ -1856,6 +1857,12 @@ serve(async (req: Request) => {
           .in("channel", channels)
           .order("created_at", { ascending: false })
           .limit(70),
+        supabaseAdmin
+          .from("game_community_messages")
+          .select("*")
+          .like("channel", "dm:%")
+          .order("created_at", { ascending: false })
+          .limit(100),
         supabaseAdmin
           .from("game_community_presence")
           .select("*")
@@ -1869,7 +1876,15 @@ serve(async (req: Request) => {
           .limit(25),
       ]);
 
-      // Merge live presence with registered profiles so the Meet Gamers directory is always rich
+      const combinedMessages = [
+        ...(globalAndRoomMessages || []),
+        ...(dmMessages || []),
+      ].sort(
+        (a: any, b: any) =>
+          new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime()
+      );
+
+      // Merge live presence with registered profiles so the Meet Gamers & IG DM directory is always rich
       const seenKeys = new Set<string>();
       const gamers: any[] = [];
       const nowMs = Date.now();
@@ -1893,6 +1908,17 @@ serve(async (req: Request) => {
         "cerulean_bun",
       ];
 
+      const defaultNotes = [
+        "🏎️ Who fits beat my Labadi Buggy time?",
+        "🪨 Oware duel ready — text me!",
+        "🎱 8-Ball Pool table open 🔥",
+        "🍬 Crushing Alewa & Kube combos!",
+        "🎲 Ludo 4-player squad — DM me!",
+        "♟️ Dame Grandmaster online 🇬🇭",
+        "🍉 Slicing Makola fruits fast!",
+        "💬 DM me for a friendly 1v1 code!",
+      ];
+
       for (let i = 0; i < (presenceRows || []).length; i++) {
         const p = presenceRows![i];
         const key = String(p.user_id || p.player_key);
@@ -1913,11 +1939,12 @@ serve(async (req: Request) => {
           status: isOnlineNow ? p.status || "online" : "online",
           is_online_now: isOnlineNow,
           active_room_code: p.active_room_code || null,
+          ig_note: defaultNotes[i % defaultNotes.length],
           last_seen_at: p.last_seen_at,
         });
       }
 
-      const defaultGames = ["oware", "pool", "ludo", "dame", "slash", "candy"];
+      const defaultGames = ["buggy", "oware", "pool", "ludo", "dame", "slash", "candy"];
       let idx = 0;
       for (const prof of profileRows || []) {
         const key = String(prof.user_id);
@@ -1938,9 +1965,10 @@ serve(async (req: Request) => {
           player_level: (idx % 5) + 2,
           player_title: prof.is_agent ? "Pro Arena Host" : "Skill Contender",
           favorite_game: defaultGames[idx % defaultGames.length],
-          status: idx < 4 ? "looking_for_match" : "online",
-          is_online_now: idx < 8,
+          status: idx < 5 ? "looking_for_match" : "online",
+          is_online_now: idx < 9,
           active_room_code: null,
+          ig_note: defaultNotes[(idx + 2) % defaultNotes.length],
           last_seen_at: prof.updated_at || new Date().toISOString(),
         });
         idx++;
@@ -1948,7 +1976,7 @@ serve(async (req: Request) => {
 
       return jsonResponse({
         success: true,
-        messages: (messages || []).reverse(),
+        messages: combinedMessages,
         gamers: gamers.slice(0, 35),
       });
     }
@@ -2005,7 +2033,7 @@ serve(async (req: Request) => {
         return jsonResponse({ success: false, error: "Message cannot be empty" }, 400);
       }
 
-      const channel = String(body.channel || "global").trim().slice(0, 40);
+      const channel = String(body.channel || "global").trim().slice(0, 120);
       const senderName = String(
         body.sender_name || authUser?.user_metadata?.full_name || "Ghana Gamer"
       )
@@ -2075,26 +2103,38 @@ serve(async (req: Request) => {
         last_seen_at: new Date().toISOString(),
       });
 
-      // If this chat message tags a specific user for a direct invite and has a room code, notify them!
-      if (insertPayload.target_user_id && insertPayload.room_code) {
+      // Notify target user when they receive a Direct Message (dm:*) or Direct Challenge Invite!
+      if (insertPayload.target_user_id) {
         try {
+          const isDirectDm = channel.startsWith("dm:");
           const gameLabel = formatGameLabel(insertPayload.game_type || "oware");
+          const notifTitle = insertPayload.room_code
+            ? `💬 ${senderName} Challenged You in SwiftGram Chat!`
+            : isDirectDm
+            ? `✈️ New Message from ${senderName}`
+            : `💬 ${senderName} mentioned you in SwiftGram`;
+          const notifBody = insertPayload.room_code
+            ? `${text} (Room #${insertPayload.room_code} • ${gameLabel})`
+            : text;
+
           await supabaseAdmin.from("notifications").insert({
-            title: `💬 ${senderName} Challenged You in Gamer Chat!`,
-            message: `${text} (Room #${insertPayload.room_code} • ${gameLabel})`,
+            title: notifTitle,
+            message: notifBody,
             target_type: "specific",
             target_user_id: insertPayload.target_user_id,
             created_by: authUser?.id || null,
           });
           await triggerWebPush(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
             user_id: insertPayload.target_user_id,
-            title: `💬 ${senderName} Challenged You in Gamer Chat!`,
-            body: `${text} — Tap to join Room #${insertPayload.room_code}!`,
-            url: `/challenges?room=${insertPayload.room_code}`,
-            tag: `chat-invite-${insertPayload.room_code}`,
+            title: notifTitle,
+            body: notifBody,
+            url: insertPayload.room_code
+              ? `/challenges?room=${insertPayload.room_code}`
+              : `/challenges`,
+            tag: `swiftgram-dm-${channel}`,
           });
         } catch (inviteErr) {
-          console.warn("[challenge-arena] Chat direct invite push warning:", inviteErr);
+          console.warn("[challenge-arena] DM / invite push warning:", inviteErr);
         }
       }
 
