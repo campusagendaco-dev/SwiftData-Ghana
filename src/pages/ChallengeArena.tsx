@@ -600,14 +600,6 @@ export default function ChallengeArena() {
         .maybeSingle();
       if (w) setWalletBalance(Number((w as any).balance || 0));
     }
-    const { data: sys } = await supabase
-      .from("system_settings")
-      .select("paystack_public_key")
-      .eq("id", 1)
-      .maybeSingle();
-    if ((sys as any)?.paystack_public_key) {
-      setPaystackPublicKey((sys as any).paystack_public_key);
-    }
   }, [user]);
 
   const [myJoinedSides, setMyJoinedSides] = useState<Record<string, "creator" | "opponent">>(() => {
