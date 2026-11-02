@@ -2219,7 +2219,7 @@ export default function ChallengeArena() {
           onClick={() => setCommunityModalOpen(false)}
         >
           <div
-            className="w-full max-w-2xl"
+            className="w-full max-w-2xl h-[90dvh] sm:h-[88dvh] flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
             <GamerCommunityHub

@@ -19,16 +19,21 @@ import {
   Loader2,
   Hash,
   UserPlus,
+  Heart,
   MessageCircle,
   SendHorizontal,
   PenSquare,
   Flame,
+  Image as ImageIcon,
+  Video,
+  Eye,
+  Sparkles,
 } from "lucide-react";
 import {
   playTurnNotificationSound,
   triggerHapticSensor,
 } from "@/lib/game-sensory-engine";
-import { VerifiedGamerAvatar, DailyStoriesBar } from "./DailyStoriesBar";
+import { VerifiedGamerAvatar, DailyStoriesBar, GamerStoryItem } from "./DailyStoriesBar";
 
 export type CommunityGameType =
   | "oware"
@@ -51,6 +56,10 @@ export interface CommunityChatMessage {
   favorite_game: string;
   message_type: "chat" | "challenge_card" | "direct_invite" | "victory_shoutout";
   message: string;
+  media_type?: "text" | "image" | "video";
+  media_url?: string | null;
+  bg_gradient?: string | null;
+  views_count?: number;
   challenge_id?: string | null;
   room_code?: string | null;
   game_type?: string | null;
@@ -60,6 +69,7 @@ export interface CommunityChatMessage {
   target_user_name?: string | null;
   reactions?: Record<string, number>;
   created_at: string;
+  is_story_post?: boolean;
 }
 
 export interface CommunityGamerProfile {
@@ -151,7 +161,6 @@ function normalizeKey(raw: string): string {
 
 /**
  * Deterministic 1-on-1 DM channel between two real users.
- * Prefers sorted `user_id`s when both users are authenticated, falling back to normalized names.
  */
 export function buildDmChannel(
   userA: { user_id?: string | null; name?: string | null },
@@ -192,6 +201,41 @@ function formatRelativeTime(iso: string): string {
   if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h`;
   return `${Math.floor(diffSec / 86400)}d`;
 }
+
+const compressImageToDataUrl = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Failed to read image"));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => resolve(String(reader.result));
+      img.onload = () => {
+        const maxDim = 1080;
+        let { width: w, height: h } = img;
+        if (w > maxDim || h > maxDim) {
+          if (w > h) {
+            h = Math.round((h * maxDim) / w);
+            w = maxDim;
+          } else {
+            w = Math.round((w * maxDim) / h);
+            h = maxDim;
+          }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          resolve(String(reader.result));
+          return;
+        }
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL("image/jpeg", 0.82));
+      };
+      img.src = String(reader.result);
+    };
+    reader.readAsDataURL(file);
+  });
 
 interface GamerCommunityHubProps {
   currentUserId?: string | null;
@@ -241,6 +285,7 @@ export function GamerCommunityHub({
   const [activeDmPartner, setActiveDmPartner] =
     useState<CommunityGamerProfile | null>(initialDmPartner);
   const [messages, setMessages] = useState<CommunityChatMessage[]>([]);
+  const [storyPosts, setStoryPosts] = useState<CommunityChatMessage[]>([]);
   const [gamers, setGamers] = useState<CommunityGamerProfile[]>([]);
   const [searchedPlayers, setSearchedPlayers] = useState<CommunityGamerProfile[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -250,10 +295,8 @@ export function GamerCommunityHub({
   const [gamerSearch, setGamerSearch] = useState<string>("");
   const [dmSearch, setDmSearch] = useState<string>("");
   const [onlyLookingForMatch, setOnlyLookingForMatch] = useState<boolean>(false);
-  const [myStatus, setMyStatus] = useState<"online" | "looking_for_match">(
-    "looking_for_match"
-  );
-  const [myFavoriteGame, setMyFavoriteGame] = useState<CommunityGameType>("buggy");
+  const [myStatus] = useState<"online" | "looking_for_match">("looking_for_match");
+  const [myFavoriteGame] = useState<CommunityGameType>("buggy");
   const [myIgNote, setMyIgNote] = useState<string>(() => {
     try {
       return localStorage.getItem("swiftgram_my_ig_note") || "";
@@ -271,6 +314,20 @@ export function GamerCommunityHub({
     name: string;
   } | null>(null);
   const [partnerTypingName, setPartnerTypingName] = useState<string | null>(null);
+  const [likedPostIds, setLikedPostIds] = useState<Set<string>>(() => new Set());
+  const [replyingToPostId, setReplyingToPostId] = useState<string | null>(null);
+  const [inlineReplyText, setInlineReplyText] = useState<string>("");
+
+  // Inline Photo / Video Attachment State for Feed Posts
+  const [attachedMediaType, setAttachedMediaType] = useState<"image" | "video" | null>(
+    null
+  );
+  const [attachedMediaPreview, setAttachedMediaPreview] = useState<string | null>(
+    null
+  );
+  const [attachedMediaFile, setAttachedMediaFile] = useState<File | null>(null);
+  const feedPhotoInputRef = useRef<HTMLInputElement | null>(null);
+  const feedVideoInputRef = useRef<HTMLInputElement | null>(null);
 
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const dmScrollRef = useRef<HTMLDivElement | null>(null);
@@ -288,19 +345,55 @@ export function GamerCommunityHub({
     }
   }, [initialDmPartner]);
 
+  const mapStoryRowToFeedPost = useCallback(
+    (s: GamerStoryItem): CommunityChatMessage => ({
+      id: `story-feed-${s.id}`,
+      channel: "global",
+      sender_id: s.user_id || null,
+      sender_name: s.author_name || "Ghana Gamer",
+      sender_phone_masked: s.author_phone_masked || null,
+      avatar_id: s.avatar_id || "royal_headband",
+      sender_level: Number(s.author_level || 1),
+      sender_title: s.author_title || "SwiftData Gamer",
+      favorite_game: s.favorite_game || s.game_type || "oware",
+      message_type: "chat",
+      message: s.caption || "",
+      media_type: s.media_type,
+      media_url: s.media_url || null,
+      bg_gradient: s.bg_gradient || null,
+      views_count: Number(s.views_count || 0),
+      room_code: s.room_code || null,
+      game_type: s.game_type || s.favorite_game || "oware",
+      reactions: s.reactions || {},
+      created_at: s.created_at || new Date().toISOString(),
+      is_story_post: true,
+    }),
+    []
+  );
+
   const fetchCommunityHub = useCallback(
     async (silent = false) => {
       if (!silent) setLoading(true);
       try {
-        const { data, error } = await supabase.functions.invoke("challenge-arena", {
-          body: {
-            action: "get_community_hub",
-            room_code: activeRoomCode || undefined,
-          },
-        });
-        if (!error && data?.success) {
-          setMessages(data.messages || []);
-          setGamers(data.gamers || []);
+        const [hubRes, storiesRes] = await Promise.all([
+          supabase.functions.invoke("challenge-arena", {
+            body: {
+              action: "get_community_hub",
+              room_code: activeRoomCode || undefined,
+            },
+          }),
+          supabase.functions.invoke("challenge-arena", {
+            body: { action: "get_stories" },
+          }),
+        ]);
+
+        if (!hubRes.error && hubRes.data?.success) {
+          setMessages(hubRes.data.messages || []);
+          setGamers(hubRes.data.gamers || []);
+        }
+
+        if (!storiesRes.error && storiesRes.data?.success && Array.isArray(storiesRes.data.stories)) {
+          setStoryPosts(storiesRes.data.stories.map(mapStoryRowToFeedPost));
         }
       } catch (err) {
         console.warn("[GamerCommunityHub] Fetch warning:", err);
@@ -308,7 +401,7 @@ export function GamerCommunityHub({
         if (!silent) setLoading(false);
       }
     },
-    [activeRoomCode]
+    [activeRoomCode, mapStoryRowToFeedPost]
   );
 
   const sendPresenceHeartbeat = useCallback(
@@ -349,7 +442,7 @@ export function GamerCommunityHub({
     ]
   );
 
-  // Live search of all registered users on the site when typing in DM search or Gamer search
+  // Live search of all registered users on the site
   useEffect(() => {
     const query = (activeTab === "dms" ? dmSearch : gamerSearch).trim();
     if (query.length < 2) {
@@ -401,8 +494,7 @@ export function GamerCommunityHub({
     return () => window.clearInterval(interval);
   }, [fetchCommunityHub, sendPresenceHeartbeat]);
 
-  // 1) Shared Supabase Realtime Broadcast Bus (<50ms live text + live typing indicator)
-  // 2) Postgres Changes subscription for `game_community_messages` & `game_community_presence`
+  // Shared Supabase Realtime Broadcast Bus (<50ms live text + live typing) + Postgres Changes
   useEffect(() => {
     const uid = `${Math.random().toString(36).slice(2, 9)}_${Date.now()}`;
     let msgChannel: ReturnType<typeof supabase.channel> | null = null;
@@ -468,7 +560,6 @@ export function GamerCommunityHub({
               const incoming = payload.new as CommunityChatMessage;
               setMessages((prev) => {
                 if (prev.some((m) => m.id === incoming.id)) return prev;
-                // Also replace optimistic temp message if it matches sender & text
                 const withoutDuplicateTemp = prev.filter(
                   (m) =>
                     !(
@@ -525,20 +616,12 @@ export function GamerCommunityHub({
     };
   }, [activeRoomCode, currentUserId, fetchCommunityHub, playerName]);
 
-  // Auto-scroll to bottom when messages change
-  useEffect(() => {
-    if (chatScrollRef.current && (activeTab === "chat" || activeTab === "room")) {
-      chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
-    }
-  }, [messages.length, activeTab]);
-
   useEffect(() => {
     if (dmScrollRef.current && activeTab === "dms" && activeDmPartner) {
       dmScrollRef.current.scrollTop = dmScrollRef.current.scrollHeight;
     }
   }, [messages.length, activeTab, activeDmPartner, partnerTypingName]);
 
-  // Emit live typing event when typing a DM to another real user
   const notifyPartnerTyping = useCallback(
     (partner: CommunityGamerProfile | null) => {
       if (!partner || !broadcastChannelRef.current) return;
@@ -563,14 +646,13 @@ export function GamerCommunityHub({
     [currentUserId, playerName]
   );
 
-  // Open a 1-on-1 DM thread with any real user
   const openDirectMessageWith = (gamer: CommunityGamerProfile) => {
     triggerHapticSensor("aim_tick");
     setActiveDmPartner(gamer);
     setActiveTab("dms");
   };
 
-  // Other real users (excluding current user)
+  // Other real users on the site
   const otherRealGamers = useMemo(() => {
     const combined = [...gamers];
     for (const sp of searchedPlayers) {
@@ -595,15 +677,23 @@ export function GamerCommunityHub({
       ? `room:${activeRoomCode.toUpperCase()}`
       : "global";
 
-  const visibleMessages = useMemo(() => {
-    return messages.filter((m) =>
-      activeTab === "room" && activeRoomCode
-        ? m.channel === `room:${activeRoomCode.toUpperCase()}`
-        : m.channel === "global"
+  // Unified Instagram Full Feed items (Newest First for "chat" tab, chronological for "room" tab)
+  const visibleFeedPosts = useMemo(() => {
+    if (activeTab === "room" && activeRoomCode) {
+      return messages.filter(
+        (m) => m.channel === `room:${activeRoomCode.toUpperCase()}`
+      );
+    }
+    const globalMsgs = messages.filter((m) => m.channel === "global");
+    const combined = [...globalMsgs, ...storyPosts];
+    // Sort newest first just like Instagram's main feed
+    return combined.sort(
+      (a, b) =>
+        new Date(b.created_at || 0).getTime() -
+        new Date(a.created_at || 0).getTime()
     );
-  }, [messages, activeTab, activeRoomCode]);
+  }, [messages, storyPosts, activeTab, activeRoomCode]);
 
-  // Compute current 1-on-1 DM channel and messages between current user and activeDmPartner
   const activeDmChannel = useMemo(() => {
     if (!activeDmPartner) return null;
     return buildDmChannel(
@@ -621,7 +711,6 @@ export function GamerCommunityHub({
       if (!m.channel.startsWith("dm:")) return false;
       if (activeDmChannel && m.channel === activeDmChannel) return true;
 
-      // Match by authenticated user_ids in either direction
       if (currentUserId && partnerId) {
         if (
           (m.sender_id === currentUserId && m.target_user_id === partnerId) ||
@@ -631,7 +720,6 @@ export function GamerCommunityHub({
         }
       }
 
-      // Match by sender_name / target_user_name (supports first-name vs full-name)
       const meToPartner =
         ((currentUserId && m.sender_id === currentUserId) ||
           namesMatch(m.sender_name, playerName)) &&
@@ -648,7 +736,6 @@ export function GamerCommunityHub({
     });
   }, [messages, activeDmChannel, activeDmPartner, playerName, currentUserId]);
 
-  // Build DM Conversation Inbox list from real DM threads + real site users
   const dmConversations = useMemo(() => {
     const map = new Map<
       string,
@@ -658,7 +745,6 @@ export function GamerCommunityHub({
       }
     >();
 
-    // 1. Populate all active DM conversations involving current user
     for (const m of messages) {
       if (!m.channel.startsWith("dm:")) continue;
       const isMeSender =
@@ -701,7 +787,6 @@ export function GamerCommunityHub({
       map.set(key, { gamer: gamerProfile, lastMessage: m });
     }
 
-    // 2. Also list all other real users on the site so you can start a conversation with anyone
     for (const g of otherRealGamers) {
       const key = String(g.user_id || normalizeKey(g.display_name));
       if (!map.has(key)) {
@@ -721,6 +806,33 @@ export function GamerCommunityHub({
     );
   }, [messages, otherRealGamers, playerName, currentUserId, dmSearch]);
 
+  const handlePickFeedPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const dataUrl = await compressImageToDataUrl(file);
+      setAttachedMediaFile(file);
+      setAttachedMediaPreview(dataUrl);
+      setAttachedMediaType("image");
+      triggerHapticSensor("aim_tick");
+    } catch {
+      // ignore
+    }
+  };
+
+  const handlePickFeedVideo = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      setAttachedMediaFile(file);
+      setAttachedMediaPreview(String(reader.result));
+      setAttachedMediaType("video");
+      triggerHapticSensor("aim_tick");
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleSendMessage = async (
     customText?: string,
     opts?: {
@@ -736,12 +848,92 @@ export function GamerCommunityHub({
     );
     const rawText = customText ?? (isDmSend ? dmInput : chatInput);
     const textToSend = rawText.trim();
-    if (!textToSend || sending) return;
+    const hasMedia = !isDmSend && Boolean(attachedMediaPreview && attachedMediaType);
+
+    if ((!textToSend && !hasMedia) || sending) return;
 
     setSending(true);
     if (!customText) {
       if (isDmSend) setDmInput("");
       else setChatInput("");
+    }
+
+    // If the user attached a Photo or Video to their Feed Post, publish it as a visual Feed + Story post!
+    if (hasMedia && attachedMediaPreview && attachedMediaType) {
+      const mediaUrlToUse = attachedMediaPreview;
+      const mediaTypeToUse = attachedMediaType;
+      const fileToUpload = attachedMediaFile;
+      setAttachedMediaPreview(null);
+      setAttachedMediaType(null);
+      setAttachedMediaFile(null);
+
+      let finalMediaUrl = mediaUrlToUse;
+      if (fileToUpload) {
+        try {
+          const ext =
+            fileToUpload.name.split(".").pop()?.toLowerCase() ||
+            (mediaTypeToUse === "video" ? "mp4" : "jpg");
+          const path = `stories/${Date.now()}_${Math.random()
+            .toString(36)
+            .slice(2, 8)}.${ext}`;
+          const { error: upErr } = await supabase.storage
+            .from("arena-stories")
+            .upload(path, fileToUpload, { cacheControl: "3600", upsert: false });
+          if (!upErr) {
+            const { data: pubData } = supabase.storage
+              .from("arena-stories")
+              .getPublicUrl(path);
+            if (pubData?.publicUrl) finalMediaUrl = pubData.publicUrl;
+          }
+        } catch {
+          // keep data URL
+        }
+      }
+
+      const optimisticMediaPost: CommunityChatMessage = {
+        id: `story-feed-local-${Date.now()}`,
+        channel: "global",
+        sender_id: currentUserId || null,
+        sender_name: playerName || "Ghana Champion",
+        avatar_id: playerAvatarId,
+        sender_level: playerLevel,
+        sender_title: playerTitle,
+        favorite_game: myFavoriteGame,
+        message_type: "chat",
+        message: textToSend,
+        media_type: mediaTypeToUse,
+        media_url: finalMediaUrl,
+        views_count: 1,
+        reactions: {},
+        created_at: new Date().toISOString(),
+        is_story_post: true,
+      };
+      setStoryPosts((prev) => [optimisticMediaPost, ...prev]);
+
+      try {
+        await supabase.functions.invoke("challenge-arena", {
+          body: {
+            action: "post_story",
+            author_name: playerName || "Ghana Champion",
+            author_phone: playerPhone || "",
+            avatar_id: playerAvatarId,
+            author_level: playerLevel,
+            author_title: playerTitle,
+            favorite_game: myFavoriteGame,
+            media_type: mediaTypeToUse,
+            media_url: finalMediaUrl,
+            caption: textToSend,
+            attached_room_code: activeRoomCode || null,
+            attached_game_type: myFavoriteGame,
+          },
+        });
+        window.dispatchEvent(new CustomEvent("swiftdata-stories-updated"));
+      } catch {
+        // ignore
+      } finally {
+        setSending(false);
+      }
+      return;
     }
 
     const partner = opts?.dmPartner || (isDmSend ? activeDmPartner : null);
@@ -822,7 +1014,6 @@ export function GamerCommunityHub({
           return prev.map((m) => (m.id === tempId ? persistedRow : m));
         });
 
-        // Broadcast immediately over Supabase Realtime Broadcast Bus so recipient gets it in <50ms!
         try {
           broadcastChannelRef.current?.send({
             type: "broadcast",
@@ -840,25 +1031,59 @@ export function GamerCommunityHub({
     }
   };
 
-  const handleReactMessage = async (messageId: string, emoji: string) => {
+  const handleReactMessage = async (post: CommunityChatMessage, emoji: string) => {
     triggerHapticSensor("aim_tick");
+
+    if (emoji === "❤️") {
+      setLikedPostIds((prev) => {
+        const next = new Set(prev);
+        next.add(post.id);
+        return next;
+      });
+    }
+
+    if (post.is_story_post) {
+      setStoryPosts((prev) =>
+        prev.map((m) => {
+          if (m.id !== post.id) return m;
+          const nextReactions = { ...(m.reactions || {}) };
+          nextReactions[emoji] = Number(nextReactions[emoji] || 0) + 1;
+          return { ...m, reactions: nextReactions };
+        })
+      );
+      const rawStoryId = post.id.replace(/^story-feed-/, "");
+      if (!rawStoryId.startsWith("local-")) {
+        try {
+          await supabase.functions.invoke("challenge-arena", {
+            body: {
+              action: "react_story",
+              story_id: rawStoryId,
+              emoji,
+            },
+          });
+        } catch {
+          // ignore
+        }
+      }
+      return;
+    }
 
     setMessages((prev) =>
       prev.map((m) => {
-        if (m.id !== messageId) return m;
+        if (m.id !== post.id) return m;
         const nextReactions = { ...(m.reactions || {}) };
         nextReactions[emoji] = Number(nextReactions[emoji] || 0) + 1;
         return { ...m, reactions: nextReactions };
       })
     );
 
-    if (messageId.startsWith("temp-")) return;
+    if (post.id.startsWith("temp-")) return;
 
     try {
       await supabase.functions.invoke("challenge-arena", {
         body: {
           action: "react_community_message",
-          message_id: messageId,
+          message_id: post.id,
           emoji,
         },
       });
@@ -887,30 +1112,25 @@ export function GamerCommunityHub({
   }, [dmConversations]);
 
   return (
-    <div className="flex flex-col h-full max-h-[86vh] bg-[#080c17] text-white rounded-3xl border border-white/15 shadow-[0_25px_70px_rgba(0,0,0,0.9)] overflow-hidden">
-      {/* ── Instagram-Style Top App Bar ("SwiftGram • Real Gamers & Live DMs") ── */}
-      <div className="px-4 py-3 bg-gradient-to-r from-[#121829] via-[#1a1128] to-[#0f172a] border-b border-white/10 flex items-center justify-between gap-2 shrink-0">
+    <div className="flex flex-col h-full w-full bg-[#070a12] text-white rounded-3xl border border-white/15 shadow-[0_25px_70px_rgba(0,0,0,0.92)] overflow-hidden">
+      {/* ── Instagram-Style Top App Bar ("SwiftGram") ── */}
+      <div className="px-4 py-2.5 bg-[#0c111f] border-b border-white/10 flex items-center justify-between gap-2 shrink-0">
         <div className="flex items-center gap-2.5 min-w-0">
-          <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-amber-400 via-rose-500 to-purple-600 text-white flex items-center justify-center shadow-lg shrink-0">
-            <MessageCircle className="w-5 h-5" />
+          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-amber-400 via-rose-500 to-purple-600 text-white flex items-center justify-center shadow shrink-0">
+            <Sparkles className="w-4 h-4" />
           </div>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <h3 className="text-sm sm:text-base font-black tracking-tight bg-gradient-to-r from-white via-amber-200 to-pink-200 bg-clip-text text-transparent truncate">
-                SwiftGram • Live User Chat &amp; DMs
-              </h3>
-              <Badge className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-black px-2 py-0">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping mr-1 inline-block" />
-                {Math.max(1, gamers.length)} Members
-              </Badge>
-            </div>
-            <p className="text-[11px] text-slate-400 truncate">
-              Real-time messaging with real users on SwiftData
-            </p>
+          <div className="min-w-0 flex items-center gap-2">
+            <h3 className="text-sm sm:text-base font-black tracking-tight bg-gradient-to-r from-white via-amber-200 to-pink-200 bg-clip-text text-transparent truncate">
+              SwiftGram
+            </h3>
+            <Badge className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-black px-2 py-0">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping mr-1 inline-block" />
+              {Math.max(1, gamers.length)} Users
+            </Badge>
           </div>
         </div>
 
-        {/* Top-Right IG Action Icons: Start Post | Direct Messages (Paper Plane) | Refresh | Close */}
+        {/* Top-Right IG Action Icons */}
         <div className="flex items-center gap-1.5 shrink-0">
           <button
             type="button"
@@ -919,10 +1139,10 @@ export function GamerCommunityHub({
               window.setTimeout(() => feedInputRef.current?.focus(), 80);
             }}
             className="px-2.5 py-1.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-xs font-black text-amber-300 flex items-center gap-1.5 cursor-pointer"
-            title="Start a Conversation in Feed"
+            title="Create Post"
           >
             <PenSquare className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">New Post</span>
+            <span className="hidden sm:inline">Create Post</span>
           </button>
 
           <button
@@ -965,25 +1185,25 @@ export function GamerCommunityHub({
         </div>
       </div>
 
-      {/* ── IG Navigation Tabs: Feed | Direct Messages (DMs) | Find Users | Room Chat ── */}
-      <div className="px-3 pt-2 pb-2 bg-[#0b1020] border-b border-white/10 flex items-center gap-1.5 shrink-0 overflow-x-auto no-scrollbar">
+      {/* ── Clean Instagram Tab Switcher ── */}
+      <div className="px-3 py-1.5 bg-[#0a0f1c] border-b border-white/10 flex items-center gap-1.5 shrink-0 overflow-x-auto no-scrollbar">
         <button
           type="button"
           onClick={() => setActiveTab("chat")}
-          className={`flex-1 min-w-[105px] py-2 px-3 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+          className={`flex-1 min-w-[105px] py-1.5 px-3 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
             activeTab === "chat"
               ? "bg-gradient-to-r from-amber-400 to-orange-500 text-slate-950 shadow"
               : "bg-white/[0.04] text-slate-300 hover:text-white"
           }`}
         >
           <Flame className="w-3.5 h-3.5" />
-          <span>Live Feed</span>
+          <span>Full Feed ({visibleFeedPosts.length})</span>
         </button>
 
         <button
           type="button"
           onClick={() => setActiveTab("dms")}
-          className={`flex-1 min-w-[125px] py-2 px-3 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+          className={`flex-1 min-w-[125px] py-1.5 px-3 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
             activeTab === "dms"
               ? "bg-gradient-to-r from-pink-500 via-rose-500 to-amber-500 text-white shadow"
               : "bg-white/[0.04] text-slate-300 hover:text-white"
@@ -1005,21 +1225,21 @@ export function GamerCommunityHub({
         <button
           type="button"
           onClick={() => setActiveTab("gamers")}
-          className={`flex-1 min-w-[110px] py-2 px-3 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+          className={`flex-1 min-w-[110px] py-1.5 px-3 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
             activeTab === "gamers"
               ? "bg-amber-500 text-slate-950 shadow"
               : "bg-white/[0.04] text-slate-300 hover:text-white"
           }`}
         >
           <Users className="w-3.5 h-3.5" />
-          <span>All Site Users ({otherRealGamers.length})</span>
+          <span>Users ({otherRealGamers.length})</span>
         </button>
 
         {activeRoomCode && (
           <button
             type="button"
             onClick={() => setActiveTab("room")}
-            className={`flex-1 min-w-[100px] py-2 px-3 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+            className={`flex-1 min-w-[100px] py-1.5 px-3 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
               activeTab === "room"
                 ? "bg-emerald-500 text-slate-950 shadow"
                 : "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
@@ -1039,7 +1259,7 @@ export function GamerCommunityHub({
               <Swords className="w-3.5 h-3.5" /> Pick a Game to Challenge{" "}
               {activeTab === "dms" && activeDmPartner
                 ? activeDmPartner.display_name
-                : "in Chat"}
+                : "in Feed"}
               :
             </span>
             <button
@@ -1084,13 +1304,16 @@ export function GamerCommunityHub({
       )}
 
       {/* ══════════════════════════════════════════════════════════════════════════
-          TAB 1 & TAB 4: IG FEED & GLOBAL LOUNGE / ROOM CHAT
+          TAB 1 & TAB 4: UNIFIED INSTAGRAM FULL FEED (SINGLE SMOOTH SCROLL VIEWPORT)
          ══════════════════════════════════════════════════════════════════════════ */}
       {(activeTab === "chat" || activeTab === "room") && (
-        <>
-          {/* Daily Stories Bar + Real Site Users IG Notes Strip */}
+        <div
+          ref={chatScrollRef}
+          className="flex-1 min-h-0 overflow-y-auto divide-y divide-white/10"
+        >
+          {/* 1. Top Stories + Active Real Users Tray (Scrolls naturally inside Feed!) */}
           {activeTab === "chat" && (
-            <div className="px-3 py-2 bg-[#0a0f1d] border-b border-white/10 space-y-2 shrink-0">
+            <div className="p-3 bg-[#090d19] space-y-3">
               <DailyStoriesBar
                 currentUserId={currentUserId}
                 playerName={playerName}
@@ -1112,161 +1335,263 @@ export function GamerCommunityHub({
                 }}
               />
 
-              {/* Real Site Users Strip • Tap Anyone to Text (DM) */}
-              <div className="pt-1 border-t border-white/5">
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-pink-300 flex items-center gap-1">
-                    <SendHorizontal className="w-3 h-3 -rotate-12" />
-                    Real Site Users • Tap Anyone to Text (DM) Live
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setEditingNote((v) => !v)}
-                    className="text-[10px] font-bold text-amber-300 hover:underline cursor-pointer"
-                  >
-                    {editingNote ? "Close" : "✏️ Set My IG Note"}
-                  </button>
-                </div>
-
-                {editingNote && (
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <Input
-                      value={myIgNote}
-                      onChange={(e) => setMyIgNote(e.target.value.slice(0, 50))}
-                      placeholder="Write a short note above your avatar for other users..."
-                      className="h-7 text-[11px] bg-slate-950 border-amber-400/40 rounded-xl text-white"
-                    />
-                    <Button
+              {/* Compact Instagram Active Users Strip • Tap to DM */}
+              {otherRealGamers.length > 0 && (
+                <div className="pt-2 border-t border-white/10">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[11px] font-black uppercase tracking-wider text-pink-300 flex items-center gap-1.5">
+                      <SendHorizontal className="w-3 h-3 -rotate-12" />
+                      Active Users • Tap Any Avatar to Text (DM)
+                    </span>
+                    <button
                       type="button"
-                      size="sm"
-                      onClick={() => {
-                        try {
-                          localStorage.setItem("swiftgram_my_ig_note", myIgNote);
-                        } catch {
-                          // ignore
-                        }
-                        sendPresenceHeartbeat(myStatus, myFavoriteGame, myIgNote);
-                        setEditingNote(false);
-                      }}
-                      className="h-7 px-3 rounded-xl bg-amber-400 text-slate-950 font-black text-[10px]"
+                      onClick={() => setEditingNote((v) => !v)}
+                      className="text-[10px] font-bold text-amber-300 hover:underline cursor-pointer"
                     >
-                      Save Note
-                    </Button>
+                      {editingNote ? "Close" : "✏️ Set My IG Note"}
+                    </button>
                   </div>
-                )}
 
-                {otherRealGamers.length > 0 && (
-                  <div className="flex items-center gap-2.5 overflow-x-auto pb-1 no-scrollbar">
-                    {otherRealGamers.slice(0, 12).map((g) => {
-                      const fav =
-                        GAME_LABELS[g.favorite_game] || GAME_LABELS.oware;
-                      return (
-                        <div
-                          key={g.player_key}
-                          className="shrink-0 w-[116px] p-2 rounded-2xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 flex flex-col items-center text-center transition-all"
-                        >
-                          {g.ig_note && (
-                            <div className="w-full px-1.5 py-0.5 mb-1 rounded-xl bg-slate-900/95 border border-white/15 text-[9px] text-amber-200 truncate shadow">
-                              {g.ig_note}
-                            </div>
-                          )}
+                  {editingNote && (
+                    <div className="flex items-center gap-1.5 mb-2">
+                      <Input
+                        value={myIgNote}
+                        onChange={(e) => setMyIgNote(e.target.value.slice(0, 50))}
+                        placeholder="Write a short note above your avatar..."
+                        className="h-8 text-xs bg-slate-950 border-amber-400/40 rounded-xl text-white"
+                      />
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => {
+                          try {
+                            localStorage.setItem("swiftgram_my_ig_note", myIgNote);
+                          } catch {
+                            // ignore
+                          }
+                          sendPresenceHeartbeat(myStatus, myFavoriteGame, myIgNote);
+                          setEditingNote(false);
+                        }}
+                        className="h-8 px-3 rounded-xl bg-amber-400 text-slate-950 font-black text-xs"
+                      >
+                        Save Note
+                      </Button>
+                    </div>
+                  )}
 
-                          <div
-                            onClick={() => openDirectMessageWith(g)}
-                            className="relative cursor-pointer"
-                          >
+                  <div className="flex items-center gap-3 overflow-x-auto pb-1 no-scrollbar">
+                    {otherRealGamers.slice(0, 12).map((g) => (
+                      <button
+                        key={g.player_key}
+                        type="button"
+                        onClick={() => openDirectMessageWith(g)}
+                        className="shrink-0 flex flex-col items-center group cursor-pointer w-[74px]"
+                      >
+                        {g.ig_note && (
+                          <span className="max-w-[72px] px-1.5 py-0.5 mb-1 rounded-full bg-slate-900 border border-white/15 text-[8px] text-amber-200 truncate">
+                            {g.ig_note}
+                          </span>
+                        )}
+                        <div className="relative p-0.5 rounded-full bg-gradient-to-tr from-amber-400 via-pink-500 to-purple-600">
+                          <div className="rounded-full bg-[#090d19] p-0.5">
                             <VerifiedGamerAvatar
                               avatarId={g.avatar_id}
                               seedName={g.display_name}
-                              size={40}
-                              showVerifiedBadge={true}
-                            />
-                            <span
-                              className={`w-2.5 h-2.5 rounded-full border-2 border-[#0a0f1d] absolute bottom-0 right-0 ${
-                                g.is_online_now
-                                  ? "bg-emerald-400"
-                                  : "bg-amber-400"
-                              }`}
+                              size={42}
+                              showVerifiedBadge={false}
                             />
                           </div>
-
-                          <span className="text-[11px] font-black text-white truncate w-full mt-1">
-                            {g.display_name}
-                          </span>
-                          <span className="text-[9px] text-slate-400 truncate w-full">
-                            {g.masked_phone || `${fav.emoji} ${fav.name}`}
-                          </span>
-
-                          <div className="flex items-center gap-1 w-full mt-1.5">
-                            <button
-                              type="button"
-                              onClick={() => openDirectMessageWith(g)}
-                              className="flex-1 py-1 rounded-lg bg-gradient-to-r from-pink-500/30 to-purple-500/30 hover:from-pink-500 hover:to-purple-500 border border-pink-400/40 text-[9px] font-black text-pink-200 hover:text-white transition-all cursor-pointer"
-                            >
-                              💬 Text
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                onQuickCreateChallenge(
-                                  (g.favorite_game as CommunityGameType) ||
-                                    "oware",
-                                  {
-                                    user_id: g.user_id,
-                                    full_name: g.display_name,
-                                    phone: g.raw_phone,
-                                  }
-                                )
-                              }
-                              className="px-1.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500 border border-amber-400/40 text-[9px] font-black text-amber-300 hover:text-slate-950 transition-all cursor-pointer"
-                              title={`Challenge ${g.display_name}`}
-                            >
-                              ⚔️
-                            </button>
-                          </div>
+                          <span
+                            className={`w-3 h-3 rounded-full border-2 border-[#090d19] absolute bottom-0 right-0 ${
+                              g.is_online_now ? "bg-emerald-400" : "bg-amber-400"
+                            }`}
+                          />
                         </div>
-                      );
-                    })}
+                        <span className="text-[10px] font-bold text-slate-200 group-hover:text-pink-300 truncate w-full text-center mt-1">
+                          {g.display_name.split(" ")[0]}
+                        </span>
+                        <span className="text-[9px] font-black text-pink-400">
+                          💬 Text
+                        </span>
+                      </button>
+                    ))}
                   </div>
-                )}
-              </div>
+                </div>
+              )}
             </div>
           )}
 
-          {/* Scrollable IG Feed & Chat Stream */}
-          <div
-            ref={chatScrollRef}
-            className="flex-1 min-h-[250px] overflow-y-auto p-3 space-y-3"
-          >
-            {loading && visibleMessages.length === 0 ? (
-              <div className="h-44 flex flex-col items-center justify-center text-slate-400 gap-2">
+          {/* 2. Instagram "Create Post" Composer Card right at top of Feed */}
+          <div className="p-3.5 bg-[#0c1222] space-y-2.5">
+            <input
+              ref={feedPhotoInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handlePickFeedPhoto}
+              className="hidden"
+            />
+            <input
+              ref={feedVideoInputRef}
+              type="file"
+              accept="video/*"
+              onChange={handlePickFeedVideo}
+              className="hidden"
+            />
+
+            {taggedTargetUser && (
+              <div className="flex items-center justify-between px-3 py-1.5 rounded-xl bg-amber-500/15 border border-amber-400/40 text-xs text-amber-200">
+                <span>
+                  💬 Replying to <strong>@{taggedTargetUser.name}</strong>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setTaggedTargetUser(null)}
+                  className="text-xs text-slate-300 hover:text-white"
+                >
+                  ×
+                </button>
+              </div>
+            )}
+
+            {attachedMediaPreview && (
+              <div className="relative rounded-2xl overflow-hidden border border-pink-400/50 bg-slate-950 max-h-56 flex items-center justify-center">
+                {attachedMediaType === "video" ? (
+                  <video
+                    src={attachedMediaPreview}
+                    controls
+                    className="max-h-52 w-full object-contain"
+                  />
+                ) : (
+                  <img
+                    src={attachedMediaPreview}
+                    alt="Feed attachment preview"
+                    className="max-h-52 w-full object-cover"
+                  />
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAttachedMediaPreview(null);
+                    setAttachedMediaType(null);
+                    setAttachedMediaFile(null);
+                  }}
+                  className="absolute top-2 right-2 p-1.5 rounded-full bg-black/75 text-white hover:bg-black"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleSendMessage();
+              }}
+              className="flex items-center gap-2.5"
+            >
+              <VerifiedGamerAvatar
+                avatarId={playerAvatarId}
+                seedName={playerName}
+                size={38}
+                showVerifiedBadge={true}
+              />
+              <Input
+                ref={feedInputRef}
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                placeholder={
+                  activeTab === "room"
+                    ? `Write to Room #${activeRoomCode}…`
+                    : `What's happening in the Arena, ${playerName || "Champion"}?`
+                }
+                className="h-10 flex-1 rounded-full bg-slate-950 border-white/15 px-4 text-xs sm:text-sm text-white"
+              />
+              <Button
+                type="submit"
+                disabled={sending || (!chatInput.trim() && !attachedMediaPreview)}
+                className="h-10 px-4 rounded-full bg-gradient-to-r from-pink-500 via-rose-500 to-amber-500 hover:opacity-95 text-white font-black text-xs gap-1.5 shrink-0 shadow"
+              >
+                {sending ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <>
+                    <Send className="w-3.5 h-3.5" />
+                    <span>Post</span>
+                  </>
+                )}
+              </Button>
+            </form>
+
+            {/* Composer Action Buttons: Photo | Video | Game Challenge | Quick Banter */}
+            <div className="flex items-center justify-between gap-2 pt-0.5 overflow-x-auto no-scrollbar">
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => feedPhotoInputRef.current?.click()}
+                  className="px-3 py-1 rounded-full bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-[11px] font-bold text-emerald-300 flex items-center gap-1.5 cursor-pointer"
+                >
+                  <ImageIcon className="w-3.5 h-3.5" />
+                  <span>Photo</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => feedVideoInputRef.current?.click()}
+                  className="px-3 py-1 rounded-full bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-[11px] font-bold text-sky-300 flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Video className="w-3.5 h-3.5" />
+                  <span>Video</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowDropChallengePicker((v) => !v)}
+                  className="px-3 py-1 rounded-full bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/40 text-[11px] font-black text-amber-300 flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Swords className="w-3.5 h-3.5" />
+                  <span>Drop Challenge</span>
+                </button>
+              </div>
+
+              <div className="flex items-center gap-1.5 shrink-0">
+                {QUICK_BANTER_CHIPS.slice(0, 3).map((chip, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => handleSendMessage(chip)}
+                    className="px-2.5 py-1 rounded-full bg-white/[0.04] hover:bg-amber-500/20 border border-white/10 text-[10px] font-bold text-slate-300 whitespace-nowrap cursor-pointer"
+                  >
+                    {chip}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* 3. Instagram Feed Stream Cards */}
+          <div className="p-3 sm:p-4 space-y-4 bg-[#070a12]">
+            {loading && visibleFeedPosts.length === 0 ? (
+              <div className="h-48 flex flex-col items-center justify-center text-slate-400 gap-2">
                 <Loader2 className="w-6 h-6 animate-spin text-amber-400" />
                 <span className="text-xs font-bold">
-                  Loading Real-Time SwiftGram Feed…
+                  Loading SwiftGram Full Feed…
                 </span>
               </div>
-            ) : visibleMessages.length === 0 ? (
-              <div className="p-6 rounded-2xl border border-dashed border-white/10 text-center space-y-2 my-4">
+            ) : visibleFeedPosts.length === 0 ? (
+              <div className="p-8 rounded-3xl border border-dashed border-white/10 text-center space-y-2">
                 <p className="text-sm font-black text-amber-300">
-                  {activeTab === "room"
-                    ? `Room #${activeRoomCode} Live Chat`
-                    : "Start the First Live Conversation! 💬"}
+                  No Feed Posts Yet — Share the First Post! 📸
                 </p>
                 <p className="text-xs text-slate-400 max-w-sm mx-auto">
-                  Post a message below to all users on the site, or tap any user above to send them a real-time 1-on-1 Direct Message!
+                  Use the composer above to share a message, photo, video, or live game challenge with everyone on SwiftData.
                 </p>
               </div>
             ) : (
-              visibleMessages.map((msg) => {
+              visibleFeedPosts.map((msg) => {
                 const isMe =
                   (currentUserId && msg.sender_id === currentUserId) ||
                   namesMatch(msg.sender_name, playerName);
                 const gMeta =
                   GAME_LABELS[msg.game_type || msg.favorite_game || "oware"] ||
                   GAME_LABELS.oware;
-                const isChallengeCard =
-                  msg.message_type === "challenge_card" ||
-                  msg.message_type === "direct_invite";
                 const isVictory = msg.message_type === "victory_shoutout";
                 const matchingOpenChallenge = msg.room_code
                   ? openChallenges.find(
@@ -1295,18 +1620,21 @@ export function GamerCommunityHub({
                   last_seen_at: msg.created_at,
                 };
 
+                const likeCount = Number(msg.reactions?.["❤️"] || 0);
+                const isLiked = likedPostIds.has(msg.id) || likeCount > 0;
+
                 if (isVictory) {
                   return (
                     <div
                       key={msg.id}
-                      className="p-3 rounded-2xl bg-gradient-to-r from-amber-500/20 via-emerald-500/15 to-amber-500/20 border border-amber-400/40 flex items-center justify-between gap-2"
+                      className="p-3.5 rounded-3xl bg-gradient-to-r from-amber-500/20 via-emerald-500/15 to-amber-500/20 border border-amber-400/40 flex items-center justify-between gap-3 shadow-lg"
                     >
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-xl bg-amber-400 text-slate-950 flex items-center justify-center font-black shrink-0">
-                          <Trophy className="w-4 h-4" />
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-2xl bg-amber-400 text-slate-950 flex items-center justify-center font-black shrink-0 shadow">
+                          <Trophy className="w-5 h-5" />
                         </div>
                         <div>
-                          <p className="text-xs font-black text-amber-200">
+                          <p className="text-xs sm:text-sm font-black text-amber-200">
                             {msg.message}
                           </p>
                           <span className="text-[10px] text-slate-400">
@@ -1316,62 +1644,60 @@ export function GamerCommunityHub({
                       </div>
                       <button
                         type="button"
-                        onClick={() => handleReactMessage(msg.id, "👑")}
-                        className="px-2.5 py-1 rounded-full bg-white/10 hover:bg-white/20 text-xs font-black text-amber-300 shrink-0 cursor-pointer"
+                        onClick={() => handleReactMessage(msg, "👑")}
+                        className="px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-xs font-black text-amber-300 shrink-0 cursor-pointer"
                       >
-                        👑 {Number(msg.reactions?.["👑"] || 0) || ""}
+                        👑 {Number(msg.reactions?.["👑"] || 0) || "Salute"}
                       </button>
                     </div>
                   );
                 }
 
                 return (
-                  <div
+                  <article
                     key={msg.id}
-                    className={`rounded-2xl p-3.5 border transition-all space-y-2.5 ${
-                      isChallengeCard
-                        ? "bg-gradient-to-br from-[#1b2438] via-[#131b2e] to-[#291347]/70 border-amber-400/60 shadow-lg"
-                        : isMe
-                        ? "bg-gradient-to-r from-amber-500/15 via-slate-900 to-purple-500/15 border-amber-400/35"
-                        : "bg-[#111829] border-white/10"
-                    }`}
+                    className="rounded-3xl bg-[#0e1424] border border-white/10 overflow-hidden shadow-[0_12px_32px_rgba(0,0,0,0.5)]"
                   >
-                    {/* IG Post Header: Avatar + Name + Level + Direct "Message 💬" Button */}
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 min-w-0">
+                    {/* ── Instagram Post Header ── */}
+                    <div className="px-4 py-3 flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2.5 min-w-0">
                         <div
                           onClick={() =>
                             !isMe && openDirectMessageWith(senderGamerObj)
                           }
-                          className={!isMe ? "cursor-pointer" : ""}
+                          className={`p-0.5 rounded-full bg-gradient-to-tr from-amber-400 via-pink-500 to-purple-600 shrink-0 ${
+                            !isMe ? "cursor-pointer" : ""
+                          }`}
                         >
-                          <VerifiedGamerAvatar
-                            avatarId={msg.avatar_id}
-                            seedName={msg.sender_name}
-                            size={34}
-                            showVerifiedBadge={true}
-                          />
+                          <div className="rounded-full bg-[#0e1424] p-0.5">
+                            <VerifiedGamerAvatar
+                              avatarId={msg.avatar_id}
+                              seedName={msg.sender_name}
+                              size={36}
+                              showVerifiedBadge={true}
+                            />
+                          </div>
                         </div>
+
                         <div className="min-w-0">
                           <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="text-xs font-black text-white truncate">
+                            <span className="text-xs sm:text-sm font-black text-white truncate">
                               {msg.sender_name}
                             </span>
                             <span className="px-1.5 py-0.2 rounded bg-amber-500/20 border border-amber-500/40 text-[9px] font-black text-amber-300">
                               Lv.{msg.sender_level || 1}
                             </span>
-                            <span
-                              className="text-[10px]"
-                              title={`Plays ${gMeta.name}`}
+                            <Badge
+                              className={`border text-[9px] font-bold px-1.5 py-0 ${gMeta.badgeClass}`}
                             >
-                              {gMeta.emoji}
-                            </span>
+                              {gMeta.emoji} {gMeta.name}
+                            </Badge>
                             <span className="text-[10px] text-slate-400">
                               • {formatRelativeTime(msg.created_at)}
                             </span>
                           </div>
                           <p className="text-[10px] text-slate-400 truncate">
-                            {msg.sender_title || "SwiftData Member"}
+                            {msg.sender_title || "SwiftData Gamer"}
                           </p>
                         </div>
                       </div>
@@ -1383,7 +1709,7 @@ export function GamerCommunityHub({
                             onClick={() =>
                               openDirectMessageWith(senderGamerObj)
                             }
-                            className="px-2.5 py-1 rounded-full bg-gradient-to-r from-pink-500/25 to-purple-500/25 hover:from-pink-500 hover:to-purple-500 border border-pink-400/40 text-[10px] font-black text-pink-200 hover:text-white flex items-center gap-1 transition-all cursor-pointer"
+                            className="px-3 py-1.5 rounded-full bg-gradient-to-r from-pink-500/25 to-purple-500/25 hover:from-pink-500 hover:to-purple-500 border border-pink-400/40 text-[10px] font-black text-pink-200 hover:text-white flex items-center gap-1 transition-all cursor-pointer"
                           >
                             <SendHorizontal className="w-3 h-3 -rotate-12" />
                             <span>Message</span>
@@ -1400,7 +1726,7 @@ export function GamerCommunityHub({
                                 }
                               )
                             }
-                            className="px-2.5 py-1 rounded-full bg-amber-500/20 hover:bg-amber-500 border border-amber-400/40 text-[10px] font-black text-amber-300 hover:text-slate-950 transition-all cursor-pointer"
+                            className="px-2.5 py-1.5 rounded-full bg-amber-500/20 hover:bg-amber-500 border border-amber-400/40 text-[10px] font-black text-amber-300 hover:text-slate-950 transition-all cursor-pointer"
                           >
                             ⚔️ Duel
                           </button>
@@ -1408,32 +1734,65 @@ export function GamerCommunityHub({
                       )}
                     </div>
 
-                    {msg.target_user_name && (
-                      <Badge className="bg-rose-500/20 text-rose-300 border border-rose-400/40 text-[9px] font-black">
-                        🎯 Replying to @{msg.target_user_name}
-                      </Badge>
+                    {/* ── Instagram Post Media / Visual Canvas ── */}
+                    {msg.media_type === "image" && msg.media_url ? (
+                      <div
+                        onDoubleClick={() => handleReactMessage(msg, "❤️")}
+                        className="relative bg-black/80 border-y border-white/10 max-h-[380px] flex items-center justify-center overflow-hidden cursor-pointer"
+                      >
+                        <img
+                          src={msg.media_url}
+                          alt={msg.message || msg.sender_name}
+                          className="w-full max-h-[380px] object-cover"
+                        />
+                      </div>
+                    ) : msg.media_type === "video" && msg.media_url ? (
+                      <div className="relative bg-black border-y border-white/10 max-h-[380px] flex items-center justify-center overflow-hidden">
+                        <video
+                          src={msg.media_url}
+                          controls
+                          playsInline
+                          className="w-full max-h-[380px] object-contain"
+                        />
+                      </div>
+                    ) : msg.is_story_post && msg.bg_gradient ? (
+                      <div
+                        onDoubleClick={() => handleReactMessage(msg, "❤️")}
+                        className={`p-6 sm:p-8 bg-gradient-to-br ${msg.bg_gradient} border-y border-white/10 text-center flex flex-col items-center justify-center min-h-[160px]`}
+                      >
+                        <p className="text-base sm:text-lg font-black text-white drop-shadow leading-relaxed max-w-md">
+                          {msg.message}
+                        </p>
+                      </div>
+                    ) : (
+                      /* Standard Text / Challenge Feed Post Body */
+                      <div className="px-4 pb-2 space-y-2">
+                        {msg.target_user_name && (
+                          <Badge className="bg-rose-500/20 text-rose-300 border border-rose-400/40 text-[9px] font-black">
+                            💬 Replying to @{msg.target_user_name}
+                          </Badge>
+                        )}
+                        <p className="text-xs sm:text-sm text-slate-100 leading-relaxed break-words">
+                          {msg.message}
+                        </p>
+                      </div>
                     )}
 
-                    {/* Post Body Text */}
-                    <p className="text-xs sm:text-sm text-slate-100 leading-relaxed break-words">
-                      {msg.message}
-                    </p>
-
-                    {/* Embedded Interactive Challenge Card inside Post */}
+                    {/* ── Embedded Interactive Challenge Ticket (If Room Code Attached) ── */}
                     {msg.room_code && (
-                      <div className="p-2.5 rounded-xl bg-slate-950/90 border border-amber-400/40 flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xl">{gMeta.emoji}</span>
+                      <div className="mx-4 my-2.5 p-3 rounded-2xl bg-gradient-to-r from-slate-950 via-[#151e34] to-amber-950/40 border border-amber-400/50 flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2.5">
+                          <span className="text-2xl">{gMeta.emoji}</span>
                           <div>
                             <div className="flex items-center gap-1.5">
                               <span className="text-xs font-black text-white">
-                                {gMeta.name}
+                                {gMeta.name} Live Match
                               </span>
-                              <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/40 font-mono text-[9px]">
+                              <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/40 font-mono text-[10px]">
                                 #{msg.room_code}
                               </Badge>
                             </div>
-                            <p className="text-[10px] text-emerald-300 font-bold">
+                            <p className="text-[11px] text-emerald-300 font-bold">
                               {Number(msg.stake_amount || 0) > 0
                                 ? `Stake: GH₵ ${Number(msg.stake_amount).toFixed(
                                     2
@@ -1458,7 +1817,7 @@ export function GamerCommunityHub({
                               onJoinByRoomCode(msg.room_code);
                             }
                           }}
-                          className="h-8 px-3.5 rounded-xl bg-[#f59e0b] hover:bg-[#fbbf24] text-slate-950 font-black text-xs gap-1 shadow"
+                          className="h-8 px-4 rounded-xl bg-[#f59e0b] hover:bg-[#fbbf24] text-slate-950 font-black text-xs gap-1 shadow"
                         >
                           <span>Accept &amp; Play</span>
                           <ArrowRight className="w-3.5 h-3.5" />
@@ -1466,149 +1825,142 @@ export function GamerCommunityHub({
                       </div>
                     )}
 
-                    {/* IG Post Action Bar: Like | Reply in Feed | DM Author | Reactions */}
-                    <div className="pt-1 border-t border-white/5 flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex items-center gap-1.5">
-                        {REACTION_EMOJIS.map((emo) => {
-                          const count = Number(msg.reactions?.[emo] || 0);
-                          return (
-                            <button
-                              key={emo}
-                              type="button"
-                              onClick={() => handleReactMessage(msg.id, emo)}
-                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold transition-all cursor-pointer ${
-                                count > 0
-                                  ? "bg-pink-500/20 border border-pink-400/40 text-pink-200"
-                                  : "bg-white/[0.04] hover:bg-white/10 text-slate-400"
-                              }`}
-                            >
-                              {emo} {count > 0 ? count : ""}
-                            </button>
-                          );
-                        })}
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setTaggedTargetUser({
-                              user_id: msg.sender_id,
-                              name: msg.sender_name,
-                            });
-                            setChatInput(`@${msg.sender_name} `);
-                            feedInputRef.current?.focus();
-                          }}
-                          className="text-[10px] font-bold text-slate-300 hover:text-amber-300 flex items-center gap-1 cursor-pointer"
-                        >
-                          <MessageCircle className="w-3 h-3" />
-                          <span>Reply</span>
-                        </button>
-                        {!isMe && (
+                    {/* ── Instagram Action Bar (Like, Comment, DM, Reactions) ── */}
+                    <div className="px-4 py-2.5 border-t border-white/5 space-y-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-3">
                           <button
                             type="button"
-                            onClick={() =>
-                              openDirectMessageWith(senderGamerObj)
-                            }
-                            className="text-[10px] font-bold text-pink-300 hover:text-pink-200 flex items-center gap-1 cursor-pointer"
+                            onClick={() => handleReactMessage(msg, "❤️")}
+                            className={`flex items-center gap-1.5 text-xs font-black transition-all cursor-pointer ${
+                              isLiked
+                                ? "text-rose-400 scale-105"
+                                : "text-slate-300 hover:text-rose-400"
+                            }`}
                           >
-                            <SendHorizontal className="w-3 h-3 -rotate-12" />
-                            <span>DM</span>
+                            <Heart
+                              className={`w-4 h-4 ${
+                                isLiked ? "fill-rose-500 text-rose-500" : ""
+                              }`}
+                            />
+                            <span>{likeCount > 0 ? likeCount : "Like"}</span>
                           </button>
-                        )}
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setReplyingToPostId((prev) =>
+                                prev === msg.id ? null : msg.id
+                              );
+                              setInlineReplyText(`@${msg.sender_name} `);
+                            }}
+                            className="flex items-center gap-1.5 text-xs font-bold text-slate-300 hover:text-amber-300 cursor-pointer"
+                          >
+                            <MessageCircle className="w-4 h-4" />
+                            <span>Comment</span>
+                          </button>
+
+                          {!isMe && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                openDirectMessageWith(senderGamerObj)
+                              }
+                              className="flex items-center gap-1.5 text-xs font-bold text-pink-300 hover:text-pink-200 cursor-pointer"
+                            >
+                              <SendHorizontal className="w-4 h-4 -rotate-12" />
+                              <span>Send DM</span>
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-1.5">
+                          {msg.views_count !== undefined && msg.views_count > 0 && (
+                            <span className="text-[10px] text-slate-400 flex items-center gap-1 mr-1">
+                              <Eye className="w-3 h-3" /> {msg.views_count}
+                            </span>
+                          )}
+                          {["🔥", "⚔️", "👑", "😂"].map((emo) => {
+                            const count = Number(msg.reactions?.[emo] || 0);
+                            return (
+                              <button
+                                key={emo}
+                                type="button"
+                                onClick={() => handleReactMessage(msg, emo)}
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-bold transition-all cursor-pointer ${
+                                  count > 0
+                                    ? "bg-amber-500/20 border border-amber-400/40 text-amber-200"
+                                    : "bg-white/[0.04] hover:bg-white/10 text-slate-400"
+                                }`}
+                              >
+                                {emo} {count > 0 ? count : ""}
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
+
+                      {/* Caption under Media Posts */}
+                      {(msg.media_type === "image" ||
+                        msg.media_type === "video") &&
+                        msg.message && (
+                          <p className="text-xs text-slate-200 leading-relaxed">
+                            <strong className="text-white mr-1.5">
+                              {msg.sender_name}
+                            </strong>
+                            {msg.message}
+                          </p>
+                        )}
+
+                      {/* Inline Comment / Reply Input Box for this Post */}
+                      {replyingToPostId === msg.id && (
+                        <form
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            if (!inlineReplyText.trim()) return;
+                            handleSendMessage(inlineReplyText, {
+                              targetUser: {
+                                user_id: msg.sender_id,
+                                name: msg.sender_name,
+                              },
+                            });
+                            setInlineReplyText("");
+                            setReplyingToPostId(null);
+                          }}
+                          className="pt-1.5 flex items-center gap-2 animate-in fade-in duration-150"
+                        >
+                          <Input
+                            value={inlineReplyText}
+                            onChange={(e) =>
+                              setInlineReplyText(e.target.value)
+                            }
+                            placeholder={`Reply to ${msg.sender_name}…`}
+                            className="h-8 flex-1 rounded-full bg-slate-950 border-white/15 px-3 text-xs text-white"
+                            autoFocus
+                          />
+                          <Button
+                            type="submit"
+                            size="sm"
+                            className="h-8 px-3 rounded-full bg-amber-400 text-slate-950 font-black text-[11px]"
+                          >
+                            Reply
+                          </Button>
+                        </form>
+                      )}
                     </div>
-                  </div>
+                  </article>
                 );
               })
             )}
           </div>
-
-          {/* Bottom Composer Bar: Quick Chips + Start Conversation Input */}
-          <div className="p-2.5 bg-[#0c1324] border-t border-white/10 space-y-2 shrink-0">
-            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
-              <button
-                type="button"
-                onClick={() => setShowDropChallengePicker((v) => !v)}
-                className="px-2.5 py-1 rounded-full bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/50 text-[10px] font-black text-amber-300 whitespace-nowrap shrink-0 cursor-pointer"
-              >
-                ⚔️ + Drop Game Challenge
-              </button>
-              {QUICK_BANTER_CHIPS.map((chip, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => handleSendMessage(chip)}
-                  className="px-2.5 py-1 rounded-full bg-white/[0.05] hover:bg-amber-500/20 border border-white/10 hover:border-amber-400/40 text-[10px] font-bold text-slate-200 whitespace-nowrap transition-all cursor-pointer shrink-0"
-                >
-                  {chip}
-                </button>
-              ))}
-            </div>
-
-            {taggedTargetUser && (
-              <div className="flex items-center justify-between px-2.5 py-1 rounded-lg bg-amber-500/15 border border-amber-400/40 text-[11px] text-amber-200">
-                <span>
-                  💬 Replying to <strong>@{taggedTargetUser.name}</strong>
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setTaggedTargetUser(null)}
-                  className="text-xs text-slate-300 hover:text-white"
-                >
-                  ×
-                </button>
-              </div>
-            )}
-
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                handleSendMessage();
-              }}
-              className="flex items-center gap-2"
-            >
-              <VerifiedGamerAvatar
-                avatarId={playerAvatarId}
-                seedName={playerName}
-                size={34}
-                showVerifiedBadge={false}
-              />
-              <Input
-                ref={feedInputRef}
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                placeholder={
-                  activeTab === "room"
-                    ? `Message Room #${activeRoomCode}…`
-                    : `Start a conversation as ${playerName || "Ghana Champion"} or @tag a user…`
-                }
-                className="h-10 flex-1 rounded-2xl bg-slate-950 border-white/15 text-xs text-white"
-              />
-              <Button
-                type="submit"
-                disabled={sending || !chatInput.trim()}
-                className="h-10 px-4 rounded-2xl bg-gradient-to-r from-amber-400 to-orange-500 hover:from-amber-300 hover:to-orange-400 text-slate-950 font-black text-xs gap-1.5 shrink-0"
-              >
-                {sending ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <>
-                    <Send className="w-3.5 h-3.5" />
-                    <span>Post</span>
-                  </>
-                )}
-              </Button>
-            </form>
-          </div>
-        </>
+        </div>
       )}
 
       {/* ══════════════════════════════════════════════════════════════════════════
           TAB 2: REAL-TIME 1-ON-1 DIRECT MESSAGES WITH REAL USERS ON THE SITE
          ══════════════════════════════════════════════════════════════════════════ */}
       {activeTab === "dms" && (
-        <div className="flex-1 flex flex-col min-h-[320px] overflow-hidden">
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
           {!activeDmPartner ? (
             /* ── DM INBOX VIEW (CONVERSATION LIST + SEARCH ANY REGISTERED USER) ── */
             <div className="flex-1 flex flex-col overflow-hidden">
@@ -1658,7 +2010,7 @@ export function GamerCommunityHub({
                           <VerifiedGamerAvatar
                             avatarId={g.avatar_id}
                             seedName={g.display_name}
-                            size={44}
+                            size={42}
                             showVerifiedBadge={true}
                           />
                           <span
@@ -1818,9 +2170,8 @@ export function GamerCommunityHub({
               {/* DM Messages Scroll Area */}
               <div
                 ref={dmScrollRef}
-                className="flex-1 min-h-[220px] overflow-y-auto p-3.5 space-y-3"
+                className="flex-1 min-h-0 overflow-y-auto p-3.5 space-y-3"
               >
-                {/* Top IG Profile Card inside DM Thread */}
                 <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 text-center space-y-1.5 my-1">
                   <div className="flex justify-center">
                     <VerifiedGamerAvatar
@@ -1840,7 +2191,7 @@ export function GamerCommunityHub({
                       : ""}
                   </p>
                   <p className="text-[10px] text-pink-300 font-bold">
-                    Real-time direct chat — messages appear immediately on {activeDmPartner.display_name}&apos;s screen &amp; send a notification!
+                    Real-time direct chat — messages appear immediately on {activeDmPartner.display_name}&apos;s screen!
                   </p>
                 </div>
 
@@ -1887,7 +2238,7 @@ export function GamerCommunityHub({
                                 <button
                                   key={emo}
                                   type="button"
-                                  onClick={() => handleReactMessage(msg.id, emo)}
+                                  onClick={() => handleReactMessage(msg, emo)}
                                   className={`text-[10px] px-1 rounded ${
                                     count > 0
                                       ? "bg-black/30 text-white font-bold"
@@ -1970,8 +2321,7 @@ export function GamerCommunityHub({
           TAB 3: ALL REAL SITE USERS & 1-TAP MESSAGE / CHALLENGE DIRECTORY
          ══════════════════════════════════════════════════════════════════════════ */}
       {activeTab === "gamers" && (
-        <div className="flex-1 flex flex-col min-h-[280px] overflow-hidden">
-          {/* Search & Filter Bar */}
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
           <div className="p-3 bg-[#0e1629] border-b border-white/10 flex flex-wrap items-center gap-2 shrink-0">
             <div className="relative flex-1 min-w-[160px]">
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-3" />
@@ -1996,7 +2346,6 @@ export function GamerCommunityHub({
             </button>
           </div>
 
-          {/* Inline 1-Tap Game Picker when challenging a specific gamer */}
           {challengingGamer && (
             <div className="p-3 bg-gradient-to-r from-amber-500/20 via-slate-900 to-emerald-500/20 border-b border-amber-400/50 space-y-2 shrink-0 animate-in fade-in duration-150">
               <div className="flex items-center justify-between">
@@ -2046,7 +2395,6 @@ export function GamerCommunityHub({
             </div>
           )}
 
-          {/* Real Site Users Directory List */}
           <div className="flex-1 overflow-y-auto p-3 space-y-2">
             {filteredGamers.length === 0 ? (
               <div className="p-6 text-center text-xs text-slate-400">
@@ -2142,7 +2490,6 @@ export function GamerCommunityHub({
 
 /**
  * Instagram-Style Community & Real-Time Direct Message Card on the Main Challenge Arena Lobby
- * Displays real users on the site, pops up live incoming DMs in real time, and lets users start a conversation immediately!
  */
 export function GamerCommunityPreviewCard({
   currentUserId,
@@ -2289,7 +2636,6 @@ export function GamerCommunityPreviewCard({
 
   return (
     <div className="rounded-3xl p-4 sm:p-5 bg-gradient-to-br from-[#12192e] via-[#0d1324] to-[#1f1135] border border-pink-500/35 shadow-[0_18px_50px_rgba(0,0,0,0.65)] space-y-4">
-      {/* Live Incoming DM Alert Banner (Appears in real time when another user texts you!) */}
       {incomingLiveDm && (
         <div className="p-3 rounded-2xl bg-gradient-to-r from-pink-600/30 via-purple-600/30 to-amber-500/30 border-2 border-pink-400 flex items-center justify-between gap-2 animate-in fade-in duration-150 shadow-lg">
           <div className="flex items-center gap-2.5 min-w-0">
@@ -2321,7 +2667,8 @@ export function GamerCommunityPreviewCard({
                   display_name: incomingLiveDm.sender_name,
                   avatar_id: incomingLiveDm.avatar_id || "royal_headband",
                   player_level: incomingLiveDm.sender_level || 1,
-                  player_title: incomingLiveDm.sender_title || "Registered Member",
+                  player_title:
+                    incomingLiveDm.sender_title || "Registered Member",
                   favorite_game: incomingLiveDm.favorite_game || "oware",
                   status: "online",
                   is_online_now: true,
@@ -2390,7 +2737,7 @@ export function GamerCommunityPreviewCard({
             className="h-9 px-3.5 rounded-full bg-white/10 hover:bg-white/15 border border-white/15 text-amber-300 font-black text-xs gap-1.5"
           >
             <MessageSquare className="w-3.5 h-3.5" />
-            <span>Live Feed</span>
+            <span>Full Feed</span>
           </Button>
         </div>
       </div>
