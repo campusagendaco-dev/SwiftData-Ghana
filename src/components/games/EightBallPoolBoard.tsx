@@ -1165,7 +1165,7 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
     return { svgX: relX * TABLE_W, svgY: relY * TABLE_H };
   };
 
-  // Pointer aiming, Slingshot pull-back, OR Ball-in-Hand placement on the SVG pool table
+  // Pointer aiming OR Ball-in-Hand placement on the SVG pool table (NEVER triggers a shot!)
   const handleTablePointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
     if (!isMyTurn) return;
     const cue = state.balls.find((b) => b.id === 0);
@@ -1174,13 +1174,13 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
     const { svgX, svgY } = clientToSvgCoords(e.clientX, e.clientY);
     e.currentTarget.setPointerCapture(e.pointerId);
 
-    // 1. If Ball-in-Hand is active and user touches near the cue ball (or inside D-zone), let them drag/place it!
+    // 1. If Ball-in-Hand is active and user touches near the cue ball, let them drag/place it!
     if (state.ballInHand && Math.hypot(svgX - cue.x, svgY - cue.y) <= BALL_R * 2.8) {
       setIsDraggingCueBall(true);
       return;
     }
 
-    // 2. Otherwise start Slingshot / Direct Table Aiming
+    // 2. Otherwise strictly rotate/aim the cue stick toward the touched point (never shoot from table touch)
     setAimDragStart({ x: svgX, y: svgY });
     setAimDragCurrent({ x: svgX, y: svgY });
     const angle = Math.atan2(svgY - cue.y, svgX - cue.x);
@@ -1212,53 +1212,20 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
       return;
     }
 
+    // While dragging on the table, smoothly aim the cue stick toward the pointer without changing shotPower or shooting
     if (aimDragStart) {
       setAimDragCurrent({ x: svgX, y: svgY });
-      const pullVectorX = aimDragStart.x - svgX;
-      const pullVectorY = aimDragStart.y - svgY;
-      const pullDistance = Math.hypot(pullVectorX, pullVectorY);
-
-      if (pullDistance >= MINIMUM_PULL_DISTANCE) {
-        // Slingshot backwards drag: aim along pull vector and scale shot power!
-        setAimAngle(Math.atan2(pullVectorY, pullVectorX));
-        const pct = Math.round(
-          Math.max(
-            15,
-            Math.min(100, (Math.min(pullDistance, MAXIMUM_PULL_DISTANCE) / MAXIMUM_PULL_DISTANCE) * 100)
-          )
-        );
-        setShotPower(pct);
-      } else {
-        setAimAngle(Math.atan2(svgY - cue.y, svgX - cue.x));
-      }
+      setAimAngle(Math.atan2(svgY - cue.y, svgX - cue.x));
     }
   };
 
   const handleTablePointerUp = () => {
     if (isDraggingCueBall) {
       setIsDraggingCueBall(false);
-      return;
     }
-    if (aimDragStart && aimDragCurrent) {
-      const pullVectorX = aimDragStart.x - aimDragCurrent.x;
-      const pullVectorY = aimDragStart.y - aimDragCurrent.y;
-      const pullDistance = Math.hypot(pullVectorX, pullVectorY);
+    if (aimDragStart || aimDragCurrent) {
       setAimDragStart(null);
       setAimDragCurrent(null);
-
-      // If the player pulled back like a slingshot (>= 42px), release fires the shot immediately!
-      if (isMyTurn && pullDistance >= 42) {
-        const angle = Math.atan2(pullVectorY, pullVectorX);
-        const pct = Math.round(
-          Math.max(
-            18,
-            Math.min(100, (Math.min(pullDistance, MAXIMUM_PULL_DISTANCE) / MAXIMUM_PULL_DISTANCE) * 100)
-          )
-        );
-        setAimAngle(angle);
-        setShotPower(pct);
-        executeShot(angle, pct, mode === "p2p" ? mySide : "creator");
-      }
     }
   };
 
@@ -2018,7 +1985,7 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
                           </g>
                         );
                       })}
-                      {/* Ghost Cue Ball Preview when dragging Ball-in-Hand + Slingshot Power Bar */}
+                      {/* Ghost Cue Ball Preview when dragging Ball-in-Hand */}
                       {isDraggingCueBall && state.ballInHand && hoverPosition && (() => {
                         const ghostPos = constrainCueBallPosition(
                           hoverPosition,
@@ -2037,16 +2004,6 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
                           />
                         );
                       })()}
-                      {aimDragStart && aimDragCurrent && isMyTurn && (
-                        <rect
-                          x={24}
-                          y={TABLE_H - 14}
-                          width={(shotPower / 100) * 180}
-                          height={6}
-                          rx={3}
-                          fill={`hsl(${120 - (shotPower / 100) * 120}, 85%, 52%)`}
-                        />
-                      )}
                     </svg>
                   </div>
                 </div>

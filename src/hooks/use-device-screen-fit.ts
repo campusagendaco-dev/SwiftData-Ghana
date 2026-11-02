@@ -31,6 +31,17 @@ export interface PoolStageFitMetrics {
   fitSummaryLabel: string;
 }
 
+export interface BoardStageFitMetrics {
+  stageWidthPx: number;
+  stageHeightPx: number;
+  squareBoardSizePx: number;
+  owarePitSizePx: number;
+  slashCanvasHeightPx: number;
+  isCompactViewport: boolean;
+  isShortViewport: boolean;
+  fitSummaryLabel: string;
+}
+
 function detectDeviceBrandAndCategory(
   ua: string,
   screenW: number,
@@ -45,7 +56,10 @@ function detectDeviceBrandAndCategory(
   const shortSide = Math.min(screenW, screenH);
   const longSide = Math.max(screenW, screenH);
 
-  if (/ipad|tablet|playbook|silk/i.test(lower) || (/macintosh/i.test(lower) && navigator.maxTouchPoints > 1 && shortSide >= 600)) {
+  if (
+    /ipad|tablet|playbook|silk/i.test(lower) ||
+    (/macintosh/i.test(lower) && navigator.maxTouchPoints > 1 && shortSide >= 600)
+  ) {
     return {
       deviceCategory: "tablet",
       deviceBrand: /ipad|macintosh/i.test(lower) ? "iPad" : "Tablet",
@@ -243,9 +257,68 @@ export function useDeviceScreenFit() {
     };
   }, [profile]);
 
+  const computeBoardStageMetrics = useMemo(() => {
+    return (
+      gameType: "oware" | "ludo" | "dame" | "slash",
+      opts?: { reservedTopPx?: number }
+    ): BoardStageFitMetrics => {
+      const reservedTopPx = opts?.reservedTopPx ?? 38;
+      const stageWidthPx = profile.availWidth;
+      const stageHeightPx = Math.max(280, profile.availHeight - reservedTopPx);
+      const isCompactViewport = stageWidthPx < 640 || stageHeightPx < 680;
+      const isShortViewport = stageHeightPx < 580;
+
+      const horizontalPad = isCompactViewport ? 16 : 36;
+      const maxWidthForBoard = Math.max(250, stageWidthPx - horizontalPad);
+
+      // Reserve vertical space for each game's HUD & controls so the board never overflows the screen
+      let verticalChromeForSquare = 150;
+      let maxCapSquare = 520;
+      if (gameType === "ludo") {
+        // Ludo has top status bar + player chips + bottom 3D Dice dock
+        verticalChromeForSquare = isShortViewport ? 148 : isCompactViewport ? 172 : 210;
+        maxCapSquare = 500;
+      } else if (gameType === "dame") {
+        // Dame has top bar + compact score strip + bottom status bar
+        verticalChromeForSquare = isShortViewport ? 116 : isCompactViewport ? 136 : 180;
+        maxCapSquare = 460;
+      }
+
+      const maxHeightForSquare = Math.max(230, stageHeightPx - verticalChromeForSquare);
+      const squareBoardSizePx = Math.floor(
+        Math.min(maxWidthForBoard, maxHeightForSquare, maxCapSquare)
+      );
+
+      // Oware pit size calculation so 2 rows of 6 pits + Kulo storehouses + turn banner fit inside stageHeightPx
+      const owareMaxPitByWidth = Math.floor((maxWidthForBoard - 68) / 6);
+      const owareMaxPitByHeight = Math.floor((stageHeightPx - (isCompactViewport ? 210 : 260)) / 2.4);
+      const owarePitSizePx = Math.max(
+        46,
+        Math.min(92, owareMaxPitByWidth, owareMaxPitByHeight)
+      );
+
+      // Market Slash canvas height so the top HUD + canvas fit inside stageHeightPx
+      const slashCanvasHeightPx = Math.max(
+        260,
+        Math.min(540, stageHeightPx - (isCompactViewport ? 96 : 124))
+      );
+
+      return {
+        stageWidthPx,
+        stageHeightPx,
+        squareBoardSizePx,
+        owarePitSizePx,
+        slashCanvasHeightPx,
+        isCompactViewport,
+        isShortViewport,
+        fitSummaryLabel: `${profile.deviceBrand} ${profile.availWidth}×${profile.availHeight}`,
+      };
+    };
+  }, [profile]);
+
   return {
     ...profile,
     computePoolStageMetrics,
+    computeBoardStageMetrics,
   };
 }
-

@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Crown, HelpCircle, Brain, Volume2, VolumeX, Smartphone } from "lucide-react";
 import { playSound, playSuccessSound } from "@/lib/sound";
+import { useDeviceScreenFit } from "@/hooks/use-device-screen-fit";
 import {
   playWoodSeedClack,
   playLevelUpFanfare,
@@ -407,35 +408,41 @@ export function DameCheckersBoard({
     }
   }, [mode, game, playerLevel, onStateChange, onMatchComplete]);
 
+  const screenFit = useDeviceScreenFit();
+  const dameFit = screenFit.computeBoardStageMetrics("dame", { reservedTopPx: 38 });
+
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl bg-amber-950/40 border border-amber-500/30">
-        <div className="flex flex-wrap items-center gap-2.5">
-          <Badge className="bg-amber-500 text-slate-950 font-black text-xs px-3 py-1">
-            ♟️ GHANAIAN DAME (DRAUGHTS)
+    <div className="space-y-2 sm:space-y-3 max-w-xl mx-auto">
+      <div className="flex flex-wrap items-center justify-between gap-2 p-2 sm:p-2.5 rounded-2xl bg-amber-950/40 border border-amber-500/30">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Badge className="bg-amber-500 text-slate-950 font-black text-[10px] sm:text-xs px-2 py-0.5">
+            ♟️ GHANA DAME
           </Badge>
+          <span
+            title={`Auto-fitted for ${screenFit.deviceModelHint} (${dameFit.squareBoardSizePx}×${dameFit.squareBoardSizePx}px board)`}
+            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-sky-500/10 border border-sky-400/30 text-[9px] font-mono font-bold text-sky-300"
+          >
+            📱 {dameFit.fitSummaryLabel}
+          </span>
           {mode !== "p2p" && (
             <Badge
               variant="outline"
-              className="border-emerald-500/40 bg-emerald-500/10 text-emerald-300 text-[10px] font-bold gap-1"
+              className="border-emerald-500/40 bg-emerald-500/10 text-emerald-300 text-[9px] font-bold gap-1"
             >
-              <Brain className="w-3 h-3" />
-              {effectiveOpponentName} • {persona.humanSensePercent}% Human Sense (Medium)
+              <Brain className="w-2.5 h-2.5" />
+              {effectiveOpponentName} • {persona.humanSensePercent}% AI
             </Badge>
           )}
-          <span className="text-xs text-amber-200 font-semibold">
-            Mandatory jumps &amp; Crowned Kings!
-          </span>
         </div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1">
           <Button
             size="sm"
             variant="ghost"
             onClick={() => setShowRules((v) => !v)}
-            className="h-8 text-xs text-amber-300 gap-1"
+            className="h-7 px-2 text-[10px] text-amber-300 gap-1"
           >
-            <HelpCircle className="w-3.5 h-3.5" />
-            {showRules ? "Hide Rules" : "Dame Rules"}
+            <HelpCircle className="w-3 h-3" />
+            {showRules ? "Hide" : "Rules"}
           </Button>
           <Button
             size="sm"
@@ -446,7 +453,7 @@ export function DameCheckersBoard({
               setGameSensoryPreferences({ vibrationEnabled: next });
               if (next) triggerHapticSensor("aim_tick");
             }}
-            className={`h-8 px-2 text-xs ${vibrationEnabled ? "text-emerald-300" : "text-slate-500"}`}
+            className={`h-7 px-1.5 text-xs ${vibrationEnabled ? "text-emerald-300" : "text-slate-500"}`}
             title="Toggle Haptic Vibration Sensor"
           >
             <Smartphone className="w-3.5 h-3.5" />
@@ -459,16 +466,16 @@ export function DameCheckersBoard({
               setSoundEnabled(next);
               setGameSensoryPreferences({ soundEnabled: next });
             }}
-            className="h-8 w-8 p-0 text-amber-300"
+            className="h-7 w-7 p-0 text-amber-300"
             title={soundEnabled ? "Mute Sound" : "Enable Sound"}
           >
-            {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+            {soundEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
           </Button>
         </div>
       </div>
 
       {showRules && (
-        <div className="p-3.5 rounded-xl bg-slate-900/90 border border-amber-500/30 text-xs text-slate-200 space-y-1">
+        <div className="p-3 rounded-xl bg-slate-900/90 border border-amber-500/30 text-xs text-slate-200 space-y-1">
           <p className="font-black text-amber-400">🇬🇭 Ghanaian Dame Rules:</p>
           <ul className="list-disc pl-4 space-y-1">
             <li>Tap any of your glowing pieces, then tap a highlighted green target square to move diagonally.</li>
@@ -478,30 +485,36 @@ export function DameCheckersBoard({
         </div>
       )}
 
-      {/* Score & Turn Strip */}
-      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-xl bg-slate-900/90 border border-white/10 text-xs">
-        <div className="flex items-center gap-3">
-          <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/40 font-black">
-            🟡 {creatorName}: {game.capturedCount.creator}/12 Captured
+      {/* Compact Score & Turn Strip */}
+      <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-900/90 border border-white/10 text-[11px] sm:text-xs">
+        <div className="flex items-center gap-2">
+          <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/40 font-black text-[10px]">
+            🟡 {creatorName}: {game.capturedCount.creator}/12
           </Badge>
-          <Badge className="bg-rose-500/20 text-rose-300 border border-rose-500/40 font-black">
-            🔴 {effectiveOpponentName}: {game.capturedCount.opponent}/12 Captured
+          <Badge className="bg-rose-500/20 text-rose-300 border border-rose-500/40 font-black text-[10px]">
+            🔴 {effectiveOpponentName}: {game.capturedCount.opponent}/12
           </Badge>
         </div>
         <span className="font-black text-white">
           {game.winner
             ? game.winner === mySide
-              ? "🏆 YOU WON THE DAME CHALLENGE!"
+              ? "🏆 YOU WON!"
               : `🏅 ${game.winner === "creator" ? creatorName : effectiveOpponentName} Won!`
             : isMyTurn
-            ? "🟢 YOUR TURN — Select a glowing piece"
-            : `⏳ ${game.turn === "creator" ? creatorName : effectiveOpponentName}'s turn...`}
+            ? "🟢 YOUR TURN — Tap piece"
+            : `⏳ ${game.turn === "creator" ? creatorName : effectiveOpponentName}...`}
         </span>
       </div>
 
-      {/* 8x8 Ghanaian Dame Wooden Board */}
-      <div className="max-w-[440px] mx-auto p-3 rounded-2xl bg-[#3a1d0d] border-4 border-[#6b3719] shadow-2xl">
-        <div className="grid grid-cols-8 border-2 border-[#241006] rounded-lg overflow-hidden">
+      {/* 8x8 Ghanaian Dame Wooden Board (Mathematically Fitted to Device Screen) */}
+      <div
+        style={{
+          width: `${dameFit.squareBoardSizePx}px`,
+          height: `${dameFit.squareBoardSizePx}px`,
+        }}
+        className="mx-auto p-2 sm:p-2.5 rounded-2xl bg-[#3a1d0d] border-4 border-[#6b3719] shadow-2xl flex items-center justify-center"
+      >
+        <div className="w-full h-full grid grid-cols-8 border-2 border-[#241006] rounded-lg overflow-hidden">
           {game.board.map((row, r) =>
             row.map((cell, c) => {
               const isDark = (r + c) % 2 === 1;

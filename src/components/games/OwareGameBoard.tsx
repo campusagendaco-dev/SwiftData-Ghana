@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Volume2, VolumeX, HelpCircle, Sparkles, Flame, Smartphone, Brain } from "lucide-react";
 import { playSound, playSuccessSound } from "@/lib/sound";
+import { useDeviceScreenFit } from "@/hooks/use-device-screen-fit";
 import {
   playWoodSeedClack,
   playLevelUpFanfare,
@@ -1166,56 +1167,65 @@ export function OwareGameBoard({
       "inset 0 8px 16px rgba(0,0,0,0.75), inset 0 -3px 8px rgba(251,146,60,0.28), 0 2px 6px rgba(0,0,0,0.9)",
   };
 
+  const screenFit = useDeviceScreenFit();
+  const owareFit = screenFit.computeBoardStageMetrics("oware", { reservedTopPx: 38 });
+
   return (
-    <div className="space-y-4">
-      {/* Top Status, Rule Variant Selector & Score Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl bg-slate-900/95 border border-amber-500/30 shadow-lg">
-        <div className="flex flex-wrap items-center gap-2.5">
+    <div className="space-y-2 sm:space-y-3 max-w-4xl mx-auto">
+      {/* Top Status, Device Auto-Fit Badge, Rule Variant Selector & Score Header */}
+      <div className="flex flex-wrap items-center justify-between gap-2 p-2 sm:p-3 rounded-2xl bg-slate-900/95 border border-amber-500/30 shadow-lg">
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
           <img
             src="/oware-challenge-icon.jpg"
             alt="Ghanaian Oware Board"
-            className="w-8 h-8 rounded-lg object-cover shadow-md border border-amber-500/40"
+            className="w-6 h-6 sm:w-7 sm:h-7 rounded-lg object-cover shadow-md border border-amber-500/40"
           />
-          <Badge className="bg-gradient-to-r from-orange-600 to-amber-500 text-white font-black text-xs px-3 py-1">
-            🪨 GHANA OWARE ({variant === "nam-nam" ? "NAM-NAM RELAY" : "ABAPA TOURNAMENT"})
+          <Badge className="bg-gradient-to-r from-orange-600 to-amber-500 text-white font-black text-[10px] sm:text-xs px-2 py-0.5">
+            🪨 OWARE ({variant === "nam-nam" ? "NAM-NAM" : "ABAPA"})
           </Badge>
+          <span
+            title={`Auto-fitted for ${screenFit.deviceModelHint} (${owareFit.owarePitSizePx}px bowls)`}
+            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-sky-500/10 border border-sky-400/30 text-[9px] font-mono font-bold text-sky-300"
+          >
+            📱 {owareFit.fitSummaryLabel}
+          </span>
           {mode !== "p2p" && (
             <Badge
               variant="outline"
-              className="border-emerald-500/40 bg-emerald-500/10 text-emerald-300 text-[10px] font-bold gap-1"
+              className="border-emerald-500/40 bg-emerald-500/10 text-emerald-300 text-[9px] font-bold gap-1 hidden sm:inline-flex"
             >
-              <Brain className="w-3 h-3" />
-              {effectiveOpponentName} • {persona.humanSensePercent}% Human Sense (Medium)
+              <Brain className="w-2.5 h-2.5" />
+              {effectiveOpponentName} • {persona.humanSensePercent}% AI
             </Badge>
           )}
 
           {/* Rule Variant Switcher (Available before first move) */}
-          <div className="inline-flex items-center rounded-xl bg-slate-950 p-1 border border-white/10">
+          <div className="inline-flex items-center rounded-xl bg-slate-950 p-0.5 border border-white/10">
             <button
               type="button"
               disabled={isAnimating || (game.moveCount || 0) > 0}
               onClick={() => handleToggleVariant("nam-nam")}
-              className={`px-2.5 py-1 rounded-lg text-[10px] font-black transition-all ${
+              className={`px-2 py-0.5 rounded-lg text-[10px] font-black transition-all ${
                 variant === "nam-nam"
                   ? "bg-amber-500 text-slate-950 shadow"
                   : "text-slate-400 hover:text-white disabled:opacity-40"
               }`}
               title="Traditional Ghanaian Relay Sowing & 4-Seed Harvest"
             >
-              🇬🇭 Nam-Nam (4-Seed Relay)
+              🇬🇭 Nam-Nam
             </button>
             <button
               type="button"
               disabled={isAnimating || (game.moveCount || 0) > 0}
               onClick={() => handleToggleVariant("abapa")}
-              className={`px-2.5 py-1 rounded-lg text-[10px] font-black transition-all ${
+              className={`px-2 py-0.5 rounded-lg text-[10px] font-black transition-all ${
                 variant === "abapa"
                   ? "bg-amber-500 text-slate-950 shadow"
                   : "text-slate-400 hover:text-white disabled:opacity-40"
               }`}
               title="Tournament Single-Lap & 2/3 Seed Capture"
             >
-              🏆 Abapa (2/3 Capture)
+              🏆 Abapa
             </button>
           </div>
 
@@ -1224,24 +1234,24 @@ export function OwareGameBoard({
               aria-label="Computer difficulty"
               value={aiDifficultyDepth}
               onChange={(e) => setAiDifficultyDepth(Number(e.target.value))}
-              className="h-7 rounded-xl bg-slate-950 border border-white/15 px-2 text-[10px] font-black text-amber-300"
+              className="h-6 rounded-xl bg-slate-950 border border-white/15 px-1.5 text-[10px] font-black text-amber-300"
             >
-              <option value={2}>Easy (Depth 2)</option>
-              <option value={4}>Medium (Depth 4)</option>
-              <option value={6}>Hard (Depth 6)</option>
+              <option value={2}>Easy</option>
+              <option value={4}>Medium</option>
+              <option value={6}>Hard</option>
             </select>
           )}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1">
           <Button
             size="sm"
             variant="ghost"
             onClick={() => setShowRules((v) => !v)}
-            className="h-8 text-xs text-amber-300 hover:text-amber-200 gap-1"
+            className="h-7 px-2 text-[10px] text-amber-300 hover:text-amber-200 gap-1"
           >
-            <HelpCircle className="w-3.5 h-3.5" />
-            {showRules ? "Hide Rules" : "How to Play"}
+            <HelpCircle className="w-3 h-3" />
+            {showRules ? "Hide" : "Rules"}
           </Button>
           <Button
             size="sm"
@@ -1252,7 +1262,7 @@ export function OwareGameBoard({
               setGameSensoryPreferences({ vibrationEnabled: next });
               if (next) triggerHapticSensor("aim_tick");
             }}
-            className={`h-8 px-2 text-xs gap-1 ${
+            className={`h-7 px-1.5 text-xs gap-1 ${
               vibrationEnabled ? "text-emerald-300" : "text-slate-500"
             }`}
             title="Toggle Haptic Vibration Sensor"
@@ -1267,10 +1277,10 @@ export function OwareGameBoard({
               setMuted(nextMuted);
               setGameSensoryPreferences({ soundEnabled: !nextMuted });
             }}
-            className="h-8 w-8 p-0 text-amber-300"
+            className="h-7 w-7 p-0 text-amber-300"
             title={muted ? "Unmute" : "Mute"}
           >
-            {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+            {muted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
           </Button>
         </div>
       </div>
@@ -1371,11 +1381,11 @@ export function OwareGameBoard({
       </div>
 
       {/* AUTHENTIC HINGED MATTE-BLACK EBONY & CARVED TERRACOTTA OWARE BOARD */}
-      <div className="relative p-3 sm:p-5 rounded-[36px] bg-slate-950/90 border border-white/10 shadow-2xl">
-        <div className="grid grid-cols-1 lg:grid-cols-8 gap-4 items-center">
+      <div className="relative p-2 sm:p-4 rounded-[28px] sm:rounded-[36px] bg-slate-950/90 border border-white/10 shadow-2xl">
+        <div className="grid grid-cols-1 lg:grid-cols-8 gap-2.5 sm:gap-4 items-center">
           {/* Opponent Kulo Storehouse (Left Ebony Bowl) */}
           <div
-            className={`flex lg:flex-col items-center justify-between lg:justify-center p-3.5 rounded-[36px] border-2 transition-all shadow-[0_14px_28px_rgba(0,0,0,0.85),inset_0_2px_3px_rgba(255,255,255,0.08)] min-h-[115px] lg:min-h-[270px] ${
+            className={`flex lg:flex-col items-center justify-between lg:justify-center p-2.5 sm:p-3.5 rounded-[28px] sm:rounded-[36px] border-2 transition-all shadow-[0_14px_28px_rgba(0,0,0,0.85),inset_0_2px_3px_rgba(255,255,255,0.08)] min-h-[76px] lg:min-h-[240px] ${
               animStep?.harvestedBy === "opponent"
                 ? "border-amber-400 ring-4 ring-amber-400/30 scale-[1.03]"
                 : "border-[#35373d]"
@@ -1384,18 +1394,18 @@ export function OwareGameBoard({
               background: "linear-gradient(180deg, #242529 0%, #17181b 55%, #101114 100%)",
             }}
           >
-            <div className="text-center mb-2">
-              <p className="text-[10px] uppercase tracking-wider font-extrabold text-orange-300 truncate max-w-[115px]">
+            <div className="text-left lg:text-center lg:mb-2">
+              <p className="text-[10px] uppercase tracking-wider font-extrabold text-orange-300 truncate max-w-[130px] lg:max-w-[115px]">
                 {effectiveOpponentName}
               </p>
-              <p className="text-2xl sm:text-3xl font-black text-white font-mono">
+              <p className="text-xl sm:text-3xl font-black text-white font-mono leading-tight">
                 {displayScores.opponent}
                 <span className="text-xs text-slate-400">/25</span>
               </p>
               <span className="text-[9px] text-slate-400 font-semibold">Captured Seeds</span>
             </div>
             <div
-              className="w-16 h-16 sm:w-20 sm:h-20 rounded-full border-2 border-[#3a1a08] relative flex items-center justify-center"
+              className="w-12 h-12 sm:w-16 sm:h-16 lg:w-20 lg:h-20 rounded-full border-2 border-[#3a1a08] relative flex items-center justify-center shrink-0"
               style={terracottaBowlStyle}
             >
               <NickernutSeedCluster count={displayScores.opponent} pitSeedOffset={20} />
@@ -1408,23 +1418,23 @@ export function OwareGameBoard({
 
             {/* TOP EBONY PLANK — Opponent's 6 Carved Terracotta Bowls (North: 11..6) */}
             <div
-              className="relative px-3.5 sm:px-6 py-3.5 sm:py-5 rounded-[44px] sm:rounded-[64px] border-2 border-[#34363c] shadow-[0_14px_28px_rgba(0,0,0,0.9),inset_0_2px_4px_rgba(255,255,255,0.1)]"
+              className="relative px-2.5 sm:px-6 py-2.5 sm:py-4 rounded-[32px] sm:rounded-[64px] border-2 border-[#34363c] shadow-[0_14px_28px_rgba(0,0,0,0.9),inset_0_2px_4px_rgba(255,255,255,0.1)]"
               style={{
                 background: "linear-gradient(180deg, #26272b 0%, #191a1d 55%, #121316 100%)",
               }}
             >
-              <div className="flex items-center justify-between mb-2 px-3">
-                <span className="text-[10px] font-black uppercase tracking-wider text-orange-300/90">
-                  ← {effectiveOpponentName}&apos;s Row (Counter-Clockwise 12 → 7)
+              <div className="flex items-center justify-between mb-1.5 px-2 sm:px-3">
+                <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-orange-300/90">
+                  ← {effectiveOpponentName}&apos;s Row (12 → 7)
                 </span>
                 {mySide === "opponent" && isMyTurn && (
-                  <span className="text-[10px] font-black text-emerald-400 animate-pulse">
-                    Tap a bowl below ↓
+                  <span className="text-[9px] sm:text-[10px] font-black text-emerald-400 animate-pulse">
+                    Tap a bowl ↓
                   </span>
                 )}
               </div>
 
-              <div className="grid grid-cols-6 gap-2 sm:gap-3.5">
+              <div className="grid grid-cols-6 gap-1.5 sm:gap-3">
                 {northIndices.map((pitIdx) => {
                   const count = displayPits[pitIdx];
                   const isLegal =
@@ -1510,12 +1520,12 @@ export function OwareGameBoard({
 
             {/* BOTTOM EBONY PLANK — Creator's 6 Carved Terracotta Bowls (South: 0..5) */}
             <div
-              className="relative px-3.5 sm:px-6 py-3.5 sm:py-5 rounded-[44px] sm:rounded-[64px] border-2 border-[#34363c] shadow-[0_16px_32px_rgba(0,0,0,0.95),inset_0_2px_4px_rgba(255,255,255,0.1)]"
+              className="relative px-2.5 sm:px-6 py-2.5 sm:py-4 rounded-[32px] sm:rounded-[64px] border-2 border-[#34363c] shadow-[0_16px_32px_rgba(0,0,0,0.95),inset_0_2px_4px_rgba(255,255,255,0.1)]"
               style={{
                 background: "linear-gradient(180deg, #26272b 0%, #191a1d 55%, #121316 100%)",
               }}
             >
-              <div className="grid grid-cols-6 gap-2 sm:gap-3.5">
+              <div className="grid grid-cols-6 gap-1.5 sm:gap-3">
                 {southIndices.map((pitIdx) => {
                   const count = displayPits[pitIdx];
                   const isLegal =
@@ -1585,13 +1595,13 @@ export function OwareGameBoard({
                 })}
               </div>
 
-              <div className="flex items-center justify-between mt-3 px-3">
-                <span className="text-[10px] font-black uppercase tracking-wider text-orange-300/90">
-                  {creatorName}&apos;s Row (Counter-Clockwise 1 → 6 {mySide === "creator" ? "• YOU" : ""}) →
+              <div className="flex items-center justify-between mt-2 px-2 sm:px-3">
+                <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-orange-300/90">
+                  {creatorName}&apos;s Row (1 → 6 {mySide === "creator" ? "• YOU" : ""}) →
                 </span>
                 {mySide === "creator" && isMyTurn && (
-                  <span className="text-[10px] font-black text-emerald-400 animate-pulse">
-                    Tap any glowing terracotta bowl ↑
+                  <span className="text-[9px] sm:text-[10px] font-black text-emerald-400 animate-pulse">
+                    Tap a bowl ↑
                   </span>
                 )}
               </div>
@@ -1600,7 +1610,7 @@ export function OwareGameBoard({
 
           {/* Creator Kulo Storehouse (Right Ebony Bowl) */}
           <div
-            className={`flex lg:flex-col items-center justify-between lg:justify-center p-3.5 rounded-[36px] border-2 transition-all shadow-[0_14px_28px_rgba(0,0,0,0.85),inset_0_2px_3px_rgba(255,255,255,0.08)] min-h-[115px] lg:min-h-[270px] ${
+            className={`flex lg:flex-col items-center justify-between lg:justify-center p-2.5 sm:p-3.5 rounded-[28px] sm:rounded-[36px] border-2 transition-all shadow-[0_14px_28px_rgba(0,0,0,0.85),inset_0_2px_3px_rgba(255,255,255,0.08)] min-h-[76px] lg:min-h-[240px] ${
               animStep?.harvestedBy === "creator"
                 ? "border-emerald-400 ring-4 ring-emerald-400/30 scale-[1.03]"
                 : "border-[#35373d]"
@@ -1609,18 +1619,18 @@ export function OwareGameBoard({
               background: "linear-gradient(180deg, #242529 0%, #17181b 55%, #101114 100%)",
             }}
           >
-            <div className="text-center mb-2">
-              <p className="text-[10px] uppercase tracking-wider font-extrabold text-emerald-400 truncate max-w-[115px]">
+            <div className="text-left lg:text-center lg:mb-2">
+              <p className="text-[10px] uppercase tracking-wider font-extrabold text-emerald-400 truncate max-w-[130px] lg:max-w-[115px]">
                 {creatorName}
               </p>
-              <p className="text-2xl sm:text-3xl font-black text-emerald-300 font-mono">
+              <p className="text-xl sm:text-3xl font-black text-emerald-300 font-mono leading-tight">
                 {displayScores.creator}
                 <span className="text-xs text-slate-400">/25</span>
               </p>
               <span className="text-[9px] text-slate-400 font-semibold">Captured Seeds</span>
             </div>
             <div
-              className="w-16 h-16 sm:w-20 sm:h-20 rounded-full border-2 border-[#3a1a08] relative flex items-center justify-center"
+              className="w-12 h-12 sm:w-16 sm:h-16 lg:w-20 lg:h-20 rounded-full border-2 border-[#3a1a08] relative flex items-center justify-center shrink-0"
               style={terracottaBowlStyle}
             >
               <NickernutSeedCluster count={displayScores.creator} pitSeedOffset={40} />

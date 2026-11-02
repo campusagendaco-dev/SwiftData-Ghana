@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Volume2, VolumeX, Smartphone, ChevronLeft, Share2, RotateCcw, Trophy } from "lucide-react";
+import { useDeviceScreenFit } from "@/hooks/use-device-screen-fit";
 import {
   playFruitSliceSound,
   playBombExplosionSound,
@@ -1251,25 +1252,36 @@ export function MarketSlashBoard({
     }
   };
 
+  const screenFit = useDeviceScreenFit();
+  const slashFit = screenFit.computeBoardStageMetrics("slash", { reservedTopPx: 38 });
+
   return (
     <div className="max-w-md mx-auto rounded-[28px] bg-[#1a120b] border-2 border-[#3a2819] shadow-[0_24px_60px_rgba(0,0,0,0.85)] overflow-hidden select-none">
-      {/* ── Top Bar: < Games | Market Slash | X pts (Exact Match to Video) ── */}
-      <div className="px-3.5 py-3 bg-[#1d140c] border-b border-white/10 flex items-center justify-between gap-2">
+      {/* ── Top Bar: < Games | Market Slash | Device Badge | X pts ── */}
+      <div className="px-3 py-2 bg-[#1d140c] border-b border-white/10 flex items-center justify-between gap-1.5">
         <button
           type="button"
           onClick={() => (onBackToLobby ? onBackToLobby() : handleRestartGame())}
-          className="px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/15 text-xs font-bold text-slate-200 flex items-center gap-1 transition-all cursor-pointer"
+          className="px-2.5 py-1 rounded-full bg-white/10 hover:bg-white/15 text-xs font-bold text-slate-200 flex items-center gap-1 transition-all cursor-pointer"
         >
           <ChevronLeft className="w-3.5 h-3.5" />
           Games
         </button>
 
-        <div className="text-base sm:text-lg font-black tracking-tight">
-          <span className="text-white">Market </span>
-          <span className="text-amber-400">Slash</span>
+        <div className="flex items-center gap-1.5">
+          <div className="text-sm sm:text-base font-black tracking-tight">
+            <span className="text-white">Market </span>
+            <span className="text-amber-400">Slash</span>
+          </div>
+          <span
+            title={`Auto-fitted for ${screenFit.deviceModelHint} (${slashFit.slashCanvasHeightPx}px canvas)`}
+            className="hidden sm:inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-sky-500/10 border border-sky-400/30 text-[8px] font-mono font-bold text-sky-300"
+          >
+            📱 {slashFit.fitSummaryLabel}
+          </span>
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1">
           <button
             type="button"
             onClick={() => {
@@ -1301,16 +1313,16 @@ export function MarketSlashBoard({
             {muted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
           </button>
 
-          <div className="px-3 py-1 rounded-full bg-[#2a1d11] border border-amber-500/70 text-amber-400 font-black text-xs sm:text-sm font-mono shadow-inner">
+          <div className="px-2.5 py-0.5 rounded-full bg-[#2a1d11] border border-amber-500/70 text-amber-400 font-black text-xs font-mono shadow-inner">
             {score} pts
           </div>
         </div>
       </div>
 
-      {/* ── 5-Segment Stall Progress Bar & 3-Strike Miss Counter (Exact Match to Video) ── */}
-      <div className="px-4 py-2.5 bg-[#22170e] border-b border-white/10 flex items-center justify-between gap-3">
+      {/* ── 5-Segment Stall Progress Bar & 3-Strike Miss Counter ── */}
+      <div className="px-3.5 py-2 bg-[#22170e] border-b border-white/10 flex items-center justify-between gap-2">
         <div className="flex-1 space-y-1">
-          <div className="grid grid-cols-5 gap-1.5 max-w-[200px]">
+          <div className="grid grid-cols-5 gap-1.5 max-w-[180px]">
             {STALL_LEVELS.map((s, idx) => {
               const completed = idx < stallIdx;
               const current = idx === stallIdx;
@@ -1328,10 +1340,10 @@ export function MarketSlashBoard({
               );
             })}
           </div>
-          <p className="text-[11px] font-bold text-amber-100/80">
+          <p className="text-[10px] font-bold text-amber-100/80">
             {currentStallConfig.level}/5 · {currentStallConfig.name}
             {mode !== "p2p" && (
-              <span className="ml-2 text-[10px] text-emerald-300 font-semibold">
+              <span className="ml-1.5 text-[9px] text-emerald-300 font-semibold">
                 • Beat {effectiveOpponentName} ({aiTargetScore.current} pts)
               </span>
             )}
@@ -1356,8 +1368,11 @@ export function MarketSlashBoard({
         </div>
       </div>
 
-      {/* ── Main Playfield Canvas Container ── */}
-      <div className="relative w-full aspect-[3/4] max-h-[580px] bg-[#5c351b] overflow-hidden">
+      {/* ── Main Playfield Canvas Container (Mathematically Fitted to Device Screen Height) ── */}
+      <div
+        style={{ height: `${slashFit.slashCanvasHeightPx}px` }}
+        className="relative w-full bg-[#5c351b] overflow-hidden"
+      >
         <canvas
           ref={canvasRef}
           width={420}

@@ -2145,7 +2145,7 @@ export default function ChallengeArena() {
               </div>
 
               <div className="flex items-center gap-1 shrink-0">
-                <span className="hidden md:inline-flex items-center gap-1 px-1.5 py-0.2 rounded bg-sky-500/10 border border-sky-400/30 text-[8px] font-mono text-sky-300">
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded bg-sky-500/10 border border-sky-400/30 text-[8px] font-mono text-sky-300">
                   📱 {screenFit.deviceBrand} {screenFit.availWidth}×{screenFit.availHeight}
                 </span>
 

@@ -16,6 +16,7 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { playSuccessSound } from "@/lib/sound";
+import { useDeviceScreenFit } from "@/hooks/use-device-screen-fit";
 import {
   playDiceRattleSound,
   playWoodSeedClack,
@@ -856,28 +857,31 @@ export function GhanaLudoBoard({
     return list;
   }, [engine.players, engine.tokens, resolveVisualToken]);
 
+  const screenFit = useDeviceScreenFit();
+  const ludoFit = screenFit.computeBoardStageMetrics("ludo", { reservedTopPx: 38 });
+
   return (
-    <div className="space-y-4">
-      {/* ── Top Control Header: 52-Cell Rule Badge, 2P/3P/4P Selector, Computers/Friends, New Game & Audio/Haptics ── */}
-      <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl bg-slate-900/95 border border-white/10 shadow-lg">
-        <div className="flex flex-wrap items-center gap-2">
+    <div className="space-y-2 sm:space-y-3 max-w-2xl mx-auto">
+      {/* ── Top Control Header: 52-Cell Rule Badge, Device Auto-Fit Badge, 2P/3P/4P Selector, Computers/Friends, New Game & Audio/Haptics ── */}
+      <div className="flex flex-wrap items-center justify-between gap-1.5 sm:gap-2 p-2 sm:p-2.5 rounded-2xl bg-slate-900/95 border border-white/10 shadow-lg">
+        <div className="flex flex-wrap items-center gap-1.5">
           <img
             src="/ludo-challenge-icon.png"
             alt="Ghana Ludo"
-            className="w-8 h-8 rounded-lg object-cover shadow-md border border-white/20"
+            className="w-6 h-6 sm:w-7 sm:h-7 rounded-lg object-cover shadow-md border border-white/20"
           />
-          <Badge className="bg-amber-500 text-slate-950 font-black text-xs px-2.5 py-0.5">
-            🎲 PRO 52-CELL LUDO ENGINE
+          <Badge className="bg-amber-500 text-slate-950 font-black text-[10px] sm:text-xs px-2 py-0.5">
+            🎲 52-CELL LUDO
           </Badge>
-          <Badge
-            variant="outline"
-            className="border-emerald-500/40 bg-emerald-500/10 text-emerald-300 text-[10px] font-bold gap-1"
+          <span
+            title={`Auto-fitted for ${screenFit.deviceModelHint} (${ludoFit.squareBoardSizePx}×${ludoFit.squareBoardSizePx}px board)`}
+            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-sky-500/10 border border-sky-400/30 text-[9px] font-mono font-bold text-sky-300"
           >
-            <Shield className="w-3 h-3" /> 8 Safe Squares • Step-by-Step • Exact Home Roll
-          </Badge>
+            📱 {ludoFit.fitSummaryLabel}
+          </span>
 
           {/* 2P / 3P / 4P Seat Switcher */}
-          <div className="inline-flex items-center rounded-xl bg-slate-950 p-1 border border-white/10 gap-1">
+          <div className="inline-flex items-center rounded-xl bg-slate-950 p-0.5 border border-white/10 gap-0.5">
             {([2, 3, 4] as const).map((cnt) => {
               const active = engine.players.length === cnt;
               return (
@@ -886,14 +890,14 @@ export function GhanaLudoBoard({
                   type="button"
                   disabled={mode === "p2p" && engine.moveCount > 0}
                   onClick={() => handleSelectPlayerCount(cnt)}
-                  className={`px-2.5 py-1 rounded-lg text-[10px] font-black transition-all flex items-center gap-1 cursor-pointer ${
+                  className={`px-2 py-0.5 rounded-lg text-[10px] font-black transition-all flex items-center gap-1 cursor-pointer ${
                     active
                       ? "bg-amber-500 text-slate-950 shadow"
                       : "text-slate-400 hover:text-white disabled:opacity-40"
                   }`}
                   title="Select 2, 3, or 4 Players"
                 >
-                  <Users className="w-3 h-3" /> {cnt}P
+                  <Users className="w-2.5 h-2.5" /> {cnt}P
                 </button>
               );
             })}
@@ -901,7 +905,7 @@ export function GhanaLudoBoard({
 
           {/* Play Computers vs Play Friends Selector */}
           {mode !== "p2p" && (
-            <div className="inline-flex items-center rounded-xl bg-slate-950 p-1 border border-white/10 gap-1">
+            <div className="inline-flex items-center rounded-xl bg-slate-950 p-0.5 border border-white/10 gap-0.5">
               {(["computers", "friends"] as const).map((opt) => {
                 const active = opponentType === opt;
                 return (
@@ -909,13 +913,13 @@ export function GhanaLudoBoard({
                     key={opt}
                     type="button"
                     onClick={() => handleSelectOpponentType(opt)}
-                    className={`px-2.5 py-1 rounded-lg text-[10px] font-black transition-all cursor-pointer ${
+                    className={`px-2 py-0.5 rounded-lg text-[10px] font-black transition-all cursor-pointer ${
                       active
                         ? "bg-indigo-500 text-white shadow"
                         : "text-slate-400 hover:text-white"
                     }`}
                   >
-                    {opt === "computers" ? "🤖 Play Computers" : "👥 Play Friends"}
+                    {opt === "computers" ? "🤖 AI" : "👥 Friends"}
                   </button>
                 );
               })}
@@ -923,7 +927,7 @@ export function GhanaLudoBoard({
           )}
         </div>
 
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1">
           {mode !== "p2p" && (
             <Button
               size="sm"
@@ -931,10 +935,10 @@ export function GhanaLudoBoard({
               onClick={() =>
                 startNewLudoGame((engine.players.length as 2 | 3 | 4) || 2, opponentType)
               }
-              className="h-8 rounded-xl border-indigo-500/40 bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-200 text-xs font-black gap-1.5"
+              className="h-7 px-2 rounded-xl border-indigo-500/40 bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-200 text-[10px] font-black gap-1"
             >
-              <RotateCcw className="w-3.5 h-3.5" />
-              New Game
+              <RotateCcw className="w-3 h-3" />
+              New
             </Button>
           )}
 
@@ -942,20 +946,20 @@ export function GhanaLudoBoard({
             size="sm"
             variant="outline"
             onClick={() => setShowInviteBar((v) => !v)}
-            className="h-8 rounded-xl border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 text-xs font-black gap-1.5"
+            className="h-7 px-2 rounded-xl border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 text-[10px] font-black gap-1"
           >
-            <UserPlus className="w-3.5 h-3.5" />
-            Invite Players ({engine.players.length}/4)
+            <UserPlus className="w-3 h-3" />
+            Invite ({engine.players.length}/4)
           </Button>
 
           <Button
             size="sm"
             variant="ghost"
             onClick={() => setShowRules((v) => !v)}
-            className="h-8 text-xs text-amber-300 hover:text-amber-200 gap-1"
+            className="h-7 px-2 text-[10px] text-amber-300 hover:text-amber-200 gap-1"
           >
-            <HelpCircle className="w-3.5 h-3.5" />
-            {showRules ? "Hide Rules" : "Rules"}
+            <HelpCircle className="w-3 h-3" />
+            {showRules ? "Hide" : "Rules"}
           </Button>
 
           <Button
@@ -967,7 +971,7 @@ export function GhanaLudoBoard({
               setGameSensoryPreferences({ vibrationEnabled: next });
               if (next) triggerHapticSensor("aim_tick");
             }}
-            className={`h-8 px-2 text-xs ${
+            className={`h-7 px-1.5 text-xs ${
               vibrationEnabled ? "text-emerald-300" : "text-slate-500"
             }`}
             title="Toggle Haptic Vibration"
@@ -983,7 +987,7 @@ export function GhanaLudoBoard({
               setSoundEnabled(next);
               setGameSensoryPreferences({ soundEnabled: next });
             }}
-            className="h-8 px-2 text-xs text-amber-300"
+            className="h-7 px-1.5 text-xs text-amber-300"
             title="Toggle Sound"
           >
             {soundEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
@@ -1083,7 +1087,7 @@ export function GhanaLudoBoard({
       )}
 
       {/* ── Player Scorecards & Seat Status Bar (2–4 Players) ── */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+      <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
         {(["RED", "GREEN", "YELLOW", "BLUE"] as LudoPlayerId[]).map((color) => {
           const isPlaying = engine.players.includes(color);
           const isTurn = engine.currentPlayer === color && engine.matchStatus === "IN_PROGRESS";
@@ -1098,7 +1102,7 @@ export function GhanaLudoBoard({
           return (
             <div
               key={color}
-              className={`p-2.5 rounded-2xl border transition-all ${
+              className={`px-2 py-1.5 rounded-xl border transition-all ${
                 !isPlaying
                   ? "bg-slate-950/40 border-white/5 opacity-45"
                   : isTurn
@@ -1106,17 +1110,17 @@ export function GhanaLudoBoard({
                   : "bg-slate-900/90 border-white/10"
               }`}
             >
-              <div className="flex items-center justify-between gap-1 mb-1">
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <span className={`w-3 h-3 rounded-full ${theme.bg} border border-white shrink-0`} />
-                  <span className="text-xs font-black text-white truncate">
+              <div className="flex items-center justify-between gap-1">
+                <div className="flex items-center gap-1 min-w-0">
+                  <span className={`w-2.5 h-2.5 rounded-full ${theme.bg} border border-white shrink-0`} />
+                  <span className="text-[10px] sm:text-xs font-black text-white truncate">
                     {meta?.name || color}
                   </span>
                 </div>
                 {isPlaying ? (
-                  <Badge className="bg-black/40 text-white border border-white/15 text-[9px] font-mono">
-                    🏠 {finishedCount}/4
-                  </Badge>
+                  <span className="text-[9px] font-mono font-bold text-amber-300 shrink-0">
+                    🏠{finishedCount}/4
+                  </span>
                 ) : (
                   <button
                     type="button"
@@ -1125,22 +1129,22 @@ export function GhanaLudoBoard({
                       setInviteSeatColor(color);
                       setShowInviteBar(true);
                     }}
-                    className="text-[9px] font-bold text-amber-400 hover:underline cursor-pointer"
+                    className="text-[8px] font-bold text-amber-400 hover:underline cursor-pointer shrink-0"
                   >
-                    + Invite
+                    +Invite
                   </button>
                 )}
               </div>
 
-              <div className="flex items-center justify-between text-[10px] text-slate-400">
+              <div className="hidden sm:flex items-center justify-between text-[9px] text-slate-400 mt-0.5">
                 <span>
                   {isPlaying
-                    ? `On Track: ${activeCount} • Base: ${4 - finishedCount - activeCount}`
+                    ? `Track: ${activeCount} • Base: ${4 - finishedCount - activeCount}`
                     : "Seat Open"}
                 </span>
                 {isTurn && (
                   <span className="font-black text-amber-300 animate-pulse">
-                    {engine.diceResult ? `Rolled ${engine.diceResult}` : "Rolling..."}
+                    {engine.diceResult ? `🎲 ${engine.diceResult}` : "Roll"}
                   </span>
                 )}
               </div>
@@ -1149,9 +1153,15 @@ export function GhanaLudoBoard({
         })}
       </div>
 
-      {/* ── Main 15x15 Ludo Cross Board & 3D Blue Dice Stage ── */}
-      <div className="p-3 sm:p-5 rounded-3xl bg-gradient-to-b from-slate-900 via-slate-950 to-slate-900 border-2 border-slate-800 shadow-[0_20px_50px_rgba(0,0,0,0.85)]">
-        <div className="relative max-w-[540px] mx-auto aspect-square rounded-2xl bg-[#eef6fb] p-1.5 sm:p-2.5 shadow-2xl border-4 border-slate-300">
+      {/* ── Main 15x15 Ludo Cross Board & 3D Blue Dice Stage (Mathematically Fitted to Device Screen) ── */}
+      <div className="p-2 sm:p-3.5 rounded-3xl bg-gradient-to-b from-slate-900 via-slate-950 to-slate-900 border-2 border-slate-800 shadow-[0_20px_50px_rgba(0,0,0,0.85)]">
+        <div
+          style={{
+            width: `${ludoFit.squareBoardSizePx}px`,
+            height: `${ludoFit.squareBoardSizePx}px`,
+          }}
+          className="relative mx-auto aspect-square rounded-2xl bg-[#eef6fb] p-1 sm:p-2 shadow-2xl border-4 border-slate-300"
+        >
           <div className="w-full h-full grid grid-cols-15 grid-rows-15 border-2 border-slate-900 bg-white relative">
             {/* 1. GREEN YARD (Top-Left 6x6: rows 0..5, cols 0..5) */}
             <div
@@ -1473,76 +1483,78 @@ export function GhanaLudoBoard({
         </div>
 
         {/* ── Interactive 3D Royal-Blue Dice Dock & Turn Action Bar ── */}
-        <div className="mt-4 p-3.5 sm:p-4 rounded-2xl bg-slate-950/90 border border-white/10 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="space-y-1 text-center sm:text-left">
-            <div className="flex items-center justify-center sm:justify-start gap-2 flex-wrap">
+        <div className="mt-2.5 p-2.5 sm:p-3.5 rounded-2xl bg-slate-950/90 border border-white/10 flex flex-row items-center justify-between gap-2.5">
+          <div className="space-y-0.5 min-w-0 flex-1">
+            <div className="flex items-center gap-1.5 flex-wrap">
               <span
-                className={`w-2.5 h-2.5 rounded-full ${
+                className={`w-2 h-2 rounded-full shrink-0 ${
                   isCurrentSeatHumanControlled ? "bg-emerald-400 animate-ping" : "bg-amber-400"
                 }`}
               />
-              <span className="text-xs sm:text-sm font-black text-white">
+              <span className="text-[11px] sm:text-xs font-black text-white truncate">
                 {engine.winner ? (
-                  `🏆 ${engine.playerMeta[engine.winner]?.name || engine.winner} WON THE LUDO MATCH (4/4 HOME)!`
+                  `🏆 ${engine.playerMeta[engine.winner]?.name || engine.winner} WON THE LUDO MATCH!`
                 ) : isCurrentSeatHumanControlled ? (
                   engine.diceResult === null ? (
-                    `🟢 YOUR TURN (${engine.playerMeta[engine.currentPlayer]?.name}) — Tap the 3D Blue Dice to Roll!`
+                    `🟢 YOUR TURN (${engine.playerMeta[engine.currentPlayer]?.name}) — Tap Dice!`
                   ) : (
-                    `🎯 Rolled ${engine.diceResult}! Tap any of your ${engine.legalMoves.length} highlighted ${engine.currentPlayer} token(s) to move!`
+                    `🎯 Rolled ${engine.diceResult}! Tap highlighted ${engine.currentPlayer} token!`
                   )
                 ) : (
-                  `⏳ ${engine.playerMeta[engine.currentPlayer]?.name || engine.currentPlayer} is playing...`
+                  `⏳ ${engine.playerMeta[engine.currentPlayer]?.name || engine.currentPlayer} playing...`
                 )}
               </span>
               {engine.consecutiveSixes > 0 && (
-                <Badge className="bg-amber-500/20 text-amber-300 border border-amber-400/40 text-[10px]">
-                  🔥 Sixes Streak: {engine.consecutiveSixes}/3
+                <Badge className="bg-amber-500/20 text-amber-300 border border-amber-400/40 text-[9px] px-1.5 py-0">
+                  🔥 6s: {engine.consecutiveSixes}/3
                 </Badge>
               )}
             </div>
-            <p className="text-xs text-amber-300/90 font-medium">{ludo.lastAction}</p>
+            <p className="text-[10px] sm:text-xs text-amber-300/90 font-medium truncate">
+              {ludo.lastAction}
+            </p>
           </div>
 
           {/* 3D Royal-Blue Dice & Legal Token Quick-Select Pills */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 shrink-0">
             {isCurrentSeatHumanControlled &&
               !isAnimatingMove &&
               engine.diceResult !== null &&
               engine.legalMoves.length > 0 && (
-                <div className="flex flex-wrap items-center gap-1.5">
+                <div className="flex flex-wrap items-center gap-1">
                   {engine.legalMoves.map((m) => (
                     <Button
                       key={m.tokenId}
                       size="sm"
                       onClick={() => handleSelectTokenMove(m.owner, m.tokenIndex)}
-                      className="h-9 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs shadow"
+                      className="h-7 px-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-[10px] shadow"
                     >
-                      Move {m.owner[0]}
+                      {m.owner[0]}
                       {m.tokenIndex + 1}{" "}
                       {m.fromStatus === "BASE"
-                        ? "(Launch)"
+                        ? "(Out)"
                         : m.willCaptureTokenIds.length > 0
-                        ? "(💥 Capture!)"
+                        ? "(💥)"
                         : m.toStatus === "FINISHED"
-                        ? "(🏠 Finish!)"
+                        ? "(🏠)"
                         : `(+${engine.diceResult})`}
                     </Button>
                   ))}
                 </div>
               )}
 
-            <div className="flex items-center gap-3 bg-slate-900/90 px-4 py-2 rounded-2xl border border-indigo-500/30 shadow-inner">
-              <div className="text-right">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-indigo-300">
+            <div className="flex items-center gap-2 bg-slate-900/90 px-2.5 py-1.5 rounded-2xl border border-indigo-500/30 shadow-inner">
+              <div className="text-right hidden sm:block">
+                <p className="text-[9px] font-bold uppercase tracking-wider text-indigo-300">
                   {rolling
                     ? "Rolling..."
                     : engine.diceResult
                     ? `Rolled: ${engine.diceResult}`
                     : "3D Dice"}
                 </p>
-                <p className="text-[11px] font-semibold text-slate-400">
+                <p className="text-[10px] font-semibold text-slate-400">
                   {isCurrentSeatHumanControlled && engine.diceResult === null && !isAnimatingMove
-                    ? "Tap cube to roll"
+                    ? "Tap to roll"
                     : engine.diceResult !== null
                     ? "Choose token"
                     : "Waiting..."}
@@ -1564,31 +1576,19 @@ export function GhanaLudoBoard({
           </div>
         </div>
 
-        {/* ── Recent Turn History Log (Section 10 Requirement) ── */}
-        {engine.turnHistory.length > 0 && (
-          <div className="mt-3 p-3 rounded-xl bg-slate-950/70 border border-white/5 space-y-1">
-            <p className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1">
-              <History className="w-3 h-3 text-amber-400" /> Validated Move History (Last 3 Turns)
-            </p>
-            <div className="space-y-1">
-              {engine.turnHistory
-                .slice(-3)
-                .reverse()
-                .map((h) => (
-                  <div
-                    key={h.moveNumber}
-                    className="flex items-center justify-between text-[11px] text-slate-300"
-                  >
-                    <span>
-                      <strong className="text-amber-300 font-mono">#{h.moveNumber}</strong>{" "}
-                      {h.summary}
-                    </span>
-                    <span className="font-mono text-[10px] text-slate-400">
-                      🎲 {h.diceValue}
-                    </span>
-                  </div>
-                ))}
-            </div>
+        {/* ── Recent Turn History Log (Shown on non-short viewports) ── */}
+        {!ludoFit.isShortViewport && engine.turnHistory.length > 0 && (
+          <div className="mt-2 px-3 py-1.5 rounded-xl bg-slate-950/70 border border-white/5 flex items-center justify-between gap-2 text-[10px] text-slate-300">
+            <span className="truncate">
+              <History className="w-3 h-3 text-amber-400 inline mr-1" />
+              <strong className="text-amber-300 font-mono">
+                #{engine.turnHistory[engine.turnHistory.length - 1].moveNumber}
+              </strong>{" "}
+              {engine.turnHistory[engine.turnHistory.length - 1].summary}
+            </span>
+            <span className="font-mono text-slate-400 shrink-0">
+              🎲 {engine.turnHistory[engine.turnHistory.length - 1].diceValue}
+            </span>
           </div>
         )}
       </div>
