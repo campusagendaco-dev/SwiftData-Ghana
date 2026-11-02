@@ -399,7 +399,10 @@ export function GhanaLudoBoard({
     if (
       initialState &&
       initialState.engine &&
-      (initialState.moveCount || 0) > (ludo.moveCount || 0)
+      ((initialState.moveCount || 0) > (ludo.moveCount || 0) ||
+        ((initialState.moveCount || 0) === (ludo.moveCount || 0) &&
+          (initialState.engine.currentPlayer !== ludo.engine.currentPlayer ||
+            initialState.engine.diceResult !== ludo.engine.diceResult)))
     ) {
       gameSessionIdRef.current += 1;
       setIsAnimatingMove(false);
@@ -409,7 +412,7 @@ export function GhanaLudoBoard({
         setLastRolledVisual(initialState.engine.diceResult);
       }
     }
-  }, [initialState, ludo.moveCount]);
+  }, [initialState, ludo.moveCount, ludo.engine.currentPlayer, ludo.engine.diceResult]);
 
   const engine = ludo.engine;
   const myColor: LudoPlayerId = mySide === "creator" ? "RED" : "YELLOW";
@@ -439,6 +442,7 @@ export function GhanaLudoBoard({
     if (mode === "p2p") {
       if (mySide === "creator" && activeColor === "RED") return true;
       if (mySide === "opponent" && activeColor !== "RED") return true;
+      if ((engine.moveCount || 0) === 0 && engine.diceResult === null) return true;
       const meta = engine.playerMeta[activeColor];
       return !meta?.isAI && mySide === "creator";
     }
@@ -640,8 +644,17 @@ export function GhanaLudoBoard({
     ) {
       return;
     }
-    void animateAndExecuteRoll(engine);
-  }, [animateAndExecuteRoll, engine, isAnimatingMove, isCurrentSeatHumanControlled, rolling]);
+    let targetEngine = engine;
+    if (mode === "p2p" && (engine.moveCount || 0) === 0 && engine.currentPlayer !== myColor) {
+      const mySeatIdx = Math.max(0, engine.players.indexOf(myColor));
+      targetEngine = {
+        ...engine,
+        currentPlayer: myColor,
+        currentPlayerIndex: mySeatIdx,
+      };
+    }
+    void animateAndExecuteRoll(targetEngine);
+  }, [animateAndExecuteRoll, engine, isAnimatingMove, isCurrentSeatHumanControlled, mode, myColor, rolling]);
 
   // Step-by-Step Animated Token Movement (matches reference `moveToken`: 300ms Base launch, 130ms per step, 500ms capture pause)
   const executeAnimatedTokenMove = useCallback(

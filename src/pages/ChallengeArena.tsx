@@ -424,6 +424,46 @@ export default function ChallengeArena() {
     }
   }, [user]);
 
+  const [myJoinedSides, setMyJoinedSides] = useState<Record<string, "creator" | "opponent">>(() => {
+    try {
+      const saved = window.localStorage.getItem("swiftdata_arena_my_sides_v1");
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  const recordMyChallengeSide = useCallback((challengeId: string, side: "creator" | "opponent") => {
+    if (!challengeId) return;
+    setMyJoinedSides((prev) => {
+      const next = { ...prev, [challengeId]: side };
+      try {
+        window.localStorage.setItem("swiftdata_arena_my_sides_v1", JSON.stringify(next));
+      } catch {
+        // ignore storage error
+      }
+      return next;
+    });
+  }, []);
+
+  const resolveMySideForChallenge = useCallback(
+    (chal: any): "creator" | "opponent" | null => {
+      if (!chal) return null;
+      if (myJoinedSides[chal.id]) return myJoinedSides[chal.id];
+      if (user?.id && chal.creator_id === user.id) return "creator";
+      if (user?.id && chal.opponent_id === user.id) return "opponent";
+      const cleanMyPhone = String(playerPhone || profile?.phone || "").replace(/\D/g, "").slice(-9);
+      if (cleanMyPhone.length >= 9) {
+        const cleanCreatorPhone = String(chal.creator_phone || "").replace(/\D/g, "").slice(-9);
+        const cleanOpponentPhone = String(chal.opponent_phone || "").replace(/\D/g, "").slice(-9);
+        if (cleanCreatorPhone === cleanMyPhone) return "creator";
+        if (cleanOpponentPhone === cleanMyPhone) return "opponent";
+      }
+      return null;
+    },
+    [myJoinedSides, user?.id, playerPhone, profile?.phone]
+  );
+
   const fetchLobby = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
@@ -432,7 +472,30 @@ export default function ChallengeArena() {
       });
       if (!error && data?.success) {
         if (data.settings) setSettings(data.settings);
-        if (Array.isArray(data.challenges)) setChallenges(data.challenges);
+        if (Array.isArray(data.challenges)) {
+          setChallenges(data.challenges);
+          setActiveChallenge((curr: any) => {
+            if (!curr) return curr;
+            const fresh = data.challenges.find((c: any) => c.id === curr.id);
+            if (!fresh) return curr;
+            const currMoves =
+              Number(curr.board_state?.shotCount || 0) +
+              Number(curr.board_state?.moveCount || 0) +
+              Number(curr.board_state?.engine?.moveCount || 0);
+            const freshMoves =
+              Number(fresh.board_state?.shotCount || 0) +
+              Number(fresh.board_state?.moveCount || 0) +
+              Number(fresh.board_state?.engine?.moveCount || 0);
+            if (
+              fresh.status !== curr.status ||
+              freshMoves > currMoves ||
+              (freshMoves === currMoves && fresh.current_turn !== curr.current_turn)
+            ) {
+              return fresh;
+            }
+            return curr;
+          });
+        }
         if (Array.isArray(data.recent_claims)) setRecentClaims(data.recent_claims);
         if (typeof data.today_free_data_claimed === "number") {
           setTodayFreeDataCount(data.today_free_data_claimed);
@@ -476,7 +539,7 @@ export default function ChallengeArena() {
     return () => clearTimeout(t);
   }, [playerSearchQuery, searchPlayersToInvite]);
 
-  // Auto-open room if current user is creator or opponent of ?room=XXXXXX
+  // Auto-open room if current user is creator or opponent of ?room=XXXXXX (or if joining an in_progress room)
   useEffect(() => {
     if (!roomQueryParam || challenges.length === 0 || activeChallenge) return;
     const matched = challenges.find(
@@ -484,14 +547,32 @@ export default function ChallengeArena() {
     );
     if (!matched) return;
 
-    if (user?.id && matched.creator_id === user.id) {
-      setMySide("creator");
+    const detectedSide = resolveMySideForChallenge(matched);
+    if (detectedSide) {
+      setMySide(detectedSide);
       setActiveChallenge(matched);
-    } else if (user?.id && matched.opponent_id === user.id) {
-      setMySide("opponent");
+    } else if (matched.status === "in_progress") {
+      // If opened via direct SMS/Share link while already in_progress, let challenger enter as opponent (or creator if owner)
+      const fallbackSide = user?.id && matched.creator_id === user.id ? "creator" : "opponent";
+      setMySide(fallbackSide);
       setActiveChallenge(matched);
     }
-  }, [roomQueryParam, challenges, activeChallenge, user?.id]);
+  }, [roomQueryParam, challenges, activeChallenge, resolveMySideForChallenge, user?.id]);
+
+  // Background polling fallback while inside a live P2P challenge room
+  useEffect(() => {
+    if (
+      !activeChallenge ||
+      activeChallenge.mode !== "p2p" ||
+      (activeChallenge.status !== "open" && activeChallenge.status !== "in_progress")
+    ) {
+      return;
+    }
+    const pollTimer = window.setInterval(() => {
+      fetchLobby(true);
+    }, 3500);
+    return () => window.clearInterval(pollTimer);
+  }, [activeChallenge, fetchLobby]);
 
   // Realtime subscription to game_challenges for live 1v1 moves & open challenge board
   useEffect(() => {
@@ -677,6 +758,7 @@ export default function ChallengeArena() {
         description: data.message,
       });
 
+      recordMyChallengeSide(data.challenge.id, "creator");
       setMySide("creator");
       setActiveChallenge(data.challenge);
       setInvitedPhone("");
@@ -761,8 +843,32 @@ export default function ChallengeArena() {
         description: data.message,
       });
 
+      const joinedChallenge = { ...data.challenge };
+      const joinedBoard =
+        joinedChallenge.board_state && typeof joinedChallenge.board_state === "object"
+          ? { ...joinedChallenge.board_state }
+          : {};
+      const hasMovesAlready =
+        Number(joinedBoard.moveCount || 0) > 0 ||
+        Number(joinedBoard.shotCount || 0) > 0 ||
+        Number(joinedBoard.engine?.moveCount || 0) > 0;
+
+      if (!hasMovesAlready) {
+        joinedChallenge.current_turn = "opponent";
+        joinedBoard.turn = "opponent";
+        if (joinedBoard.engine && typeof joinedBoard.engine === "object") {
+          const eng = { ...joinedBoard.engine };
+          const playersArr = Array.isArray(eng.players) ? eng.players : ["RED", "YELLOW"];
+          eng.currentPlayer = "YELLOW";
+          eng.currentPlayerIndex = Math.max(0, playersArr.indexOf("YELLOW"));
+          joinedBoard.engine = eng;
+        }
+        joinedChallenge.board_state = joinedBoard;
+      }
+
+      recordMyChallengeSide(joinedChallenge.id, "opponent");
       setMySide("opponent");
-      setActiveChallenge(data.challenge);
+      setActiveChallenge(joinedChallenge);
       if (roomQueryParam) {
         setSearchParams({});
       }
@@ -946,8 +1052,18 @@ export default function ChallengeArena() {
   const openChallenges = challenges.filter(
     (c) => c.status === "open" && (filterGame === "all" || c.game_type === filterGame)
   );
+  const activeInProgressChallenges = challenges.filter((c) => {
+    if (c.status !== "in_progress") return false;
+    if (filterGame !== "all" && c.game_type !== filterGame) return false;
+    const myRole = resolveMySideForChallenge(c);
+    return Boolean(myRole) || c.mode === "p2p";
+  });
   const invitedSpotlightChallenge = roomQueryParam
-    ? challenges.find((c) => String(c.room_code || "").toUpperCase() === roomQueryParam && c.status === "open")
+    ? challenges.find(
+        (c) =>
+          String(c.room_code || "").toUpperCase() === roomQueryParam &&
+          (c.status === "open" || c.status === "in_progress")
+      )
     : null;
   const remainingFreeDataToday = Math.max(
     0,
@@ -1504,7 +1620,13 @@ export default function ChallengeArena() {
                       activeChallenge.current_turn ||
                       activeChallenge.board_state?.turn ||
                       "creator";
-                    const isCurrentlyMyTurn = currentTurnSide === mySide;
+                    const hasAnyMoveOccurred =
+                      Number(activeChallenge.board_state?.shotCount || 0) > 0 ||
+                      Number(activeChallenge.board_state?.moveCount || 0) > 0 ||
+                      Number(activeChallenge.board_state?.engine?.moveCount || 0) > 0;
+                    const isCurrentlyMyTurn =
+                      currentTurnSide === mySide ||
+                      (activeChallenge.mode === "p2p" && !hasAnyMoveOccurred);
                     const gType = (activeChallenge.game_type || "pool") as GameType;
                     const activeLudoColor = activeChallenge.board_state?.currentPlayerColor;
                     const activeLudoSeat =
@@ -1513,7 +1635,11 @@ export default function ChallengeArena() {
                         : null;
                     const nextUpName =
                       activeLudoSeat?.name ||
-                      (currentTurnSide === "creator"
+                      (isCurrentlyMyTurn
+                        ? mySide === "creator"
+                          ? activeChallenge.creator_name || "You"
+                          : activeChallenge.opponent_name || playerName || "You"
+                        : currentTurnSide === "creator"
                         ? activeChallenge.creator_name || "Player 1"
                         : activeChallenge.opponent_name ||
                           HUMAN_CHALLENGER_PERSONAS[gType]?.name ||
@@ -1608,20 +1734,75 @@ export default function ChallengeArena() {
 
                           <div className="flex flex-wrap items-center gap-2">
                             {!isCurrentlyMyTurn && activeChallenge.mode === "p2p" && (
-                              <Button
-                                type="button"
-                                size="sm"
-                                disabled={nudgingTurn}
-                                onClick={handleNudgeNextPlayer}
-                                className="h-8 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[11px] gap-1.5 px-3 shadow"
-                              >
-                                {nudgingTurn ? (
-                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                ) : (
-                                  <BellRing className="w-3.5 h-3.5" />
-                                )}
-                                Ping {nextUpName} (SMS &amp; Push)
-                              </Button>
+                              <>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  disabled={nudgingTurn}
+                                  onClick={handleNudgeNextPlayer}
+                                  className="h-8 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[11px] gap-1.5 px-3 shadow"
+                                >
+                                  {nudgingTurn ? (
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  ) : (
+                                    <BellRing className="w-3.5 h-3.5" />
+                                  )}
+                                  Ping {nextUpName} (SMS &amp; Push)
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    const gKey = (activeChallenge.game_type || "pool") as GameType;
+                                    const aiName =
+                                      HUMAN_CHALLENGER_PERSONAS[gKey]?.name || "Grandmaster AI";
+                                    setMySide("creator");
+                                    setActiveChallenge((prev: any) => {
+                                      if (!prev) return prev;
+                                      const nextBoard = {
+                                        ...(prev.board_state || {}),
+                                        turn: "creator",
+                                      };
+                                      if (nextBoard.engine && typeof nextBoard.engine === "object") {
+                                        nextBoard.engine = {
+                                          ...nextBoard.engine,
+                                          currentPlayer: "RED",
+                                          currentPlayerIndex: 0,
+                                          playerMeta: {
+                                            ...(nextBoard.engine.playerMeta || {}),
+                                            RED: {
+                                              ...(nextBoard.engine.playerMeta?.RED || {}),
+                                              isAI: false,
+                                            },
+                                            YELLOW: {
+                                              ...(nextBoard.engine.playerMeta?.YELLOW || {}),
+                                              name: aiName,
+                                              isAI: true,
+                                            },
+                                          },
+                                        };
+                                      }
+                                      return {
+                                        ...prev,
+                                        mode: "ai",
+                                        opponent_name: aiName,
+                                        current_turn: "creator",
+                                        board_state: nextBoard,
+                                      };
+                                    });
+                                    toast({
+                                      title: `⚡ Switched to ${aiName} (Human-Sense Challenger)!`,
+                                      description:
+                                        "It is now your turn on the board — play immediately without waiting!",
+                                    });
+                                  }}
+                                  className="h-8 rounded-xl border-emerald-400/50 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 font-black text-[11px] gap-1.5 px-3"
+                                >
+                                  <Brain className="w-3.5 h-3.5" />
+                                  Opponent Offline? Play vs AI Now
+                                </Button>
+                              </>
                             )}
                             {typeof window !== "undefined" &&
                               "Notification" in window &&
@@ -2061,6 +2242,76 @@ export default function ChallengeArena() {
 
           {/* Right Column: Live Open Challenges Board & Winners Feed (7 cols) */}
           <div className="lg:col-span-7 space-y-6">
+            {activeInProgressChallenges.length > 0 && (
+              <Card className="border-2 border-emerald-500/50 bg-gradient-to-br from-emerald-950/50 via-slate-900/95 to-slate-950 shadow-2xl">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base sm:text-lg font-black text-emerald-300 flex items-center gap-2">
+                    <span className="w-3 h-3 rounded-full bg-emerald-400 animate-ping shrink-0" />
+                    Live / Accepted Matches Ready to Play ({activeInProgressChallenges.length})
+                  </CardTitle>
+                  <CardDescription className="text-slate-300 text-xs">
+                    You accepted or started a challenge that is currently LIVE! Tap <strong>Play Match Now</strong> below to enter the board and make your move:
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-2.5">
+                  {activeInProgressChallenges.slice(0, 6).map((chal) => {
+                    const detectedRole = resolveMySideForChallenge(chal);
+                    const effectiveSide: "creator" | "opponent" =
+                      detectedRole ||
+                      (user?.id && chal.creator_id === user.id ? "creator" : "opponent");
+                    const stake = Number(chal.stake_amount || 0);
+                    return (
+                      <div
+                        key={chal.id}
+                        className="p-3.5 rounded-2xl border border-emerald-500/40 bg-slate-950/85 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                      >
+                        <div className="space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge className="bg-emerald-500 text-slate-950 font-black text-[10px] uppercase">
+                              LIVE • {chal.game_type}
+                            </Badge>
+                            <span className="text-xs sm:text-sm font-black text-white">
+                              {chal.creator_name} <span className="text-amber-400">vs</span>{" "}
+                              {chal.opponent_name || "Challenger"}
+                            </span>
+                            <span className="text-[11px] font-mono text-slate-400">
+                              Room #{chal.room_code}
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-3 text-xs">
+                            <span className="text-slate-300">
+                              Stake:{" "}
+                              <strong className="text-amber-300 font-mono">
+                                GH₵ {stake.toFixed(2)}
+                              </strong>
+                            </span>
+                            <span className="text-emerald-400 font-black font-mono">
+                              🏆 Pot: GH₵ {Number(chal.prize_pool || 0).toFixed(2)}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <Button
+                            size="sm"
+                            onClick={() => {
+                              recordMyChallengeSide(chal.id, effectiveSide);
+                              setMySide(effectiveSide);
+                              setActiveChallenge(chal);
+                            }}
+                            className="h-9 rounded-xl bg-gradient-to-r from-emerald-400 to-teal-400 hover:from-emerald-300 hover:to-teal-300 text-slate-950 font-black text-xs gap-1.5 shadow-lg"
+                          >
+                            <Gamepad2 className="w-4 h-4" />
+                            Play Match Now
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </CardContent>
+              </Card>
+            )}
+
             <Card className="border-white/10 bg-slate-900/80 backdrop-blur-xl shadow-xl">
               <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3">
                 <div>

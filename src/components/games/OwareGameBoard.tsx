@@ -935,11 +935,14 @@ export function OwareGameBoard({
       initialState &&
       Array.isArray(initialState.pits) &&
       initialState.pits.length === 12 &&
-      (initialState.moveCount || 0) > (game.moveCount || 0)
+      ((initialState.moveCount || 0) > (game.moveCount || 0) ||
+        ((initialState.moveCount || 0) === (game.moveCount || 0) &&
+          initialState.turn &&
+          initialState.turn !== game.turn))
     ) {
       setGame({ variant: game.variant || "nam-nam", ...initialState });
     }
-  }, [initialState, game.moveCount, game.variant, isAnimating]);
+  }, [initialState, game.moveCount, game.turn, game.variant, isAnimating]);
 
   // Step-by-step animated sowing player with live SVG Hand gliding across bowls
   const playAnimatedMove = useCallback(
@@ -1092,7 +1095,9 @@ export function OwareGameBoard({
   const handlePitClick = useCallback(
     (pitIndex: number) => {
       if (game.winner || isAnimating) return;
-      if (game.turn !== mySide) return;
+      const canActNow =
+        game.turn === mySide || (mode === "p2p" && (game.moveCount || 0) === 0);
+      if (!canActNow) return;
 
       const simResult =
         variant === "nam-nam"
@@ -1103,7 +1108,7 @@ export function OwareGameBoard({
 
       playAnimatedMove(simResult.steps, simResult.nextState, true, mySide);
     },
-    [game, isAnimating, mySide, variant, playAnimatedMove]
+    [game, isAnimating, mode, mySide, variant, playAnimatedMove]
   );
 
   // Trigger Human-Sense Challenger move when playing vs Challenger / Free Data mode
@@ -1134,7 +1139,12 @@ export function OwareGameBoard({
   // Display state (either live animation frame or settled game state)
   const displayPits = animStep ? animStep.pits : game.pits;
   const displayScores = animStep ? animStep.scores : game.scores;
-  const legalMovesForTurn = !game.winner && !isAnimating ? getLegalOwareMoves(game, game.turn) : [];
+  const activeSideForLegalMoves =
+    mode === "p2p" && (game.moveCount || 0) === 0 ? mySide : game.turn;
+  const legalMovesForTurn =
+    !game.winner && !isAnimating
+      ? getLegalOwareMoves(game, activeSideForLegalMoves)
+      : [];
   const otherSide: "creator" | "opponent" = game.turn === "creator" ? "opponent" : "creator";
   const mustFeedOpponent = !game.winner && sumSeedsOnSide(game.pits, otherSide) === 0;
 
@@ -1143,7 +1153,10 @@ export function OwareGameBoard({
   // Bottom row (South: Creator pits 0 up to 5 left-to-right)
   const southIndices = [0, 1, 2, 3, 4, 5];
 
-  const isMyTurn = !game.winner && !isAnimating && game.turn === mySide;
+  const isMyTurn =
+    !game.winner &&
+    !isAnimating &&
+    (game.turn === mySide || (mode === "p2p" && (game.moveCount || 0) === 0));
 
   // Shared Terracotta Carved Bowl styling matching the reference photo
   const terracottaBowlStyle = {

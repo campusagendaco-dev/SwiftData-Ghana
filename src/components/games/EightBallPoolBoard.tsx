@@ -358,7 +358,10 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
       initialState &&
       Array.isArray(initialState.balls) &&
       initialState.balls.length === 16 &&
-      (initialState.shotCount || 0) > (state.shotCount || 0)
+      ((initialState.shotCount || 0) > (state.shotCount || 0) ||
+        ((initialState.shotCount || 0) === (state.shotCount || 0) &&
+          initialState.turn &&
+          initialState.turn !== state.turn))
     ) {
       setState((prev) => ({
         ...prev,
@@ -366,7 +369,7 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
         balls: initialState.balls!,
       }));
     }
-  }, [initialState, isSimulating, state.shotCount]);
+  }, [initialState, isSimulating, state.shotCount, state.turn]);
 
   // Strictly detect Portrait Viewport (height > width on mobile/tablet screens)
   useEffect(() => {
@@ -393,7 +396,9 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
     !state.winner &&
     !isSimulating &&
     !isOpponentAiming &&
-    (mode === "p2p" ? state.turn === mySide : state.turn === "creator");
+    (mode === "p2p"
+      ? state.turn === mySide || (state.shotCount || 0) === 0
+      : state.turn === "creator");
 
   // Trigger Turn Notification Banner & Acoustic Chime whenever `state.turn` or `state.shotCount` updates!
   useEffect(() => {
@@ -958,7 +963,7 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
     const finalPct = updatePowerFromPointer(e.clientX, e.clientY);
     // If pulled down past 20%, release snaps the cue stick forward and shoots!
     if (isMyTurn && finalPct >= 20) {
-      executeShot(aimAngle, finalPct, state.turn);
+      executeShot(aimAngle, finalPct, mode === "p2p" ? mySide : "creator");
     }
   };
 
@@ -1228,7 +1233,7 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
         );
         setAimAngle(angle);
         setShotPower(pct);
-        executeShot(angle, pct, state.turn);
+        executeShot(angle, pct, mode === "p2p" ? mySide : "creator");
       }
     }
   };
@@ -2063,7 +2068,7 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
                 <Button
                   type="button"
                   disabled={!isMyTurn}
-                  onClick={() => executeShot(aimAngle, shotPower, state.turn)}
+                  onClick={() => executeShot(aimAngle, shotPower, mode === "p2p" ? mySide : "creator")}
                   className="w-full h-10 rounded-xl bg-gradient-to-b from-amber-400 via-orange-500 to-amber-600 hover:from-amber-300 hover:to-orange-500 text-slate-950 font-black text-[11px] shadow-lg px-1"
                 >
                   <Zap className="w-3.5 h-3.5 mr-0.5 shrink-0" />

@@ -1007,6 +1007,42 @@ serve(async (req: Request) => {
         }
       }
 
+      // Give the accepting challenger (who is actively in the room right now) the immediate opening turn if no moves have been made yet
+      const prevBoard =
+        challenge.board_state && typeof challenge.board_state === "object"
+          ? { ...challenge.board_state }
+          : {};
+      const hasMovesAlready =
+        Number(prevBoard.moveCount || 0) > 0 ||
+        Number(prevBoard.shotCount || 0) > 0 ||
+        Number(prevBoard.engine?.moveCount || 0) > 0;
+
+      const nextTurnOnJoin = hasMovesAlready
+        ? String(challenge.current_turn || "creator")
+        : "opponent";
+
+      if (!hasMovesAlready) {
+        prevBoard.turn = "opponent";
+        if (prevBoard.engine && typeof prevBoard.engine === "object") {
+          const eng = { ...prevBoard.engine };
+          const playersArr = Array.isArray(eng.players) ? eng.players : ["RED", "YELLOW"];
+          const yellowIdx = Math.max(0, playersArr.indexOf("YELLOW"));
+          eng.currentPlayer = "YELLOW";
+          eng.currentPlayerIndex = yellowIdx;
+          if (eng.playerMeta && typeof eng.playerMeta === "object") {
+            eng.playerMeta = {
+              ...eng.playerMeta,
+              YELLOW: {
+                ...(eng.playerMeta.YELLOW || {}),
+                name: opponentName,
+                isAI: false,
+              },
+            };
+          }
+          prevBoard.engine = eng;
+        }
+      }
+
       const { data: updated, error: joinErr } = await supabaseAdmin
         .from("game_challenges")
         .update({
@@ -1015,6 +1051,8 @@ serve(async (req: Request) => {
           opponent_phone: opponentPhone || null,
           opponent_payment_source: stake > 0 ? paymentSource : "free",
           opponent_paystack_ref: verifiedPaystackRef,
+          current_turn: nextTurnOnJoin,
+          board_state: prevBoard,
           status: "in_progress",
           updated_at: new Date().toISOString(),
         })

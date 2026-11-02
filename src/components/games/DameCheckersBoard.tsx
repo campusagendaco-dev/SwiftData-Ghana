@@ -320,14 +320,19 @@ export function DameCheckersBoard({
     if (
       initialState &&
       Array.isArray(initialState.board) &&
-      (initialState.moveCount || 0) > (game.moveCount || 0)
+      ((initialState.moveCount || 0) > (game.moveCount || 0) ||
+        ((initialState.moveCount || 0) === (game.moveCount || 0) &&
+          initialState.turn &&
+          initialState.turn !== game.turn))
     ) {
       setGame(initialState);
       setSelectedSq(null);
     }
-  }, [initialState, game.moveCount]);
+  }, [initialState, game.moveCount, game.turn]);
 
-  const isMyTurn = !game.winner && game.turn === mySide;
+  const isMyTurn =
+    !game.winner &&
+    (game.turn === mySide || (mode === "p2p" && (game.moveCount || 0) === 0));
   const allLegalMoves = isMyTurn ? getLegalDameMoves(game.board, mySide) : [];
   const selectedMoves = selectedSq
     ? allLegalMoves.filter((m) => m.fromR === selectedSq.r && m.fromC === selectedSq.c)
