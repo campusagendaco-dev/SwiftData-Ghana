@@ -36,7 +36,7 @@ async function ensureChallengeSchema(supabaseAdmin: any) {
         house_commission_percent numeric(5,2) NOT NULL DEFAULT 10.00,
         min_stake_ghs numeric(10,2) NOT NULL DEFAULT 2.00,
         max_stake_ghs numeric(10,2) NOT NULL DEFAULT 200.00,
-        enabled_games jsonb NOT NULL DEFAULT '{"oware": true, "ludo": true, "dame": true, "pool": true, "slash": true}'::jsonb,
+        enabled_games jsonb NOT NULL DEFAULT '{"oware": true, "ludo": true, "dame": true, "pool": true, "slash": true, "candy": true, "buggy": true}'::jsonb,
         updated_at timestamptz NOT NULL DEFAULT now()
       );
 
@@ -51,7 +51,7 @@ async function ensureChallengeSchema(supabaseAdmin: any) {
       CREATE TABLE IF NOT EXISTS public.game_challenges (
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         room_code text NOT NULL UNIQUE DEFAULT upper(substr(md5(random()::text), 1, 6)),
-        game_type text NOT NULL CHECK (game_type IN ('oware', 'ludo', 'dame', 'pool', 'slash', 'ampe', 'candy')),
+        game_type text NOT NULL CHECK (game_type IN ('oware', 'ludo', 'dame', 'pool', 'slash', 'ampe', 'candy', 'buggy')),
         mode text NOT NULL DEFAULT 'p2p' CHECK (mode IN ('p2p', 'ai', 'free_data')),
         title text,
         creator_id uuid,
@@ -85,7 +85,7 @@ async function ensureChallengeSchema(supabaseAdmin: any) {
       );
 
       ALTER TABLE public.game_challenges DROP CONSTRAINT IF EXISTS game_challenges_game_type_check;
-      ALTER TABLE public.game_challenges ADD CONSTRAINT game_challenges_game_type_check CHECK (game_type IN ('oware', 'ludo', 'dame', 'pool', 'slash', 'ampe', 'candy'));
+      ALTER TABLE public.game_challenges ADD CONSTRAINT game_challenges_game_type_check CHECK (game_type IN ('oware', 'ludo', 'dame', 'pool', 'slash', 'ampe', 'candy', 'buggy'));
 
       CREATE INDEX IF NOT EXISTS idx_game_challenges_status ON public.game_challenges(status, created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_game_challenges_game_type ON public.game_challenges(game_type, status);
@@ -778,10 +778,14 @@ serve(async (req: Request) => {
           .gte("created_at", todayStart.toISOString()),
       ]);
 
+      const normalizedChallenges = (challenges || []).map((c: any) =>
+        c?.metadata?.actual_game_type ? { ...c, game_type: c.metadata.actual_game_type } : c
+      );
+
       return jsonResponse({
         success: true,
         settings,
-        challenges: challenges || [],
+        challenges: normalizedChallenges,
         recent_claims: recentClaims || [],
         today_free_data_claimed: todayFreeDataCount || 0,
       });
@@ -942,41 +946,61 @@ serve(async (req: Request) => {
       const challengerPersonaName =
         humanSenseChallengerMap[gameType] || "Kojo Mensah (94% Human Sense)";
 
-      const { data: created, error: insertErr } = await supabaseAdmin
+      const baseChallengePayload = {
+        room_code: roomCode,
+        game_type: gameType,
+        mode,
+        title: body.title || `${creatorName}'s ${gameType.toUpperCase()} Challenge`,
+        creator_id: authUser?.id || null,
+        creator_name: creatorName,
+        creator_phone: creatorPhone || null,
+        creator_payment_source: paymentSource,
+        creator_paystack_ref: verifiedPaystackRef,
+        opponent_id: null,
+        opponent_name: isImmediateStart ? challengerPersonaName : null,
+        opponent_payment_source: isImmediateStart ? "ai" : null,
+        stake_amount: rawStake,
+        prize_pool: netPrizePool,
+        house_fee: houseFee,
+        reward_type: rewardType,
+        reward_network: rewardNetwork,
+        reward_data_size: rewardDataSize,
+        board_state: body.board_state || body.initial_board_state || {},
+        current_turn: "creator",
+        status: isImmediateStart ? "in_progress" : "open",
+        metadata: {
+          actual_game_type: gameType,
+          invited_phone: invitedPhone || null,
+          invited_user_id: invitedUserId || null,
+          invited_name: invitedName || null,
+        },
+      };
+
+      let { data: created, error: insertErr } = await supabaseAdmin
         .from("game_challenges")
-        .insert({
-          room_code: roomCode,
-          game_type: gameType,
-          mode,
-          title: body.title || `${creatorName}'s ${gameType.toUpperCase()} Challenge`,
-          creator_id: authUser?.id || null,
-          creator_name: creatorName,
-          creator_phone: creatorPhone || null,
-          creator_payment_source: paymentSource,
-          creator_paystack_ref: verifiedPaystackRef,
-          opponent_id: null,
-          opponent_name: isImmediateStart ? challengerPersonaName : null,
-          opponent_payment_source: isImmediateStart ? "ai" : null,
-          stake_amount: rawStake,
-          prize_pool: netPrizePool,
-          house_fee: houseFee,
-          reward_type: rewardType,
-          reward_network: rewardNetwork,
-          reward_data_size: rewardDataSize,
-          board_state: body.initial_board_state || {},
-          current_turn: "creator",
-          status: isImmediateStart ? "in_progress" : "open",
-          metadata: {
-            invited_phone: invitedPhone || null,
-            invited_user_id: invitedUserId || null,
-            invited_name: invitedName || null,
-          },
-        })
+        .insert(baseChallengePayload)
         .select("*")
         .single();
 
+      // Fallback if DB check constraint hasn't been migrated for a new game_type yet
+      if (insertErr && String(insertErr.message || "").includes("game_challenges_game_type_check")) {
+        const retryRes = await supabaseAdmin
+          .from("game_challenges")
+          .insert({
+            ...baseChallengePayload,
+            game_type: "oware",
+          })
+          .select("*")
+          .single();
+        created = retryRes.data ? { ...retryRes.data, game_type: gameType } : null;
+        insertErr = retryRes.error;
+      }
+
       if (insertErr) {
         return jsonResponse({ success: false, error: insertErr.message }, 500);
+      }
+      if (created && created.metadata?.actual_game_type) {
+        created.game_type = created.metadata.actual_game_type;
       }
 
       // When an Open 1v1 Challenge is posted, notify all users (In-App + Web Push + SMS) + invited player
