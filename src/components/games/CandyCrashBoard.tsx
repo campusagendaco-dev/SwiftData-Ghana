@@ -422,6 +422,8 @@ interface CandyCrashBoardProps {
   onPointsEarned?: (points: number, reason: string) => void;
   playerLevel?: number;
   onBackToLobby?: () => void;
+  onRematch?: () => void;
+  onPlayAnotherGame?: () => void;
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -437,6 +439,8 @@ export function CandyCrashBoard({
   onPointsEarned,
   playerLevel = 1,
   onBackToLobby,
+  onRematch,
+  onPlayAnotherGame,
 }: CandyCrashBoardProps) {
   const screenFit = useDeviceScreenFit();
   const candyFit = screenFit.computeBoardStageMetrics("candy", { reservedTopPx: 38 });
@@ -1008,7 +1012,7 @@ export function CandyCrashBoard({
       onStateChange?.(nextState);
       if (win) {
         onMatchComplete?.(mySide, nextState);
-      } else if (timedOut) {
+      } else {
         const otherSide = mySide === "creator" ? "opponent" : "creator";
         onMatchComplete?.(otherSide, nextState);
       }
@@ -1559,18 +1563,32 @@ export function CandyCrashBoard({
               </div>
             </div>
 
-            <Button
-              type="button"
-              onClick={() => {
-                const nextLv = overModal.win ? overModal.levelNum + 1 : overModal.levelNum;
-                initBoardForLevel(nextLv);
-              }}
-              className="h-10 px-7 rounded-full bg-gradient-to-r from-amber-400 via-orange-500 to-rose-500 hover:from-amber-300 hover:to-rose-400 text-slate-950 font-black text-sm shadow-xl"
-            >
-              {overModal.win
-                ? `Next Stall: ${getMarketStage(overModal.levelNum + 1).market} →`
-                : "Try Market Tray Again"}
-            </Button>
+            <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+              <Button
+                type="button"
+                onClick={() => {
+                  const nextLv = overModal.win ? overModal.levelNum + 1 : overModal.levelNum;
+                  initBoardForLevel(nextLv);
+                  onRematch?.();
+                }}
+                className="h-10 px-5 rounded-full bg-gradient-to-r from-amber-400 via-orange-500 to-rose-500 hover:from-amber-300 hover:to-rose-400 text-slate-950 font-black text-xs sm:text-sm shadow-xl"
+              >
+                {overModal.win
+                  ? `🔄 Next Stall / Rematch →`
+                  : "🔄 Rematch Tray"}
+              </Button>
+
+              {onPlayAnotherGame && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={onPlayAnotherGame}
+                  className="h-10 px-4 rounded-full border-emerald-400/50 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-200 font-black text-xs sm:text-sm"
+                >
+                  🎮 Play Another Game
+                </Button>
+              )}
+            </div>
           </div>
         )}
       </div>

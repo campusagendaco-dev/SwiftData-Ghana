@@ -54,6 +54,7 @@ import { EightBallPoolBoard, INITIAL_POOL_STATE } from "@/components/games/Eight
 import { MarketSlashBoard, INITIAL_SLASH_STATE } from "@/components/games/MarketSlashBoard";
 import { CandyCrashBoard, INITIAL_CANDY_STATE } from "@/components/games/CandyCrashBoard";
 import { BeachBuggyTrack, INITIAL_BUGGY_STATE } from "@/components/games/BeachBuggyTrack";
+import { InGameVoiceChat } from "@/components/games/InGameVoiceChat";
 import {
   GamerCommunityHub,
   GamerCommunityPreviewCard,
@@ -113,134 +114,134 @@ const GAME_CATALOG: {
   emoji: string;
   gradient: string;
 }[] = [
-    {
-      id: "oware",
-      name: "Oware",
-      shortTitle: "Oware",
-      categoryTag: "GHANA'S GAME",
-      statusTag: "PLAY ONLINE",
-      statusColor: "green",
-      subtitle: "Our own board game. Beat Kofi, Ama and Nana, or send a friend a code and play online.",
-      rulesSummary: [
-        "Tap any of your 6 bowls on your side to scoop all seeds and sow counter-clockwise.",
-        "Nam-Nam mode: relay-sow continuously and harvest whenever a bowl reaches 4 seeds.",
-        "Abapa mode: single-lap sowing; capture opponent bowls holding 2 or 3 seeds.",
-        "First player to capture 25 or more seeds wins the match!",
-      ],
-      badge: "Most Popular",
-      emoji: "🪨",
-      gradient: "from-amber-600/30 via-amber-900/20 to-slate-950 border-amber-500/40",
-    },
-    {
-      id: "pool",
-      name: "8-Ball Pool",
-      shortTitle: "8-Ball Pool",
-      categoryTag: "BILLIARDS",
-      statusTag: "ONLINE",
-      statusColor: "gold",
-      subtitle: "Aim the laser cue, fine-tune stick angle on the left tray, and pull the cue stick to strike.",
-      rulesSummary: [
-        "Play in Landscape view for full tournament table precision.",
-        "Use the Left Fine-Aim Tray to micro-adjust your cue angle and the Right Tray to pull & shoot.",
-        "Pot all 7 of your group (Solids 1–7 or Stripes 9–15), then legally sink the Black 8-Ball.",
-        "Scratching the white cue ball gives your opponent Ball-in-Hand anywhere on the felt.",
-      ],
-      badge: "Pro Physics",
-      emoji: "🎱",
-      gradient: "from-sky-600/30 via-blue-900/25 to-slate-950 border-sky-500/40",
-    },
-    {
-      id: "slash",
-      name: "Market Slash",
-      shortTitle: "Market Slash",
-      categoryTag: "REFLEX",
-      statusTag: "NEW",
-      statusColor: "gold",
-      subtitle: "Swipe fast to slice flying Makola watermelons, pineapples & papayas while dodging bombs.",
-      rulesSummary: [
-        "Drag or swipe your finger across flying fruits to slice them with your blade.",
-        "Slice 3+ fruits in a single swipe for multi-slice combo bonus points.",
-        "Never touch the black explosives — hitting a bomb costs a life and drops your combo!",
-        "Clear all 5 market stall stages with a higher score than your challenger to win.",
-      ],
-      badge: "Swipe & Slice",
-      emoji: "🍉",
-      gradient: "from-orange-600/35 via-amber-900/25 to-slate-950 border-orange-500/50",
-    },
-    {
-      id: "ludo",
-      name: "Ghana Ludo",
-      shortTitle: "Ghana Ludo",
-      categoryTag: "BOARD",
-      statusTag: "ONLINE",
-      statusColor: "gold",
-      subtitle: "52-cell track Ludo for 2–4 players. Roll a 6 to launch, kick opponents & race home.",
-      rulesSummary: [
-        "Tap the 3D dice on your turn; roll a 6 to bring a token out of your Base onto your start square.",
-        "Landing on an opponent token on a non-safe square sends it back to Base and grants a bonus roll.",
-        "Rolling a 6, capturing an opponent, or reaching the center Home triangle earns an extra roll.",
-        "First player to bring all 4 tokens into the center Home triangle wins!",
-      ],
-      badge: "2–4 Players",
-      emoji: "🎲",
-      gradient: "from-rose-600/30 via-amber-900/20 to-slate-950 border-rose-500/40",
-    },
-    {
-      id: "dame",
-      name: "Ghana Dame",
-      shortTitle: "Ghana Dame",
-      categoryTag: "STRATEGY",
-      statusTag: "ONLINE",
-      statusColor: "gold",
-      subtitle: "8×8 Ghanaian checkers with mandatory jump captures and crowned Kings.",
-      rulesSummary: [
-        "Tap one of your pieces, then tap a highlighted diagonal square to move.",
-        "Mandatory Capture Rule: if a jump over an opponent piece is available, you must take it.",
-        "Reach the opponent's back row to crown your piece into a King that moves forward and backward.",
-        "Capture all 12 opponent pieces or block all their legal moves to win!",
-      ],
-      badge: "Pure Skill",
-      emoji: "♟️",
-      gradient: "from-emerald-600/30 via-teal-900/20 to-slate-950 border-emerald-500/40",
-    },
-    {
-      id: "candy",
-      name: "Candy Crash (Alewa & Kube)",
-      shortTitle: "Candy Crash",
-      categoryTag: "GHANA SWEETS",
-      statusTag: "NEW",
-      statusColor: "gold",
-      subtitle: "Match 3+ Ghanaian Alewa, Kube & Golden Cocoa Pods — forge Kente Boosters & Calabash Bombs.",
-      rulesSummary: [
-        "Swipe or tap two adjacent Ghanaian sweets (Alewa, Kube, Cocoa Pod, Nkate Cake, Sobolo, Bofrot) on the 8×8 wooden tray.",
-        "Match 4 sweets to wrap a Red-Gold-Green Kente-Striped Booster that blasts an entire row or column.",
-        "Match 5 sweets to forge a Takoradi Calabash Cocoa Bomb that wipes out every sweet of that type.",
-        "Outscore Auntie Efua across 10 Ghana Markets (Makola, Osu, Kejetia) to earn up to 3 Stars and Free Data!",
-      ],
-      badge: "Alewa & Kube",
-      emoji: "🍬",
-      gradient: "from-amber-600/35 via-rose-900/25 to-slate-950 border-amber-500/45",
-    },
-    {
-      id: "buggy",
-      name: "Labadi Beach & Aburi Buggy GP",
-      shortTitle: "Labadi Buggy GP",
-      categoryTag: "GHANA RACING",
-      statusTag: "NEW 3D",
-      statusColor: "gold",
-      subtitle:
-        "Race 3 laps across Labadi Beach, Aburi Hills & Tema Motorway — hit Kente Boost Pads & upgrade at Suame Garage.",
-      rulesSummary: [
-        "Choose from 4 Ghanaian rides (Labadi Sand Buggy, Yellow-Yellow Pragya, VIP Sprinter Trotro, or Kantanka 4×4) and 3 circuits.",
-        "Hit glowing yellow Kente Boost Pads and tap Shito Nitro (N₂) to blast past Kwame Turbo and the 6-racer pack.",
-        "Dodge volcanic rocks, coconut palms, and beach huts so your Armor HP never hits 0 before finishing 3 laps.",
-        "Collect spinning Gold Ghana Cedi Coins (GH₵) to upgrade your Engine, Nitro & Armor at the Suame Magazine Workshop!",
-      ],
-      badge: "Suame Turbo",
-      emoji: "🏎️",
-      gradient: "from-red-600/35 via-amber-900/25 to-slate-950 border-red-500/45",
-    },
-  ];
+  {
+    id: "oware",
+    name: "Oware",
+    shortTitle: "Oware",
+    categoryTag: "GHANA'S GAME",
+    statusTag: "PLAY ONLINE",
+    statusColor: "green",
+    subtitle: "Our own board game. Beat Kofi, Ama and Nana, or send a friend a code and play online.",
+    rulesSummary: [
+      "Tap any of your 6 bowls on your side to scoop all seeds and sow counter-clockwise.",
+      "Nam-Nam mode: relay-sow continuously and harvest whenever a bowl reaches 4 seeds.",
+      "Abapa mode: single-lap sowing; capture opponent bowls holding 2 or 3 seeds.",
+      "First player to capture 25 or more seeds wins the match!",
+    ],
+    badge: "Most Popular",
+    emoji: "🪨",
+    gradient: "from-amber-600/30 via-amber-900/20 to-slate-950 border-amber-500/40",
+  },
+  {
+    id: "pool",
+    name: "8-Ball Pool",
+    shortTitle: "8-Ball Pool",
+    categoryTag: "BILLIARDS",
+    statusTag: "ONLINE",
+    statusColor: "gold",
+    subtitle: "Aim the laser cue, fine-tune stick angle on the left tray, and pull the cue stick to strike.",
+    rulesSummary: [
+      "Play in Landscape view for full tournament table precision.",
+      "Use the Left Fine-Aim Tray to micro-adjust your cue angle and the Right Tray to pull & shoot.",
+      "Pot all 7 of your group (Solids 1–7 or Stripes 9–15), then legally sink the Black 8-Ball.",
+      "Scratching the white cue ball gives your opponent Ball-in-Hand anywhere on the felt.",
+    ],
+    badge: "Pro Physics",
+    emoji: "🎱",
+    gradient: "from-sky-600/30 via-blue-900/25 to-slate-950 border-sky-500/40",
+  },
+  {
+    id: "slash",
+    name: "Market Slash",
+    shortTitle: "Market Slash",
+    categoryTag: "REFLEX",
+    statusTag: "NEW",
+    statusColor: "gold",
+    subtitle: "Swipe fast to slice flying Makola watermelons, pineapples & papayas while dodging bombs.",
+    rulesSummary: [
+      "Drag or swipe your finger across flying fruits to slice them with your blade.",
+      "Slice 3+ fruits in a single swipe for multi-slice combo bonus points.",
+      "Never touch the black explosives — hitting a bomb costs a life and drops your combo!",
+      "Clear all 5 market stall stages with a higher score than your challenger to win.",
+    ],
+    badge: "Swipe & Slice",
+    emoji: "🍉",
+    gradient: "from-orange-600/35 via-amber-900/25 to-slate-950 border-orange-500/50",
+  },
+  {
+    id: "ludo",
+    name: "Ghana Ludo",
+    shortTitle: "Ghana Ludo",
+    categoryTag: "BOARD",
+    statusTag: "ONLINE",
+    statusColor: "gold",
+    subtitle: "52-cell track Ludo for 2–4 players. Roll a 6 to launch, kick opponents & race home.",
+    rulesSummary: [
+      "Tap the 3D dice on your turn; roll a 6 to bring a token out of your Base onto your start square.",
+      "Landing on an opponent token on a non-safe square sends it back to Base and grants a bonus roll.",
+      "Rolling a 6, capturing an opponent, or reaching the center Home triangle earns an extra roll.",
+      "First player to bring all 4 tokens into the center Home triangle wins!",
+    ],
+    badge: "2–4 Players",
+    emoji: "🎲",
+    gradient: "from-rose-600/30 via-amber-900/20 to-slate-950 border-rose-500/40",
+  },
+  {
+    id: "dame",
+    name: "Ghana Dame",
+    shortTitle: "Ghana Dame",
+    categoryTag: "STRATEGY",
+    statusTag: "ONLINE",
+    statusColor: "gold",
+    subtitle: "8×8 Ghanaian checkers with mandatory jump captures and crowned Kings.",
+    rulesSummary: [
+      "Tap one of your pieces, then tap a highlighted diagonal square to move.",
+      "Mandatory Capture Rule: if a jump over an opponent piece is available, you must take it.",
+      "Reach the opponent's back row to crown your piece into a King that moves forward and backward.",
+      "Capture all 12 opponent pieces or block all their legal moves to win!",
+    ],
+    badge: "Pure Skill",
+    emoji: "♟️",
+    gradient: "from-emerald-600/30 via-teal-900/20 to-slate-950 border-emerald-500/40",
+  },
+  {
+    id: "candy",
+    name: "Candy Crash (Alewa & Kube)",
+    shortTitle: "Candy Crash",
+    categoryTag: "GHANA SWEETS",
+    statusTag: "NEW",
+    statusColor: "gold",
+    subtitle: "Match 3+ Ghanaian Alewa, Kube & Golden Cocoa Pods — forge Kente Boosters & Calabash Bombs.",
+    rulesSummary: [
+      "Swipe or tap two adjacent Ghanaian sweets (Alewa, Kube, Cocoa Pod, Nkate Cake, Sobolo, Bofrot) on the 8×8 wooden tray.",
+      "Match 4 sweets to wrap a Red-Gold-Green Kente-Striped Booster that blasts an entire row or column.",
+      "Match 5 sweets to forge a Takoradi Calabash Cocoa Bomb that wipes out every sweet of that type.",
+      "Outscore Auntie Efua across 10 Ghana Markets (Makola, Osu, Kejetia) to earn up to 3 Stars and Free Data!",
+    ],
+    badge: "Alewa & Kube",
+    emoji: "🍬",
+    gradient: "from-amber-600/35 via-rose-900/25 to-slate-950 border-amber-500/45",
+  },
+  {
+    id: "buggy",
+    name: "Labadi Beach & Aburi Buggy GP",
+    shortTitle: "Labadi Buggy GP",
+    categoryTag: "GHANA RACING",
+    statusTag: "NEW 3D",
+    statusColor: "gold",
+    subtitle:
+      "Race 3 laps across Labadi Beach, Aburi Hills & Tema Motorway — hit Kente Boost Pads & upgrade at Suame Garage.",
+    rulesSummary: [
+      "Choose from 4 Ghanaian rides (Labadi Sand Buggy, Yellow-Yellow Pragya, VIP Sprinter Trotro, or Kantanka 4×4) and 3 circuits.",
+      "Hit glowing yellow Kente Boost Pads and tap Shito Nitro (N₂) to blast past Kwame Turbo and the 6-racer pack.",
+      "Dodge volcanic rocks, coconut palms, and beach huts so your Armor HP never hits 0 before finishing 3 laps.",
+      "Collect spinning Gold Ghana Cedi Coins (GH₵) to upgrade your Engine, Nitro & Armor at the Suame Magazine Workshop!",
+    ],
+    badge: "Suame Turbo",
+    emoji: "🏎️",
+    gradient: "from-red-600/35 via-amber-900/25 to-slate-950 border-red-500/45",
+  },
+];
 
 const QUICK_STAKES = [2, 5, 10, 20, 50];
 
@@ -396,8 +397,8 @@ export default function ChallengeArena() {
         (nextTurnSide === "creator"
           ? challengeObj.creator_name || "Player 1"
           : challengeObj.opponent_name ||
-          HUMAN_CHALLENGER_PERSONAS[gType]?.name ||
-          "Challenger");
+            HUMAN_CHALLENGER_PERSONAS[gType]?.name ||
+            "Challenger");
 
       playTurnNotificationSound(isNowMyTurn);
 
@@ -780,62 +781,62 @@ export default function ChallengeArena() {
           "postgres_changes",
           { event: "*", schema: "public", table: "game_challenges" },
           (payload: any) => {
-            const updated = payload.new;
-            const oldRow = payload.old;
-            if (!updated) return;
+          const updated = payload.new;
+          const oldRow = payload.old;
+          if (!updated) return;
 
-            setChallenges((prev) => {
-              const exists = prev.some((c) => c.id === updated.id);
-              if (!exists) return [updated, ...prev];
-              return prev.map((c) => (c.id === updated.id ? updated : c));
-            });
+          setChallenges((prev) => {
+            const exists = prev.some((c) => c.id === updated.id);
+            if (!exists) return [updated, ...prev];
+            return prev.map((c) => (c.id === updated.id ? updated : c));
+          });
 
-            setActiveChallenge((curr: any) => {
-              if (curr && curr.id === updated.id) {
-                if (curr.status === "open" && updated.status === "in_progress" && updated.opponent_name) {
-                  window.setTimeout(() => {
-                    playSuccessSound();
-                    toast({
-                      title: `🔥 ${updated.opponent_name} Accepted Your Challenge!`,
-                      description: `Room #${updated.room_code} is now LIVE! Make your opening move!`,
-                    });
-                  }, 0);
-                }
-
-                const prevTurn = curr.current_turn || curr.board_state?.turn || "creator";
-                const nextTurn = updated.current_turn || updated.board_state?.turn || "creator";
-                const prevColor = curr.board_state?.currentPlayerColor;
-                const nextColor = updated.board_state?.currentPlayerColor;
-                if (
-                  updated.status === "in_progress" &&
-                  !updated.board_state?.winner &&
-                  (prevTurn !== nextTurn || (prevColor && nextColor && prevColor !== nextColor))
-                ) {
-                  window.setTimeout(() => {
-                    triggerOverallTurnNotification(updated, nextTurn, updated.board_state);
-                  }, 0);
-                }
-                return updated;
+          setActiveChallenge((curr: any) => {
+            if (curr && curr.id === updated.id) {
+              if (curr.status === "open" && updated.status === "in_progress" && updated.opponent_name) {
+                window.setTimeout(() => {
+                  playSuccessSound();
+                  toast({
+                    title: `🔥 ${updated.opponent_name} Accepted Your Challenge!`,
+                    description: `Room #${updated.room_code} is now LIVE! Make your opening move!`,
+                  });
+                }, 0);
               }
-              return curr;
-            });
 
-            if (
-              oldRow?.status === "open" &&
-              updated.status === "in_progress" &&
-              updated.opponent_name &&
-              (!activeChallenge || activeChallenge.id !== updated.id)
-            ) {
-              toast({
-                title: `⚔️ Challenge Accepted (#${updated.room_code})`,
-                description: `${updated.opponent_name} just accepted ${updated.creator_name}'s ${String(
-                  updated.game_type || ""
-                ).toUpperCase()} challenge!`,
-              });
+              const prevTurn = curr.current_turn || curr.board_state?.turn || "creator";
+              const nextTurn = updated.current_turn || updated.board_state?.turn || "creator";
+              const prevColor = curr.board_state?.currentPlayerColor;
+              const nextColor = updated.board_state?.currentPlayerColor;
+              if (
+                updated.status === "in_progress" &&
+                !updated.board_state?.winner &&
+                (prevTurn !== nextTurn || (prevColor && nextColor && prevColor !== nextColor))
+              ) {
+                window.setTimeout(() => {
+                  triggerOverallTurnNotification(updated, nextTurn, updated.board_state);
+                }, 0);
+              }
+              return updated;
             }
+            return curr;
+          });
+
+          if (
+            oldRow?.status === "open" &&
+            updated.status === "in_progress" &&
+            updated.opponent_name &&
+            (!activeChallenge || activeChallenge.id !== updated.id)
+          ) {
+            toast({
+              title: `⚔️ Challenge Accepted (#${updated.room_code})`,
+              description: `${updated.opponent_name} just accepted ${updated.creator_name}'s ${String(
+                updated.game_type || ""
+              ).toUpperCase()} challenge!`,
+            });
           }
-        )
-        .subscribe();
+        }
+      )
+      .subscribe();
     } catch {
       // ignore realtime channel collision
     }
@@ -1256,23 +1257,27 @@ export default function ChallengeArena() {
         winnerSide === "creator"
           ? activeChallenge.creator_name || "Player 1"
           : winnerSide === "opponent"
-            ? activeChallenge.opponent_name || "Challenger 2"
-            : "Draw";
+          ? activeChallenge.opponent_name || "Challenger 2"
+          : "Draw";
 
-      // If this is a local fallback challenge, settle locally immediately
-      if (String(activeChallenge.id || "").startsWith("local_")) {
-        setActiveChallenge((prev: any) =>
-          prev
-            ? {
+      // Immediately open the Celebratory Winner & Rematch Popup and optimistically mark completed so there is zero network delay!
+      setShowPlayAnotherPicker(false);
+      setShowMatchResultModal(true);
+      setActiveChallenge((prev: any) =>
+        prev
+          ? {
               ...prev,
               status: "completed",
               winner_side: winnerSide,
               winner_name: resolvedWinnerName,
-              board_state: finalState,
+              board_state: finalState || prev.board_state,
               completed_at: new Date().toISOString(),
             }
-            : prev
-        );
+          : prev
+      );
+
+      // If this is a local fallback challenge, we are already settled locally
+      if (String(activeChallenge.id || "").startsWith("local_")) {
         return;
       }
 
@@ -1295,38 +1300,15 @@ export default function ChallengeArena() {
               winnerSide === mySide
                 ? "🏆 VICTORY!"
                 : winnerSide === "draw"
-                  ? "🤝 Match Draw!"
-                  : `🏁 ${resolvedWinnerName} Won!`,
+                ? "🤝 Match Draw!"
+                : `🏁 ${resolvedWinnerName} Won!`,
             description: data.message,
           });
           fetchWalletAndPaystackKey();
           fetchLobby(true);
-        } else {
-          setActiveChallenge((prev: any) =>
-            prev
-              ? {
-                ...prev,
-                status: "completed",
-                winner_side: winnerSide,
-                winner_name: resolvedWinnerName,
-                board_state: finalState,
-              }
-              : prev
-          );
         }
       } catch (err) {
         console.error("Failed to settle match:", err);
-        setActiveChallenge((prev: any) =>
-          prev
-            ? {
-              ...prev,
-              status: "completed",
-              winner_side: winnerSide,
-              winner_name: resolvedWinnerName,
-              board_state: finalState,
-            }
-            : prev
-        );
       }
     },
     [
@@ -1343,20 +1325,44 @@ export default function ChallengeArena() {
 
   // Automatic End-of-Match Settlement & Winner Popup Watcher (works both locally AND via Supabase Realtime when Opponent wins!)
   useEffect(() => {
-    if (!activeChallenge || activeChallenge.status !== "completed" || !activeChallenge.id) {
+    if (!activeChallenge || !activeChallenge.id) {
       return;
     }
 
-    const cid = String(activeChallenge.id);
-    if (settledCompletedIdsRef.current.has(cid)) {
+    const ludoEngineWinner = activeChallenge.board_state?.engine?.winner;
+    const derivedBoardWinner =
+      activeChallenge.winner_side ||
+      activeChallenge.board_state?.winner ||
+      (ludoEngineWinner
+        ? ludoEngineWinner === "RED"
+          ? "creator"
+          : "opponent"
+        : null);
+
+    const isCompletedNow =
+      activeChallenge.status === "completed" || Boolean(derivedBoardWinner);
+
+    if (!isCompletedNow) {
       return;
     }
-    settledCompletedIdsRef.current.add(cid);
+
+    const roundSignature = `${activeChallenge.id}-${
+      activeChallenge.completed_at ||
+      activeChallenge.board_state?.moveCount ||
+      activeChallenge.board_state?.shotCount ||
+      activeChallenge.board_state?.engine?.moveCount ||
+      "done"
+    }`;
+
+    if (settledCompletedIdsRef.current.has(roundSignature)) {
+      return;
+    }
+    settledCompletedIdsRef.current.add(roundSignature);
 
     setShowPlayAnotherPicker(false);
     setShowMatchResultModal(true);
 
-    const winnerSide = activeChallenge.winner_side || activeChallenge.board_state?.winner;
+    const winnerSide = derivedBoardWinner || "creator";
     if (winnerSide === mySide) {
       playSuccessSound();
       triggerHapticSensor("victory");
@@ -1375,6 +1381,11 @@ export default function ChallengeArena() {
     activeChallenge?.id,
     activeChallenge?.status,
     activeChallenge?.winner_side,
+    activeChallenge?.completed_at,
+    activeChallenge?.board_state?.winner,
+    activeChallenge?.board_state?.engine?.winner,
+    activeChallenge?.board_state?.moveCount,
+    activeChallenge?.board_state?.shotCount,
     mySide,
     handlePointsEarned,
     fetchWalletAndPaystackKey,
@@ -1399,7 +1410,7 @@ export default function ChallengeArena() {
           (pendingRematchId && c.id === pendingRematchId) ||
           (pendingRematchCode &&
             String(c.room_code || "").toUpperCase() ===
-            String(pendingRematchCode).toUpperCase())
+              String(pendingRematchCode).toUpperCase())
       );
       if (foundInLobby && foundInLobby.status === "open") {
         await handleJoinChallenge(foundInLobby, user ? "wallet" : "momo");
@@ -1433,10 +1444,10 @@ export default function ChallengeArena() {
       autoInviteOpponent:
         gMode === "p2p"
           ? {
-            name: otherPlayerName || null,
-            phone: otherPlayerPhone || null,
-            userId: otherPlayerUserId || null,
-          }
+              name: otherPlayerName || null,
+              phone: otherPlayerPhone || null,
+              userId: otherPlayerUserId || null,
+            }
           : undefined,
     });
   };
@@ -1574,10 +1585,10 @@ export default function ChallengeArena() {
   });
   const invitedSpotlightChallenge = roomQueryParam
     ? challenges.find(
-      (c) =>
-        String(c.room_code || "").toUpperCase() === roomQueryParam &&
-        (c.status === "open" || c.status === "in_progress")
-    )
+        (c) =>
+          String(c.room_code || "").toUpperCase() === roomQueryParam &&
+          (c.status === "open" || c.status === "in_progress")
+      )
     : null;
   const remainingFreeDataToday = Math.max(
     0,
@@ -1605,9 +1616,9 @@ export default function ChallengeArena() {
       style={
         activeChallenge
           ? {
-            width: `${screenFit.availWidth}px`,
-            height: `${screenFit.availHeight}px`,
-          }
+              width: `${screenFit.availWidth}px`,
+              height: `${screenFit.availHeight}px`,
+            }
           : undefined
       }
       className={
@@ -1740,10 +1751,11 @@ export default function ChallengeArena() {
                     key={tab.id}
                     type="button"
                     onClick={() => setProfileDrawerTab(tab.id)}
-                    className={`py-2 px-2 rounded-xl text-[11px] font-black flex flex-col items-center gap-1 transition-all cursor-pointer ${active
+                    className={`py-2 px-2 rounded-xl text-[11px] font-black flex flex-col items-center gap-1 transition-all cursor-pointer ${
+                      active
                         ? "bg-amber-500 text-slate-950 shadow"
                         : "text-slate-400 hover:text-white hover:bg-white/5"
-                      }`}
+                    }`}
                   >
                     <Icon className="w-4 h-4" />
                     <span>{tab.label}</span>
@@ -1838,10 +1850,11 @@ export default function ChallengeArena() {
                             key={tier.size}
                             type="button"
                             onClick={() => handleSelectTargetData(tier.size)}
-                            className={`py-2 px-2 rounded-xl text-xs font-black border transition-all cursor-pointer ${active
+                            className={`py-2 px-2 rounded-xl text-xs font-black border transition-all cursor-pointer ${
+                              active
                                 ? "bg-amber-500 text-slate-950 border-amber-400 shadow"
                                 : "bg-slate-950 border-white/10 text-slate-300 hover:text-white"
-                              }`}
+                            }`}
                           >
                             🎁 {tier.size}
                           </button>
@@ -2329,10 +2342,11 @@ export default function ChallengeArena() {
                     key={g.id}
                     type="button"
                     onClick={() => setSelectedGame(g.id)}
-                    className={`px-3 py-1.5 rounded-xl text-[11px] font-black whitespace-nowrap border transition-all flex items-center gap-1.5 cursor-pointer shrink-0 ${active
+                    className={`px-3 py-1.5 rounded-xl text-[11px] font-black whitespace-nowrap border transition-all flex items-center gap-1.5 cursor-pointer shrink-0 ${
+                      active
                         ? "bg-amber-500 text-slate-950 border-amber-300 shadow-md"
                         : "bg-slate-950/70 text-slate-300 border-white/10 hover:text-white hover:border-white/25"
-                      }`}
+                    }`}
                   >
                     <span>{g.emoji}</span>
                     <span>{g.shortTitle}</span>
@@ -2346,10 +2360,11 @@ export default function ChallengeArena() {
               <button
                 type="button"
                 onClick={() => setSelectedMode("free_data")}
-                className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${selectedMode === "free_data"
+                className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${
+                  selectedMode === "free_data"
                     ? "bg-amber-500/20 border-amber-400 text-white ring-1 ring-amber-400"
                     : "bg-slate-950/70 border-white/10 text-slate-400 hover:text-white"
-                  }`}
+                }`}
               >
                 <Gift className="w-4 h-4 text-amber-400 mb-1" />
                 <p className="text-xs font-black">Win Data</p>
@@ -2362,10 +2377,11 @@ export default function ChallengeArena() {
                   setSelectedMode("p2p");
                   setStakeAmount("0");
                 }}
-                className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${selectedMode === "p2p"
+                className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${
+                  selectedMode === "p2p"
                     ? "bg-emerald-500/20 border-emerald-400 text-white ring-1 ring-emerald-400"
                     : "bg-slate-950/70 border-white/10 text-slate-400 hover:text-white"
-                  }`}
+                }`}
               >
                 <Users className="w-4 h-4 text-emerald-400 mb-1" />
                 <p className="text-xs font-black">Play Friend</p>
@@ -2378,10 +2394,11 @@ export default function ChallengeArena() {
                   setSelectedMode("ai");
                   if (Number(stakeAmount || 0) <= 0) setStakeAmount("5");
                 }}
-                className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${selectedMode === "ai"
+                className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${
+                  selectedMode === "ai"
                     ? "bg-sky-500/20 border-sky-400 text-white ring-1 ring-sky-400"
                     : "bg-slate-950/70 border-white/10 text-slate-400 hover:text-white"
-                  }`}
+                }`}
               >
                 <Brain className="w-4 h-4 text-sky-400 mb-1" />
                 <p className="text-xs font-black">1.8× Cash AI</p>
@@ -2413,10 +2430,11 @@ export default function ChallengeArena() {
                     <button
                       type="button"
                       onClick={() => setPaymentSource("wallet")}
-                      className={`p-2.5 rounded-xl border text-left flex items-center gap-2 cursor-pointer ${paymentSource === "wallet"
+                      className={`p-2.5 rounded-xl border text-left flex items-center gap-2 cursor-pointer ${
+                        paymentSource === "wallet"
                           ? "bg-emerald-500/15 border-emerald-400 text-emerald-300"
                           : "bg-slate-950 border-white/10 text-slate-400"
-                        }`}
+                      }`}
                     >
                       <Wallet className="w-4 h-4 shrink-0" />
                       <div>
@@ -2427,10 +2445,11 @@ export default function ChallengeArena() {
                     <button
                       type="button"
                       onClick={() => setPaymentSource("momo")}
-                      className={`p-2.5 rounded-xl border text-left flex items-center gap-2 cursor-pointer ${paymentSource === "momo"
+                      className={`p-2.5 rounded-xl border text-left flex items-center gap-2 cursor-pointer ${
+                        paymentSource === "momo"
                           ? "bg-amber-500/15 border-amber-400 text-amber-300"
                           : "bg-slate-950 border-white/10 text-slate-400"
-                        }`}
+                      }`}
                     >
                       <Smartphone className="w-4 h-4 shrink-0" />
                       <div>
@@ -2450,11 +2469,11 @@ export default function ChallengeArena() {
                       {Number(stakeAmount || 0) === 0
                         ? "🎁 Friendly 1v1 (+35 Arena Pts)"
                         : `Winner Pot: GH₵ ${(
-                          Number(stakeAmount || 0) *
-                          (selectedMode === "p2p"
-                            ? 2 * (1 - Number(settings.house_commission_percent || 10) / 100)
-                            : 1.8)
-                        ).toFixed(2)}`}
+                            Number(stakeAmount || 0) *
+                            (selectedMode === "p2p"
+                              ? 2 * (1 - Number(settings.house_commission_percent || 10) / 100)
+                              : 1.8)
+                          ).toFixed(2)}`}
                     </span>
                   </div>
                   <div className="flex gap-1.5 flex-wrap">
@@ -2462,10 +2481,11 @@ export default function ChallengeArena() {
                       <button
                         type="button"
                         onClick={() => setStakeAmount("0")}
-                        className={`flex-1 min-w-[68px] py-1.5 rounded-xl border text-xs font-black cursor-pointer ${Number(stakeAmount || 0) === 0
+                        className={`flex-1 min-w-[68px] py-1.5 rounded-xl border text-xs font-black cursor-pointer ${
+                          Number(stakeAmount || 0) === 0
                             ? "bg-emerald-500 text-slate-950 border-emerald-300"
                             : "bg-slate-950 border-white/10 text-emerald-300"
-                          }`}
+                        }`}
                       >
                         Free 1v1
                       </button>
@@ -2475,10 +2495,11 @@ export default function ChallengeArena() {
                         key={amt}
                         type="button"
                         onClick={() => setStakeAmount(String(amt))}
-                        className={`flex-1 py-1.5 rounded-xl border text-xs font-black cursor-pointer ${Number(stakeAmount) === amt
+                        className={`flex-1 py-1.5 rounded-xl border text-xs font-black cursor-pointer ${
+                          Number(stakeAmount) === amt
                             ? "bg-amber-500 text-slate-950 border-amber-400"
                             : "bg-slate-950 border-white/10 text-slate-300"
-                          }`}
+                        }`}
                       >
                         ₵{amt}
                       </button>
@@ -2557,12 +2578,12 @@ export default function ChallengeArena() {
                       {selectedMode === "free_data"
                         ? `Play ${selectedGameMeta.shortTitle} Now`
                         : selectedMode === "p2p"
-                          ? Number(stakeAmount || 0) === 0
-                            ? `Create Free ${selectedGameMeta.shortTitle} Room`
-                            : `Create ${selectedGameMeta.shortTitle} Room (GH₵ ${Number(
+                        ? Number(stakeAmount || 0) === 0
+                          ? `Create Free ${selectedGameMeta.shortTitle} Room`
+                          : `Create ${selectedGameMeta.shortTitle} Room (GH₵ ${Number(
                               stakeAmount || 0
                             ).toFixed(2)})`
-                          : `Play vs Champion (GH₵ ${Number(stakeAmount || 0).toFixed(2)})`}
+                        : `Play vs Champion (GH₵ ${Number(stakeAmount || 0).toFixed(2)})`}
                     </span>
                     <ArrowRight className="w-4 h-4" />
                   </>
@@ -2634,13 +2655,53 @@ export default function ChallengeArena() {
         <Card className="relative flex-1 min-h-0 w-full flex flex-col border-0 rounded-none bg-[#070b14] shadow-none overflow-hidden">
           {topHudCollapsed ? (
             /* Floating Corner Pill when Board is 100% Locked to Screen */
-            <div className="fixed top-1.5 left-1.5 z-[95] flex items-center gap-1 px-2 py-1 rounded-full bg-slate-950/90 border border-white/15 shadow-xl backdrop-blur-md">
+            <div className="fixed top-1.5 left-1.5 z-[115] flex flex-wrap items-center gap-1 px-2 py-1 rounded-full bg-slate-950/90 border border-white/15 shadow-xl backdrop-blur-md">
               <button
                 type="button"
                 onClick={() => setActiveChallenge(null)}
                 className="px-2 py-0.5 rounded-full bg-white/10 hover:bg-white/20 text-[10px] font-black text-white flex items-center gap-1 cursor-pointer"
               >
                 <ArrowLeft className="w-3 h-3" /> Lobby
+              </button>
+              <InGameVoiceChat
+                roomCode={activeChallenge.room_code || "ARENA"}
+                challengeId={activeChallenge.id}
+                mySide={mySide}
+                myName={
+                  mySide === "creator"
+                    ? activeChallenge.creator_name || displayFirstName
+                    : activeChallenge.opponent_name || displayFirstName
+                }
+                opponentName={
+                  mySide === "creator"
+                    ? activeChallenge.opponent_name ||
+                      HUMAN_CHALLENGER_PERSONAS[
+                        (activeChallenge.game_type || "oware") as GameType
+                      ]?.name ||
+                      "Opponent"
+                    : activeChallenge.creator_name || "Creator"
+                }
+                mode={activeChallenge.mode || "free_data"}
+                compact={true}
+              />
+              <button
+                type="button"
+                onClick={handleRematchCurrentGame}
+                className="px-2 py-0.5 rounded-full bg-amber-500/25 hover:bg-amber-500/35 border border-amber-400/50 text-[9px] font-black text-amber-300 flex items-center gap-1 cursor-pointer"
+                title="Start Instant Rematch"
+              >
+                <RefreshCw className="w-2.5 h-2.5" /> Rematch
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPlayAnotherPicker(true);
+                  setShowMatchResultModal(true);
+                }}
+                className="px-2 py-0.5 rounded-full bg-emerald-500/25 hover:bg-emerald-500/35 border border-emerald-400/50 text-[9px] font-black text-emerald-300 flex items-center gap-1 cursor-pointer"
+                title="Switch to Another Game"
+              >
+                <Gamepad2 className="w-2.5 h-2.5" /> Play Another
               </button>
               <button
                 type="button"
@@ -2674,7 +2735,7 @@ export default function ChallengeArena() {
               </button>
             </div>
           ) : (
-            <CardHeader className="shrink-0 h-7 py-0.5 px-2 sm:px-3 border-b border-white/10 bg-[#0c1322] flex flex-row flex-nowrap items-center justify-between gap-1.5 space-y-0 overflow-x-auto no-scrollbar">
+            <CardHeader className="shrink-0 h-8 py-0.5 px-2 sm:px-3 border-b border-white/10 bg-[#0c1322] flex flex-row flex-nowrap items-center justify-between gap-1.5 space-y-0 overflow-x-auto no-scrollbar">
               <div className="flex items-center gap-1.5 min-w-0 shrink-0">
                 {/* Left-Corner Profile / Settings / Help Micro Button */}
                 <button
@@ -2723,27 +2784,71 @@ export default function ChallengeArena() {
                     activeChallenge.status === "in_progress"
                       ? "bg-emerald-500 text-slate-950 font-black text-[8px] px-1 py-0 shrink-0"
                       : activeChallenge.status === "open"
-                        ? "bg-amber-500 text-slate-950 font-black animate-pulse text-[8px] px-1 py-0 shrink-0"
-                        : "bg-purple-500 text-white font-black text-[8px] px-1 py-0 shrink-0"
+                      ? "bg-amber-500 text-slate-950 font-black animate-pulse text-[8px] px-1 py-0 shrink-0"
+                      : "bg-purple-500 text-white font-black text-[8px] px-1 py-0 shrink-0"
                   }
                 >
                   {activeChallenge.status === "open"
                     ? "⏳ WAIT"
                     : activeChallenge.status === "in_progress"
-                      ? "🟢 LIVE"
-                      : "🏁 DONE"}
+                    ? "🟢 LIVE"
+                    : "🏁 DONE"}
                 </Badge>
 
-                <span className="text-[9px] sm:text-[11px] font-black text-white truncate max-w-[120px] sm:max-w-[240px]">
+                <span className="text-[9px] sm:text-[11px] font-black text-white truncate max-w-[110px] sm:max-w-[200px]">
                   {activeChallenge.creator_name} <span className="text-amber-400">vs.</span>{" "}
                   {activeChallenge.opponent_name || "Waiting..."}
                 </span>
               </div>
 
               <div className="flex items-center gap-1 shrink-0">
-                <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded bg-sky-500/10 border border-sky-400/30 text-[8px] font-mono text-sky-300">
-                  📱 {screenFit.deviceBrand} {screenFit.availWidth}×{screenFit.availHeight}
-                </span>
+                {/* 🎙️ LIVE IN-GAME OPEN MIC VOICE COMMUNICATION */}
+                <InGameVoiceChat
+                  roomCode={activeChallenge.room_code || "ARENA"}
+                  challengeId={activeChallenge.id}
+                  mySide={mySide}
+                  myName={
+                    mySide === "creator"
+                      ? activeChallenge.creator_name || displayFirstName
+                      : activeChallenge.opponent_name || displayFirstName
+                  }
+                  opponentName={
+                    mySide === "creator"
+                      ? activeChallenge.opponent_name ||
+                        HUMAN_CHALLENGER_PERSONAS[
+                          (activeChallenge.game_type || "oware") as GameType
+                        ]?.name ||
+                        "Opponent"
+                      : activeChallenge.creator_name || "Creator"
+                  }
+                  mode={activeChallenge.mode || "free_data"}
+                />
+
+                {/* 🔄 ALWAYS-VISIBLE 1-TAP REMATCH BUTTON */}
+                <button
+                  type="button"
+                  disabled={submitting || Boolean(joiningChallengeId)}
+                  onClick={handleRematchCurrentGame}
+                  className="h-5 px-2 rounded-md bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[9px] flex items-center gap-1 cursor-pointer shrink-0 shadow"
+                  title="Rematch / Start Fresh Round"
+                >
+                  <RefreshCw className="w-2.5 h-2.5" />
+                  <span>Rematch</span>
+                </button>
+
+                {/* 🎮 ALWAYS-VISIBLE 1-TAP PLAY ANOTHER GAME BUTTON */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPlayAnotherPicker(true);
+                    setShowMatchResultModal(true);
+                  }}
+                  className="h-5 px-2 rounded-md bg-emerald-500/25 hover:bg-emerald-500/35 border border-emerald-400/50 text-emerald-200 font-black text-[9px] flex items-center gap-1 cursor-pointer shrink-0"
+                  title="Switch to Another Game"
+                >
+                  <Gamepad2 className="w-2.5 h-2.5 text-emerald-300" />
+                  <span>Play Another</span>
+                </button>
 
                 {lastPointsPopup && (
                   <Badge className="bg-amber-400 text-slate-950 font-black text-[8px] animate-bounce px-1 py-0">
@@ -2781,17 +2886,19 @@ export default function ChallengeArena() {
                   title="Hide top bar and lock board to 100% of screen"
                 >
                   <Maximize2 className="w-2.5 h-2.5" />
-                  <span className="hidden sm:inline">Lock Board</span>
+                  <span className="hidden sm:inline">Lock</span>
                 </button>
 
-                {activeChallenge.status === "completed" && (
+                {(activeChallenge.status === "completed" ||
+                  Boolean(activeChallenge.board_state?.winner) ||
+                  Boolean(activeChallenge.board_state?.engine?.winner)) && (
                   <button
                     type="button"
                     onClick={() => setShowMatchResultModal(true)}
                     className="h-5 px-2 rounded-md bg-gradient-to-r from-amber-500 to-emerald-500 text-slate-950 font-black text-[9px] flex items-center gap-1 cursor-pointer shrink-0 shadow"
                   >
                     <Trophy className="w-2.5 h-2.5" />
-                    <span>Winner &amp; Rematch</span>
+                    <span>Winner Card</span>
                   </button>
                 )}
 
@@ -2832,13 +2939,13 @@ export default function ChallengeArena() {
           <CardContent
             className={
               activeChallenge.game_type === "buggy" &&
-                activeChallenge.status === "in_progress"
+              activeChallenge.status === "in_progress"
                 ? "flex-1 min-h-0 w-full h-full overflow-hidden overscroll-none p-0 flex flex-col"
                 : (activeChallenge.game_type === "pool" ||
-                  activeChallenge.game_type === "slash") &&
+                    activeChallenge.game_type === "slash") &&
                   activeChallenge.status === "in_progress"
-                  ? "flex-1 min-h-0 w-full h-full overflow-hidden overscroll-none p-0 sm:p-1.5 flex flex-col"
-                  : "flex-1 min-h-0 w-full overflow-y-auto overflow-x-hidden overscroll-none p-1.5 sm:p-3 space-y-1.5 max-w-6xl mx-auto"
+                ? "flex-1 min-h-0 w-full h-full overflow-hidden overscroll-none p-0 sm:p-1.5 flex flex-col"
+                : "flex-1 min-h-0 w-full overflow-y-auto overflow-x-hidden overscroll-none p-1.5 sm:p-3 space-y-1.5 max-w-6xl mx-auto"
             }
           >
             {/* Waiting for Opponent + Invite Console (Open P2P Challenge) */}
@@ -2890,7 +2997,8 @@ export default function ChallengeArena() {
 
                     <a
                       href={`https://wa.me/?text=${encodeURIComponent(
-                        `⚔️ Join my ${String(activeChallenge.game_type || "").toUpperCase()} match on SwiftData Games!\n🔑 Room Code: #${activeChallenge.room_code}\n👉 Tap to play: ${window.location.origin
+                        `⚔️ Join my ${String(activeChallenge.game_type || "").toUpperCase()} match on SwiftData Games!\n🔑 Room Code: #${activeChallenge.room_code}\n👉 Tap to play: ${
+                          window.location.origin
                         }/challenges?room=${activeChallenge.room_code}`
                       )}`}
                       target="_blank"
@@ -2914,13 +3022,15 @@ export default function ChallengeArena() {
                     {activeChallenge.winner_side === "draw"
                       ? "🤝 Match Ended in a Draw!"
                       : activeChallenge.winner_side === mySide
-                        ? `🏆 Victory! You Won (${Number(activeChallenge.prize_pool || 0) > 0
-                          ? `GH₵ ${Number(activeChallenge.prize_pool).toFixed(2)}`
-                          : `+35 Pts • ${targetProgressPercent}% to ${selectedTargetOption.size}`
+                      ? `🏆 Victory! You Won (${
+                          Number(activeChallenge.prize_pool || 0) > 0
+                            ? `GH₵ ${Number(activeChallenge.prize_pool).toFixed(2)}`
+                            : `+35 Pts • ${targetProgressPercent}% to ${selectedTargetOption.size}`
                         })`
-                        : `🏁 ${activeChallenge.winner_side === "creator"
-                          ? activeChallenge.creator_name || "Player 1"
-                          : activeChallenge.opponent_name || "Opponent"
+                      : `🏁 ${
+                          activeChallenge.winner_side === "creator"
+                            ? activeChallenge.creator_name || "Player 1"
+                            : activeChallenge.opponent_name || "Opponent"
                         } Won This Match`}
                   </h3>
                   <p className="text-[11px] text-emerald-200">
@@ -2998,8 +3108,8 @@ export default function ChallengeArena() {
                           ? activeChallenge.creator_name || "You"
                           : activeChallenge.opponent_name || playerName || "You"
                         : currentTurnSide === "creator"
-                          ? activeChallenge.creator_name || "Player 1"
-                          : activeChallenge.opponent_name ||
+                        ? activeChallenge.creator_name || "Player 1"
+                        : activeChallenge.opponent_name ||
                           HUMAN_CHALLENGER_PERSONAS[gType]?.name ||
                           "Player 2");
 
@@ -3010,17 +3120,19 @@ export default function ChallengeArena() {
 
                     return (
                       <div
-                        className={`px-2.5 py-1 rounded-xl border flex flex-wrap items-center justify-between gap-1.5 shrink-0 ${isCurrentlyMyTurn
+                        className={`px-2.5 py-1 rounded-xl border flex flex-wrap items-center justify-between gap-1.5 shrink-0 ${
+                          isCurrentlyMyTurn
                             ? "bg-emerald-950/50 border-emerald-500/40"
                             : "bg-amber-950/40 border-amber-500/40"
-                          }`}
+                        }`}
                       >
                         <div className="flex items-center gap-2">
                           <span
-                            className={`w-2 h-2 rounded-full shrink-0 ${isCurrentlyMyTurn
+                            className={`w-2 h-2 rounded-full shrink-0 ${
+                              isCurrentlyMyTurn
                                 ? "bg-emerald-400 animate-ping"
                                 : "bg-amber-400 animate-pulse"
-                              }`}
+                            }`}
                           />
                           <span className="text-[11px] font-black text-white">
                             {isCurrentlyMyTurn
@@ -3028,10 +3140,11 @@ export default function ChallengeArena() {
                               : `🔔 NEXT TURN: ${nextUpName.toUpperCase()}`}
                           </span>
                           <span
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-black border ${turnShotClockSec <= 6
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-black border ${
+                              turnShotClockSec <= 6
                                 ? "bg-rose-600/90 border-rose-300 text-white animate-pulse"
                                 : "bg-slate-950/80 border-amber-400/40 text-amber-300"
-                              }`}
+                            }`}
                           >
                             ⏱️ {turnShotClockSec}s
                           </span>
@@ -3120,6 +3233,12 @@ export default function ChallengeArena() {
                     onMatchComplete={handleMatchComplete}
                     onPointsEarned={handlePointsEarned}
                     playerLevel={levelInfo.level}
+                    prizePoolGhs={Number(activeChallenge.prize_pool_ghs || 0)}
+                    onRematch={handleRematchCurrentGame}
+                    onPlayAnotherGame={() => {
+                      setShowPlayAnotherPicker(true);
+                      setShowMatchResultModal(true);
+                    }}
                   />
                 )}
                 {activeChallenge.game_type === "ludo" && (
@@ -3188,6 +3307,11 @@ export default function ChallengeArena() {
                     onPointsEarned={handlePointsEarned}
                     playerLevel={levelInfo.level}
                     onBackToLobby={() => setActiveChallenge(null)}
+                    onRematch={handleRematchCurrentGame}
+                    onPlayAnotherGame={() => {
+                      setShowPlayAnotherPicker(true);
+                      setShowMatchResultModal(true);
+                    }}
                   />
                 )}
                 {activeChallenge.game_type === "candy" && (
@@ -3204,35 +3328,86 @@ export default function ChallengeArena() {
                     onPointsEarned={handlePointsEarned}
                     playerLevel={levelInfo.level}
                     onBackToLobby={() => setActiveChallenge(null)}
+                    onRematch={handleRematchCurrentGame}
+                    onPlayAnotherGame={() => {
+                      setShowPlayAnotherPicker(true);
+                      setShowMatchResultModal(true);
+                    }}
                   />
                 )}
                 {activeChallenge.game_type === "buggy" && (
-                  <BeachBuggyTrack
-                    mode={activeChallenge.mode}
-                    mySide={mySide}
-                    creatorName={activeChallenge.creator_name}
-                    opponentName={
-                      activeChallenge.opponent_name || HUMAN_CHALLENGER_PERSONAS.buggy.name
-                    }
-                    initialState={activeChallenge.board_state}
-                    onStateChange={handleBoardStateChange}
-                    onMatchComplete={(winnerSide: "creator" | "opponent" | "draw", finalState?: any) =>
-                      handleMatchComplete(winnerSide, finalState || activeChallenge.board_state)
-                    }
-                    onPointsEarned={handlePointsEarned}
-                    playerLevel={levelInfo.level}
-                    onBackToLobby={() => setActiveChallenge(null)}
-                  />
+                  <>
+                    {/* Floating Open Mic, Rematch & Play Another Overlay above Fullscreen Buggy GP (z-[115]) */}
+                    <div className="fixed bottom-1.5 left-1/2 -translate-x-1/2 z-[115] flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-950/85 border border-white/15 backdrop-blur-md shadow-xl">
+                      <InGameVoiceChat
+                        roomCode={activeChallenge.room_code || "ARENA"}
+                        challengeId={activeChallenge.id}
+                        mySide={mySide}
+                        myName={
+                          mySide === "creator"
+                            ? activeChallenge.creator_name || displayFirstName
+                            : activeChallenge.opponent_name || displayFirstName
+                        }
+                        opponentName={
+                          mySide === "creator"
+                            ? activeChallenge.opponent_name ||
+                              HUMAN_CHALLENGER_PERSONAS.buggy.name
+                            : activeChallenge.creator_name || "Creator"
+                        }
+                        mode={activeChallenge.mode || "free_data"}
+                        compact={true}
+                      />
+                      <button
+                        type="button"
+                        onClick={handleRematchCurrentGame}
+                        className="px-2 py-0.5 rounded-full bg-amber-500 text-slate-950 font-black text-[9px] flex items-center gap-1 cursor-pointer"
+                      >
+                        <RefreshCw className="w-2.5 h-2.5" /> Rematch
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowPlayAnotherPicker(true);
+                          setShowMatchResultModal(true);
+                        }}
+                        className="px-2 py-0.5 rounded-full bg-emerald-500/25 border border-emerald-400/50 text-emerald-200 font-black text-[9px] flex items-center gap-1 cursor-pointer"
+                      >
+                        <Gamepad2 className="w-2.5 h-2.5" /> Play Another
+                      </button>
+                    </div>
+                    <BeachBuggyTrack
+                      mode={activeChallenge.mode}
+                      mySide={mySide}
+                      creatorName={activeChallenge.creator_name}
+                      opponentName={
+                        activeChallenge.opponent_name || HUMAN_CHALLENGER_PERSONAS.buggy.name
+                      }
+                      initialState={activeChallenge.board_state}
+                      onStateChange={handleBoardStateChange}
+                      onMatchComplete={(winnerSide: "creator" | "opponent" | "draw", finalState?: any) =>
+                        handleMatchComplete(winnerSide, finalState || activeChallenge.board_state)
+                      }
+                      onPointsEarned={handlePointsEarned}
+                      playerLevel={levelInfo.level}
+                      onBackToLobby={() => setActiveChallenge(null)}
+                      onRematch={handleRematchCurrentGame}
+                      onPlayAnotherGame={() => {
+                        setShowPlayAnotherPicker(true);
+                        setShowMatchResultModal(true);
+                      }}
+                    />
+                  </>
                 )}
               </>
             )}
 
             {/* ── CELEBRATORY END-OF-MATCH WINNER, REWARD & REMATCH POPUP MODAL ── */}
-            {activeChallenge.status === "completed" && showMatchResultModal && (() => {
+            {showMatchResultModal && (() => {
+              const ludoWinner = activeChallenge.board_state?.engine?.winner;
               const winnerSide =
                 activeChallenge.winner_side ||
                 activeChallenge.board_state?.winner ||
-                "creator";
+                (ludoWinner ? (ludoWinner === "RED" ? "creator" : "opponent") : "creator");
               const isDraw = winnerSide === "draw";
               const iWon = !isDraw && winnerSide === mySide;
               const gType = (activeChallenge.game_type || "oware") as GameType;
@@ -3241,15 +3416,15 @@ export default function ChallengeArena() {
               const winnerDisplayName = isDraw
                 ? "Match Draw"
                 : winnerSide === "creator"
-                  ? activeChallenge.creator_name || "Player 1"
-                  : activeChallenge.opponent_name ||
+                ? activeChallenge.creator_name || "Player 1"
+                : activeChallenge.opponent_name ||
                   HUMAN_CHALLENGER_PERSONAS[gType]?.name ||
                   "Challenger 2";
               const runnerUpDisplayName =
                 winnerSide === "creator"
                   ? activeChallenge.opponent_name ||
-                  HUMAN_CHALLENGER_PERSONAS[gType]?.name ||
-                  "Challenger 2"
+                    HUMAN_CHALLENGER_PERSONAS[gType]?.name ||
+                    "Challenger 2"
                   : activeChallenge.creator_name || "Player 1";
               const stakeVal = Number(activeChallenge.stake_amount || 0);
               const prizeVal = Number(activeChallenge.prize_pool || 0);
@@ -3262,7 +3437,7 @@ export default function ChallengeArena() {
                 runnerUpDisplayName;
 
               return (
-                <div className="fixed inset-0 z-[130] flex items-center justify-center p-3 sm:p-5 bg-slate-950/88 backdrop-blur-xl animate-in fade-in duration-200 overflow-y-auto">
+                <div className="fixed inset-0 z-[140] flex items-center justify-center p-3 sm:p-5 bg-slate-950/88 backdrop-blur-xl animate-in fade-in duration-200 overflow-y-auto">
                   <div className="relative w-full max-w-lg rounded-3xl border border-amber-400/40 bg-gradient-to-b from-[#11192e] via-[#0c1324] to-[#080d1a] p-5 sm:p-6 shadow-[0_25px_80px_rgba(0,0,0,0.92)] text-white space-y-4 my-auto">
                     {/* Close / View Board Corner Button */}
                     <button
@@ -3303,15 +3478,15 @@ export default function ChallengeArena() {
                             {isDraw
                               ? "STAKES REFUNDED"
                               : iWon
-                                ? "🎉 YOU ARE THE WINNER!"
-                                : `🏆 WINNER: ${winnerDisplayName.toUpperCase()}`}
+                              ? "🎉 YOU ARE THE WINNER!"
+                              : `🏆 WINNER: ${winnerDisplayName.toUpperCase()}`}
                           </p>
                           <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-white">
                             {isDraw
                               ? "Match Ended in a Draw!"
                               : iWon
-                                ? `${winnerDisplayName} Wins!`
-                                : `${winnerDisplayName} Won This Round!`}
+                              ? `${winnerDisplayName} Wins!`
+                              : `${winnerDisplayName} Won This Round!`}
                           </h2>
                           <p className="text-xs text-slate-300 max-w-md mx-auto">
                             {activeChallenge.board_state?.summary ||
@@ -3325,12 +3500,13 @@ export default function ChallengeArena() {
 
                     {/* Reward Settlement / Instant Claim Box */}
                     <div
-                      className={`p-4 rounded-2xl border space-y-3 ${iWon
+                      className={`p-4 rounded-2xl border space-y-3 ${
+                        iWon
                           ? "bg-gradient-to-br from-emerald-950/90 via-teal-950/75 to-slate-900 border-emerald-400/50"
                           : isDraw
-                            ? "bg-slate-900/90 border-amber-400/40"
-                            : "bg-slate-900/90 border-white/15"
-                        }`}
+                          ? "bg-slate-900/90 border-amber-400/40"
+                          : "bg-slate-900/90 border-white/15"
+                      }`}
                     >
                       {stakeVal > 0 && prizeVal > 0 ? (
                         /* PAID STAKE MATCH SETTLEMENT */
@@ -3536,11 +3712,12 @@ export default function ChallengeArena() {
                         {pendingRematchCode
                           ? `⚡ Accept Rematch (#${pendingRematchCode})`
                           : activeChallenge.mode === "p2p"
-                            ? `🔄 Rematch ${mySide === "creator"
-                              ? activeChallenge.opponent_name || "Opponent"
-                              : activeChallenge.creator_name || "Creator"
+                          ? `🔄 Rematch ${
+                              mySide === "creator"
+                                ? activeChallenge.opponent_name || "Opponent"
+                                : activeChallenge.creator_name || "Creator"
                             }`
-                            : `🔄 Rematch (${gameMeta.shortLabel})`}
+                          : `🔄 Rematch (${gameMeta.shortLabel})`}
                       </Button>
 
                       <Button
@@ -3575,10 +3752,11 @@ export default function ChallengeArena() {
                                   (activeChallenge.mode || selectedMode) as ChallengeMode
                                 );
                               }}
-                              className={`p-2.5 rounded-xl border text-left transition-all flex items-center gap-2 cursor-pointer ${g.type === activeChallenge.game_type
+                              className={`p-2.5 rounded-xl border text-left transition-all flex items-center gap-2 cursor-pointer ${
+                                g.type === activeChallenge.game_type
                                   ? "bg-amber-500/20 border-amber-400/60 text-white"
                                   : "bg-white/[0.04] hover:bg-white/[0.1] border-white/10 text-slate-200"
-                                }`}
+                              }`}
                             >
                               <span className="text-lg shrink-0">{g.emoji}</span>
                               <div className="min-w-0">

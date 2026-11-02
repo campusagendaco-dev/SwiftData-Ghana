@@ -1,7 +1,20 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Volume2, VolumeX, HelpCircle, Sparkles, Flame, Smartphone, Brain } from "lucide-react";
+import {
+  Volume2,
+  VolumeX,
+  HelpCircle,
+  Sparkles,
+  Flame,
+  Smartphone,
+  Brain,
+  Trophy,
+  Crown,
+  RotateCcw,
+  Gamepad2,
+  Eye,
+} from "lucide-react";
 import { playSound, playSuccessSound } from "@/lib/sound";
 import { useDeviceScreenFit } from "@/hooks/use-device-screen-fit";
 import {
@@ -235,13 +248,20 @@ export function simulateNamNamMoveWithSteps(
     for (let i = 0; i < TOTAL_PIT_COUNT; i++) pits[i] = 0;
   }
 
+  const gained = scores[player] - scoreBefore;
+  const totalBoardSeeds = pits.reduce((acc, v) => acc + v, 0);
+
   let winner: "creator" | "opponent" | "draw" | null = null;
   const totalMoveCount = (state.moveCount || 0) + 1;
-  const boardEmpty = pits.every((p) => p === 0);
+  const boardEmpty = totalBoardSeeds === 0;
 
   if (scores.creator >= SEEDS_NEEDED_TO_WIN) winner = "creator";
   else if (scores.opponent >= SEEDS_NEEDED_TO_WIN) winner = "opponent";
-  else if (boardEmpty || totalMoveCount >= 100) {
+  else if (
+    boardEmpty ||
+    totalMoveCount >= 100 ||
+    (totalBoardSeeds <= 4 && gained === 0 && (scores.creator >= 20 || scores.opponent >= 20))
+  ) {
     scores.creator += sumSeedsOnSide(pits, "creator");
     scores.opponent += sumSeedsOnSide(pits, "opponent");
     for (let i = 0; i < TOTAL_PIT_COUNT; i++) pits[i] = 0;
@@ -249,8 +269,6 @@ export function simulateNamNamMoveWithSteps(
     else if (scores.opponent > scores.creator) winner = "opponent";
     else winner = "draw";
   }
-
-  const gained = scores[player] - scoreBefore;
 
   return {
     nextState: {
@@ -832,6 +850,9 @@ interface OwareGameBoardProps {
   onMatchComplete?: (winnerSide: "creator" | "opponent" | "draw", finalState: OwareState) => void;
   onPointsEarned?: (points: number, reason: string) => void;
   playerLevel?: number;
+  prizePoolGhs?: number;
+  onRematch?: () => void;
+  onPlayAnotherGame?: () => void;
 }
 
 export function OwareGameBoard({
@@ -844,6 +865,9 @@ export function OwareGameBoard({
   onMatchComplete,
   onPointsEarned,
   playerLevel = 1,
+  prizePoolGhs = 0,
+  onRematch,
+  onPlayAnotherGame,
 }: OwareGameBoardProps) {
   const persona = HUMAN_CHALLENGER_PERSONAS.oware;
   const effectiveOpponentName =
@@ -867,6 +891,8 @@ export function OwareGameBoard({
   const [vibrationEnabled, setVibrationEnabled] = useState(
     () => getGameSensoryPreferences().vibrationEnabled
   );
+  const [dismissedWinnerPopup, setDismissedWinnerPopup] = useState(false);
+  const notifiedWinnerRef = useRef<string | null>(null);
 
   // Animated Hand overlay state (glides from bowl to bowl scooping & dropping seeds)
   const [handPose, setHandPose] = useState<{
@@ -929,7 +955,7 @@ export function OwareGameBoard({
     };
   }, []);
 
-  // Keep synced with external realtime board_state updates in P2P mode
+  // Keep synced with external realtime board_state updates in P2P mode (including when opponent wins!)
   useEffect(() => {
     if (
       !isAnimating &&
@@ -937,13 +963,25 @@ export function OwareGameBoard({
       Array.isArray(initialState.pits) &&
       initialState.pits.length === 12 &&
       ((initialState.moveCount || 0) > (game.moveCount || 0) ||
+        Boolean(initialState.winner && !game.winner) ||
         ((initialState.moveCount || 0) === (game.moveCount || 0) &&
           initialState.turn &&
           initialState.turn !== game.turn))
     ) {
       setGame({ variant: game.variant || "nam-nam", ...initialState });
     }
-  }, [initialState, game.moveCount, game.turn, game.variant, isAnimating]);
+  }, [initialState, game.moveCount, game.turn, game.variant, game.winner, isAnimating]);
+
+  // Whenever game.winner becomes set (from local move, AI move, or P2P opponent move),
+  // open the Winner Spotlight Popup and notify parent onMatchComplete once!
+  useEffect(() => {
+    if (!game.winner || isAnimating) return;
+    const winKey = `${game.moveCount || 0}-${game.winner}`;
+    if (notifiedWinnerRef.current === winKey) return;
+    notifiedWinnerRef.current = winKey;
+    setDismissedWinnerPopup(false);
+    onMatchComplete?.(game.winner, game);
+  }, [game, isAnimating, onMatchComplete]);
 
   // Step-by-step animated sowing player with live SVG Hand gliding across bowls
   const playAnimatedMove = useCallback(
@@ -1148,6 +1186,62 @@ export function OwareGameBoard({
       : [];
   const otherSide: "creator" | "opponent" = game.turn === "creator" ? "opponent" : "creator";
   const mustFeedOpponent = !game.winner && sumSeedsOnSide(game.pits, otherSide) === 0;
+
+  // Auto-finish Oware match if the player to move has 0 legal moves (sweep remaining seeds & declare winner)
+  useEffect(() => {
+    if (game.winner || isAnimating || (game.moveCount || 0) === 0) return;
+    const movesForCurrentTurn = getLegalOwareMoves(game, game.turn);
+    if (movesForCurrentTurn.length === 0) {
+      const finalCreator = game.scores.creator + sumSeedsOnSide(game.pits, "creator");
+      const finalOpponent = game.scores.opponent + sumSeedsOnSide(game.pits, "opponent");
+      const declaredWinner: "creator" | "opponent" | "draw" =
+        finalCreator > finalOpponent
+          ? "creator"
+          : finalOpponent > finalCreator
+          ? "opponent"
+          : "draw";
+      const settledState: OwareState = {
+        ...game,
+        pits: Array(TOTAL_PIT_COUNT).fill(0),
+        scores: { creator: finalCreator, opponent: finalOpponent },
+        winner: declaredWinner,
+      };
+      setGame(settledState);
+      onStateChange?.(settledState);
+    }
+  }, [game, isAnimating, onStateChange]);
+
+  const handleInBoardRematch = useCallback(() => {
+    setDismissedWinnerPopup(false);
+    notifiedWinnerRef.current = null;
+    if (onRematch) {
+      onRematch();
+      if (mode !== "p2p") {
+        const fresh: OwareState = { ...INITIAL_OWARE_STATE, variant };
+        setGame(fresh);
+        onStateChange?.(fresh);
+      }
+      return;
+    }
+    const fresh: OwareState = { ...INITIAL_OWARE_STATE, variant };
+    setGame(fresh);
+    onStateChange?.(fresh);
+  }, [onRematch, mode, variant, onStateChange]);
+
+  const winnerDisplayName =
+    game.winner === "creator"
+      ? creatorName
+      : game.winner === "opponent"
+      ? effectiveOpponentName
+      : "24–24 Tie";
+  const loserDisplayName =
+    game.winner === "creator"
+      ? effectiveOpponentName
+      : game.winner === "opponent"
+      ? creatorName
+      : "";
+  const didIWin = Boolean(game.winner && game.winner === mySide);
+  const isDrawResult = game.winner === "draw";
 
   // Top row (North: Opponent pits 11 down to 6 left-to-right so counter-clockwise flow is visually accurate)
   const northIndices = [11, 10, 9, 8, 7, 6];
@@ -1652,6 +1746,192 @@ export function OwareGameBoard({
                 Sowing <strong>{displayPits[hoveredPit]} seeds</strong> from Bowl #{hoveredPit + 1} counter-clockwise...
               </>
             )}
+          </div>
+        )}
+
+        {/* Quick Persistent Rematch Bar when Winner Popup is minimized */}
+        {game.winner && dismissedWinnerPopup && (
+          <div className="mt-3 p-3 rounded-2xl bg-gradient-to-r from-amber-500/20 via-slate-900 to-emerald-500/20 border border-amber-400/50 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Crown className="w-4 h-4 text-amber-400" />
+              <span className="text-xs font-black text-white">
+                {isDrawResult
+                  ? "🤝 24–24 Tie!"
+                  : `🏆 Winner: ${winnerDisplayName} (${game.scores.creator} – ${game.scores.opponent})`}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                onClick={handleInBoardRematch}
+                className="h-8 rounded-xl bg-gradient-to-r from-amber-400 to-orange-500 text-slate-950 font-black text-xs gap-1.5"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                Request Rematch
+              </Button>
+              {onPlayAnotherGame && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={onPlayAnotherGame}
+                  className="h-8 rounded-xl border-sky-400/50 bg-sky-500/15 text-sky-200 font-black text-xs gap-1.5"
+                >
+                  <Gamepad2 className="w-3.5 h-3.5" />
+                  Play Another Game
+                </Button>
+              )}
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => setDismissedWinnerPopup(false)}
+                className="h-8 rounded-xl text-amber-300 text-xs font-bold"
+              >
+                Show Winner Card
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* ── FULL WINNER SPOTLIGHT & REMATCH / PLAY ANOTHER GAME POPUP OVERLAY ── */}
+        {game.winner && !dismissedWinnerPopup && (
+          <div className="fixed inset-0 z-[130] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
+            <div className="relative w-full max-w-md rounded-3xl bg-gradient-to-b from-slate-900 via-[#111827] to-slate-950 border-2 border-amber-400/70 shadow-[0_0_60px_rgba(245,158,11,0.35)] p-5 sm:p-6 text-center space-y-4 overflow-hidden">
+              {/* Top Glow Ribbon */}
+              <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-amber-500/20 border border-amber-400/50 text-amber-300 text-[11px] font-black uppercase tracking-wider">
+                <Crown className="w-3.5 h-3.5 text-amber-400" />
+                <span>Oware Match Finished • Winner Spotlight</span>
+              </div>
+
+              {/* Winner Avatar & Trophy Spotlight */}
+              <div className="flex flex-col items-center gap-2">
+                <div className="relative w-20 h-20 rounded-full bg-gradient-to-br from-amber-300 via-amber-500 to-orange-600 p-1 shadow-[0_0_35px_rgba(251,191,36,0.6)]">
+                  <div className="w-full h-full rounded-full bg-slate-950 flex items-center justify-center">
+                    <Trophy className="w-10 h-10 text-amber-400 animate-bounce" />
+                  </div>
+                  <span className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 px-2.5 py-0.5 rounded-full bg-emerald-500 text-slate-950 font-black text-[9px] uppercase tracking-wider shadow">
+                    {isDrawResult ? "DRAW" : "WINNER"}
+                  </span>
+                </div>
+
+                <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight mt-1">
+                  {isDrawResult
+                    ? "🤝 24–24 Tie Game!"
+                    : `🏆 ${winnerDisplayName} Wins!`}
+                </h2>
+
+                <p className="text-xs sm:text-sm text-slate-300 font-semibold max-w-xs mx-auto">
+                  {isDrawResult
+                    ? "Both players harvested 24 nickernut seeds each! Ready for a tie-breaker?"
+                    : didIWin
+                    ? `Congratulations! You defeated ${loserDisplayName} in Ghanaian Oware!`
+                    : `${winnerDisplayName} captured the winning seeds this round. Request an instant rematch or switch to another game below!`}
+                </p>
+
+                {prizePoolGhs > 0 && !isDrawResult && (
+                  <div className="px-4 py-1.5 rounded-2xl bg-emerald-500/20 border border-emerald-400/50 text-emerald-300 text-xs font-black">
+                    💰 Winner Payout: GH₵ {prizePoolGhs.toFixed(2)}
+                  </div>
+                )}
+              </div>
+
+              {/* Head-to-Head Final Seed Scoreboard */}
+              <div className="grid grid-cols-2 gap-2.5 p-3 rounded-2xl bg-slate-950/90 border border-white/10">
+                <div
+                  className={`p-2.5 rounded-xl border ${
+                    game.winner === "creator"
+                      ? "bg-emerald-500/15 border-emerald-400/60"
+                      : "bg-white/[0.03] border-white/10"
+                  }`}
+                >
+                  <p className="text-[10px] font-black uppercase text-emerald-300 truncate">
+                    {creatorName} {mySide === "creator" ? "(YOU)" : ""}
+                  </p>
+                  <p className="text-2xl font-black font-mono text-white mt-0.5">
+                    {game.scores.creator}
+                    <span className="text-xs text-slate-400"> seeds</span>
+                  </p>
+                  {game.winner === "creator" && (
+                    <span className="inline-block mt-1 px-2 py-0.5 rounded-full bg-amber-400 text-slate-950 text-[9px] font-black">
+                      👑 WINNER
+                    </span>
+                  )}
+                </div>
+
+                <div
+                  className={`p-2.5 rounded-xl border ${
+                    game.winner === "opponent"
+                      ? "bg-amber-500/15 border-amber-400/60"
+                      : "bg-white/[0.03] border-white/10"
+                  }`}
+                >
+                  <p className="text-[10px] font-black uppercase text-orange-300 truncate">
+                    {effectiveOpponentName} {mySide === "opponent" ? "(YOU)" : ""}
+                  </p>
+                  <p className="text-2xl font-black font-mono text-white mt-0.5">
+                    {game.scores.opponent}
+                    <span className="text-xs text-slate-400"> seeds</span>
+                  </p>
+                  {game.winner === "opponent" && (
+                    <span className="inline-block mt-1 px-2 py-0.5 rounded-full bg-amber-400 text-slate-950 text-[9px] font-black">
+                      👑 WINNER
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* 1-Tap Action Buttons for Loser & Winner: Request Rematch or Play Another Game */}
+              <div className="space-y-2 pt-1">
+                <Button
+                  type="button"
+                  onClick={handleInBoardRematch}
+                  className="w-full h-12 rounded-2xl bg-gradient-to-r from-emerald-400 via-amber-400 to-orange-500 hover:from-emerald-300 hover:to-orange-400 text-slate-950 font-black text-sm shadow-lg gap-2 cursor-pointer"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  <span>
+                    {didIWin
+                      ? `🔄 Play Rematch vs ${loserDisplayName || "Opponent"}`
+                      : `🔄 Request Rematch vs ${winnerDisplayName}`}
+                  </span>
+                </Button>
+
+                <div className="grid grid-cols-2 gap-2">
+                  {onPlayAnotherGame ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={onPlayAnotherGame}
+                      className="h-10 rounded-xl border-sky-400/50 bg-sky-500/15 hover:bg-sky-500/25 text-sky-200 font-black text-xs gap-1.5 cursor-pointer"
+                    >
+                      <Gamepad2 className="w-4 h-4" />
+                      <span>Play Another Game</span>
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleInBoardRematch}
+                      className="h-10 rounded-xl border-sky-400/50 bg-sky-500/15 hover:bg-sky-500/25 text-sky-200 font-black text-xs gap-1.5 cursor-pointer"
+                    >
+                      <Gamepad2 className="w-4 h-4" />
+                      <span>New Match</span>
+                    </Button>
+                  )}
+
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => setDismissedWinnerPopup(true)}
+                    className="h-10 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 text-slate-300 font-bold text-xs gap-1.5 cursor-pointer"
+                  >
+                    <Eye className="w-4 h-4" />
+                    <span>View Final Board</span>
+                  </Button>
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </div>

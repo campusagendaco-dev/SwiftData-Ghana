@@ -255,6 +255,8 @@ interface BeachBuggyTrackProps {
   onPointsEarned?: (points: number, reason: string) => void;
   playerLevel?: number;
   onBackToLobby?: () => void;
+  onRematch?: () => void;
+  onPlayAnotherGame?: () => void;
 }
 
 export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
@@ -268,6 +270,8 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
   onPointsEarned,
   playerLevel = 1,
   onBackToLobby,
+  onRematch,
+  onPlayAnotherGame,
 }) => {
   const screenFit = useDeviceScreenFit();
   const racingMetrics = screenFit.computeRacingStageMetrics({ forcedLandscape: true });
@@ -2145,60 +2149,76 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
     function drawHud() {
       const r = getRank();
       const lap = Math.min(LAPS, Math.floor((P.tot - playerZ) / trackLen) + 1);
-      const topY = 44; // Leaves top 40px for floating interactive control bar
+      const topY = 40; // Leaves top 36px for floating interactive control bar
 
-      // Left Telemetry Card: Position & Coins
+      // 1. Top-Left Telemetry Card: Position & Coins
       ctx!.textAlign = "left";
-      drawPill(14, topY, 152, 66);
+      drawPill(12, topY, 142, 54);
       ctx!.fillStyle = "#94a3b8";
-      ctx!.font = "800 11px Trebuchet MS, sans-serif";
-      ctx!.fillText("POS", 26, topY + 18);
-      ctx!.font = "900 36px Impact, sans-serif";
+      ctx!.font = "800 10px Trebuchet MS, sans-serif";
+      ctx!.fillText("POS", 22, topY + 15);
+      ctx!.font = "900 30px Impact, sans-serif";
       ctx!.fillStyle = r === 1 ? "#fde047" : "#38bdf8";
       ctx!.fillText(
         ["", "1ST", "2ND", "3RD", "4TH", "5TH", "6TH"][r] || `${r}TH`,
-        26,
-        topY + 54
+        22,
+        topY + 45
       );
-      ctx!.font = "800 13px Impact, sans-serif";
+      ctx!.font = "800 12px Impact, sans-serif";
       ctx!.fillStyle = "#ffd23a";
-      ctx!.fillText(`🪙 ₵${P.coins * 15}`, 98, topY + 22);
+      ctx!.fillText(`🪙 ₵${P.coins * 15}`, 88, topY + 20);
       ctx!.fillStyle = "#e2e8f0";
-      ctx!.fillText(`${r} / 6`, 104, topY + 50);
+      ctx!.fillText(`${r} / 6`, 94, topY + 42);
 
-      // Right Telemetry Card: Lap & 95s Countdown Clock
-      drawPill(W - 178, topY, 164, 66);
+      // 2. Top-Right Telemetry Card: Lap & 95s Countdown Clock
+      drawPill(W - 160, topY, 148, 54);
       ctx!.fillStyle = "#94a3b8";
-      ctx!.font = "800 11px Trebuchet MS, sans-serif";
-      ctx!.fillText("LAP", W - 166, topY + 18);
+      ctx!.font = "800 10px Trebuchet MS, sans-serif";
+      ctx!.fillText("LAP", W - 148, topY + 15);
       ctx!.fillStyle = "#ffffff";
-      ctx!.font = "900 30px Impact, sans-serif";
-      ctx!.fillText(`${lap}/${LAPS}`, W - 166, topY + 52);
+      ctx!.font = "900 26px Impact, sans-serif";
+      ctx!.fillText(`${lap}/${LAPS}`, W - 148, topY + 44);
 
       const remainingSec = Math.max(0, RACE_CUTOFF_SECONDS - P.time);
       ctx!.textAlign = "right";
-      ctx!.font = "800 12px Trebuchet MS, sans-serif";
+      ctx!.font = "800 11px Trebuchet MS, sans-serif";
       ctx!.fillStyle = remainingSec <= 15 ? "#ff4d4d" : "#ffd24a";
-      ctx!.fillText(`⏱️ ${remainingSec.toFixed(1)}s`, W - 24, topY + 22);
+      ctx!.fillText(`⏱️ ${remainingSec.toFixed(1)}s`, W - 22, topY + 20);
       ctx!.fillStyle = "#cbd5e1";
-      ctx!.fillText(`${P.time.toFixed(1)}s`, W - 24, topY + 50);
+      ctx!.fillText(`${P.time.toFixed(1)}s`, W - 22, topY + 42);
 
-      // Center Live Track Radar Bar (All 6 Racers)
-      const radarW = Math.min(340, Math.max(200, W - 380));
-      const bx = W / 2 - radarW / 2;
-      const by = topY + 18;
-      ctx!.fillStyle = "rgba(6, 18, 34, 0.72)";
-      ctx!.beginPath();
-      ctx!.roundRect(bx - 12, by - 12, radarW + 24, 28, 14);
-      ctx!.fill();
-      ctx!.fillStyle = "rgba(255,255,255,0.28)";
-      ctx!.fillRect(bx, by, radarW, 4);
+      // 3. Top-Center Integrated Cockpit Pod: Speedometer + Nitro + Armor + Live Track Radar
+      // Positioned at the top so the entire bottom-center road & buggy view is 100% open!
+      const centerAvailW = Math.max(240, W - 336);
+      const podW = Math.min(460, centerAvailW);
+      const podH = 54;
+      const podX = Math.round(W / 2 - podW / 2);
+      const podY = topY;
+      drawPill(podX, podY, podW, podH);
+
+      // Digital Speedometer & Gear on Left of Center Pod
+      const kmh = Math.round((P.speed / MAX) * 195);
+      const gear = Math.min(6, Math.max(1, Math.ceil(kmh / 34)));
+      ctx!.textAlign = "left";
+      ctx!.fillStyle = P.boosting ? "#38bdf8" : "#ffffff";
+      ctx!.font = "900 28px Impact, sans-serif";
+      ctx!.fillText(String(kmh), podX + 12, podY + 32);
+      ctx!.font = "800 9px Trebuchet MS, sans-serif";
+      ctx!.fillStyle = "#94a3b8";
+      ctx!.fillText(`KM/H • G${gear}`, podX + 12, podY + 46);
+
+      // Live Track Radar Bar along Top Half of Center Pod
+      const barX = podX + 86;
+      const barW = Math.max(130, podW - 98);
+      const radarY = podY + 12;
+      ctx!.fillStyle = "rgba(255,255,255,0.25)";
+      ctx!.fillRect(barX, radarY, barW, 3);
 
       const prog = (t: number) => clamp((t - playerZ) / (LAPS * trackLen), 0, 1);
       cars.forEach((c) => {
         ctx!.fillStyle = c.col;
         ctx!.beginPath();
-        ctx!.arc(bx + radarW * prog(c.tot), by + 2, 4.5, 0, 7);
+        ctx!.arc(barX + barW * prog(c.tot), radarY + 1.5, 4, 0, 7);
         ctx!.fill();
       });
 
@@ -2209,7 +2229,7 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
             : Number(initialStateRef.current.creatorProgress || 0);
         ctx!.fillStyle = "#22d3ee";
         ctx!.beginPath();
-        ctx!.arc(bx + radarW * clamp(oppProg, 0, 1), by + 2, 6, 0, 7);
+        ctx!.arc(barX + barW * clamp(oppProg, 0, 1), radarY + 1.5, 5.5, 0, 7);
         ctx!.fill();
       }
 
@@ -2218,16 +2238,50 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
         GHANA_VEHICLES[0];
       ctx!.fillStyle = myVeh.color;
       ctx!.strokeStyle = "#fff";
-      ctx!.lineWidth = 2;
+      ctx!.lineWidth = 1.8;
       ctx!.beginPath();
-      ctx!.arc(bx + radarW * prog(P.tot), by + 2, 6.5, 0, 7);
+      ctx!.arc(barX + barW * prog(P.tot), radarY + 1.5, 5.5, 0, 7);
       ctx!.fill();
       ctx!.stroke();
 
-      // Active Drift / Slipstream / Nitro Status Banner at Top-Center
+      // Side-by-Side Nitro & Armor Gauges on Bottom Half of Center Pod
+      const halfGaugeW = Math.floor((barW - 8) / 2);
+      const gaugeY = podY + 29;
+      ctx!.fillStyle = "rgba(255,255,255,0.16)";
+      ctx!.fillRect(barX, gaugeY, halfGaugeW, 13);
+      const nitGrad = ctx!.createLinearGradient(barX, 0, barX + halfGaugeW, 0);
+      nitGrad.addColorStop(0, "#38bdf8");
+      nitGrad.addColorStop(0.5, "#facc15");
+      nitGrad.addColorStop(1, "#ef4444");
+      ctx!.fillStyle = nitGrad;
+      ctx!.fillRect(
+        barX,
+        gaugeY,
+        (halfGaugeW * clamp(P.boost, 0, 100)) / 100,
+        13
+      );
+      ctx!.fillStyle = "#ffffff";
+      ctx!.font = "900 8.5px Trebuchet MS, sans-serif";
+      ctx!.fillText("N₂ NITRO", barX + 4, gaugeY + 10);
+
+      const armX = barX + halfGaugeW + 8;
+      ctx!.fillStyle = "rgba(255,255,255,0.16)";
+      ctx!.fillRect(armX, gaugeY, halfGaugeW, 13);
+      ctx!.fillStyle =
+        P.hp > 50 ? "#10b981" : P.hp > 25 ? "#f59e0b" : "#ef4444";
+      ctx!.fillRect(
+        armX,
+        gaugeY,
+        (halfGaugeW * clamp(P.hp, 0, 100)) / 100,
+        13
+      );
+      ctx!.fillStyle = "#ffffff";
+      ctx!.fillText("ARMOR", armX + 4, gaugeY + 10);
+
+      // Active Drift / Slipstream / Nitro Status Banner below Top Pod
       if (P.drifting || P.drafting || P.driftBoostTimer > 0) {
         ctx!.textAlign = "center";
-        ctx!.font = "900 15px Impact, sans-serif";
+        ctx!.font = "900 14px Impact, sans-serif";
         const statusLabel =
           P.driftBoostTimer > 0
             ? "🔥 DRIFT TURBO BOOST!"
@@ -2236,49 +2290,8 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
             : "💨 SLIPSTREAM DRAFTING +20 KM/H";
         ctx!.fillStyle =
           P.driftBoostTimer > 0 || P.driftCharge >= 80 ? "#38bdf8" : "#facc15";
-        ctx!.fillText(statusLabel, W / 2, topY + 56);
+        ctx!.fillText(statusLabel, W / 2, topY + 72);
       }
-
-      // Bottom-Center Compact Telemetry Pod (Speedometer, Gear, Nitro & Armor)
-      // Placed at Bottom-Center so Bottom-Left (Steering) & Bottom-Right (Pedals) have 100% clear room!
-      const podW = 290;
-      const podH = 62;
-      const podX = W / 2 - podW / 2;
-      const podY = H - podH - 10;
-      drawPill(podX, podY, podW, podH);
-
-      const kmh = Math.round((P.speed / MAX) * 195);
-      const gear = Math.min(6, Math.max(1, Math.ceil(kmh / 34)));
-      ctx!.textAlign = "left";
-      ctx!.fillStyle = P.boosting ? "#38bdf8" : "#ffffff";
-      ctx!.font = "900 34px Impact, sans-serif";
-      ctx!.fillText(String(kmh), podX + 14, podY + 38);
-      ctx!.font = "800 10px Trebuchet MS, sans-serif";
-      ctx!.fillStyle = "#94a3b8";
-      ctx!.fillText(`KM/H • G${gear}`, podX + 14, podY + 53);
-
-      // Nitro & Armor Bars inside Center Telemetry Pod
-      const barX = podX + 102;
-      const barW = 172;
-      ctx!.fillStyle = "rgba(255,255,255,0.18)";
-      ctx!.fillRect(barX, podY + 14, barW, 11);
-      const nitGrad = ctx!.createLinearGradient(barX, 0, barX + barW, 0);
-      nitGrad.addColorStop(0, "#38bdf8");
-      nitGrad.addColorStop(0.5, "#facc15");
-      nitGrad.addColorStop(1, "#ef4444");
-      ctx!.fillStyle = nitGrad;
-      ctx!.fillRect(barX, podY + 14, (barW * clamp(P.boost, 0, 100)) / 100, 11);
-      ctx!.fillStyle = "#ffffff";
-      ctx!.font = "900 9px Trebuchet MS, sans-serif";
-      ctx!.fillText("N₂ NITRO", barX + 4, podY + 23);
-
-      ctx!.fillStyle = "rgba(255,255,255,0.18)";
-      ctx!.fillRect(barX, podY + 35, barW, 11);
-      ctx!.fillStyle =
-        P.hp > 50 ? "#10b981" : P.hp > 25 ? "#f59e0b" : "#ef4444";
-      ctx!.fillRect(barX, podY + 35, (barW * clamp(P.hp, 0, 100)) / 100, 11);
-      ctx!.fillStyle = "#ffffff";
-      ctx!.fillText("ARMOR", barX + 4, podY + 44);
     }
 
     function render() {
@@ -2369,7 +2382,7 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
           const cx =
             lerp(a.x, s.p2.screen.x, pc) + (sc * c.off * roadW * W) / 2;
           const cy = lerp(a.y, s.p2.screen.y, pc);
-          const w = (sc * 1000 * W) / 2;
+          const w = (sc * 860 * W) / 2;
           if (w < 3) continue;
           ctx!.save();
           ctx!.beginPath();
@@ -2405,15 +2418,17 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
 
       const sp = P.speed / MAX;
       const bn = P.speed > 200 ? Math.sin(time * 42) * sp * 2.4 : 0;
+      const playerBuggyY = H * 0.89;
+      const playerBuggyW = Math.round(Math.min(192, H * 0.355));
       ctx!.save();
-      ctx!.translate(W / 2, H * 0.87);
+      ctx!.translate(W / 2, playerBuggyY);
       ctx!.rotate(P.st * 0.045 * sp + ps.curve * 0.004 * sp);
-      ctx!.translate(-W / 2, -H * 0.87);
+      ctx!.translate(-W / 2, -playerBuggyY);
       if (!(P.inv > 0 && Math.floor(time * 14) % 2)) {
         drawBuggy(
           W / 2,
-          H * 0.87,
-          232,
+          playerBuggyY,
+          playerBuggyW,
           myVeh.color,
           P.st,
           bn,
@@ -2980,19 +2995,31 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
             )}
           </div>
 
-          <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
+          <div className="flex flex-wrap items-center justify-center gap-2.5 pt-1">
             <button
               type="button"
-              onClick={() => startRaceFnRef.current?.()}
-              className="px-6 py-2 rounded-full bg-gradient-to-r from-amber-400 to-orange-500 text-slate-950 font-black text-xs uppercase flex items-center gap-1.5 shadow-lg cursor-pointer"
+              onClick={() => {
+                startRaceFnRef.current?.();
+                onRematch?.();
+              }}
+              className="px-5 py-2 rounded-full bg-gradient-to-r from-amber-400 to-orange-500 text-slate-950 font-black text-xs uppercase flex items-center gap-1.5 shadow-lg cursor-pointer"
             >
               <RotateCcw className="w-4 h-4" />
-              Race Again
+              🔄 Rematch
             </button>
+            {onPlayAnotherGame && (
+              <button
+                type="button"
+                onClick={onPlayAnotherGame}
+                className="px-5 py-2 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs uppercase flex items-center gap-1.5 shadow-lg cursor-pointer"
+              >
+                🎮 Play Another Game
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setUiScreen("garage")}
-              className="px-5 py-2 rounded-full bg-sky-600 hover:bg-sky-500 text-white font-black text-xs uppercase flex items-center gap-1.5 cursor-pointer"
+              className="px-4 py-2 rounded-full bg-sky-600 hover:bg-sky-500 text-white font-black text-xs uppercase flex items-center gap-1.5 cursor-pointer"
             >
               <Wrench className="w-4 h-4" />
               Suame Garage
@@ -3226,18 +3253,25 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
   );
 
   // Strict 100% Edge-to-Edge Fullscreen Landscape Stage (both rotated-portrait & native-landscape)
+  // Uses fixed center positioning + 100dvh/100dvw + flex-shrink:0 so mobile flexbox NEVER shrinks the landscape breadth into a square!
   if (racingMetrics.isRotatedPortrait) {
     return (
       <div
         ref={stageRootRef}
-        className="fixed inset-0 z-[95] bg-black flex items-center justify-center overflow-hidden touch-none overscroll-none select-none m-0 p-0"
+        className="fixed inset-0 z-[95] bg-black overflow-hidden touch-none overscroll-none select-none m-0 p-0"
       >
         <div
           style={{
-            width: `${racingMetrics.stageWidthPx}px`,
-            height: `${racingMetrics.stageHeightPx}px`,
-            transform: "rotate(90deg)",
+            position: "fixed",
+            top: "50%",
+            left: "50%",
+            width: `max(100dvh, ${racingMetrics.stageWidthPx}px)`,
+            height: `max(100dvw, ${racingMetrics.stageHeightPx}px)`,
+            minWidth: `${racingMetrics.stageWidthPx}px`,
+            minHeight: `${racingMetrics.stageHeightPx}px`,
+            transform: "translate(-50%, -50%) rotate(90deg)",
             transformOrigin: "center center",
+            flexShrink: 0,
           }}
           className="flex flex-col m-0 p-0 overflow-hidden select-none touch-none"
         >
@@ -3251,8 +3285,10 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
     <div
       ref={stageRootRef}
       style={{
-        width: `${racingMetrics.stageWidthPx}px`,
-        height: `${racingMetrics.stageHeightPx}px`,
+        position: "fixed",
+        inset: 0,
+        width: `max(100dvw, ${racingMetrics.stageWidthPx}px)`,
+        height: `max(100dvh, ${racingMetrics.stageHeightPx}px)`,
       }}
       className="fixed inset-0 z-[95] bg-black flex flex-col m-0 p-0 overflow-hidden touch-none overscroll-none select-none"
     >

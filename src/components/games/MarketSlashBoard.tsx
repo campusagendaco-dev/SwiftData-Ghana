@@ -288,6 +288,8 @@ interface MarketSlashBoardProps {
   onPointsEarned?: (points: number, reason: string) => void;
   playerLevel?: number;
   onBackToLobby?: () => void;
+  onRematch?: () => void;
+  onPlayAnotherGame?: () => void;
 }
 
 const randomBetween = (minimum: number, maximum: number) =>
@@ -306,6 +308,8 @@ export function MarketSlashBoard({
   onPointsEarned,
   playerLevel = 1,
   onBackToLobby,
+  onRematch,
+  onPlayAnotherGame,
 }: MarketSlashBoardProps) {
   const persona = HUMAN_CHALLENGER_PERSONAS.slash;
   const effectiveOpponentName =
@@ -2137,27 +2141,40 @@ export function MarketSlashBoard({
                 </div>
               )}
 
-              {/* Primary Fruit Slash Arcade Play Again + Share Buttons */}
-              <div className="space-y-2.5 pt-1">
+              {/* Primary Fruit Slash Arcade Rematch, Play Another & Share Buttons */}
+              <div className="space-y-2 pt-1">
                 <button
                   type="button"
-                  onClick={handleRestartGame}
+                  onClick={() => {
+                    handleRestartGame();
+                    onRematch?.();
+                  }}
                   style={{
                     background: "linear-gradient(180deg, #ff8a3d, #e8341c)",
                     boxShadow:
                       "0 5px 0 #8f1a0b, 0 12px 26px rgba(232, 52, 28, 0.5), inset 0 2px 0 rgba(255, 255, 255, 0.45)",
                     textShadow: "0 2px 0 rgba(90, 10, 0, 0.6)",
                   }}
-                  className="w-full py-3 rounded-full text-xl tracking-widest text-white flex items-center justify-center gap-2 hover:-translate-y-0.5 active:translate-y-1 transition-all cursor-pointer"
+                  className="w-full py-3 rounded-full text-lg tracking-widest text-white flex items-center justify-center gap-2 hover:-translate-y-0.5 active:translate-y-1 transition-all cursor-pointer"
                 >
                   <RotateCcw className="w-5 h-5" />
-                  <span>PLAY AGAIN</span>
+                  <span>🔄 REMATCH</span>
                 </button>
+
+                {onPlayAnotherGame && (
+                  <button
+                    type="button"
+                    onClick={onPlayAnotherGame}
+                    className="w-full py-2.5 rounded-full bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/50 text-xs font-sans font-black text-emerald-200 flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                  >
+                    <span>🎮 PLAY ANOTHER GAME</span>
+                  </button>
+                )}
 
                 <button
                   type="button"
                   onClick={handleShareScore}
-                  className="w-full py-2.5 rounded-full bg-white/10 hover:bg-white/15 border border-white/15 text-xs font-sans font-black text-amber-100 flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                  className="w-full py-2 rounded-full bg-white/10 hover:bg-white/15 border border-white/15 text-xs font-sans font-black text-amber-100 flex items-center justify-center gap-1.5 transition-all cursor-pointer"
                 >
                   <Share2 className="w-3.5 h-3.5" />
                   <span>{copiedShare ? "Copied Score Link!" : "Share Score"}</span>

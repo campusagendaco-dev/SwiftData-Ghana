@@ -1362,10 +1362,16 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
             style={
               forcedLandscape && isPortraitViewport
                 ? {
-                    width: `${screenFit.availHeight}px`,
-                    height: `${screenFit.availWidth}px`,
-                    transform: "rotate(90deg)",
+                    position: "fixed",
+                    top: "50%",
+                    left: "50%",
+                    width: `max(100dvh, ${screenFit.availHeight}px)`,
+                    height: `max(100dvw, ${screenFit.availWidth}px)`,
+                    minWidth: `${screenFit.availHeight}px`,
+                    minHeight: `${screenFit.availWidth}px`,
+                    transform: "translate(-50%, -50%) rotate(90deg)",
                     transformOrigin: "center center",
+                    flexShrink: 0,
                   }
                 : undefined
             }
