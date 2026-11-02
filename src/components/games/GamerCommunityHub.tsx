@@ -107,11 +107,17 @@ const GAME_LABELS: Record<
     emoji: "🍬",
     badgeClass: "bg-pink-500/20 text-pink-300 border-pink-500/40",
   },
+  buggy: {
+    name: "Labadi Buggy GP",
+    emoji: "🏎️",
+    badgeClass: "bg-red-500/20 text-red-300 border-red-500/40",
+  },
 };
 
 const QUICK_BANTER_CHIPS = [
   "🪨 Who is ready for an Oware duel?",
   "🎱 Join my 8-Ball Pool table right now!",
+  "🏎️ Labadi Beach Buggy 3-Lap GP — who fits beat my time?",
   "🎲 Ludo 4-Player room open — step up!",
   "🍬 Alewa & Kube high-score race, who fits beat me?",
   "🔥 Chale, sharp game! Rematch?",

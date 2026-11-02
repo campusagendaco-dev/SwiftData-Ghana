@@ -53,6 +53,7 @@ import { DameCheckersBoard, INITIAL_DAME_STATE } from "@/components/games/DameCh
 import { EightBallPoolBoard, INITIAL_POOL_STATE } from "@/components/games/EightBallPoolBoard";
 import { MarketSlashBoard, INITIAL_SLASH_STATE } from "@/components/games/MarketSlashBoard";
 import { CandyCrashBoard, INITIAL_CANDY_STATE } from "@/components/games/CandyCrashBoard";
+import { BeachBuggyTrack, INITIAL_BUGGY_STATE } from "@/components/games/BeachBuggyTrack";
 import {
   GamerCommunityHub,
   GamerCommunityPreviewCard,
@@ -82,7 +83,7 @@ declare global {
   }
 }
 
-type GameType = "oware" | "ludo" | "dame" | "pool" | "slash" | "candy";
+type GameType = "oware" | "ludo" | "dame" | "pool" | "slash" | "candy" | "buggy";
 type ChallengeMode = "p2p" | "ai" | "free_data";
 type PaymentSource = "wallet" | "momo" | "free";
 type ProfileDrawerTab = "profile" | "settings" | "rooms" | "help";
@@ -216,11 +217,31 @@ const GAME_CATALOG: {
     emoji: "🍬",
     gradient: "from-amber-600/35 via-rose-900/25 to-slate-950 border-amber-500/45",
   },
+  {
+    id: "buggy",
+    name: "Labadi Beach & Aburi Buggy GP",
+    shortTitle: "Labadi Buggy GP",
+    categoryTag: "GHANA RACING",
+    statusTag: "NEW 3D",
+    statusColor: "gold",
+    subtitle:
+      "Race 3 laps across Labadi Beach, Aburi Hills & Tema Motorway — hit Kente Boost Pads & upgrade at Suame Garage.",
+    rulesSummary: [
+      "Choose from 4 Ghanaian rides (Labadi Sand Buggy, Yellow-Yellow Pragya, VIP Sprinter Trotro, or Kantanka 4×4) and 3 circuits.",
+      "Hit glowing yellow Kente Boost Pads and tap Shito Nitro (N₂) to blast past Kwame Turbo and the 6-racer pack.",
+      "Dodge volcanic rocks, coconut palms, and beach huts so your Armor HP never hits 0 before finishing 3 laps.",
+      "Collect spinning Gold Ghana Cedi Coins (GH₵) to upgrade your Engine, Nitro & Armor at the Suame Magazine Workshop!",
+    ],
+    badge: "Suame Turbo",
+    emoji: "🏎️",
+    gradient: "from-red-600/35 via-amber-900/25 to-slate-950 border-red-500/45",
+  },
 ];
 
 const QUICK_STAKES = [2, 5, 10, 20, 50];
 
 function getInitialBoardForGame(gameType: GameType) {
+  if (gameType === "buggy") return INITIAL_BUGGY_STATE;
   if (gameType === "candy") return INITIAL_CANDY_STATE;
   if (gameType === "slash") return INITIAL_SLASH_STATE;
   if (gameType === "oware") return INITIAL_OWARE_STATE;
@@ -2528,6 +2549,7 @@ export default function ChallengeArena() {
               <>
                 {activeChallenge.status === "in_progress" &&
                   activeChallenge.game_type !== "slash" &&
+                  activeChallenge.game_type !== "buggy" &&
                   (activeChallenge.game_type !== "pool" || activeChallenge.mode === "p2p") && (() => {
                     const currentTurnSide =
                       activeChallenge.current_turn ||
@@ -2755,6 +2777,22 @@ export default function ChallengeArena() {
                     onBackToLobby={() => setActiveChallenge(null)}
                   />
                 )}
+                {activeChallenge.game_type === "buggy" && (
+                  <BeachBuggyTrack
+                    mode={activeChallenge.mode}
+                    mySide={mySide}
+                    creatorName={activeChallenge.creator_name}
+                    opponentName={
+                      activeChallenge.opponent_name || HUMAN_CHALLENGER_PERSONAS.buggy.name
+                    }
+                    initialState={activeChallenge.board_state}
+                    onStateChange={handleBoardStateChange}
+                    onMatchComplete={handleMatchComplete}
+                    onPointsEarned={handlePointsEarned}
+                    playerLevel={levelInfo.level}
+                    onBackToLobby={() => setActiveChallenge(null)}
+                  />
+                )}
               </>
             )}
           </CardContent>
@@ -2816,7 +2854,7 @@ export default function ChallengeArena() {
             >
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
               <span>
-                6 games • {openChallenges.length > 0 ? `${openChallenges.length} open` : "free"}
+                7 games • {openChallenges.length > 0 ? `${openChallenges.length} open` : "free"}
               </span>
             </button>
           </div>

@@ -286,6 +286,7 @@ function formatGameLabel(gameType: string): string {
   if (g === "pool") return "8-Ball Pool";
   if (g === "slash") return "Market Slash";
   if (g === "candy") return "Candy Crash";
+  if (g === "buggy") return "Labadi Buggy GP";
   return g.toUpperCase();
 }
 
@@ -828,7 +829,7 @@ serve(async (req: Request) => {
       }
 
       const gameType = String(body.game_type || "oware").toLowerCase();
-      if (!["oware", "ludo", "dame", "pool", "slash", "candy"].includes(gameType)) {
+      if (!["oware", "ludo", "dame", "pool", "slash", "candy", "buggy"].includes(gameType)) {
         return jsonResponse({ success: false, error: "Unsupported game type" }, 400);
       }
       if (settings.enabled_games && settings.enabled_games[gameType] === false) {
@@ -932,6 +933,7 @@ serve(async (req: Request) => {
       const humanSenseChallengerMap: Record<string, string> = {
         slash: "Auntie Ama Serwaa (94% Human Sense)",
         candy: "Efua Mensah (93% Human Sense)",
+        buggy: "Kwame 'Suame Turbo' Mensah (93% Human Sense)",
         pool: "Yaw Boateng (92% Human Sense)",
         oware: "Nana Kwame Asante (93% Human Sense)",
         ludo: "Abena Osei (91% Human Sense)",
