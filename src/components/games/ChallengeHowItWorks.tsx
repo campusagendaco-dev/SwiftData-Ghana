@@ -26,7 +26,7 @@ import {
   X,
 } from "lucide-react";
 
-export type ArenaGameType = "oware" | "ludo" | "dame" | "pool" | "slash" | "candy";
+export type ArenaGameType = "oware" | "ludo" | "dame" | "pool" | "slash" | "candy" | "buggy";
 
 interface ChallengeHowItWorksProps {
   onQuickStart?: (game: ArenaGameType, mode: "p2p" | "ai" | "free_data") => void;
@@ -47,6 +47,44 @@ interface GameStepGuide {
 }
 
 export const GAME_STEP_GUIDES: Record<ArenaGameType, GameStepGuide> = {
+  buggy: {
+    title: "Labadi Beach & Aburi Hills Buggy GP",
+    tagline:
+      "Race 3 laps across Labadi Coast, Aburi Hairpins & Tema Motorway — hit Kente Boost Pads & upgrade at Suame Garage!",
+    emoji: "🏎️",
+    badge: "🇬🇭 3D Ghana Rally",
+    accentGradient: "from-red-500 via-amber-500 to-emerald-500",
+    steps: [
+      {
+        stepNum: "01",
+        heading: "Pick Your Ghanaian Ride & Circuit",
+        detail:
+          "Choose from 4 local machines (Labadi Sand Buggy, Yellow-Yellow Pragya Turbo, VIP Sprinter Trotro, or Kantanka Omama 4×4) and 3 circuits (Labadi Beach, Aburi Hills, or Tema Motorway).",
+        tip: "The Pragya handles tight Aburi hairpins best, while the Kantanka 4×4 absorbs roadside crashes!",
+      },
+      {
+        stepNum: "02",
+        heading: "Steer, Hit Kente Boost Pads & Fire Shito Nitro (N₂)",
+        detail:
+          "Use A/D or Arrow keys (or the bottom-left ◀ / ▶ touch buttons) to steer around curves. Drive over glowing yellow Kente Boost Pads and press Space / N₂ to blast past the 6-racer pack!",
+        tip: "Auto-Gas is ON by default on mobile so you can focus on steering and timing your Nitro.",
+      },
+      {
+        stepNum: "03",
+        heading: "Dodge Palms, Rocks, Kejetia Stalls & Rivals",
+        detail:
+          "Crashing into coconut palms, volcanic rocks, beach huts, or rival racers drains your Armor HP. If your HP reaches 0 before finishing 3 laps, your engine stalls out!",
+        tip: "Stay on the asphalt road — driving off-road in deep sand slows your top speed.",
+      },
+      {
+        stepNum: "04",
+        heading: "Collect Gold Cedi Coins (GH₵) & Upgrade at Suame Workshop",
+        detail:
+          "Scoop spinning Gold Ghana Cedi Coins on the track and visit the Suame Magazine Garage to upgrade your V8 Engine, Shito Nitro tank, and Kantanka Armor up to Level 5!",
+        tip: "Finish 1st across 3 laps (or beat Kwame Turbo's lap time) to win the pot and earn Free Data Points!",
+      },
+    ],
+  },
   candy: {
     title: "Candy Crash (Alewa & Kube Edition)",
     tagline: "Swap Ghanaian Alewa, Kube & Golden Cocoa Pods — forge Kente Boosters & Calabash Bombs!",
@@ -1186,6 +1224,7 @@ export function ChallengeHowItWorks({ onQuickStart }: ChallengeHowItWorksProps) 
                   <div className="flex flex-wrap items-center gap-2">
                     {(
                       [
+                        { id: "buggy", label: "🏎️ Labadi Buggy GP (3D Racing)" },
                         { id: "candy", label: "🍬 Alewa & Kube Crush (Match-3)" },
                         { id: "slash", label: "🍉 Market Slash (Fruit & Bombs)" },
                         { id: "pool", label: "🎱 8-Ball Pool (Landscape)" },

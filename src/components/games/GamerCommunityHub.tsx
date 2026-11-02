@@ -32,7 +32,8 @@ export type CommunityGameType =
   | "ludo"
   | "dame"
   | "slash"
-  | "candy";
+  | "candy"
+  | "buggy";
 
 export interface CommunityChatMessage {
   id: string;

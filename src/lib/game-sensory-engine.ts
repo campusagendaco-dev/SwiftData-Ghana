@@ -45,7 +45,10 @@ export type HapticPreset =
   | "victory"
   | "level_up"
   | "slice"
-  | "bomb";
+  | "bomb"
+  | "tap"
+  | "capture"
+  | "win";
 
 export function triggerHapticSensor(pattern: number | number[] | HapticPreset) {
   if (!vibrationEnabled || typeof navigator === "undefined" || !("vibrate" in navigator)) return;
@@ -483,7 +486,7 @@ export interface HumanChallengerPersona {
 }
 
 const PERSONA_MAP: Record<
-  "oware" | "ludo" | "dame" | "pool" | "slash" | "candy",
+  "oware" | "ludo" | "dame" | "pool" | "slash" | "candy" | "buggy",
   HumanChallengerPersona
 > = {
   oware: {
@@ -528,10 +531,17 @@ const PERSONA_MAP: Record<
     styleTag: "Oxford Street Sweet Cascade Pro",
     avatarInitials: "EM",
   },
+  buggy: {
+    name: "Kwame 'Suame Turbo' Mensah",
+    city: "Labadi & Aburi Ridge",
+    humanSensePercent: 93,
+    styleTag: "Labadi Coast & Aburi Hairpin Rally Pro",
+    avatarInitials: "KT",
+  },
 };
 
 export const HUMAN_CHALLENGER_PERSONAS: HumanChallengerPersona[] &
-  Record<"oware" | "ludo" | "dame" | "pool" | "slash" | "candy", HumanChallengerPersona> =
+  Record<"oware" | "ludo" | "dame" | "pool" | "slash" | "candy" | "buggy", HumanChallengerPersona> =
   Object.assign(
     [
       PERSONA_MAP.oware,
@@ -540,6 +550,7 @@ export const HUMAN_CHALLENGER_PERSONAS: HumanChallengerPersona[] &
       PERSONA_MAP.pool,
       PERSONA_MAP.slash,
       PERSONA_MAP.candy,
+      PERSONA_MAP.buggy,
     ],
     PERSONA_MAP
   );

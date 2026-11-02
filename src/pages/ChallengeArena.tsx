@@ -1976,6 +1976,28 @@ export default function ChallengeArena() {
               </button>
             </div>
 
+            {/* Quick Game Switcher Strip inside Launch Modal */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+              {GAME_CATALOG.map((g) => {
+                const active = selectedGame === g.id;
+                return (
+                  <button
+                    key={g.id}
+                    type="button"
+                    onClick={() => setSelectedGame(g.id)}
+                    className={`px-3 py-1.5 rounded-xl text-[11px] font-black whitespace-nowrap border transition-all flex items-center gap-1.5 cursor-pointer shrink-0 ${
+                      active
+                        ? "bg-amber-500 text-slate-950 border-amber-300 shadow-md"
+                        : "bg-slate-950/70 text-slate-300 border-white/10 hover:text-white hover:border-white/25"
+                    }`}
+                  >
+                    <span>{g.emoji}</span>
+                    <span>{g.shortTitle}</span>
+                  </button>
+                );
+              })}
+            </div>
+
             {/* Mode Selector Pills */}
             <div className="grid grid-cols-3 gap-2">
               <button
@@ -2884,6 +2906,15 @@ export default function ChallengeArena() {
             <div className="flex flex-wrap items-center gap-2.5 pt-1">
               <button
                 type="button"
+                onClick={() => openLaunchSheetForGame("buggy", "free_data")}
+                className="px-4 py-2 rounded-full bg-gradient-to-r from-orange-500/25 via-amber-500/25 to-emerald-500/20 hover:from-orange-500/35 hover:to-emerald-500/30 border border-amber-400/50 text-xs sm:text-sm font-black text-amber-200 flex items-center gap-2 transition-all cursor-pointer shadow-[0_0_20px_rgba(245,158,11,0.2)]"
+              >
+                <span>🏎️</span>
+                <span>Labadi Buggy GP • NEW</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => openLaunchSheetForGame("oware", "free_data")}
                 className="px-4 py-2 rounded-full bg-white/[0.05] hover:bg-white/[0.1] border border-white/12 text-xs sm:text-sm font-bold text-slate-200 flex items-center gap-2 transition-all cursor-pointer"
               >
@@ -3142,6 +3173,66 @@ export default function ChallengeArena() {
             </div>
 
             <div className="grid grid-cols-2 gap-3.5 sm:gap-4">
+              {/* Featured Racing Card: Labadi Beach & Aburi Buggy GP */}
+              <div
+                onClick={() => openLaunchSheetForGame("buggy", "free_data")}
+                className="group relative rounded-3xl overflow-hidden border-2 border-amber-400/40 bg-[#101829] hover:border-amber-400 transition-all cursor-pointer flex flex-col justify-between shadow-[0_14px_35px_rgba(245,158,11,0.18)] col-span-2"
+              >
+                <div className="relative h-40 sm:h-44 bg-gradient-to-br from-[#7c2d12] via-[#0f4c5c] to-[#081c24] p-3.5 sm:p-4 flex flex-col justify-between overflow-hidden">
+                  {/* Ghana Flag Racing Stripe Top Accent */}
+                  <div
+                    className="absolute inset-x-0 top-0 h-1.5"
+                    style={{
+                      background:
+                        "linear-gradient(90deg, #ef4444 0% 33%, #facc15 33% 66%, #22c55e 66% 100%)",
+                    }}
+                  />
+                  <div className="relative z-10 flex items-center justify-between gap-1">
+                    <span className="px-2.5 py-1 rounded-full bg-slate-950/80 backdrop-blur-md text-amber-300 font-black text-[10px] uppercase tracking-wider">
+                      🇬🇭 3D GHANA RACING • 3 LAPS
+                    </span>
+                    <span className="px-2.5 py-1 rounded-full bg-gradient-to-r from-amber-300 via-yellow-400 to-orange-400 text-slate-950 font-black text-[10px] uppercase tracking-wider shadow">
+                      NEW • SUAME GARAGE
+                    </span>
+                  </div>
+
+                  {/* Pseudo-3D Highway, Palm Trees, Kente Boost Pad & Buggy Illustration */}
+                  <div className="relative my-auto flex items-center justify-center gap-4 sm:gap-6">
+                    <span className="text-3xl sm:text-4xl drop-shadow-lg -rotate-6">🌴</span>
+                    <div className="relative px-5 py-2 rounded-2xl bg-slate-950/65 border border-amber-400/40 shadow-[0_0_24px_rgba(245,158,11,0.35)] flex items-center gap-3">
+                      <span className="text-4xl sm:text-5xl drop-shadow-[0_6px_12px_rgba(0,0,0,0.65)]">
+                        🏎️
+                      </span>
+                      <div className="text-left">
+                        <div className="text-[10px] font-black uppercase tracking-widest text-amber-300">
+                          LABADI • TEMA • ABURI
+                        </div>
+                        <div className="text-xs sm:text-sm font-black text-white flex items-center gap-1.5">
+                          <span>⚡ Sobolo Nitro</span>
+                          <span className="text-emerald-400">• ₵ Cedis</span>
+                        </div>
+                      </div>
+                    </div>
+                    <span className="text-3xl sm:text-4xl drop-shadow-lg rotate-6">🚐</span>
+                  </div>
+                </div>
+
+                <div className="p-3.5 sm:p-4 space-y-1 bg-[#0d1424]">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-base sm:text-lg font-black text-white flex items-center gap-2">
+                      <span>Labadi Beach &amp; Aburi Buggy GP</span>
+                      <span className="px-2 py-0.5 rounded-md bg-amber-500/20 border border-amber-400/40 text-amber-300 text-[10px] font-black uppercase">
+                        PLAY NOW
+                      </span>
+                    </h3>
+                    <ArrowRight className="w-4 h-4 text-amber-400 group-hover:translate-x-1 transition-transform" />
+                  </div>
+                  <p className="text-[11px] sm:text-xs text-slate-300 line-clamp-2">
+                    Race across Labadi Beach, Tema Motorway &amp; Aburi Hills! Hit Kente boost pads, collect ₵ Cedis &amp; upgrade your buggy in Suame Magazine Garage.
+                  </p>
+                </div>
+              </div>
+
               {/* Card 1: 8-Ball Pool & Snooker */}
               <div
                 onClick={() => openLaunchSheetForGame("pool", "free_data")}
