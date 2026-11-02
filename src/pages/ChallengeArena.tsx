@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import {
   Trophy,
   Gamepad2,
@@ -16,16 +16,15 @@ import {
   Gift,
   Sparkles,
   Users,
-  Bot,
   PlusCircle,
   RefreshCw,
-  Copy,
   Check,
   XCircle,
   Share2,
   Loader2,
   Crown,
   ArrowLeft,
+  ArrowRight,
   BellRing,
   Send,
   UserPlus,
@@ -34,13 +33,23 @@ import {
   Brain,
   Zap,
   Compass,
+  Settings,
+  HelpCircle,
+  Volume2,
+  VolumeX,
+  Vibrate,
+  User,
+  X,
+  BookOpen,
+  ChevronLeft,
+  Hash,
 } from "lucide-react";
 import { OwareGameBoard, INITIAL_OWARE_STATE } from "@/components/games/OwareGameBoard";
 import { GhanaLudoBoard, INITIAL_LUDO_STATE } from "@/components/games/GhanaLudoBoard";
 import { DameCheckersBoard, INITIAL_DAME_STATE } from "@/components/games/DameCheckersBoard";
 import { EightBallPoolBoard, INITIAL_POOL_STATE } from "@/components/games/EightBallPoolBoard";
 import { MarketSlashBoard, INITIAL_SLASH_STATE } from "@/components/games/MarketSlashBoard";
-import { ChallengeHowItWorks, GameInstructionPromptModal } from "@/components/games/ChallengeHowItWorks";
+import { GameInstructionPromptModal } from "@/components/games/ChallengeHowItWorks";
 import { playSuccessSound } from "@/lib/sound";
 import {
   DATA_TARGET_CATALOG,
@@ -49,6 +58,8 @@ import {
   playLevelUpFanfare,
   playTurnNotificationSound,
   triggerHapticSensor,
+  getGameSensoryPreferences,
+  setGameSensoryPreferences,
   type DataTargetTier,
 } from "@/lib/game-sensory-engine";
 
@@ -61,6 +72,7 @@ declare global {
 type GameType = "oware" | "ludo" | "dame" | "pool" | "slash";
 type ChallengeMode = "p2p" | "ai" | "free_data";
 type PaymentSource = "wallet" | "momo" | "free";
+type ProfileDrawerTab = "profile" | "settings" | "rooms" | "help";
 
 interface SuggestedPlayer {
   user_id: string;
@@ -73,47 +85,102 @@ interface SuggestedPlayer {
 const GAME_CATALOG: {
   id: GameType;
   name: string;
+  shortTitle: string;
+  categoryTag: string;
+  statusTag: string;
+  statusColor: "gold" | "green";
   subtitle: string;
+  rulesSummary: string[];
   badge: string;
   emoji: string;
   gradient: string;
 }[] = [
   {
-    id: "slash",
-    name: "Market Slash (Makola & Kejetia)",
-    subtitle: "Swipe fast across the wooden board to slice Watermelons, Papayas & Pineapples across 5 market stalls while dodging bombs!",
-    badge: "🔪 Swipe & Slice",
-    emoji: "🍉",
-    gradient: "from-orange-600/35 via-amber-900/25 to-slate-950 border-orange-500/50",
-  },
-  {
     id: "oware",
-    name: "Ghana Oware (Nam-Nam & Abapa)",
-    subtitle: "Authentic Akan 12-bowl Oware with continuous Nam-Nam relay sowing (4-seed harvest) & Abapa tournament rules!",
+    name: "Oware",
+    shortTitle: "Oware",
+    categoryTag: "GHANA'S GAME",
+    statusTag: "PLAY ONLINE",
+    statusColor: "green",
+    subtitle: "Our own board game. Beat Kofi, Ama and Nana, or send a friend a code and play online.",
+    rulesSummary: [
+      "Tap any of your 6 bowls on your side to scoop all seeds and sow counter-clockwise.",
+      "Nam-Nam mode: relay-sow continuously and harvest whenever a bowl reaches 4 seeds.",
+      "Abapa mode: single-lap sowing; capture opponent bowls holding 2 or 3 seeds.",
+      "First player to capture 25 or more seeds wins the match!",
+    ],
     badge: "Most Popular",
     emoji: "🪨",
     gradient: "from-amber-600/30 via-amber-900/20 to-slate-950 border-amber-500/40",
   },
   {
-    id: "ludo",
-    name: "Ghana Ludo (Pro 52-Cell • 2–4 Players)",
-    subtitle: "Authentic 52-cell track, 4 tokens in Base, 8 Safe Squares, Blockades (2+ tokens), Exact Home Roll & invite up to 3 friends!",
-    badge: "🎲 2–4 Players",
-    emoji: "🎲",
-    gradient: "from-rose-600/30 via-amber-900/20 to-slate-950 border-rose-500/40",
-  },
-  {
     id: "pool",
-    name: "8-Ball Pool (Landscape Pro)",
-    subtitle: "Turn your phone sideways! Aim the cue laser, control shot power, sink Solids or Stripes & pot the 8-Ball!",
-    badge: "📱 Rotate Phone",
+    name: "8-Ball Pool",
+    shortTitle: "8-Ball Pool",
+    categoryTag: "BILLIARDS",
+    statusTag: "ONLINE",
+    statusColor: "gold",
+    subtitle: "Aim the laser cue, fine-tune stick angle on the left tray, and pull the cue stick to strike.",
+    rulesSummary: [
+      "Play in Landscape view for full tournament table precision.",
+      "Use the Left Fine-Aim Tray to micro-adjust your cue angle and the Right Tray to pull & shoot.",
+      "Pot all 7 of your group (Solids 1–7 or Stripes 9–15), then legally sink the Black 8-Ball.",
+      "Scratching the white cue ball gives your opponent Ball-in-Hand anywhere on the felt.",
+    ],
+    badge: "Pro Physics",
     emoji: "🎱",
     gradient: "from-sky-600/30 via-blue-900/25 to-slate-950 border-sky-500/40",
   },
   {
+    id: "slash",
+    name: "Market Slash",
+    shortTitle: "Market Slash",
+    categoryTag: "REFLEX",
+    statusTag: "NEW",
+    statusColor: "gold",
+    subtitle: "Swipe fast to slice flying Makola watermelons, pineapples & papayas while dodging bombs.",
+    rulesSummary: [
+      "Drag or swipe your finger across flying fruits to slice them with your blade.",
+      "Slice 3+ fruits in a single swipe for multi-slice combo bonus points.",
+      "Never touch the black explosives — hitting a bomb costs a life and drops your combo!",
+      "Clear all 5 market stall stages with a higher score than your challenger to win.",
+    ],
+    badge: "Swipe & Slice",
+    emoji: "🍉",
+    gradient: "from-orange-600/35 via-amber-900/25 to-slate-950 border-orange-500/50",
+  },
+  {
+    id: "ludo",
+    name: "Ghana Ludo",
+    shortTitle: "Ghana Ludo",
+    categoryTag: "BOARD",
+    statusTag: "ONLINE",
+    statusColor: "gold",
+    subtitle: "52-cell track Ludo for 2–4 players. Roll a 6 to launch, kick opponents & race home.",
+    rulesSummary: [
+      "Tap the 3D dice on your turn; roll a 6 to bring a token out of your Base onto your start square.",
+      "Landing on an opponent token on a non-safe square sends it back to Base and grants a bonus roll.",
+      "Rolling a 6, capturing an opponent, or reaching the center Home triangle earns an extra roll.",
+      "First player to bring all 4 tokens into the center Home triangle wins!",
+    ],
+    badge: "2–4 Players",
+    emoji: "🎲",
+    gradient: "from-rose-600/30 via-amber-900/20 to-slate-950 border-rose-500/40",
+  },
+  {
     id: "dame",
-    name: "Ghanaian Dame",
-    subtitle: "8×8 Ghanaian Draughts with mandatory jump combos and Crowned Kings.",
+    name: "Ghana Dame",
+    shortTitle: "Ghana Dame",
+    categoryTag: "STRATEGY",
+    statusTag: "ONLINE",
+    statusColor: "gold",
+    subtitle: "8×8 Ghanaian checkers with mandatory jump captures and crowned Kings.",
+    rulesSummary: [
+      "Tap one of your pieces, then tap a highlighted diagonal square to move.",
+      "Mandatory Capture Rule: if a jump over an opponent piece is available, you must take it.",
+      "Reach the opponent's back row to crown your piece into a King that moves forward and backward.",
+      "Capture all 12 opponent pieces or block all their legal moves to win!",
+    ],
     badge: "Pure Skill",
     emoji: "♟️",
     gradient: "from-emerald-600/30 via-teal-900/20 to-slate-950 border-emerald-500/40",
@@ -158,15 +225,27 @@ export default function ChallengeArena() {
   const [recentClaims, setRecentClaims] = useState<any[]>([]);
   const [todayFreeDataCount, setTodayFreeDataCount] = useState<number>(0);
 
-  // Create challenge form state
+  // Create / Launch challenge form state
   const [selectedGame, setSelectedGame] = useState<GameType>("oware");
-  const [selectedMode, setSelectedMode] = useState<ChallengeMode>("p2p");
+  const [selectedMode, setSelectedMode] = useState<ChallengeMode>("free_data");
   const [paymentSource, setPaymentSource] = useState<PaymentSource>("wallet");
   const [stakeAmount, setStakeAmount] = useState<string>("5");
   const [playerName, setPlayerName] = useState<string>("");
   const [playerPhone, setPlayerPhone] = useState<string>("");
   const [rewardType] = useState<"wallet_cash" | "data_bundle">("wallet_cash");
   const [rewardNetwork] = useState<string>("MTN");
+
+  // Modals & Left-Corner Profile / Settings / Help Drawer state
+  const [profileDrawerOpen, setProfileDrawerOpen] = useState<boolean>(false);
+  const [profileDrawerTab, setProfileDrawerTab] = useState<ProfileDrawerTab>("profile");
+  const [launchModalOpen, setLaunchModalOpen] = useState<boolean>(false);
+  const [roomCodeInput, setRoomCodeInput] = useState<string>("");
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(
+    () => getGameSensoryPreferences().soundEnabled
+  );
+  const [vibrationEnabled, setVibrationEnabled] = useState<boolean>(
+    () => getGameSensoryPreferences().vibrationEnabled
+  );
 
   // Invite Player & Broadcast state
   const [invitedPhone, setInvitedPhone] = useState<string>("");
@@ -187,11 +266,11 @@ export default function ChallengeArena() {
   const [claimNetwork, setClaimNetwork] = useState("MTN");
   const [claimingReward, setClaimingReward] = useState(false);
 
-  // Level & Target Data Bundle Accumulation State (Medium Difficulty Progression)
+  // Level & Target Data Bundle Accumulation State
   const [arenaPoints, setArenaPoints] = useState<number>(() => {
     try {
       const saved = Number(window.localStorage.getItem("swiftdata_arena_points_v1"));
-      return Number.isFinite(saved) && saved >= 0 ? saved : 120; // Start new players with 120 welcome points!
+      return Number.isFinite(saved) && saved >= 0 ? saved : 120;
     } catch {
       return 120;
     }
@@ -209,58 +288,59 @@ export default function ChallengeArena() {
   );
   const [claimingPointsBundle, setClaimingPointsBundle] = useState(false);
 
-  // Join challenge modal state for MoMo / Guest
-  const [joiningChallengeId, setJoiningChallengeId] = useState<string | null>(null);
   const [filterGame, setFilterGame] = useState<string>("all");
+  const [joiningChallengeId, setJoiningChallengeId] = useState<string | null>(null);
   const [instructionModalOpen, setInstructionModalOpen] = useState<boolean>(false);
-
-  // Overall Game Next-Player Turn Notification Banner & Nudge state
+  const [nudgingTurn, setNudgingTurn] = useState<boolean>(false);
   const [turnNotificationBanner, setTurnNotificationBanner] = useState<{
-    title: string;
-    subtitle: string;
     isMyTurn: boolean;
     nextPlayerName: string;
+    title: string;
+    subtitle: string;
   } | null>(null);
-  const [nudgingTurn, setNudgingTurn] = useState<boolean>(false);
 
+  // Trigger overall match turn notification (Sound Chime + Haptic + Visual Banner + Browser Notification)
   const triggerOverallTurnNotification = useCallback(
     (challengeObj: any, nextTurnSide: string, boardState?: any) => {
-      if (!challengeObj || challengeObj.game_type === "slash") return;
-      const gType = (challengeObj.game_type || "pool") as GameType;
+      if (!challengeObj || challengeObj.status !== "in_progress") return;
+      const bState = boardState || challengeObj.board_state || {};
+      if (bState.winner) return;
+
       const isNowMyTurn = nextTurnSide === mySide;
-
-      // Support 2-4 player Ludo seat names when available
-      const activeLudoColor = boardState?.currentPlayerColor;
+      const gType = (challengeObj.game_type || "pool") as GameType;
+      const activeLudoColor = bState.currentPlayerColor;
       const activeLudoSeat =
-        activeLudoColor && boardState?.players?.[activeLudoColor]
-          ? boardState.players[activeLudoColor]
+        activeLudoColor && bState.players?.[activeLudoColor]
+          ? bState.players[activeLudoColor]
           : null;
-
-      const creatorLabel = challengeObj.creator_name || "Player 1";
-      const opponentLabel =
-        challengeObj.opponent_name ||
-        HUMAN_CHALLENGER_PERSONAS[gType]?.name ||
-        "Player 2";
 
       const nextPlayerName =
         activeLudoSeat?.name ||
-        (nextTurnSide === "creator" ? creatorLabel : opponentLabel);
-      const prevPlayerName =
-        nextTurnSide === "creator" ? opponentLabel : creatorLabel;
+        (nextTurnSide === "creator"
+          ? challengeObj.creator_name || "Player 1"
+          : challengeObj.opponent_name ||
+            HUMAN_CHALLENGER_PERSONAS[gType]?.name ||
+            "Challenger");
 
       playTurnNotificationSound(isNowMyTurn);
 
+      const title = isNowMyTurn
+        ? `🟢 YOUR TURN TO PLAY, ${nextPlayerName.toUpperCase()}!`
+        : `🔔 NEXT PLAYER'S TURN: ${nextPlayerName.toUpperCase()}`;
+
+      const subtitle =
+        bState.lastAction ||
+        bState.lastMove?.summary ||
+        (typeof bState.lastMove === "string" ? bState.lastMove : "") ||
+        (isNowMyTurn
+          ? "Step up to the board and make your move now!"
+          : `Waiting for ${nextPlayerName} to complete their turn...`);
+
       setTurnNotificationBanner({
-        title: isNowMyTurn
-          ? `🟢 YOUR TURN TO PLAY, ${nextPlayerName.toUpperCase()}!`
-          : `🔔 NEXT PLAYER'S TURN: ${nextPlayerName.toUpperCase()} IS UP!`,
-        subtitle: isNowMyTurn
-          ? `${prevPlayerName} finished their move — step up and make your move now!`
-          : challengeObj.mode === "p2p"
-          ? `Turn handed over! ${nextPlayerName} has been notified via Live App, Web Push & SMS.`
-          : `Turn handed over! ${nextPlayerName} is lining up their next move...`,
         isMyTurn: isNowMyTurn,
         nextPlayerName,
+        title,
+        subtitle,
       });
 
       if (
@@ -268,28 +348,29 @@ export default function ChallengeArena() {
         typeof window !== "undefined" &&
         "Notification" in window &&
         Notification.permission === "granted" &&
-        document.hidden
+        document.visibilityState !== "visible"
       ) {
         try {
-          new Notification(`🟢 Your Turn in SwiftData Arena (#${challengeObj.room_code})!`, {
-            body: `${prevPlayerName} just played in ${gType.toUpperCase()}. Make your move now!`,
+          new Notification(`🟢 Your Turn in ${gType.toUpperCase()} (#${challengeObj.room_code})`, {
+            body: subtitle,
+            icon: "/favicon.ico",
+            tag: `turn-${challengeObj.room_code}`,
           });
         } catch {
-          // ignore browser notification error
+          // ignore notification error
         }
       }
     },
     [mySide]
   );
 
-  // Auto-dismiss the spotlight banner after 4.2s while keeping the persistent turn header bar active
   useEffect(() => {
     if (!turnNotificationBanner) return;
     const t = setTimeout(() => setTurnNotificationBanner(null), 4200);
     return () => clearTimeout(t);
   }, [turnNotificationBanner]);
 
-  // Lock page scrolling & rubber-banding whenever an active game board (Snooker Pool, Oware, Ludo, Dame, Slash) is open
+  // Lock page scrolling & rubber-banding whenever an active game board is open
   useEffect(() => {
     const prevBodyOverscroll = document.body.style.overscrollBehavior;
     const prevHtmlOverscroll = document.documentElement.style.overscrollBehavior;
@@ -354,22 +435,24 @@ export default function ChallengeArena() {
           triggerHapticSensor("level_up");
           toast({
             title: `🎖️ LEVEL UP! Level ${nextLevelInfo.level} • ${nextLevelInfo.title}`,
-            description: `You now have ${nextTotal.toLocaleString()} Arena Points toward your ${targetDataSize} Free Data target!`,
+            description: `You reached ${nextTotal.toLocaleString()} Arena Points! Keep playing toward your ${targetDataSize} Free Data Bundle!`,
           });
         }
         return nextTotal;
       });
       setLastPointsPopup({ pts, reason });
+      window.setTimeout(() => setLastPointsPopup(null), 2600);
     },
     [targetDataSize, toast]
   );
 
   const handleRedeemPointsBundle = async () => {
     if (!canRedeemTargetBundle) return;
-    if (!claimPhone || claimPhone.replace(/\D/g, "").length < 9) {
+    const cleanPhone = (claimPhone || playerPhone || profile?.phone || "").replace(/\D/g, "");
+    if (cleanPhone.length < 9) {
       toast({
-        title: "Valid Phone Number Required",
-        description: "Enter a 10-digit Ghana number (e.g. 0241234567) to receive your Free Data Bundle.",
+        title: "Enter Valid Recipient Phone",
+        description: "Please enter a 10-digit Ghana phone number (e.g. 0241234567) to receive your Free Data Bundle.",
         variant: "destructive",
       });
       return;
@@ -379,17 +462,17 @@ export default function ChallengeArena() {
     try {
       const { data, error } = await supabase.functions.invoke("challenge-arena", {
         body: {
-          action: "claim_points_reward",
-          phone: claimPhone,
+          action: "redeem_points_bundle",
+          phone: cleanPhone,
           network: claimNetwork,
-          target_data_size: selectedTargetOption.size,
+          data_size: selectedTargetOption.size,
           points_spent: selectedTargetOption.pointsRequired,
-          player_level: levelInfo.level,
-          winner_name: (playerName || profile?.full_name || "Arena Champion").trim(),
+          player_name: playerName || profile?.full_name || "Arena Champion",
         },
       });
+
       if (error || !data?.success) {
-        throw new Error(data?.error || error?.message || "Could not redeem points reward");
+        throw new Error(data?.error || error?.message || "Could not redeem data bundle");
       }
 
       playLevelUpFanfare();
@@ -570,7 +653,7 @@ export default function ChallengeArena() {
     return () => clearTimeout(t);
   }, [playerSearchQuery, searchPlayersToInvite]);
 
-  // Auto-open room if current user is creator or opponent of ?room=XXXXXX (or if joining an in_progress room)
+  // Auto-open room if current user is creator or opponent of ?room=XXXXXX
   useEffect(() => {
     if (!roomQueryParam || challenges.length === 0 || activeChallenge) return;
     const matched = challenges.find(
@@ -583,7 +666,6 @@ export default function ChallengeArena() {
       setMySide(detectedSide);
       setActiveChallenge(matched);
     } else if (matched.status === "in_progress") {
-      // If opened via direct SMS/Share link while already in_progress, let challenger enter as opponent (or creator if owner)
       const fallbackSide = user?.id && matched.creator_id === user.id ? "creator" : "opponent";
       setMySide(fallbackSide);
       setActiveChallenge(matched);
@@ -625,7 +707,6 @@ export default function ChallengeArena() {
 
           setActiveChallenge((curr: any) => {
             if (curr && curr.id === updated.id) {
-              // If opponent just joined the creator's waiting room, celebrate with sound + toast!
               if (curr.status === "open" && updated.status === "in_progress" && updated.opponent_name) {
                 playSuccessSound();
                 toast({
@@ -634,7 +715,6 @@ export default function ChallengeArena() {
                 });
               }
 
-              // If turn switched via live P2P move, notify the player immediately with chime + banner!
               const prevTurn = curr.current_turn || curr.board_state?.turn || "creator";
               const nextTurn = updated.current_turn || updated.board_state?.turn || "creator";
               const prevColor = curr.board_state?.currentPlayerColor;
@@ -651,7 +731,6 @@ export default function ChallengeArena() {
             return curr;
           });
 
-          // If another challenge in the lobby was just accepted, show a subtle arena toast
           if (
             oldRow?.status === "open" &&
             updated.status === "in_progress" &&
@@ -662,7 +741,7 @@ export default function ChallengeArena() {
               title: `⚔️ Challenge Accepted (#${updated.room_code})`,
               description: `${updated.opponent_name} just accepted ${updated.creator_name}'s ${String(
                 updated.game_type || ""
-              ).toUpperCase()} challenge for GH₵ ${Number(updated.prize_pool || 0).toFixed(2)}!`,
+              ).toUpperCase()} challenge!`,
             });
           }
         }
@@ -672,62 +751,64 @@ export default function ChallengeArena() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [activeChallenge, toast]);
+  }, [activeChallenge, toast, triggerOverallTurnNotification]);
 
-  // Load Paystack inline script if not already loaded
-  const ensurePaystackLoaded = (): Promise<any> => {
+  const loadPaystackInline = (): Promise<any> => {
     return new Promise((resolve, reject) => {
       if (window.PaystackPop) return resolve(window.PaystackPop);
       const script = document.createElement("script");
       script.src = "https://js.paystack.co/v1/inline.js";
       script.async = true;
       script.onload = () => resolve(window.PaystackPop);
-      script.onerror = () => reject(new Error("Could not load Paystack Mobile Money checkout"));
+      script.onerror = () => reject(new Error("Could not load Paystack checkout"));
       document.body.appendChild(script);
     });
   };
 
   const triggerMoMoStakeCheckout = async (amountGhs: number): Promise<string> => {
-    const PaystackPop = await ensurePaystackLoaded();
-    const pubKey =
-      paystackPublicKey ||
-      import.meta.env.VITE_PAYSTACK_PUBLIC_KEY ||
-      "pk_live_7ab0f41f5fb9bb80aa1fd90a17fa1be99b2a10bf";
+    if (!paystackPublicKey) {
+      throw new Error("Paystack public key is not configured yet.");
+    }
+    const PaystackPop = await loadPaystackInline();
+    const ref = `CHAL_${Date.now()}_${Math.random().toString(36).slice(2, 7).toUpperCase()}`;
 
     return new Promise((resolve, reject) => {
-      const ref = `CHAL_${Date.now()}_${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
       const handler = PaystackPop.setup({
-        key: pubKey,
-        email: user?.email || `${(playerPhone || "guest").replace(/\D/g, "") || "player"}@swiftdatagh.com`,
+        key: paystackPublicKey,
+        email: user?.email || `${(playerPhone || "0240000000").replace(/\D/g, "")}@swiftdatagh.shop`,
         amount: Math.round(amountGhs * 100),
         currency: "GHS",
         ref,
         channels: ["mobile_money", "card"],
-        metadata: {
-          custom_fields: [
-            { display_name: "Challenge Game", variable_name: "game_type", value: selectedGame },
-            { display_name: "Player Phone", variable_name: "player_phone", value: playerPhone },
-          ],
-        },
         callback: (response: any) => {
           resolve(response.reference || ref);
         },
         onClose: () => {
-          reject(new Error("Mobile Money payment window was closed before completion."));
+          reject(new Error("MoMo payment cancelled"));
         },
       });
       handler.openIframe();
     });
   };
 
-  const handleCreateChallenge = async () => {
-    const cleanName = (playerName || profile?.full_name || "Ghana Champion").trim();
-    const numStake = selectedMode === "free_data" ? 0 : Number(stakeAmount || 0);
-
-    if (selectedMode !== "free_data" && (!numStake || numStake < Number(settings.min_stake_ghs || 2))) {
+  const startChallengeWithConfig = async (
+    gameToStart: GameType = selectedGame,
+    modeToStart: ChallengeMode = selectedMode
+  ) => {
+    const stake = modeToStart === "free_data" ? 0 : Number(stakeAmount || 0);
+    if (modeToStart !== "free_data" && (isNaN(stake) || stake < Number(settings.min_stake_ghs || 2))) {
       toast({
-        title: "Invalid Stake Amount",
-        description: `Minimum stake is GH₵ ${Number(settings.min_stake_ghs || 2).toFixed(2)}.`,
+        title: "Minimum Stake Required",
+        description: `Minimum stake is GH₵ ${Number(settings.min_stake_ghs || 2).toFixed(2)}`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (modeToStart !== "free_data" && paymentSource === "wallet" && !user) {
+      toast({
+        title: "Sign in for Wallet Stake, or Choose MoMo",
+        description: "Guests can stake directly with Mobile Money (MoMo) or play Free Data mode!",
         variant: "destructive",
       });
       return;
@@ -736,59 +817,38 @@ export default function ChallengeArena() {
     setSubmitting(true);
     try {
       let paystackRef: string | undefined;
-      const effectivePaySource: PaymentSource =
-        selectedMode === "free_data" ? "free" : paymentSource;
-
-      if (effectivePaySource === "momo" && numStake > 0) {
-        if (!playerPhone || playerPhone.replace(/\D/g, "").length < 9) {
-          toast({
-            title: "Phone Number Required",
-            description: "Enter your Ghana phone number so we can send your MoMo / Data prize when you win!",
-            variant: "destructive",
-          });
-          setSubmitting(false);
-          return;
-        }
-        paystackRef = await triggerMoMoStakeCheckout(numStake);
+      if (modeToStart !== "free_data" && stake > 0 && paymentSource === "momo") {
+        paystackRef = await triggerMoMoStakeCheckout(stake);
       }
 
-      const initialBoard = getInitialBoardForGame(selectedGame);
+      const initialBoard = getInitialBoardForGame(gameToStart);
       const { data, error } = await supabase.functions.invoke("challenge-arena", {
         body: {
           action: "create_challenge",
-          game_type: selectedGame,
-          mode: selectedMode,
-          payment_source: effectivePaySource,
+          game_type: gameToStart,
+          mode: modeToStart,
+          stake_amount: stake,
+          payment_source: modeToStart === "free_data" ? "free" : paymentSource,
           paystack_reference: paystackRef,
-          stake_amount: numStake,
-          creator_name: cleanName,
-          creator_phone: playerPhone,
+          creator_name: (playerName || profile?.full_name || "Ghana Champion").trim(),
+          creator_phone: playerPhone || profile?.phone || "",
+          reward_type: modeToStart === "free_data" ? "data_bundle" : rewardType,
+          reward_network: rewardNetwork,
+          board_state: initialBoard,
           invited_phone: selectedInvitedUser?.phone || invitedPhone.trim() || undefined,
           invited_user_id: selectedInvitedUser?.user_id || undefined,
           invited_name: selectedInvitedUser?.full_name || undefined,
-          reward_type: selectedMode === "free_data" ? "free_data" : rewardType,
-          reward_network: rewardNetwork,
-          reward_data_size:
-            selectedMode === "free_data"
-              ? targetDataSize || settings.free_data_package_size || "1GB"
-              : numStake >= 15
-              ? "5GB"
-              : numStake >= 8
-              ? "2GB"
-              : "1GB",
-          initial_board_state: initialBoard,
+          notify_all_users: modeToStart === "p2p",
         },
       });
 
       if (error || !data?.success) {
-        throw new Error(data?.error || error?.message || "Could not create challenge");
+        throw new Error(data?.error || error?.message || "Failed to create challenge");
       }
 
-      toast({
-        title: "🎮 Challenge Created & Broadcasted!",
-        description: data.message,
-      });
-
+      playSuccessSound();
+      setLaunchModalOpen(false);
+      setProfileDrawerOpen(false);
       recordMyChallengeSide(data.challenge.id, "creator");
       setMySide("creator");
       setActiveChallenge(data.challenge);
@@ -806,6 +866,8 @@ export default function ChallengeArena() {
       setSubmitting(false);
     }
   };
+
+  const handleCreateChallenge = () => startChallengeWithConfig(selectedGame, selectedMode);
 
   const handleSendRoomInvite = async (
     challenge: any,
@@ -897,6 +959,8 @@ export default function ChallengeArena() {
         joinedChallenge.board_state = joinedBoard;
       }
 
+      setLaunchModalOpen(false);
+      setProfileDrawerOpen(false);
       recordMyChallengeSide(joinedChallenge.id, "opponent");
       setMySide("opponent");
       setActiveChallenge(joinedChallenge);
@@ -916,6 +980,33 @@ export default function ChallengeArena() {
     }
   };
 
+  const handleJoinByRoomCode = () => {
+    const code = roomCodeInput.trim().toUpperCase().replace(/^#/, "");
+    if (!code) return;
+    const found = challenges.find((c) => String(c.room_code || "").toUpperCase() === code);
+    if (!found) {
+      toast({
+        title: "Room Not Found",
+        description: `No active room found with code #${code}. Try refreshing the lobby.`,
+        variant: "destructive",
+      });
+      return;
+    }
+    const myDetectedSide = resolveMySideForChallenge(found);
+    if (found.status === "in_progress" || myDetectedSide === "creator") {
+      const side = myDetectedSide || "opponent";
+      recordMyChallengeSide(found.id, side);
+      setMySide(side);
+      setActiveChallenge(found);
+      setProfileDrawerOpen(false);
+      setLaunchModalOpen(false);
+      return;
+    }
+    if (found.status === "open") {
+      handleJoinChallenge(found, user ? "wallet" : "momo");
+    }
+  };
+
   const handleCancelOpenChallenge = async (challengeId: string) => {
     try {
       const { data, error } = await supabase.functions.invoke("challenge-arena", {
@@ -925,9 +1016,7 @@ export default function ChallengeArena() {
         throw new Error(data?.error || error?.message || "Could not cancel challenge");
       }
       toast({ title: "Challenge Cancelled", description: data.message });
-      if (activeChallenge?.id === challengeId) {
-        setActiveChallenge(null);
-      }
+      if (activeChallenge?.id === challengeId) setActiveChallenge(null);
       fetchWalletAndPaystackKey();
       fetchLobby(true);
     } catch (err: any) {
@@ -938,12 +1027,12 @@ export default function ChallengeArena() {
   const handleBoardStateChange = useCallback(
     async (nextState: any) => {
       if (!activeChallenge) return;
-      const prevTurn = activeChallenge.current_turn || activeChallenge.board_state?.turn || "creator";
+      const prevTurn =
+        activeChallenge.current_turn || activeChallenge.board_state?.turn || "creator";
       const nextTurn = nextState.turn || "creator";
       const prevColor = activeChallenge.board_state?.currentPlayerColor;
       const nextColor = nextState.currentPlayerColor;
 
-      // Trigger overall game turn notification whenever the turn changes to the next player!
       if (
         !nextState.winner &&
         (prevTurn !== nextTurn || (prevColor && nextColor && prevColor !== nextColor))
@@ -951,7 +1040,6 @@ export default function ChallengeArena() {
         triggerOverallTurnNotification(activeChallenge, nextTurn, nextState);
       }
 
-      // Optimistically update local activeChallenge
       setActiveChallenge((prev: any) =>
         prev ? { ...prev, board_state: nextState, current_turn: nextTurn } : prev
       );
@@ -973,7 +1061,8 @@ export default function ChallengeArena() {
     if (!activeChallenge) return;
     setNudgingTurn(true);
     try {
-      const currentTurnSide = activeChallenge.current_turn || activeChallenge.board_state?.turn || "creator";
+      const currentTurnSide =
+        activeChallenge.current_turn || activeChallenge.board_state?.turn || "creator";
       const nextName =
         currentTurnSide === "creator"
           ? activeChallenge.creator_name || "Player 1"
@@ -1101,274 +1190,25 @@ export default function ChallengeArena() {
     Number(settings.daily_free_data_limit || 15) - todayFreeDataCount
   );
 
+  const displayFirstName =
+    (playerName || profile?.full_name || "Player").trim().split(" ")[0] || "Player";
+  const selectedGameMeta =
+    GAME_CATALOG.find((g) => g.id === selectedGame) || GAME_CATALOG[0];
+
+  const openLaunchSheetForGame = (gId: GameType, defaultMode: ChallengeMode = "free_data") => {
+    setSelectedGame(gId);
+    setSelectedMode(defaultMode);
+    setLaunchModalOpen(true);
+  };
+
   return (
     <div
       className={
         activeChallenge
-          ? "fixed inset-0 z-[85] w-screen h-[100dvh] bg-slate-950 flex flex-col overflow-hidden overscroll-none select-none"
-          : "max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-6 pb-16 overscroll-none"
+          ? "fixed inset-0 z-[85] w-screen h-[100dvh] bg-[#070b14] flex flex-col overflow-hidden overscroll-none select-none"
+          : "min-h-[100dvh] w-full bg-gradient-to-b from-[#0b111e] via-[#090e1a] to-[#050811] text-white overscroll-none"
       }
     >
-      {/* ── Hero Banner (Lobby Only — Hidden in Full Game Mode) ── */}
-      {!activeChallenge && (
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-amber-950/40 to-emerald-950/40 border border-amber-500/30 p-5 sm:p-8 shadow-2xl">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-          <div className="space-y-2.5 max-w-2xl">
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => navigate(user ? "/dashboard" : "/")}
-                className="h-7 rounded-xl border-white/20 bg-slate-950/70 hover:bg-slate-900 text-white font-black text-xs px-2.5 gap-1"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                {user ? "Dashboard" : "Home"}
-              </Button>
-              <Badge className="bg-amber-500 text-slate-950 font-black text-xs px-3 py-1 gap-1">
-                <Trophy className="w-3.5 h-3.5" /> GHANA TRADITIONAL GAMES ARENA
-              </Badge>
-              <Badge variant="outline" className="border-emerald-500/40 bg-emerald-500/10 text-emerald-300 font-bold text-xs">
-                🎁 {remainingFreeDataToday} Free Data Rewards Available Today
-              </Badge>
-              <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-300 font-bold text-xs gap-1">
-                <BellRing className="w-3 h-3" /> Live Web Push, SMS &amp; In-App Alerts Active
-              </Badge>
-            </div>
-            <h1 className="text-2xl sm:text-4xl font-black tracking-tight text-white">
-              Play 8-Ball Pool, Oware, Ludo &amp; Dame — Win Cash or Target Free Data!
-            </h1>
-            <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-              Create an <strong>Open Challenge</strong> (auto-notifies all users via Web, SMS &amp; In-App),{" "}
-              <strong>invite a friend</strong>, or challenge our <strong>91%–95% Human-Sense Champions (Medium Difficulty)</strong>{" "}
-              with <strong>Gyro Motion Sensors</strong>, <strong>3D Audio</strong> &amp; <strong>Haptic Vibration</strong> to level up and accumulate points toward your <strong>1GB, 2GB, or 5GB Free Data Bundle</strong>!
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3">
-            {user && (
-              <div className="px-4 py-3 rounded-2xl bg-slate-950/80 border border-emerald-500/30 flex items-center gap-3">
-                <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400">
-                  <Wallet className="w-5 h-5" />
-                </div>
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                    Your Wallet Balance
-                  </p>
-                  <p className="text-lg font-black text-emerald-400 font-mono">
-                    GH₵ {walletBalance.toFixed(2)}
-                  </p>
-                </div>
-              </div>
-            )}
-            <Button
-              variant="outline"
-              onClick={() => fetchLobby()}
-              className="h-11 rounded-2xl border-white/15 bg-white/5 hover:bg-white/10 text-white font-bold text-xs gap-2"
-            >
-              <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-              Refresh Arena
-            </Button>
-          </div>
-        </div>
-      </div>
-      )}
-
-      {/* ── PRO LEVEL & TARGET DATA BUNDLE ACCUMULATION CONSOLE (Lobby Only — Hidden in Full Game Mode) ── */}
-      {!activeChallenge && (
-      <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-slate-900/95 via-sky-950/40 to-purple-950/40 border border-sky-500/35 shadow-xl space-y-4">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          {/* Player Level & Human-Sense Difficulty Badge */}
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="px-3.5 py-2 rounded-2xl bg-amber-500/15 border border-amber-400/50 flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-amber-500 text-slate-950 font-black flex items-center justify-center text-sm shadow">
-                L{levelInfo.level}
-              </div>
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-wider text-amber-300">
-                  Level {levelInfo.level} • {levelInfo.title}
-                </p>
-                <p className="text-xs font-black text-white font-mono">
-                  ⚡ {arenaPoints.toLocaleString()} Total Arena Points
-                </p>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge className="bg-emerald-500/15 text-emerald-300 border border-emerald-500/40 text-[11px] font-bold gap-1 px-2.5 py-1">
-                <Brain className="w-3.5 h-3.5" />
-                {HUMAN_CHALLENGER_PERSONAS[selectedGame].name} •{" "}
-                {HUMAN_CHALLENGER_PERSONAS[selectedGame].humanSensePercent}% Human Sense (Medium)
-              </Badge>
-              <Badge className="bg-sky-500/15 text-sky-300 border border-sky-500/40 text-[11px] font-bold gap-1 px-2.5 py-1">
-                <Compass className="w-3.5 h-3.5" />
-                Gyro Motion + Sound + Haptic Sensors Active
-              </Badge>
-              {lastPointsPopup && (
-                <Badge className="bg-amber-400 text-slate-950 font-black text-[11px] animate-bounce px-2.5 py-1">
-                  +{lastPointsPopup.pts} PTS • {lastPointsPopup.reason}
-                </Badge>
-              )}
-            </div>
-          </div>
-
-          {/* Target Data Bundle Selector (1GB / 2GB / 5GB) */}
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[11px] font-black uppercase tracking-wider text-purple-300 flex items-center gap-1">
-              <Zap className="w-3.5 h-3.5 text-amber-400" /> Target Free Data Goal:
-            </span>
-            <div className="inline-flex items-center rounded-2xl bg-slate-950 p-1 border border-white/15 gap-1">
-              {DATA_TARGET_CATALOG.map((tier) => {
-                const active = targetDataSize === tier.size;
-                return (
-                  <button
-                    key={tier.size}
-                    type="button"
-                    onClick={() => handleSelectTargetData(tier.size)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
-                      active
-                        ? "bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 shadow"
-                        : "text-slate-300 hover:text-white"
-                    }`}
-                  >
-                    <span>🎁 {tier.size}</span>
-                    <span className="text-[10px] font-mono opacity-85">
-                      ({tier.pointsRequired.toLocaleString()} Pts)
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-
-        {/* Animated Target Data Progress Bar */}
-        <div className="space-y-1.5">
-          <div className="flex flex-wrap items-center justify-between text-xs gap-2">
-            <span className="font-bold text-slate-200">
-              Progress to{" "}
-              <strong className="text-amber-300">{selectedTargetOption.label}</strong> (Earn{" "}
-              <span className="text-emerald-300 font-semibold">+40 Pts/ball</span>,{" "}
-              <span className="text-emerald-300 font-semibold">+15 Pts/seed</span>,{" "}
-              <span className="text-emerald-300 font-semibold">+50 Pts/kick</span>,{" "}
-              <span className="text-emerald-300 font-semibold">+300 Pts/win</span>)
-            </span>
-            <span className="font-mono font-black text-amber-300">
-              {arenaPoints.toLocaleString()} / {selectedTargetOption.pointsRequired.toLocaleString()} PTS (
-              {targetProgressPercent}%)
-            </span>
-          </div>
-          <div className="w-full h-3.5 rounded-full bg-slate-950 border border-white/15 overflow-hidden p-0.5">
-            <div
-              className="h-full rounded-full bg-gradient-to-r from-sky-500 via-emerald-400 to-amber-400 transition-all duration-500 shadow-[0_0_12px_rgba(52,211,153,0.6)]"
-              style={{ width: `${targetProgressPercent}%` }}
-            />
-          </div>
-        </div>
-
-        {/* Instant Target Data Bundle Redemption Panel (Unlocks at 100% Points!) */}
-        {canRedeemTargetBundle && (
-          <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-950/90 via-teal-950/80 to-slate-950 border-2 border-emerald-400 shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-3">
-            <div className="space-y-0.5">
-              <p className="text-sm font-black text-white flex items-center gap-1.5">
-                🎉 Target Reached! Redeem Your {selectedTargetOption.label} Now!
-              </p>
-              <p className="text-xs text-emerald-200">
-                You accumulated {arenaPoints.toLocaleString()} Points (Level {levelInfo.level}). Enter your Ghana phone number below to claim your{" "}
-                <strong>{selectedTargetOption.size} Data Bundle</strong>!
-              </p>
-            </div>
-            <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
-              <select
-                value={claimNetwork}
-                onChange={(e) => setClaimNetwork(e.target.value)}
-                className="h-10 rounded-xl bg-slate-950 border border-emerald-500/40 px-3 text-xs font-bold text-white"
-              >
-                <option value="MTN">MTN</option>
-                <option value="TELECEL">Telecel</option>
-                <option value="AT">AirtelTigo</option>
-              </select>
-              <Input
-                placeholder="0241234567"
-                value={claimPhone}
-                onChange={(e) => setClaimPhone(e.target.value)}
-                className="h-10 w-40 rounded-xl bg-slate-950 border-emerald-500/40 text-xs font-mono text-white"
-              />
-              <Button
-                type="button"
-                disabled={claimingPointsBundle}
-                onClick={handleRedeemPointsBundle}
-                className="h-10 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs gap-1.5 px-4 shrink-0"
-              >
-                {claimingPointsBundle ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Gift className="w-4 h-4" />
-                )}
-                Redeem {selectedTargetOption.size} Data
-              </Button>
-            </div>
-          </div>
-        )}
-      </div>
-      )}
-
-      {/* ── Deep-Link Invited Challenge Spotlight Banner (?room=XXXXXX) ── */}
-      {!activeChallenge && invitedSpotlightChallenge && (
-        <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-r from-amber-500/20 via-orange-500/15 to-emerald-500/20 border-2 border-amber-400 shadow-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 animate-in fade-in zoom-in-95 duration-300">
-          <div className="space-y-1.5">
-            <div className="flex items-center gap-2 flex-wrap">
-              <Badge className="bg-amber-400 text-slate-950 font-black text-[10px] uppercase">
-                🎯 Direct Challenge Invite • Room #{invitedSpotlightChallenge.room_code}
-              </Badge>
-              <Badge className="bg-emerald-500/20 text-emerald-300 border border-emerald-400/40 font-mono text-xs">
-                Winner Takes GH₵ {Number(invitedSpotlightChallenge.prize_pool || 0).toFixed(2)}
-              </Badge>
-            </div>
-            <h2 className="text-lg sm:text-xl font-black text-white">
-              {invitedSpotlightChallenge.creator_name} challenged you to play{" "}
-              <span className="text-amber-300 uppercase">{invitedSpotlightChallenge.game_type}</span>!
-            </h2>
-            <p className="text-xs text-slate-200">
-              Required Stake: <strong className="text-amber-300 font-mono">GH₵ {Number(invitedSpotlightChallenge.stake_amount || 0).toFixed(2)}</strong> • Once you accept, the match starts immediately and all players are notified!
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
-            {user && (
-              <Button
-                disabled={joiningChallengeId === invitedSpotlightChallenge.id}
-                onClick={() => handleJoinChallenge(invitedSpotlightChallenge, "wallet")}
-                className="h-11 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs gap-2 px-5 shadow-lg"
-              >
-                <Wallet className="w-4 h-4" />
-                Accept with Wallet (GH₵ {Number(invitedSpotlightChallenge.stake_amount || 0).toFixed(2)})
-              </Button>
-            )}
-            <Button
-              variant="outline"
-              disabled={joiningChallengeId === invitedSpotlightChallenge.id}
-              onClick={() => handleJoinChallenge(invitedSpotlightChallenge, "momo")}
-              className="h-11 rounded-2xl border-amber-400 bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 font-black text-xs gap-2 px-5"
-            >
-              <Smartphone className="w-4 h-4" />
-              Accept with MoMo (GH₵ {Number(invitedSpotlightChallenge.stake_amount || 0).toFixed(2)})
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* ── Interactive 4-Step Animated Guide & Game Mechanics Preview ── */}
-      {!activeChallenge && (
-        <ChallengeHowItWorks
-          onQuickStart={(g, m) => {
-            setSelectedGame(g);
-            setSelectedMode(m);
-            setInstructionModalOpen(true);
-          }}
-        />
-      )}
-
       {/* ── On-Select Game Instruction Modal (Skip or Follow 4 Steps) ── */}
       <GameInstructionPromptModal
         gameType={selectedGame}
@@ -1377,26 +1217,861 @@ export default function ChallengeArena() {
         onStartGame={() => setInstructionModalOpen(false)}
       />
 
-      {/* ── Active Game Stage (Locked Full-Screen Game Mode View — Zero Page Movement) ── */}
+      {/* ── TOP-LEFT GAMER PROFILE, SETTINGS, ONLINE ROOMS & HELP DRAWER ── */}
+      {profileDrawerOpen && (
+        <div className="fixed inset-0 z-[120] flex">
+          <div
+            className="fixed inset-0 bg-black/75 backdrop-blur-sm"
+            onClick={() => setProfileDrawerOpen(false)}
+          />
+          <div className="relative z-10 w-full max-w-md bg-[#0c1322] border-r border-white/10 h-[100dvh] flex flex-col shadow-2xl animate-in slide-in-from-left duration-200">
+            {/* Drawer Header */}
+            <div className="p-4 border-b border-white/10 flex items-center justify-between bg-[#0f172a]">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 text-slate-950 font-black text-base flex items-center justify-center shadow-lg">
+                  {displayFirstName.slice(0, 2).toUpperCase()}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-black text-white">{displayFirstName}</p>
+                    <Badge className="bg-amber-500/20 text-amber-300 border border-amber-400/40 text-[10px] font-black">
+                      Lv.{levelInfo.level} • {levelInfo.title}
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-slate-400 font-mono">
+                    ⚡ {arenaPoints.toLocaleString()} Pts • {targetProgressPercent}% to{" "}
+                    {selectedTargetOption.size}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setProfileDrawerOpen(false)}
+                className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Drawer Navigation Tabs */}
+            <div className="grid grid-cols-4 gap-1 p-2 bg-[#090e1a] border-b border-white/10">
+              {(
+                [
+                  { id: "profile", label: "Profile", icon: User },
+                  { id: "rooms", label: "Online", icon: Users },
+                  { id: "settings", label: "Settings", icon: Settings },
+                  { id: "help", label: "Help", icon: HelpCircle },
+                ] as const
+              ).map((tab) => {
+                const Icon = tab.icon;
+                const active = profileDrawerTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setProfileDrawerTab(tab.id)}
+                    className={`py-2 px-2 rounded-xl text-[11px] font-black flex flex-col items-center gap-1 transition-all cursor-pointer ${
+                      active
+                        ? "bg-amber-500 text-slate-950 shadow"
+                        : "text-slate-400 hover:text-white hover:bg-white/5"
+                    }`}
+                  >
+                    <Icon className="w-4 h-4" />
+                    <span>{tab.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Drawer Body */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-5">
+              {profileDrawerTab === "profile" && (
+                <>
+                  {/* Wallet & Points Summary */}
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div className="p-3.5 rounded-2xl bg-white/[0.04] border border-white/10">
+                      <p className="text-[10px] font-bold uppercase text-slate-400">Wallet Float</p>
+                      <p className="text-lg font-black text-emerald-400 font-mono mt-0.5">
+                        GH₵ {walletBalance.toFixed(2)}
+                      </p>
+                      {user && (
+                        <button
+                          type="button"
+                          onClick={() => navigate("/dashboard/wallet")}
+                          className="text-[10px] font-bold text-amber-300 hover:underline mt-1 inline-block"
+                        >
+                          + Top up wallet →
+                        </button>
+                      )}
+                    </div>
+                    <div className="p-3.5 rounded-2xl bg-white/[0.04] border border-white/10">
+                      <p className="text-[10px] font-bold uppercase text-slate-400">Free Data Left</p>
+                      <p className="text-lg font-black text-amber-300 font-mono mt-0.5">
+                        🎁 {remainingFreeDataToday} Today
+                      </p>
+                      <p className="text-[10px] text-slate-400 mt-1">Daily skill rewards</p>
+                    </div>
+                  </div>
+
+                  {/* Player Identity Settings */}
+                  <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 space-y-3">
+                    <p className="text-xs font-black uppercase tracking-wider text-amber-300">
+                      Gamer Identity &amp; SMS Alert Number
+                    </p>
+                    <div className="space-y-2">
+                      <div>
+                        <Label className="text-[11px] text-slate-400">Display Name</Label>
+                        <Input
+                          placeholder="e.g. Kofi Oware"
+                          value={playerName}
+                          onChange={(e) => setPlayerName(e.target.value)}
+                          className="h-9 rounded-xl bg-slate-950 border-white/15 text-xs text-white mt-1"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-[11px] text-slate-400">
+                          Ghana Phone (For Turn Alerts &amp; Free Data)
+                        </Label>
+                        <Input
+                          placeholder="0241234567"
+                          value={playerPhone}
+                          onChange={(e) => {
+                            setPlayerPhone(e.target.value);
+                            setClaimPhone(e.target.value);
+                          }}
+                          className="h-9 rounded-xl bg-slate-950 border-white/15 text-xs font-mono text-white mt-1"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Free Data Target Goal & Progress */}
+                  <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-500/10 via-slate-900 to-emerald-500/10 border border-amber-500/30 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black text-amber-300 flex items-center gap-1.5">
+                        <Gift className="w-4 h-4" /> Target Free Data Goal
+                      </span>
+                      <span className="text-xs font-mono font-black text-white">
+                        {arenaPoints.toLocaleString()} /{" "}
+                        {selectedTargetOption.pointsRequired.toLocaleString()} Pts
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {DATA_TARGET_CATALOG.map((tier) => {
+                        const active = targetDataSize === tier.size;
+                        return (
+                          <button
+                            key={tier.size}
+                            type="button"
+                            onClick={() => handleSelectTargetData(tier.size)}
+                            className={`py-2 px-2 rounded-xl text-xs font-black border transition-all cursor-pointer ${
+                              active
+                                ? "bg-amber-500 text-slate-950 border-amber-400 shadow"
+                                : "bg-slate-950 border-white/10 text-slate-300 hover:text-white"
+                            }`}
+                          >
+                            🎁 {tier.size}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div className="w-full h-3 rounded-full bg-slate-950 border border-white/15 overflow-hidden p-0.5">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-amber-400 to-emerald-400 transition-all duration-500"
+                        style={{ width: `${targetProgressPercent}%` }}
+                      />
+                    </div>
+
+                    {canRedeemTargetBundle ? (
+                      <div className="space-y-2 pt-1">
+                        <p className="text-xs font-black text-emerald-300">
+                          🎉 Goal Reached! Claim your {selectedTargetOption.size} bundle now:
+                        </p>
+                        <div className="flex gap-2">
+                          <select
+                            value={claimNetwork}
+                            onChange={(e) => setClaimNetwork(e.target.value)}
+                            className="h-9 rounded-xl bg-slate-950 border border-emerald-500/40 px-2.5 text-xs font-bold text-white"
+                          >
+                            <option value="MTN">MTN</option>
+                            <option value="TELECEL">Telecel</option>
+                            <option value="AT">AirtelTigo</option>
+                          </select>
+                          <Input
+                            placeholder="0241234567"
+                            value={claimPhone}
+                            onChange={(e) => setClaimPhone(e.target.value)}
+                            className="h-9 flex-1 rounded-xl bg-slate-950 border-emerald-500/40 text-xs font-mono text-white"
+                          />
+                        </div>
+                        <Button
+                          type="button"
+                          disabled={claimingPointsBundle}
+                          onClick={handleRedeemPointsBundle}
+                          className="w-full h-9 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs"
+                        >
+                          {claimingPointsBundle ? (
+                            <Loader2 className="w-4 h-4 animate-spin mr-1" />
+                          ) : (
+                            <Gift className="w-4 h-4 mr-1" />
+                          )}
+                          Redeem {selectedTargetOption.size} Free Data
+                        </Button>
+                      </div>
+                    ) : (
+                      <p className="text-[11px] text-slate-300">
+                        Win matches &amp; score combos to earn{" "}
+                        <strong className="text-amber-300">
+                          {(selectedTargetOption.pointsRequired - arenaPoints).toLocaleString()} more
+                          points
+                        </strong>{" "}
+                        for instant {selectedTargetOption.size} data redemption.
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Recent Champions */}
+                  {recentClaims.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-xs font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                        <Crown className="w-3.5 h-3.5 text-amber-400" /> Recent Winners
+                      </p>
+                      <div className="space-y-1.5">
+                        {recentClaims.slice(0, 5).map((c) => (
+                          <div
+                            key={c.id}
+                            className="flex items-center justify-between p-2.5 rounded-xl bg-white/[0.03] border border-white/5 text-xs"
+                          >
+                            <span className="font-bold text-white truncate max-w-[170px]">
+                              {c.winner_name}
+                            </span>
+                            <Badge className="bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-mono text-[10px]">
+                              {c.reward_type === "wallet_cash"
+                                ? `+GH₵ ${Number(c.cash_amount || 0).toFixed(2)}`
+                                : `🎁 ${c.network} ${c.data_package_size || "1GB"}`}
+                            </Badge>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {profileDrawerTab === "rooms" && (
+                <>
+                  {/* Join by Room Code */}
+                  <div className="p-4 rounded-2xl bg-white/[0.04] border border-white/10 space-y-2.5">
+                    <p className="text-xs font-black uppercase tracking-wider text-amber-300 flex items-center gap-1.5">
+                      <Hash className="w-3.5 h-3.5" /> Enter Friend&apos;s Room Code
+                    </p>
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder="e.g. 8F2K9A"
+                        value={roomCodeInput}
+                        onChange={(e) => setRoomCodeInput(e.target.value.toUpperCase())}
+                        className="h-10 rounded-xl bg-slate-950 border-white/15 font-mono font-bold text-white uppercase"
+                      />
+                      <Button
+                        type="button"
+                        onClick={handleJoinByRoomCode}
+                        className="h-10 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs px-4 shrink-0"
+                      >
+                        Join Room
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Active / Accepted Matches */}
+                  {activeInProgressChallenges.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-xs font-black uppercase tracking-wider text-emerald-400">
+                        🟢 Live Matches In Progress ({activeInProgressChallenges.length})
+                      </p>
+                      {activeInProgressChallenges.map((chal) => {
+                        const detectedRole = resolveMySideForChallenge(chal);
+                        const effectiveSide: "creator" | "opponent" =
+                          detectedRole ||
+                          (user?.id && chal.creator_id === user.id ? "creator" : "opponent");
+                        return (
+                          <div
+                            key={chal.id}
+                            className="p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/40 flex items-center justify-between gap-2"
+                          >
+                            <div>
+                              <p className="text-xs font-black text-white uppercase">
+                                {chal.game_type} • #{chal.room_code}
+                              </p>
+                              <p className="text-[11px] text-slate-300">
+                                {chal.creator_name} vs {chal.opponent_name || "Challenger"}
+                              </p>
+                            </div>
+                            <Button
+                              size="sm"
+                              onClick={() => {
+                                recordMyChallengeSide(chal.id, effectiveSide);
+                                setMySide(effectiveSide);
+                                setActiveChallenge(chal);
+                                setProfileDrawerOpen(false);
+                              }}
+                              className="h-8 rounded-xl bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-black text-xs"
+                            >
+                              Resume →
+                            </Button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Open Challenges Waiting */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-black uppercase tracking-wider text-slate-300">
+                        Open Friend Challenges ({openChallenges.length})
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => fetchLobby()}
+                        className="text-[11px] font-bold text-amber-300 flex items-center gap-1"
+                      >
+                        <RefreshCw className={`w-3 h-3 ${loading ? "animate-spin" : ""}`} />
+                        Refresh
+                      </button>
+                    </div>
+
+                    {openChallenges.length === 0 ? (
+                      <div className="p-5 rounded-2xl border border-dashed border-white/10 text-center space-y-2">
+                        <p className="text-xs text-slate-400">
+                          No open friend rooms waiting right now.
+                        </p>
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            setProfileDrawerOpen(false);
+                            openLaunchSheetForGame("oware", "p2p");
+                          }}
+                          className="h-8 rounded-xl bg-amber-500 text-slate-950 font-black text-xs"
+                        >
+                          + Create Online Room
+                        </Button>
+                      </div>
+                    ) : (
+                      openChallenges.map((chal) => {
+                        const isMine = user && chal.creator_id === user.id;
+                        const stake = Number(chal.stake_amount || 0);
+                        return (
+                          <div
+                            key={chal.id}
+                            className="p-3 rounded-2xl bg-white/[0.04] border border-white/10 space-y-2"
+                          >
+                            <div className="flex items-center justify-between">
+                              <Badge className="bg-amber-500 text-slate-950 font-black text-[10px] uppercase">
+                                {chal.game_type} • #{chal.room_code}
+                              </Badge>
+                              <span className="text-xs font-mono font-bold text-emerald-400">
+                                Pot: GH₵ {Number(chal.prize_pool || 0).toFixed(2)}
+                              </span>
+                            </div>
+                            <p className="text-xs font-bold text-white">
+                              Host: {chal.creator_name} (Stake: GH₵ {stake.toFixed(2)})
+                            </p>
+                            <div className="flex gap-2">
+                              {isMine ? (
+                                <>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => {
+                                      setMySide("creator");
+                                      setActiveChallenge(chal);
+                                      setProfileDrawerOpen(false);
+                                    }}
+                                    className="h-8 flex-1 rounded-xl border-amber-400/40 text-amber-300 text-xs font-bold"
+                                  >
+                                    Open Room
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => handleCancelOpenChallenge(chal.id)}
+                                    className="h-8 text-rose-400 text-xs font-bold"
+                                  >
+                                    Cancel
+                                  </Button>
+                                </>
+                              ) : (
+                                <>
+                                  {user && (
+                                    <Button
+                                      size="sm"
+                                      disabled={joiningChallengeId === chal.id}
+                                      onClick={() => handleJoinChallenge(chal, "wallet")}
+                                      className="h-8 flex-1 rounded-xl bg-emerald-500 text-slate-950 font-black text-xs"
+                                    >
+                                      Accept (Wallet)
+                                    </Button>
+                                  )}
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    disabled={joiningChallengeId === chal.id}
+                                    onClick={() => handleJoinChallenge(chal, "momo")}
+                                    className="h-8 flex-1 rounded-xl border-amber-500/40 text-amber-300 font-black text-xs"
+                                  >
+                                    Accept (MoMo)
+                                  </Button>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </>
+              )}
+
+              {profileDrawerTab === "settings" && (
+                <div className="space-y-3">
+                  <p className="text-xs font-black uppercase tracking-wider text-amber-300">
+                    Audio, Haptics &amp; Sensor Controls
+                  </p>
+
+                  {/* Sound Toggle */}
+                  <div className="p-3.5 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-xl bg-emerald-500/15 text-emerald-400">
+                        {soundEnabled ? (
+                          <Volume2 className="w-5 h-5" />
+                        ) : (
+                          <VolumeX className="w-5 h-5" />
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-xs font-black text-white">3D Game Sound Effects</p>
+                        <p className="text-[11px] text-slate-400">
+                          Wood seed clacks, billiard collisions &amp; turn chimes
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant={soundEnabled ? "default" : "outline"}
+                      onClick={() => {
+                        const next = !soundEnabled;
+                        setSoundEnabled(next);
+                        setGameSensoryPreferences({ soundEnabled: next });
+                      }}
+                      className={
+                        soundEnabled
+                          ? "bg-emerald-500 text-slate-950 font-black text-xs h-8 rounded-xl"
+                          : "border-white/15 text-slate-300 text-xs h-8 rounded-xl"
+                      }
+                    >
+                      {soundEnabled ? "ON" : "OFF"}
+                    </Button>
+                  </div>
+
+                  {/* Haptic Vibration Toggle */}
+                  <div className="p-3.5 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-xl bg-amber-500/15 text-amber-400">
+                        <Vibrate className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-black text-white">Haptic Vibration Feedback</p>
+                        <p className="text-[11px] text-slate-400">
+                          Tactile pulse on captures, cue shots &amp; dice rolls
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant={vibrationEnabled ? "default" : "outline"}
+                      onClick={() => {
+                        const next = !vibrationEnabled;
+                        setVibrationEnabled(next);
+                        setGameSensoryPreferences({ vibrationEnabled: next });
+                        if (next) triggerHapticSensor("aim_tick");
+                      }}
+                      className={
+                        vibrationEnabled
+                          ? "bg-amber-500 text-slate-950 font-black text-xs h-8 rounded-xl"
+                          : "border-white/15 text-slate-300 text-xs h-8 rounded-xl"
+                      }
+                    >
+                      {vibrationEnabled ? "ON" : "OFF"}
+                    </Button>
+                  </div>
+
+                  {/* Browser Turn Alerts */}
+                  <div className="p-3.5 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-xl bg-sky-500/15 text-sky-400">
+                        <BellRing className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-black text-white">Live Turn Push Alerts</p>
+                        <p className="text-[11px] text-slate-400">
+                          Get alerted when your friend completes their move
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        if (typeof window !== "undefined" && "Notification" in window) {
+                          Notification.requestPermission();
+                        }
+                      }}
+                      className="border-sky-500/40 text-sky-300 text-xs h-8 rounded-xl font-bold"
+                    >
+                      Enable
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {profileDrawerTab === "help" && (
+                <div className="space-y-3">
+                  <p className="text-xs font-black uppercase tracking-wider text-amber-300">
+                    Game Rules &amp; How to Play
+                  </p>
+                  {GAME_CATALOG.map((g) => (
+                    <div
+                      key={g.id}
+                      className="p-3.5 rounded-2xl bg-white/[0.04] border border-white/10 space-y-2"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-black text-white flex items-center gap-1.5">
+                          <span>{g.emoji}</span> {g.name}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedGame(g.id);
+                            setProfileDrawerOpen(false);
+                            setInstructionModalOpen(true);
+                          }}
+                          className="text-[11px] font-bold text-amber-300 hover:underline flex items-center gap-1 cursor-pointer"
+                        >
+                          <BookOpen className="w-3 h-3" /> Interactive Guide
+                        </button>
+                      </div>
+                      <ul className="list-disc pl-4 space-y-1 text-[11px] text-slate-300">
+                        {g.rulesSummary.map((rule, idx) => (
+                          <li key={idx}>{rule}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Drawer Footer */}
+            <div className="p-3 border-t border-white/10 bg-[#090e1a] flex items-center justify-between gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => navigate(user ? "/dashboard" : "/")}
+                className="flex-1 h-10 rounded-xl border-white/15 bg-white/5 hover:bg-white/10 text-white font-bold text-xs gap-1.5"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                Back to {user ? "Dashboard" : "Home"}
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => {
+                  setProfileDrawerOpen(false);
+                  openLaunchSheetForGame(selectedGame, "free_data");
+                }}
+                className="flex-1 h-10 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs"
+              >
+                Play Now →
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── QUICK GAME LAUNCH & MATCH SETUP MODAL (OPENS WHEN TAPPING A GAME CARD) ── */}
+      {launchModalOpen && (
+        <div className="fixed inset-0 z-[115] flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div
+            className="fixed inset-0 bg-black/80 backdrop-blur-sm"
+            onClick={() => setLaunchModalOpen(false)}
+          />
+          <div className="relative z-10 w-full max-w-lg rounded-t-3xl sm:rounded-3xl bg-[#0e1628] border border-white/15 p-5 sm:p-6 shadow-2xl space-y-5 max-h-[92dvh] overflow-y-auto animate-in slide-in-from-bottom-4 duration-200">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-amber-500/15 border border-amber-400/40 flex items-center justify-center text-2xl">
+                  {selectedGameMeta.emoji}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-lg font-black text-white">{selectedGameMeta.name}</h3>
+                    <Badge className="bg-emerald-500/20 text-emerald-300 border border-emerald-400/40 text-[10px] font-black">
+                      {selectedGameMeta.statusTag}
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-slate-300 line-clamp-1">{selectedGameMeta.subtitle}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setLaunchModalOpen(false)}
+                className="p-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Mode Selector Pills */}
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => setSelectedMode("free_data")}
+                className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${
+                  selectedMode === "free_data"
+                    ? "bg-amber-500/20 border-amber-400 text-white ring-1 ring-amber-400"
+                    : "bg-slate-950/70 border-white/10 text-slate-400 hover:text-white"
+                }`}
+              >
+                <Gift className="w-4 h-4 text-amber-400 mb-1" />
+                <p className="text-xs font-black">Win Data</p>
+                <p className="text-[10px] opacity-80">Free • vs Smart AI</p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSelectedMode("p2p")}
+                className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${
+                  selectedMode === "p2p"
+                    ? "bg-emerald-500/20 border-emerald-400 text-white ring-1 ring-emerald-400"
+                    : "bg-slate-950/70 border-white/10 text-slate-400 hover:text-white"
+                }`}
+              >
+                <Users className="w-4 h-4 text-emerald-400 mb-1" />
+                <p className="text-xs font-black">Play Friend</p>
+                <p className="text-[10px] opacity-80">Online Room Code</p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSelectedMode("ai")}
+                className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${
+                  selectedMode === "ai"
+                    ? "bg-sky-500/20 border-sky-400 text-white ring-1 ring-sky-400"
+                    : "bg-slate-950/70 border-white/10 text-slate-400 hover:text-white"
+                }`}
+              >
+                <Brain className="w-4 h-4 text-sky-400 mb-1" />
+                <p className="text-xs font-black">1.8× Cash AI</p>
+                <p className="text-[10px] opacity-80">Staked Match</p>
+              </button>
+            </div>
+
+            {selectedMode === "free_data" ? (
+              <div className="p-3.5 rounded-2xl bg-white/[0.04] border border-white/10 space-y-2 text-xs text-slate-300">
+                <div className="flex items-center justify-between">
+                  <span className="font-black text-amber-300">
+                    🎯 Opponent: {HUMAN_CHALLENGER_PERSONAS[selectedGame].name}
+                  </span>
+                  <Badge className="bg-white/10 text-white text-[10px]">
+                    {HUMAN_CHALLENGER_PERSONAS[selectedGame].humanSensePercent}% Skill
+                  </Badge>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Play for free and earn Arena Points toward your{" "}
+                  <strong className="text-white">{selectedTargetOption.label}</strong> (
+                  {arenaPoints.toLocaleString()} /{" "}
+                  {selectedTargetOption.pointsRequired.toLocaleString()} Pts).
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3 p-3.5 rounded-2xl bg-white/[0.03] border border-white/10">
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPaymentSource("wallet")}
+                    className={`p-2.5 rounded-xl border text-left flex items-center gap-2 cursor-pointer ${
+                      paymentSource === "wallet"
+                        ? "bg-emerald-500/15 border-emerald-400 text-emerald-300"
+                        : "bg-slate-950 border-white/10 text-slate-400"
+                    }`}
+                  >
+                    <Wallet className="w-4 h-4 shrink-0" />
+                    <div>
+                      <p className="text-xs font-black">Wallet</p>
+                      <p className="text-[10px]">GH₵ {walletBalance.toFixed(2)}</p>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPaymentSource("momo")}
+                    className={`p-2.5 rounded-xl border text-left flex items-center gap-2 cursor-pointer ${
+                      paymentSource === "momo"
+                        ? "bg-amber-500/15 border-amber-400 text-amber-300"
+                        : "bg-slate-950 border-white/10 text-slate-400"
+                    }`}
+                  >
+                    <Smartphone className="w-4 h-4 shrink-0" />
+                    <div>
+                      <p className="text-xs font-black">MoMo</p>
+                      <p className="text-[10px]">MTN / Telecel / AT</p>
+                    </div>
+                  </button>
+                </div>
+
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-400">Stake Amount (GH₵)</span>
+                    <span className="font-mono font-black text-emerald-400">
+                      Winner Pot: GH₵{" "}
+                      {(
+                        Number(stakeAmount || 0) *
+                        (selectedMode === "p2p"
+                          ? 2 * (1 - Number(settings.house_commission_percent || 10) / 100)
+                          : 1.8)
+                      ).toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex gap-1.5">
+                    {QUICK_STAKES.map((amt) => (
+                      <button
+                        key={amt}
+                        type="button"
+                        onClick={() => setStakeAmount(String(amt))}
+                        className={`flex-1 py-1.5 rounded-xl border text-xs font-black cursor-pointer ${
+                          Number(stakeAmount) === amt
+                            ? "bg-amber-500 text-slate-950 border-amber-400"
+                            : "bg-slate-950 border-white/10 text-slate-300"
+                        }`}
+                      >
+                        ₵{amt}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {selectedMode === "p2p" && (
+                  <div className="space-y-2 pt-1 border-t border-white/10">
+                    <Label className="text-[11px] text-amber-300 font-bold">
+                      Invite Friend by Phone (Optional — or share room code after creating)
+                    </Label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <Input
+                        placeholder="Friend's Phone (024...)"
+                        value={invitedPhone}
+                        onChange={(e) => setInvitedPhone(e.target.value)}
+                        className="h-9 rounded-xl bg-slate-950 border-white/15 text-xs font-mono text-white"
+                      />
+                      <div className="relative">
+                        <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-2.5" />
+                        <Input
+                          placeholder="Search player..."
+                          value={playerSearchQuery}
+                          onChange={(e) => setPlayerSearchQuery(e.target.value)}
+                          className="h-9 pl-8 rounded-xl bg-slate-950 border-white/15 text-xs text-white"
+                        />
+                      </div>
+                    </div>
+                    {suggestedPlayers.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {suggestedPlayers.slice(0, 4).map((p) => (
+                          <button
+                            key={p.user_id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedInvitedUser(p);
+                              setInvitedPhone(p.phone || "");
+                            }}
+                            className="px-2 py-0.5 rounded-lg bg-slate-900 border border-white/10 text-[10px] font-bold text-slate-300 hover:text-amber-300"
+                          >
+                            + {p.full_name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="flex items-center gap-2.5 pt-1">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setLaunchModalOpen(false);
+                  setInstructionModalOpen(true);
+                }}
+                className="h-12 px-4 rounded-2xl border-white/15 bg-white/5 hover:bg-white/10 text-slate-200 font-bold text-xs gap-1.5"
+              >
+                <HelpCircle className="w-4 h-4 text-amber-400" />
+                Rules
+              </Button>
+              <Button
+                type="button"
+                disabled={submitting}
+                onClick={() => startChallengeWithConfig(selectedGame, selectedMode)}
+                className="flex-1 h-12 rounded-2xl bg-[#f59e0b] hover:bg-[#fbbf24] text-slate-950 font-black text-sm gap-2 shadow-xl"
+              >
+                {submitting ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <>
+                    <span>
+                      {selectedMode === "free_data"
+                        ? `Play ${selectedGameMeta.shortTitle} Now`
+                        : selectedMode === "p2p"
+                        ? `Create ${selectedGameMeta.shortTitle} Room (GH₵ ${Number(
+                            stakeAmount || 0
+                          ).toFixed(2)})`
+                        : `Play vs Champion (GH₵ ${Number(stakeAmount || 0).toFixed(2)})`}
+                    </span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── ACTIVE GAME STAGE (LOCKED FULL-SCREEN GAME MODE VIEW — ZERO PAGE MOVEMENT) ── */}
       {activeChallenge ? (
-        <Card className="flex-1 min-h-0 w-full flex flex-col border-0 rounded-none bg-slate-950 shadow-none overflow-hidden">
-          <CardHeader className="shrink-0 py-2 px-3 sm:px-5 border-b border-white/10 bg-slate-900/95 flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
+        <Card className="flex-1 min-h-0 w-full flex flex-col border-0 rounded-none bg-[#070b14] shadow-none overflow-hidden">
+          <CardHeader className="shrink-0 py-2 px-3 sm:px-5 border-b border-white/10 bg-[#0c1322] flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
             <div className="flex flex-wrap items-center gap-2">
+              {/* Left-Corner Profile / Settings / Help Button inside Active Game */}
+              <button
+                type="button"
+                onClick={() => {
+                  setProfileDrawerTab("settings");
+                  setProfileDrawerOpen(true);
+                }}
+                className="h-8 px-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/15 flex items-center gap-1.5 text-xs font-bold text-white cursor-pointer"
+                title="Player Profile, Sound Settings & Game Rules"
+              >
+                <span className="w-5 h-5 rounded-lg bg-amber-500 text-slate-950 font-black text-[10px] flex items-center justify-center">
+                  {displayFirstName.slice(0, 1).toUpperCase()}
+                </span>
+                <Settings className="w-3.5 h-3.5 text-amber-400" />
+              </button>
+
               <Button
                 size="sm"
                 variant="outline"
                 onClick={() => setActiveChallenge(null)}
                 className="h-8 px-2.5 rounded-xl border-white/15 bg-white/5 text-xs text-slate-200 hover:text-white gap-1 font-bold"
               >
-                <ArrowLeft className="w-3.5 h-3.5" /> Lobby
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => navigate(user ? "/dashboard" : "/")}
-                className="h-8 px-2 text-xs text-slate-400 hover:text-white font-bold"
-              >
-                Exit
+                <ArrowLeft className="w-3.5 h-3.5" /> Games
               </Button>
               <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/40 font-mono text-[11px]">
                 #{activeChallenge.room_code}
@@ -1416,16 +2091,15 @@ export default function ChallengeArena() {
                   ? "🟢 LIVE"
                   : "🏁 DONE"}
               </Badge>
-              <span className="text-xs sm:text-sm font-black text-white truncate max-w-[220px] sm:max-w-none">
+              <span className="text-xs sm:text-sm font-black text-white truncate max-w-[200px] sm:max-w-none">
                 {activeChallenge.creator_name} <span className="text-amber-400">vs.</span>{" "}
                 {activeChallenge.opponent_name || "Waiting..."}
               </span>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              {/* Compact Level & Target Data Progress Pill inside Full Game Mode */}
               <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-500/10 border border-amber-500/30 text-[11px] font-black text-amber-300">
-                <span>L{levelInfo.level}</span>
+                <span>Lv.{levelInfo.level}</span>
                 <span>•</span>
                 <span className="font-mono text-white">⚡ {arenaPoints.toLocaleString()} Pts</span>
                 <span className="text-emerald-300 font-mono">
@@ -1440,9 +2114,6 @@ export default function ChallengeArena() {
               )}
 
               <div className="px-2.5 py-1 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center gap-1.5">
-                <span className="text-[10px] uppercase font-bold text-emerald-300 hidden sm:inline">
-                  {activeChallenge.mode === "free_data" ? "Prize:" : "Pot:"}
-                </span>
                 <span className="text-xs sm:text-sm font-black text-emerald-400 font-mono">
                   {activeChallenge.mode === "free_data"
                     ? `🎁 Free ${activeChallenge.reward_data_size || "1GB"}`
@@ -1468,7 +2139,7 @@ export default function ChallengeArena() {
                     className="h-8 rounded-xl border-amber-500/40 bg-amber-500/10 text-amber-300 font-bold text-xs gap-1"
                   >
                     {copiedCode ? <Check className="w-3.5 h-3.5" /> : <Share2 className="w-3.5 h-3.5" />}
-                    Copy Link
+                    Copy Code
                   </Button>
                   <Button
                     size="sm"
@@ -1484,31 +2155,20 @@ export default function ChallengeArena() {
           </CardHeader>
 
           <CardContent className="flex-1 min-h-0 w-full overflow-y-auto overflow-x-hidden overscroll-none p-2 sm:p-4 space-y-2.5 max-w-6xl mx-auto">
-            {/* Waiting for Opponent + Live Invite & Broadcast Console (Open P2P Challenge) */}
+            {/* Waiting for Opponent + Invite Console (Open P2P Challenge) */}
             {activeChallenge.status === "open" && (
-              <div className="p-5 sm:p-6 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-5">
-                <div className="text-center space-y-2">
-                  <Loader2 className="w-8 h-8 text-amber-400 animate-spin mx-auto" />
+              <div className="p-5 sm:p-6 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-4">
+                <div className="text-center space-y-1.5">
+                  <Loader2 className="w-7 h-7 text-amber-400 animate-spin mx-auto" />
                   <h3 className="text-base sm:text-lg font-black text-white">
-                    Open Challenge #{activeChallenge.room_code} is Live &amp; Broadcasted to All Users!
+                    Room #{activeChallenge.room_code} — Waiting for Friend to Join
                   </h3>
-                  <p className="text-xs text-slate-300 max-w-xl mx-auto">
-                    All users have been notified via <strong>In-App Popup</strong>, <strong>Web Push</strong>, and{" "}
-                    <strong>SMS</strong>. You can also invite a specific friend by phone number or WhatsApp below — once they accept, everyone gets notified and the match starts automatically!
+                  <p className="text-xs text-slate-300 max-w-md mx-auto">
+                    Send your room code <strong className="text-amber-300">#{activeChallenge.room_code}</strong> to a friend or invite them via SMS / WhatsApp below:
                   </p>
                 </div>
 
-                {/* Direct Invite & Re-Broadcast Console */}
-                <div className="max-w-2xl mx-auto p-4 rounded-2xl bg-slate-950/90 border border-white/10 space-y-3.5">
-                  <div className="flex items-center justify-between flex-wrap gap-2">
-                    <span className="text-xs font-black text-amber-300 flex items-center gap-1.5">
-                      <UserPlus className="w-4 h-4" /> Invite a Friend via SMS / In-App / WhatsApp
-                    </span>
-                    <Badge variant="outline" className="text-[10px] border-emerald-500/40 text-emerald-300">
-                      Instant SMS + Web + App Link
-                    </Badge>
-                  </div>
-
+                <div className="max-w-xl mx-auto p-4 rounded-2xl bg-slate-950/90 border border-white/10 space-y-3">
                   <div className="flex flex-col sm:flex-row gap-2">
                     <Input
                       placeholder="Enter friend's Ghana phone (e.g. 0241234567)"
@@ -1525,32 +2185,9 @@ export default function ChallengeArena() {
                       className="h-10 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs gap-1.5 shrink-0"
                     >
                       {sendingInvite ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                      Send SMS &amp; App Invite
+                      Send SMS Invite
                     </Button>
                   </div>
-
-                  {/* Quick-pick registered players */}
-                  {suggestedPlayers.length > 0 && (
-                    <div className="space-y-1.5">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                        Or Click a Registered Player to Invite Directly:
-                      </p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {suggestedPlayers.slice(0, 6).map((p) => (
-                          <button
-                            key={p.user_id}
-                            type="button"
-                            disabled={sendingInvite}
-                            onClick={() => handleSendRoomInvite(activeChallenge, { invitedUser: p })}
-                            className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-amber-500/20 border border-white/10 hover:border-amber-400/50 text-[11px] font-bold text-slate-200 hover:text-amber-300 transition-all flex items-center gap-1.5 cursor-pointer"
-                          >
-                            <span>🎯 {p.full_name}</span>
-                            <span className="text-[9px] font-mono text-slate-400">({p.masked_phone})</span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
 
                   <div className="pt-2 border-t border-white/10 flex flex-wrap items-center justify-between gap-2">
                     <Button
@@ -1559,19 +2196,15 @@ export default function ChallengeArena() {
                       variant="outline"
                       disabled={sendingInvite}
                       onClick={() => handleSendRoomInvite(activeChallenge, { broadcastAll: true })}
-                      className="h-9 rounded-xl border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 font-bold text-xs gap-1.5"
+                      className="h-9 rounded-xl border-emerald-500/40 bg-emerald-500/10 text-emerald-300 font-bold text-xs gap-1.5"
                     >
                       <BellRing className="w-3.5 h-3.5" />
-                      Notify All Online Users Again
+                      Notify Online Players
                     </Button>
 
                     <a
                       href={`https://wa.me/?text=${encodeURIComponent(
-                        `⚔️ I just posted a ${String(activeChallenge.game_type || "").toUpperCase()} Challenge on SwiftData Arena!\n💰 Stake: GH₵ ${Number(
-                          activeChallenge.stake_amount || 0
-                        ).toFixed(2)} | 🏆 Winner Takes: GH₵ ${Number(
-                          activeChallenge.prize_pool || 0
-                        ).toFixed(2)}\n🔑 Room #${activeChallenge.room_code}\n👉 Accept my challenge live: ${
+                        `⚔️ Join my ${String(activeChallenge.game_type || "").toUpperCase()} match on SwiftData Games!\n🔑 Room Code: #${activeChallenge.room_code}\n👉 Tap to play: ${
                           window.location.origin
                         }/challenges?room=${activeChallenge.room_code}`
                       )}`}
@@ -1580,7 +2213,7 @@ export default function ChallengeArena() {
                       className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs shadow"
                     >
                       <MessageCircle className="w-3.5 h-3.5" />
-                      Invite via WhatsApp
+                      Share on WhatsApp
                     </a>
                   </div>
                 </div>
@@ -1591,102 +2224,64 @@ export default function ChallengeArena() {
             {activeChallenge.status === "completed" &&
               activeChallenge.winner_side === mySide &&
               !activeChallenge.reward_claimed && (
-                <div className="p-5 rounded-2xl bg-gradient-to-r from-emerald-950/90 via-teal-950/80 to-slate-900 border-2 border-emerald-400/60 space-y-4">
+                <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-950/90 via-teal-950/80 to-slate-900 border-2 border-emerald-400/60 space-y-3">
                   {activeChallenge.mode === "free_data" && !canRedeemTargetBundle ? (
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                      <div className="space-y-1">
-                        <h3 className="text-base sm:text-lg font-black text-white flex items-center gap-2">
-                          🏆 Victory! +300 Arena Points Added (Level {levelInfo.level} • {levelInfo.title})
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="space-y-0.5">
+                        <h3 className="text-sm sm:text-base font-black text-white">
+                          🏆 Victory! +300 Points Added (Lv.{levelInfo.level} • {targetProgressPercent}% to {selectedTargetOption.size})
                         </h3>
                         <p className="text-xs text-emerald-200">
-                          You now have{" "}
-                          <strong className="text-amber-300 font-mono">
-                            {arenaPoints.toLocaleString()} /{" "}
-                            {selectedTargetOption.pointsRequired.toLocaleString()} PTS (
-                            {targetProgressPercent}%)
-                          </strong>{" "}
-                          toward your <strong>{selectedTargetOption.label}</strong>! Need{" "}
-                          <strong className="text-amber-300 font-mono">
-                            {Math.max(
-                              0,
-                              selectedTargetOption.pointsRequired - arenaPoints
-                            ).toLocaleString()}{" "}
-                            more points
-                          </strong>{" "}
-                          to unlock instant redemption.
+                          {arenaPoints.toLocaleString()} / {selectedTargetOption.pointsRequired.toLocaleString()} Pts accumulated.
                         </p>
                       </div>
                       <Button
                         type="button"
                         disabled={submitting}
                         onClick={handleCreateChallenge}
-                        className="h-11 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs gap-2 px-5 shrink-0 shadow-lg"
+                        className="h-10 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs gap-1.5 px-4 shrink-0"
                       >
                         <Zap className="w-4 h-4" />
-                        Play Next Level Match (+300 Pts)
+                        Play Next Match (+300 Pts)
                       </Button>
                     </div>
                   ) : (
-                    <>
-                      <div className="flex items-center gap-3">
-                        <div className="p-3 rounded-2xl bg-emerald-500 text-slate-950">
-                          <Gift className="w-6 h-6" />
-                        </div>
-                        <div>
-                          <h3 className="text-base sm:text-lg font-black text-white">
-                            🎉 Congratulations! Claim Your{" "}
-                            {activeChallenge.mode === "free_data"
-                              ? `Free ${selectedTargetOption.size} Data Bundle`
-                              : `GH₵ ${Number(activeChallenge.prize_pool || 0).toFixed(2)} Winner Prize`}
-                          </h3>
-                          <p className="text-xs text-emerald-200">
-                            Enter the Ghana phone number and network where we should send your reward:
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        <select
-                          value={claimNetwork}
-                          onChange={(e) => setClaimNetwork(e.target.value)}
-                          className="h-11 rounded-xl bg-slate-950 border border-emerald-500/40 px-3 text-xs font-bold text-white"
-                        >
-                          <option value="MTN">MTN Data</option>
-                          <option value="TELECEL">Telecel Data</option>
-                          <option value="AT">AirtelTigo Data</option>
-                        </select>
-                        <Input
-                          placeholder="Recipient Phone (e.g. 0241234567)"
-                          value={claimPhone}
-                          onChange={(e) => setClaimPhone(e.target.value)}
-                          className="h-11 rounded-xl bg-slate-950 border-emerald-500/40 text-white font-mono"
-                        />
-                        <Button
-                          onClick={
-                            activeChallenge.mode === "free_data"
-                              ? handleRedeemPointsBundle
-                              : handleClaimDataReward
-                          }
-                          disabled={claimingReward || claimingPointsBundle}
-                          className="h-11 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs gap-2"
-                        >
-                          {claimingReward || claimingPointsBundle ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                          ) : (
-                            <Gift className="w-4 h-4" />
-                          )}
-                          Claim {selectedTargetOption.size} Data Bundle Now
-                        </Button>
-                      </div>
-                    </>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                      <select
+                        value={claimNetwork}
+                        onChange={(e) => setClaimNetwork(e.target.value)}
+                        className="h-10 rounded-xl bg-slate-950 border border-emerald-500/40 px-3 text-xs font-bold text-white"
+                      >
+                        <option value="MTN">MTN Data</option>
+                        <option value="TELECEL">Telecel Data</option>
+                        <option value="AT">AirtelTigo Data</option>
+                      </select>
+                      <Input
+                        placeholder="Recipient Phone (0241234567)"
+                        value={claimPhone}
+                        onChange={(e) => setClaimPhone(e.target.value)}
+                        className="h-10 rounded-xl bg-slate-950 border-emerald-500/40 text-white font-mono text-xs"
+                      />
+                      <Button
+                        onClick={
+                          activeChallenge.mode === "free_data"
+                            ? handleRedeemPointsBundle
+                            : handleClaimDataReward
+                        }
+                        disabled={claimingReward || claimingPointsBundle}
+                        className="h-10 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs gap-1.5"
+                      >
+                        <Gift className="w-4 h-4" />
+                        Claim {selectedTargetOption.size} Data Now
+                      </Button>
+                    </div>
                   )}
                 </div>
               )}
 
-            {/* Render the Active Ghanaian Traditional Game Engine */}
+            {/* Render the Active Game Engine */}
             {activeChallenge.status !== "open" && (
               <>
-                {/* ── OVERALL GAME NEXT-PLAYER TURN STATUS & NOTIFICATION BAR ── */}
                 {activeChallenge.status === "in_progress" &&
                   activeChallenge.game_type !== "slash" && (() => {
                     const currentTurnSide =
@@ -1719,93 +2314,54 @@ export default function ChallengeArena() {
                           "Player 2");
 
                     return (
-                      <div className="space-y-3">
-                        {/* Animated Turn Spotlight Flash Banner (Shows on Turn Switch) */}
+                      <div className="space-y-2">
                         {turnNotificationBanner && (
                           <div
-                            className={`p-3.5 sm:p-4 rounded-2xl border-2 shadow-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in slide-in-from-top-3 duration-300 ${
+                            className={`p-3 rounded-2xl border-2 shadow-xl flex items-center justify-between gap-3 ${
                               turnNotificationBanner.isMyTurn
-                                ? "bg-gradient-to-r from-emerald-950/95 via-teal-900/90 to-slate-950 border-emerald-400 shadow-emerald-500/20"
-                                : "bg-gradient-to-r from-amber-950/95 via-orange-950/90 to-slate-950 border-amber-400 shadow-amber-500/20"
+                                ? "bg-emerald-950/95 border-emerald-400"
+                                : "bg-amber-950/95 border-amber-400"
                             }`}
                           >
-                            <div className="flex items-center gap-3">
-                              <div
-                                className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 font-black text-lg shadow ${
-                                  turnNotificationBanner.isMyTurn
-                                    ? "bg-emerald-400 text-slate-950 animate-bounce"
-                                    : "bg-amber-400 text-slate-950 animate-pulse"
-                                }`}
-                              >
+                            <div className="flex items-center gap-2.5">
+                              <span className="text-base">
                                 {turnNotificationBanner.isMyTurn ? "🎯" : "🔔"}
-                              </div>
+                              </span>
                               <div>
-                                <p className="text-xs sm:text-sm font-black tracking-wide text-white">
+                                <p className="text-xs font-black text-white">
                                   {turnNotificationBanner.title}
                                 </p>
-                                <p className="text-[11px] text-slate-200">
+                                <p className="text-[11px] text-slate-200 line-clamp-1">
                                   {turnNotificationBanner.subtitle}
                                 </p>
                               </div>
                             </div>
-                            <Badge
-                              className={
-                                turnNotificationBanner.isMyTurn
-                                  ? "bg-emerald-400 text-slate-950 font-black text-[10px]"
-                                  : "bg-amber-400 text-slate-950 font-black text-[10px]"
-                              }
-                            >
-                              {turnNotificationBanner.isMyTurn
-                                ? "⚡ YOUR MOVE NOW"
-                                : `⏳ ${turnNotificationBanner.nextPlayerName.toUpperCase()} ON CLOCK`}
-                            </Badge>
                           </div>
                         )}
 
-                        {/* Persistent Live Turn Tracker & Next-Player Nudge Bar */}
                         <div
-                          className={`px-4 py-3 rounded-2xl border flex flex-wrap items-center justify-between gap-3 transition-all ${
+                          className={`px-3.5 py-2 rounded-2xl border flex flex-wrap items-center justify-between gap-2 ${
                             isCurrentlyMyTurn
-                              ? "bg-emerald-950/60 border-emerald-500/50"
-                              : "bg-amber-950/50 border-amber-500/45"
+                              ? "bg-emerald-950/50 border-emerald-500/40"
+                              : "bg-amber-950/40 border-amber-500/40"
                           }`}
                         >
-                          <div className="flex items-center gap-2.5">
+                          <div className="flex items-center gap-2">
                             <span
-                              className={`w-3 h-3 rounded-full shrink-0 ${
+                              className={`w-2.5 h-2.5 rounded-full shrink-0 ${
                                 isCurrentlyMyTurn
                                   ? "bg-emerald-400 animate-ping"
                                   : "bg-amber-400 animate-pulse"
                               }`}
                             />
-                            <div>
-                              <p className="text-xs sm:text-sm font-black text-white flex items-center gap-2 flex-wrap">
-                                {isCurrentlyMyTurn ? (
-                                  <>
-                                    <span className="text-emerald-300">🟢 YOUR TURN TO PLAY</span>
-                                    <span className="text-slate-300 text-xs font-bold">
-                                      ({nextUpName})
-                                    </span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <span className="text-amber-300">
-                                      🔔 NEXT PLAYER&apos;S TURN: {nextUpName.toUpperCase()}
-                                    </span>
-                                  </>
-                                )}
-                              </p>
-                              <p className="text-[11px] text-slate-300">
-                                {isCurrentlyMyTurn
-                                  ? "It is your turn on the board — make your move now!"
-                                  : activeChallenge.mode === "p2p"
-                                  ? `Waiting for ${nextUpName} to play. Automatic In-App, Web Push & SMS turn notifications are active.`
-                                  : `${nextUpName} is calculating their next move...`}
-                              </p>
-                            </div>
+                            <span className="text-xs font-black text-white">
+                              {isCurrentlyMyTurn
+                                ? `🟢 YOUR TURN (${nextUpName})`
+                                : `🔔 NEXT TURN: ${nextUpName.toUpperCase()}`}
+                            </span>
                           </div>
 
-                          <div className="flex flex-wrap items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-1.5">
                             {!isCurrentlyMyTurn && activeChallenge.mode === "p2p" && (
                               <>
                                 <Button
@@ -1813,14 +2369,10 @@ export default function ChallengeArena() {
                                   size="sm"
                                   disabled={nudgingTurn}
                                   onClick={handleNudgeNextPlayer}
-                                  className="h-8 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[11px] gap-1.5 px-3 shadow"
+                                  className="h-7 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[10px] gap-1 px-2.5"
                                 >
-                                  {nudgingTurn ? (
-                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                  ) : (
-                                    <BellRing className="w-3.5 h-3.5" />
-                                  )}
-                                  Ping {nextUpName} (SMS &amp; Push)
+                                  <BellRing className="w-3 h-3" />
+                                  Ping {nextUpName}
                                 </Button>
                                 <Button
                                   type="button"
@@ -1865,34 +2417,17 @@ export default function ChallengeArena() {
                                       };
                                     });
                                     toast({
-                                      title: `⚡ Switched to ${aiName} (Human-Sense Challenger)!`,
-                                      description:
-                                        "It is now your turn on the board — play immediately without waiting!",
+                                      title: `⚡ Switched to ${aiName}!`,
+                                      description: "Play immediately without waiting!",
                                     });
                                   }}
-                                  className="h-8 rounded-xl border-emerald-400/50 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 font-black text-[11px] gap-1.5 px-3"
+                                  className="h-7 rounded-xl border-emerald-400/50 bg-emerald-500/15 text-emerald-300 font-black text-[10px] gap-1 px-2.5"
                                 >
-                                  <Brain className="w-3.5 h-3.5" />
-                                  Opponent Offline? Play vs AI Now
+                                  <Brain className="w-3 h-3" />
+                                  Play vs AI Now
                                 </Button>
                               </>
                             )}
-                            {typeof window !== "undefined" &&
-                              "Notification" in window &&
-                              Notification.permission === "default" && (
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => {
-                                    Notification.requestPermission();
-                                  }}
-                                  className="h-8 rounded-xl border-white/15 bg-white/5 hover:bg-white/10 text-slate-200 font-bold text-[10px] gap-1"
-                                >
-                                  <BellRing className="w-3 h-3 text-emerald-400" />
-                                  Enable Turn Alerts
-                                </Button>
-                              )}
                           </div>
                         </div>
                       </div>
@@ -1986,578 +2521,539 @@ export default function ChallengeArena() {
           </CardContent>
         </Card>
       ) : (
-        /* ── Create Challenge & Open Challenge Lobby Grid ── */
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Left Column: Create Challenge Setup (5 cols) */}
-          <Card className="lg:col-span-5 border-amber-500/30 bg-slate-900/80 backdrop-blur-xl shadow-xl">
-            <CardHeader>
-              <CardTitle className="text-lg font-black flex items-center gap-2 text-white">
-                <Gamepad2 className="w-5 h-5 text-amber-400" />
-                Start a New Game Challenge
-              </CardTitle>
-              <CardDescription>
-                Choose a traditional Ghanaian or Pro Arena game, pick your stake mode (Wallet, MoMo, or Free Data), and invite or notify players!
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* 1. Choose Game */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs font-bold uppercase tracking-wider text-amber-400">
-                    1. Choose Arena Game (Tap to View Steps or Skip)
-                  </Label>
-                  <button
-                    type="button"
-                    onClick={() => setInstructionModalOpen(true)}
-                    className="text-[11px] font-bold text-emerald-400 hover:text-emerald-300 underline cursor-pointer"
-                  >
-                    📖 View Game Steps
-                  </button>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  {GAME_CATALOG.map((g) => {
-                    const active = selectedGame === g.id;
-                    return (
-                      <button
-                        key={g.id}
-                        type="button"
-                        onClick={() => {
-                          setSelectedGame(g.id);
-                          setInstructionModalOpen(true);
-                        }}
-                        className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${
-                          active
-                            ? `bg-gradient-to-br ${g.gradient} ring-2 ring-amber-400`
-                            : "bg-slate-950/60 border-white/10 hover:border-white/25"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between mb-1">
-                          {g.id === "ludo" ? (
-                            <img src="/ludo-challenge-icon.png" alt="Ghana Ludo" className="w-8 h-8 rounded-lg object-cover shadow-md border border-white/20" />
-                          ) : g.id === "oware" ? (
-                            <img src="/oware-challenge-icon.jpg" alt="Oware Abapa" className="w-8 h-8 rounded-lg object-cover shadow-md border border-amber-500/40" />
-                          ) : g.id === "pool" ? (
-                            <img src="/pool-challenge-icon.jpg" alt="8-Ball Pool" className="w-10 h-7 rounded-lg object-cover shadow-md border border-sky-400/50" />
-                          ) : (
-                            <span className="text-xl">{g.emoji}</span>
-                          )}
-                          <Badge variant="outline" className="text-[9px] border-amber-500/30 text-amber-300">
-                            {g.badge}
-                          </Badge>
-                        </div>
-                        <p className="text-xs font-black text-white">{g.name}</p>
-                        <p className="text-[10px] text-slate-400 line-clamp-2 mt-0.5">{g.subtitle}</p>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* 2. Choose Challenge Mode */}
-              <div className="space-y-2">
-                <Label className="text-xs font-bold uppercase tracking-wider text-amber-400">
-                  2. Choose Challenge Mode
-                </Label>
-                <div className="grid grid-cols-3 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedMode("p2p")}
-                    className={`p-2.5 rounded-xl border text-center transition-all ${
-                      selectedMode === "p2p"
-                        ? "bg-amber-500/20 border-amber-400 text-amber-300 font-black"
-                        : "bg-slate-950/60 border-white/10 text-slate-400"
-                    }`}
-                  >
-                    <Users className="w-4 h-4 mx-auto mb-1" />
-                    <span className="text-[11px] block">Open 1v1</span>
-                    <span className="text-[9px] opacity-75">Notify All / Invite</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedMode("ai")}
-                    className={`p-2.5 rounded-xl border text-center transition-all ${
-                      selectedMode === "ai"
-                        ? "bg-emerald-500/20 border-emerald-400 text-emerald-300 font-black"
-                        : "bg-slate-950/60 border-white/10 text-slate-400"
-                    }`}
-                  >
-                    <Brain className="w-4 h-4 mx-auto mb-1" />
-                    <span className="text-[11px] block">Human Sense</span>
-                    <span className="text-[9px] opacity-75">1.8× • Medium</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedMode("free_data")}
-                    className={`p-2.5 rounded-xl border text-center transition-all ${
-                      selectedMode === "free_data"
-                        ? "bg-purple-500/20 border-purple-400 text-purple-300 font-black"
-                        : "bg-slate-950/60 border-white/10 text-slate-400"
-                    }`}
-                  >
-                    <Gift className="w-4 h-4 mx-auto mb-1" />
-                    <span className="text-[11px] block">Free Data</span>
-                    <span className="text-[9px] opacity-75">Target {targetDataSize}</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* 3. Payment Source & Stake Amount (When not Free Data mode) */}
-              {selectedMode !== "free_data" ? (
-                <div className="space-y-3 pt-1">
-                  <Label className="text-xs font-bold uppercase tracking-wider text-amber-400">
-                    3. Stake Source (Wallet Balance or Mobile Money)
-                  </Label>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    <button
-                      type="button"
-                      onClick={() => setPaymentSource("wallet")}
-                      className={`p-3 rounded-xl border flex items-center gap-2.5 text-left transition-all ${
-                        paymentSource === "wallet"
-                          ? "bg-emerald-500/15 border-emerald-400 text-emerald-300"
-                          : "bg-slate-950/60 border-white/10 text-slate-400"
-                      }`}
-                    >
-                      <Wallet className="w-4 h-4 shrink-0" />
-                      <div>
-                        <p className="text-xs font-black">Wallet Balance</p>
-                        <p className="text-[10px] opacity-80">GH₵ {walletBalance.toFixed(2)}</p>
-                      </div>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setPaymentSource("momo")}
-                      className={`p-3 rounded-xl border flex items-center gap-2.5 text-left transition-all ${
-                        paymentSource === "momo"
-                          ? "bg-amber-500/15 border-amber-400 text-amber-300"
-                          : "bg-slate-950/60 border-white/10 text-slate-400"
-                      }`}
-                    >
-                      <Smartphone className="w-4 h-4 shrink-0" />
-                      <div>
-                        <p className="text-xs font-black">MoMo (Paystack)</p>
-                        <p className="text-[10px] opacity-80">MTN / Telecel / AT</p>
-                      </div>
-                    </button>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-xs text-slate-300">Stake Amount (GH₵)</Label>
-                      <span className="text-[11px] font-bold text-emerald-400">
-                        Winner Pot: GH₵{" "}
-                        {(
-                          Number(stakeAmount || 0) *
-                          (selectedMode === "p2p"
-                            ? 2 * (1 - Number(settings.house_commission_percent || 10) / 100)
-                            : 1.8)
-                        ).toFixed(2)}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      {QUICK_STAKES.map((amt) => (
-                        <button
-                          key={amt}
-                          type="button"
-                          onClick={() => setStakeAmount(String(amt))}
-                          className={`flex-1 py-1.5 rounded-lg border text-xs font-black transition-all ${
-                            Number(stakeAmount) === amt
-                              ? "bg-amber-500 text-slate-950 border-amber-400"
-                              : "bg-slate-950 border-white/10 text-slate-300 hover:border-amber-500/40"
-                          }`}
-                        >
-                          ₵{amt}
-                        </button>
-                      ))}
-                    </div>
-                    <Input
-                      type="number"
-                      min={settings.min_stake_ghs || 2}
-                      max={settings.max_stake_ghs || 200}
-                      value={stakeAmount}
-                      onChange={(e) => setStakeAmount(e.target.value)}
-                      className="h-10 rounded-xl bg-slate-950 border-white/15 font-mono font-bold text-white"
-                    />
-                  </div>
-                </div>
-              ) : (
-                <div className="p-3.5 rounded-2xl bg-purple-500/10 border border-purple-500/30 text-xs text-purple-200 space-y-1.5">
-                  <p className="font-black text-purple-300 flex items-center gap-1.5">
-                    <Gift className="w-4 h-4" /> Free Data Level &amp; Point Accumulation ({targetDataSize} Goal)
-                  </p>
-                  <p>
-                    Play against <strong>{HUMAN_CHALLENGER_PERSONAS[selectedGame].name}</strong> ({HUMAN_CHALLENGER_PERSONAS[selectedGame].humanSensePercent}% Human Sense • Medium Difficulty). Every potted ball, harvested seed, token kick &amp; victory adds points toward your <strong>{selectedTargetOption.label}</strong> ({arenaPoints.toLocaleString()} / {selectedTargetOption.pointsRequired.toLocaleString()} Pts)!
-                  </p>
-                </div>
-              )}
-
-              {/* 4. Invite a Specific Player & Auto-Notify All Users (When Open 1v1 mode) */}
-              {selectedMode === "p2p" && (
-                <div className="p-3.5 rounded-2xl bg-slate-950/90 border border-amber-500/30 space-y-2.5">
-                  <div className="flex items-center justify-between gap-2">
-                    <Label className="text-[11px] font-black uppercase tracking-wider text-amber-300 flex items-center gap-1.5">
-                      <UserPlus className="w-3.5 h-3.5" /> 4. Invite Player &amp; Notify All Users
-                    </Label>
-                    <Badge className="bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[9px]">
-                      Web + SMS + App Alert
-                    </Badge>
-                  </div>
-
-                  <p className="text-[11px] text-slate-400 leading-relaxed">
-                    Posting an Open Challenge automatically alerts <strong>all users</strong>. Optionally enter a friend&apos;s phone number or pick a player below to send them a personal SMS &amp; App invite:
-                  </p>
-
-                  {selectedInvitedUser ? (
-                    <div className="flex items-center justify-between p-2.5 rounded-xl bg-amber-500/15 border border-amber-400/50 text-xs">
-                      <div>
-                        <span className="font-black text-amber-300">🎯 Inviting: {selectedInvitedUser.full_name}</span>
-                        <span className="ml-2 font-mono text-[10px] text-slate-300">({selectedInvitedUser.masked_phone})</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedInvitedUser(null)}
-                        className="text-[10px] font-bold text-rose-300 hover:text-rose-200 underline"
-                      >
-                        Clear
-                      </button>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        <Input
-                          placeholder="Friend's Phone (Optional, e.g. 024...)"
-                          value={invitedPhone}
-                          onChange={(e) => setInvitedPhone(e.target.value)}
-                          className="h-9 rounded-xl bg-slate-900 border-white/15 text-xs font-mono text-white"
-                        />
-                        <div className="relative">
-                          <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-2.5" />
-                          <Input
-                            placeholder="Search registered player..."
-                            value={playerSearchQuery}
-                            onChange={(e) => setPlayerSearchQuery(e.target.value)}
-                            className="h-9 pl-8 rounded-xl bg-slate-900 border-white/15 text-xs text-white"
-                          />
-                        </div>
-                      </div>
-
-                      {suggestedPlayers.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5 pt-1">
-                          {suggestedPlayers.slice(0, 5).map((p) => (
-                            <button
-                              key={p.user_id}
-                              type="button"
-                              onClick={() => {
-                                setSelectedInvitedUser(p);
-                                setInvitedPhone(p.phone || "");
-                              }}
-                              className="px-2 py-1 rounded-lg bg-slate-900 hover:bg-amber-500/20 border border-white/10 hover:border-amber-400/40 text-[10px] font-bold text-slate-300 hover:text-amber-300 transition-all"
-                            >
-                              + {p.full_name} ({p.masked_phone})
-                            </button>
-                          ))}
-                          {searchingPlayers && (
-                            <span className="text-[10px] text-slate-500 flex items-center gap-1">
-                              <Loader2 className="w-3 h-3 animate-spin" /> searching...
-                            </span>
-                          )}
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
-              )}
-
-              {/* Player Nickname & Phone */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
-                <div>
-                  <Label className="text-[11px] text-slate-400">Your Display Name</Label>
-                  <Input
-                    placeholder="e.g. Kofi Oware"
-                    value={playerName}
-                    onChange={(e) => setPlayerName(e.target.value)}
-                    className="h-9 rounded-xl bg-slate-950 border-white/15 text-xs text-white"
-                  />
-                </div>
-                <div>
-                  <Label className="text-[11px] text-slate-400">Your Phone (For Turn &amp; Prize SMS)</Label>
-                  <Input
-                    placeholder="0241234567"
-                    value={playerPhone}
-                    onChange={(e) => setPlayerPhone(e.target.value)}
-                    className="h-9 rounded-xl bg-slate-950 border-white/15 text-xs font-mono text-white"
-                  />
-                </div>
-              </div>
-
-              <Button
-                onClick={handleCreateChallenge}
-                disabled={submitting}
-                className="w-full h-12 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-sm gap-2 shadow-xl"
+        /* ── PROFESSIONAL GAME HUB HOME (MATCHING REFERENCE DESIGN) ── */
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 pt-4 pb-16 space-y-7">
+          {/* 1. Top Bar: Left Profile/Settings/Help Corner + Home Pill & Right Status Pill */}
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              {/* Left-Corner Gamer Profile, Help & Settings Trigger */}
+              <button
+                type="button"
+                onClick={() => {
+                  setProfileDrawerTab("profile");
+                  setProfileDrawerOpen(true);
+                }}
+                className="group flex items-center gap-2.5 pl-1.5 pr-3.5 py-1.5 rounded-full bg-white/[0.07] hover:bg-white/[0.12] border border-white/15 transition-all cursor-pointer shadow-lg"
+                title="Open Gamer Profile, Settings, Online Rooms & Help"
               >
-                {submitting ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <PlusCircle className="w-4 h-4" />
-                )}
-                {selectedMode === "p2p"
-                  ? selectedInvitedUser
-                    ? `Challenge ${selectedInvitedUser.full_name.split(" ")[0]} & Notify Arena (GH₵ ${Number(stakeAmount || 0).toFixed(2)})`
-                    : invitedPhone.trim()
-                    ? `Post & Send SMS Invite (GH₵ ${Number(stakeAmount || 0).toFixed(2)})`
-                    : `Post Open ${selectedGame.toUpperCase()} Challenge & Notify All (GH₵ ${Number(stakeAmount || 0).toFixed(2)})`
-                  : selectedMode === "ai"
-                  ? `Play vs ${HUMAN_CHALLENGER_PERSONAS[selectedGame].name} (${HUMAN_CHALLENGER_PERSONAS[selectedGame].humanSensePercent}% Human Sense • GH₵ ${Number(stakeAmount || 0).toFixed(2)})`
-                  : `Start ${selectedGame.toUpperCase()} Level Match (Target ${targetDataSize} Free Data)`}
-              </Button>
-            </CardContent>
-          </Card>
-
-          {/* Right Column: Live Open Challenges Board & Winners Feed (7 cols) */}
-          <div className="lg:col-span-7 space-y-6">
-            {activeInProgressChallenges.length > 0 && (
-              <Card className="border-2 border-emerald-500/50 bg-gradient-to-br from-emerald-950/50 via-slate-900/95 to-slate-950 shadow-2xl">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base sm:text-lg font-black text-emerald-300 flex items-center gap-2">
-                    <span className="w-3 h-3 rounded-full bg-emerald-400 animate-ping shrink-0" />
-                    Live / Accepted Matches Ready to Play ({activeInProgressChallenges.length})
-                  </CardTitle>
-                  <CardDescription className="text-slate-300 text-xs">
-                    You accepted or started a challenge that is currently LIVE! Tap <strong>Play Match Now</strong> below to enter the board and make your move:
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-2.5">
-                  {activeInProgressChallenges.slice(0, 6).map((chal) => {
-                    const detectedRole = resolveMySideForChallenge(chal);
-                    const effectiveSide: "creator" | "opponent" =
-                      detectedRole ||
-                      (user?.id && chal.creator_id === user.id ? "creator" : "opponent");
-                    const stake = Number(chal.stake_amount || 0);
-                    return (
-                      <div
-                        key={chal.id}
-                        className="p-3.5 rounded-2xl border border-emerald-500/40 bg-slate-950/85 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-                      >
-                        <div className="space-y-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Badge className="bg-emerald-500 text-slate-950 font-black text-[10px] uppercase">
-                              LIVE • {chal.game_type}
-                            </Badge>
-                            <span className="text-xs sm:text-sm font-black text-white">
-                              {chal.creator_name} <span className="text-amber-400">vs</span>{" "}
-                              {chal.opponent_name || "Challenger"}
-                            </span>
-                            <span className="text-[11px] font-mono text-slate-400">
-                              Room #{chal.room_code}
-                            </span>
-                          </div>
-                          <div className="flex flex-wrap items-center gap-3 text-xs">
-                            <span className="text-slate-300">
-                              Stake:{" "}
-                              <strong className="text-amber-300 font-mono">
-                                GH₵ {stake.toFixed(2)}
-                              </strong>
-                            </span>
-                            <span className="text-emerald-400 font-black font-mono">
-                              🏆 Pot: GH₵ {Number(chal.prize_pool || 0).toFixed(2)}
-                            </span>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <Button
-                            size="sm"
-                            onClick={() => {
-                              recordMyChallengeSide(chal.id, effectiveSide);
-                              setMySide(effectiveSide);
-                              setActiveChallenge(chal);
-                            }}
-                            className="h-9 rounded-xl bg-gradient-to-r from-emerald-400 to-teal-400 hover:from-emerald-300 hover:to-teal-300 text-slate-950 font-black text-xs gap-1.5 shadow-lg"
-                          >
-                            <Gamepad2 className="w-4 h-4" />
-                            Play Match Now
-                          </Button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </CardContent>
-              </Card>
-            )}
-
-            <Card className="border-white/10 bg-slate-900/80 backdrop-blur-xl shadow-xl">
-              <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3">
-                <div>
-                  <CardTitle className="text-lg font-black text-white flex items-center gap-2">
-                    <Sparkles className="w-5 h-5 text-emerald-400" />
-                    Open Challenges Waiting for Opponent ({openChallenges.length})
-                  </CardTitle>
-                  <CardDescription>
-                    Accept any open challenge below using your Wallet Balance or Mobile Money (MoMo). Once accepted, all users get notified!
-                  </CardDescription>
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 text-slate-950 font-black text-xs flex items-center justify-center shadow">
+                  {displayFirstName.slice(0, 2).toUpperCase()}
                 </div>
-
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  {["all", "slash", "pool", "oware", "ludo", "dame"].map((g) => (
-                    <button
-                      key={g}
-                      type="button"
-                      onClick={() => setFilterGame(g)}
-                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold uppercase border transition-all ${
-                        filterGame === g
-                          ? "bg-amber-500/20 border-amber-400 text-amber-300"
-                          : "bg-slate-950 border-white/10 text-slate-400"
-                      }`}
-                    >
-                      {g}
-                    </button>
-                  ))}
-                </div>
-              </CardHeader>
-
-              <CardContent className="space-y-3">
-                {openChallenges.length === 0 ? (
-                  <div className="p-8 rounded-2xl border-2 border-dashed border-white/10 text-center space-y-2">
-                    <p className="text-sm font-bold text-slate-300">
-                      No open 1v1 challenges waiting right now.
-                    </p>
-                    <p className="text-xs text-slate-400">
-                      Create an Open Challenge on the left to notify all users via Web, SMS &amp; In-App — or play immediately against the Grandmaster AI!
-                    </p>
+                <div className="text-left leading-tight">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-black text-white">{displayFirstName}</span>
+                    <span className="text-[10px] font-black text-amber-400">
+                      Lv.{levelInfo.level}
+                    </span>
                   </div>
-                ) : (
-                  openChallenges.map((chal) => {
-                    const isMine = user && chal.creator_id === user.id;
-                    const stake = Number(chal.stake_amount || 0);
-                    const isHighlighted = roomQueryParam === String(chal.room_code || "").toUpperCase();
-                    return (
-                      <div
-                        key={chal.id}
-                        className={`p-4 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-all ${
-                          isHighlighted
-                            ? "bg-amber-500/15 border-2 border-amber-400 shadow-lg"
-                            : "bg-slate-950/80 border-white/10 hover:border-amber-500/40"
-                        }`}
-                      >
-                        <div className="space-y-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Badge className="bg-amber-500 text-slate-950 font-black text-[10px] uppercase">
-                              {chal.game_type}
-                            </Badge>
-                            <span className="text-sm font-black text-white">{chal.creator_name}</span>
-                            <span className="text-[11px] font-mono text-slate-400">
-                              Room #{chal.room_code}
-                            </span>
-                            {chal.metadata?.invited_name && (
-                              <Badge variant="outline" className="text-[9px] border-amber-400/40 text-amber-300">
-                                🎯 Invited: {chal.metadata.invited_name}
-                              </Badge>
-                            )}
-                          </div>
-                          <div className="flex flex-wrap items-center gap-3 text-xs">
-                            <span className="text-slate-300">
-                              Stake: <strong className="text-amber-300 font-mono">GH₵ {stake.toFixed(2)}</strong>
-                            </span>
-                            <span className="text-emerald-400 font-black font-mono">
-                              🏆 Winner Takes: GH₵ {Number(chal.prize_pool || 0).toFixed(2)}
-                            </span>
-                          </div>
-                        </div>
+                  <span className="text-[10px] text-slate-400 flex items-center gap-1">
+                    Menu • Help • Settings
+                  </span>
+                </div>
+              </button>
 
-                        <div className="flex items-center gap-2 flex-wrap">
-                          {isMine ? (
-                            <>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => {
-                                  setMySide("creator");
-                                  setActiveChallenge(chal);
-                                }}
-                                className="h-9 rounded-xl border-amber-500/40 text-amber-300 text-xs font-bold gap-1"
-                              >
-                                <UserPlus className="w-3.5 h-3.5" />
-                                Open &amp; Invite
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => handleCancelOpenChallenge(chal.id)}
-                                className="h-9 rounded-xl text-rose-400 hover:bg-rose-500/10 text-xs font-bold"
-                              >
-                                Cancel
-                              </Button>
-                            </>
-                          ) : (
-                            <>
-                              {user && (
-                                <Button
-                                  size="sm"
-                                  disabled={joiningChallengeId === chal.id}
-                                  onClick={() => handleJoinChallenge(chal, "wallet")}
-                                  className="h-9 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs gap-1.5"
-                                >
-                                  <Wallet className="w-3.5 h-3.5" />
-                                  Accept (Wallet)
-                                </Button>
-                              )}
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                disabled={joiningChallengeId === chal.id}
-                                onClick={() => handleJoinChallenge(chal, "momo")}
-                                className="h-9 rounded-xl border-amber-500/40 bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 font-black text-xs gap-1.5"
-                              >
-                                <Smartphone className="w-3.5 h-3.5" />
-                                Accept (MoMo)
-                              </Button>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </CardContent>
-            </Card>
+              <button
+                type="button"
+                onClick={() => navigate(user ? "/dashboard" : "/")}
+                className="flex items-center gap-1 px-3.5 py-2 rounded-full bg-white/[0.05] hover:bg-white/[0.1] border border-white/10 text-xs font-bold text-slate-300 hover:text-white transition-all cursor-pointer"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+                <span>Home</span>
+              </button>
+            </div>
 
-            {/* Recent Champions & Free Data Winners */}
-            <Card className="border-white/10 bg-slate-900/80 backdrop-blur-xl shadow-xl">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base font-black text-white flex items-center gap-2">
-                  <Crown className="w-4 h-4 text-amber-400" />
-                  Recent Arena Winners &amp; Free Data Claims
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {recentClaims.length === 0 ? (
-                  <p className="text-xs text-muted-foreground py-3">
-                    Be the first champion today to claim Free Data or a Wallet Prize pot!
-                  </p>
-                ) : (
-                  <div className="space-y-2">
-                    {recentClaims.slice(0, 8).map((c) => (
+            {/* Top-Right Status Pill */}
+            <button
+              type="button"
+              onClick={() => {
+                setProfileDrawerTab("rooms");
+                setProfileDrawerOpen(true);
+              }}
+              className="flex items-center gap-2 px-3.5 py-2 rounded-full bg-white/[0.06] hover:bg-white/[0.1] border border-white/12 text-xs font-bold text-slate-200 transition-all cursor-pointer"
+            >
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span>
+                5 games • {openChallenges.length > 0 ? `${openChallenges.length} open` : "free"}
+              </span>
+            </button>
+          </div>
+
+          {/* 2. Clean Editorial Hero Section */}
+          <div className="space-y-4 pt-1">
+            <p className="text-[11px] sm:text-xs font-black uppercase tracking-[0.22em] text-slate-400">
+              SWIFTDATA GAMES
+            </p>
+
+            <h1 className="text-4xl sm:text-6xl font-black tracking-tight leading-[1.03]">
+              <span className="block text-white">Play smart.</span>
+              <span className="block bg-gradient-to-r from-[#f59e0b] via-[#fb923c] to-[#fbbf24] bg-clip-text text-transparent">
+                Win data.
+              </span>
+            </h1>
+
+            <p className="text-sm sm:text-base text-slate-300/90 max-w-lg leading-relaxed">
+              Skill games only. No luck, no guesswork. Only the sharpest players will win.
+            </p>
+
+            {/* Interactive Feature Pills */}
+            <div className="flex flex-wrap items-center gap-2.5 pt-1">
+              <button
+                type="button"
+                onClick={() => openLaunchSheetForGame("oware", "free_data")}
+                className="px-4 py-2 rounded-full bg-white/[0.05] hover:bg-white/[0.1] border border-white/12 text-xs sm:text-sm font-bold text-slate-200 flex items-center gap-2 transition-all cursor-pointer"
+              >
+                <span>🧠</span>
+                <span>Skill, not luck</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setProfileDrawerTab("rooms");
+                  setProfileDrawerOpen(true);
+                }}
+                className="px-4 py-2 rounded-full bg-white/[0.05] hover:bg-white/[0.1] border border-white/12 text-xs sm:text-sm font-bold text-slate-200 flex items-center gap-2 transition-all cursor-pointer"
+              >
+                <span>👥</span>
+                <span>Play friends online</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setProfileDrawerTab("profile");
+                  setProfileDrawerOpen(true);
+                }}
+                className="px-4 py-2 rounded-full bg-white/[0.05] hover:bg-white/[0.1] border border-white/12 text-xs sm:text-sm font-bold text-slate-200 flex items-center gap-2 transition-all cursor-pointer"
+              >
+                <span>🎁</span>
+                <span>
+                  {targetDataSize} Goal ({targetProgressPercent}%)
+                </span>
+              </button>
+            </div>
+          </div>
+
+          {/* 3. Live / Accepted Match Alert (Only shown when user has an active or invited room) */}
+          {invitedSpotlightChallenge && (
+            <div className="p-4 rounded-3xl bg-gradient-to-r from-amber-500/20 to-emerald-500/15 border border-amber-400/60 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-black text-amber-300 uppercase">
+                  🎯 Direct Room Invite • #{invitedSpotlightChallenge.room_code}
+                </p>
+                <p className="text-sm font-black text-white">
+                  {invitedSpotlightChallenge.creator_name} invited you to play{" "}
+                  {String(invitedSpotlightChallenge.game_type || "").toUpperCase()}
+                </p>
+              </div>
+              <Button
+                size="sm"
+                onClick={() =>
+                  handleJoinChallenge(invitedSpotlightChallenge, user ? "wallet" : "momo")
+                }
+                className="h-10 rounded-full bg-[#f59e0b] hover:bg-[#fbbf24] text-slate-950 font-black text-xs px-5"
+              >
+                Accept &amp; Play →
+              </Button>
+            </div>
+          )}
+
+          {activeInProgressChallenges.length > 0 && (
+            <div className="p-4 rounded-3xl bg-emerald-500/10 border border-emerald-500/40 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black text-emerald-300 flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
+                  Live Match Ready to Resume ({activeInProgressChallenges.length})
+                </span>
+              </div>
+              {activeInProgressChallenges.slice(0, 2).map((chal) => {
+                const detectedRole = resolveMySideForChallenge(chal);
+                const effectiveSide: "creator" | "opponent" =
+                  detectedRole ||
+                  (user?.id && chal.creator_id === user.id ? "creator" : "opponent");
+                return (
+                  <div
+                    key={chal.id}
+                    className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-slate-950/80 border border-white/10"
+                  >
+                    <div>
+                      <p className="text-xs font-black text-white uppercase">
+                        {chal.game_type} • Room #{chal.room_code}
+                      </p>
+                      <p className="text-[11px] text-slate-400">
+                        {chal.creator_name} vs {chal.opponent_name || "Challenger"}
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        recordMyChallengeSide(chal.id, effectiveSide);
+                        setMySide(effectiveSide);
+                        setActiveChallenge(chal);
+                      }}
+                      className="h-9 rounded-full bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-black text-xs px-4"
+                    >
+                      Play now →
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* 4. Featured Hero Game Card — OWARE (Carved Wooden Board + Seeds Showcase) */}
+          <div
+            onClick={() => openLaunchSheetForGame("oware", "free_data")}
+            className="group relative rounded-[28px] overflow-hidden border border-amber-500/30 bg-gradient-to-b from-[#6b3c1b] via-[#3c210e] to-[#0f131d] shadow-[0_24px_60px_rgba(0,0,0,0.75)] cursor-pointer transition-transform duration-200 hover:scale-[1.01]"
+          >
+            {/* Carved Wooden Oware Board Illustration */}
+            <div className="relative pt-4 px-4 sm:px-6 pb-2">
+              {/* Top Badges inside Featured Card */}
+              <div className="relative z-10 flex items-center gap-2 mb-3">
+                <span className="px-3.5 py-1 rounded-full bg-[#fde08d] text-slate-950 font-black text-[11px] uppercase tracking-wider shadow">
+                  GHANA&apos;S GAME
+                </span>
+                <span className="px-3.5 py-1 rounded-full bg-[#34d399] text-slate-950 font-black text-[11px] uppercase tracking-wider shadow">
+                  PLAY ONLINE
+                </span>
+              </div>
+
+              {/* Carved Oware Wooden Plank with 2 End Stores & 12 Pits */}
+              <div
+                className="relative rounded-2xl p-3 sm:p-4 border border-amber-300/20 shadow-inner"
+                style={{
+                  background:
+                    "linear-gradient(180deg, #9a5b2c 0%, #7c451b 55%, #4d290e 100%)",
+                  boxShadow:
+                    "inset 0 4px 12px rgba(255,255,255,0.15), 0 12px 28px rgba(0,0,0,0.65)",
+                }}
+              >
+                <div className="flex items-center gap-2 sm:gap-3">
+                  {/* Left Store */}
+                  <div className="w-10 sm:w-14 h-24 sm:h-28 rounded-full bg-gradient-to-b from-[#2a1506] to-[#43230c] shadow-[inset_0_6px_12px_rgba(0,0,0,0.85)] flex flex-wrap items-center justify-center p-1.5 gap-0.5">
+                    {Array.from({ length: 6 }).map((_, i) => (
+                      <span
+                        key={i}
+                        className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full"
+                        style={{
+                          background:
+                            "radial-gradient(circle at 35% 30%, #f1f5f9 0%, #94a3b8 60%, #334155 100%)",
+                        }}
+                      />
+                    ))}
+                  </div>
+
+                  {/* 12 Pits (2 Rows of 6) */}
+                  <div className="flex-1 grid grid-cols-6 gap-1.5 sm:gap-2.5">
+                    {Array.from({ length: 12 }).map((_, pitIdx) => (
                       <div
-                        key={c.id}
-                        className="flex items-center justify-between p-2.5 rounded-xl bg-slate-950/60 border border-white/5 text-xs"
+                        key={pitIdx}
+                        className="aspect-square rounded-full bg-gradient-to-b from-[#261205] to-[#46240c] shadow-[inset_0_5px_10px_rgba(0,0,0,0.85)] flex flex-wrap items-center justify-center p-1 gap-0.5"
                       >
-                        <div className="flex items-center gap-2">
-                          <Trophy className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                          <span className="font-bold text-white">{c.winner_name}</span>
-                          <span className="text-slate-400 text-[11px]">{c.notes}</span>
-                        </div>
-                        <Badge className="bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-mono text-[10px]">
-                          {c.reward_type === "wallet_cash"
-                            ? `+GH₵ ${Number(c.cash_amount || 0).toFixed(2)}`
-                            : `🎁 ${c.network} ${c.data_package_size || "1GB"}`}
-                        </Badge>
+                        {Array.from({ length: (pitIdx % 3) + 2 }).map((__, sIdx) => (
+                          <span
+                            key={sIdx}
+                            className="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full shadow"
+                            style={{
+                              background:
+                                "radial-gradient(circle at 35% 30%, #f8fafc 0%, #94a3b8 60%, #334155 100%)",
+                            }}
+                          />
+                        ))}
                       </div>
                     ))}
                   </div>
-                )}
-              </CardContent>
-            </Card>
+
+                  {/* Right Store */}
+                  <div className="w-10 sm:w-14 h-24 sm:h-28 rounded-full bg-gradient-to-b from-[#2a1506] to-[#43230c] shadow-[inset_0_6px_12px_rgba(0,0,0,0.85)] flex flex-wrap items-center justify-center p-1.5 gap-0.5">
+                    {Array.from({ length: 7 }).map((_, i) => (
+                      <span
+                        key={i}
+                        className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full"
+                        style={{
+                          background:
+                            "radial-gradient(circle at 35% 30%, #f1f5f9 0%, #94a3b8 60%, #334155 100%)",
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Bottom Text & Gold CTA Overlay */}
+            <div className="px-5 sm:px-7 pt-2 pb-6 space-y-3 bg-gradient-to-t from-[#090d16] via-[#090d16]/90 to-transparent">
+              <h2 className="text-3xl sm:text-4xl font-black text-white tracking-tight">Oware</h2>
+              <p className="text-xs sm:text-sm text-slate-300 max-w-lg leading-relaxed">
+                Our own board game. Beat Kofi, Ama and Nana, or send a friend a code and play online.
+              </p>
+              <div className="pt-1">
+                <span className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-[#f59e0b] group-hover:bg-[#fbbf24] text-slate-950 font-black text-sm shadow-lg transition-all">
+                  <span>Play now</span>
+                  <ArrowRight className="w-4 h-4" />
+                </span>
+              </div>
+            </div>
           </div>
+
+          {/* 5. "All games" Grid Section */}
+          <div className="space-y-4">
+            <div className="flex items-baseline justify-between">
+              <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+                All games
+              </h2>
+              <span className="text-xs sm:text-sm font-semibold text-slate-400">Tap to play</span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3.5 sm:gap-4">
+              {/* Card 1: 8-Ball Pool & Snooker */}
+              <div
+                onClick={() => openLaunchSheetForGame("pool", "free_data")}
+                className="group relative rounded-3xl overflow-hidden border border-white/10 bg-[#101829] hover:border-amber-400/50 transition-all cursor-pointer flex flex-col justify-between shadow-xl"
+              >
+                <div className="relative h-36 sm:h-44 bg-gradient-to-br from-[#0e4f82] via-[#1668a8] to-[#082c4c] p-3 flex flex-col justify-between overflow-hidden">
+                  <div className="relative z-10 flex items-center justify-between gap-1">
+                    <span className="px-2.5 py-1 rounded-full bg-slate-950/75 backdrop-blur-md text-white font-black text-[10px] uppercase tracking-wider">
+                      BILLIARDS
+                    </span>
+                    <span className="px-2.5 py-1 rounded-full bg-[#fde08d] text-slate-950 font-black text-[10px] uppercase tracking-wider">
+                      ONLINE
+                    </span>
+                  </div>
+
+                  {/* Pool Table Felt, Cue Stick & Balls Art */}
+                  <div className="relative my-auto flex items-center justify-center">
+                    <div className="w-full h-20 rounded-xl border-4 border-[#5c260c] bg-[#1d7ec2] shadow-inner flex items-center justify-around px-3 relative">
+                      <span className="w-5 h-5 rounded-full bg-white shadow-md" />
+                      <div className="w-12 h-0.5 border-t border-dashed border-white/60" />
+                      <div className="flex items-center -space-x-1">
+                        <span className="w-5 h-5 rounded-full bg-amber-400 border border-black/20 flex items-center justify-center text-[8px] font-black text-black">
+                          1
+                        </span>
+                        <span className="w-5 h-5 rounded-full bg-slate-950 border border-white/30 flex items-center justify-center text-[8px] font-black text-white">
+                          8
+                        </span>
+                        <span className="w-5 h-5 rounded-full bg-rose-600 border border-black/20 flex items-center justify-center text-[8px] font-black text-white">
+                          3
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-3.5 sm:p-4 space-y-1 bg-[#0d1424]">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-base sm:text-lg font-black text-white">8-Ball Pool</h3>
+                    <ArrowRight className="w-4 h-4 text-amber-400 group-hover:translate-x-0.5 transition-transform" />
+                  </div>
+                  <p className="text-[11px] sm:text-xs text-slate-400 line-clamp-2">
+                    Pro cue stick tray, spin &amp; laser sight. Play online or vs Yaw.
+                  </p>
+                </div>
+              </div>
+
+              {/* Card 2: Market Slash (Reflex / Watermelon Card matching screenshot!) */}
+              <div
+                onClick={() => openLaunchSheetForGame("slash", "free_data")}
+                className="group relative rounded-3xl overflow-hidden border border-white/10 bg-[#101829] hover:border-amber-400/50 transition-all cursor-pointer flex flex-col justify-between shadow-xl"
+              >
+                <div className="relative h-36 sm:h-44 bg-gradient-to-br from-[#4b2c18] via-[#7c3f1c] to-[#291509] p-3 flex flex-col justify-between overflow-hidden">
+                  <div className="relative z-10 flex items-center justify-between gap-1">
+                    <span className="px-2.5 py-1 rounded-full bg-slate-950/75 backdrop-blur-md text-white font-black text-[10px] uppercase tracking-wider">
+                      REFLEX
+                    </span>
+                    <span className="px-2.5 py-1 rounded-full bg-[#fde08d] text-slate-950 font-black text-[10px] uppercase tracking-wider">
+                      NEW
+                    </span>
+                  </div>
+
+                  {/* Sliced Watermelon & Blade Flash Illustration */}
+                  <div className="relative my-auto flex items-center justify-center">
+                    <div className="relative flex items-center gap-1">
+                      <span className="text-5xl sm:text-6xl drop-shadow-[0_8px_16px_rgba(0,0,0,0.6)] -rotate-12">
+                        🍉
+                      </span>
+                      <span className="text-3xl sm:text-4xl drop-shadow-[0_8px_16px_rgba(0,0,0,0.6)] rotate-12">
+                        🍍
+                      </span>
+                      <div className="absolute inset-x-0 top-1/2 h-1 bg-gradient-to-r from-transparent via-white to-amber-300 -rotate-12 shadow-[0_0_12px_#fff]" />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-3.5 sm:p-4 space-y-1 bg-[#0d1424]">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-base sm:text-lg font-black text-white">Market Slash</h3>
+                    <ArrowRight className="w-4 h-4 text-amber-400 group-hover:translate-x-0.5 transition-transform" />
+                  </div>
+                  <p className="text-[11px] sm:text-xs text-slate-400 line-clamp-2">
+                    Swipe to slice flying Makola fruits, build combos &amp; dodge bombs.
+                  </p>
+                </div>
+              </div>
+
+              {/* Card 3: Ghana Ludo */}
+              <div
+                onClick={() => openLaunchSheetForGame("ludo", "free_data")}
+                className="group relative rounded-3xl overflow-hidden border border-white/10 bg-[#101829] hover:border-amber-400/50 transition-all cursor-pointer flex flex-col justify-between shadow-xl"
+              >
+                <div className="relative h-36 sm:h-44 bg-gradient-to-br from-[#3b1d5e] via-[#1e2952] to-[#0f172a] p-3 flex flex-col justify-between overflow-hidden">
+                  <div className="relative z-10 flex items-center justify-between gap-1">
+                    <span className="px-2.5 py-1 rounded-full bg-slate-950/75 backdrop-blur-md text-white font-black text-[10px] uppercase tracking-wider">
+                      BOARD
+                    </span>
+                    <span className="px-2.5 py-1 rounded-full bg-[#fde08d] text-slate-950 font-black text-[10px] uppercase tracking-wider">
+                      ONLINE
+                    </span>
+                  </div>
+
+                  {/* 4-Color Ludo Home Bases & 3D Dice Art */}
+                  <div className="relative my-auto flex items-center justify-center gap-3">
+                    <div className="w-16 h-16 rounded-xl overflow-hidden grid grid-cols-2 grid-rows-2 gap-0.5 bg-white p-0.5 shadow-lg">
+                      <div className="bg-red-600 rounded-tl-md" />
+                      <div className="bg-emerald-600 rounded-tr-md" />
+                      <div className="bg-sky-600 rounded-bl-md" />
+                      <div className="bg-amber-400 rounded-br-md" />
+                    </div>
+                    <span className="text-4xl drop-shadow-lg -rotate-12">🎲</span>
+                  </div>
+                </div>
+
+                <div className="p-3.5 sm:p-4 space-y-1 bg-[#0d1424]">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-base sm:text-lg font-black text-white">Ghana Ludo</h3>
+                    <ArrowRight className="w-4 h-4 text-amber-400 group-hover:translate-x-0.5 transition-transform" />
+                  </div>
+                  <p className="text-[11px] sm:text-xs text-slate-400 line-clamp-2">
+                    2–4 players, step-by-step token hops, captures &amp; extra rolls.
+                  </p>
+                </div>
+              </div>
+
+              {/* Card 4: Ghana Dame Checkers */}
+              <div
+                onClick={() => openLaunchSheetForGame("dame", "free_data")}
+                className="group relative rounded-3xl overflow-hidden border border-white/10 bg-[#101829] hover:border-amber-400/50 transition-all cursor-pointer flex flex-col justify-between shadow-xl"
+              >
+                <div className="relative h-36 sm:h-44 bg-gradient-to-br from-[#0f3d3e] via-[#134e4a] to-[#091e22] p-3 flex flex-col justify-between overflow-hidden">
+                  <div className="relative z-10 flex items-center justify-between gap-1">
+                    <span className="px-2.5 py-1 rounded-full bg-slate-950/75 backdrop-blur-md text-white font-black text-[10px] uppercase tracking-wider">
+                      STRATEGY
+                    </span>
+                    <span className="px-2.5 py-1 rounded-full bg-[#fde08d] text-slate-950 font-black text-[10px] uppercase tracking-wider">
+                      ONLINE
+                    </span>
+                  </div>
+
+                  {/* Crowned Dame Pieces Art */}
+                  <div className="relative my-auto flex items-center justify-center gap-2.5">
+                    <div className="w-11 h-11 rounded-full bg-gradient-to-b from-amber-300 to-amber-600 border-2 border-white/60 shadow-lg flex items-center justify-center">
+                      <Crown className="w-5 h-5 text-slate-950" />
+                    </div>
+                    <div className="w-11 h-11 rounded-full bg-gradient-to-b from-rose-500 to-rose-800 border-2 border-white/40 shadow-lg flex items-center justify-center">
+                      <Crown className="w-5 h-5 text-amber-200" />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-3.5 sm:p-4 space-y-1 bg-[#0d1424]">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-base sm:text-lg font-black text-white">Ghana Dame</h3>
+                    <ArrowRight className="w-4 h-4 text-amber-400 group-hover:translate-x-0.5 transition-transform" />
+                  </div>
+                  <p className="text-[11px] sm:text-xs text-slate-400 line-clamp-2">
+                    8×8 Ghanaian checkers with mandatory jumps &amp; crowned Kings.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 6. Compact Open Friend Challenges Strip (If Any Open Rooms Exist) */}
+          {openChallenges.length > 0 && (
+            <div className="p-4 sm:p-5 rounded-3xl bg-white/[0.03] border border-white/10 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black uppercase tracking-wider text-amber-300 flex items-center gap-2">
+                  <Sparkles className="w-4 h-4" /> Open Friend Challenges ({openChallenges.length})
+                </span>
+                <button
+                  type="button"
+                  onClick={() => fetchLobby()}
+                  className="text-xs font-bold text-slate-400 hover:text-white flex items-center gap-1"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+                  Refresh
+                </button>
+              </div>
+
+              <div className="space-y-2">
+                {openChallenges.slice(0, 4).map((chal) => {
+                  const isMine = user && chal.creator_id === user.id;
+                  const stake = Number(chal.stake_amount || 0);
+                  return (
+                    <div
+                      key={chal.id}
+                      className="p-3 rounded-2xl bg-slate-950/80 border border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <Badge className="bg-amber-500 text-slate-950 font-black text-[10px] uppercase">
+                          {chal.game_type}
+                        </Badge>
+                        <div>
+                          <p className="text-xs font-black text-white">
+                            {chal.creator_name}{" "}
+                            <span className="text-slate-400 font-mono">#{chal.room_code}</span>
+                          </p>
+                          <p className="text-[11px] text-emerald-400 font-mono">
+                            Stake: GH₵ {stake.toFixed(2)} • Winner Takes GH₵{" "}
+                            {Number(chal.prize_pool || 0).toFixed(2)}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        {isMine ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setMySide("creator");
+                              setActiveChallenge(chal);
+                            }}
+                            className="h-8 rounded-full border-amber-400/40 text-amber-300 text-xs font-bold"
+                          >
+                            Open Room
+                          </Button>
+                        ) : (
+                          <>
+                            {user && (
+                              <Button
+                                size="sm"
+                                disabled={joiningChallengeId === chal.id}
+                                onClick={() => handleJoinChallenge(chal, "wallet")}
+                                className="h-8 rounded-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs px-3.5"
+                              >
+                                Accept (Wallet)
+                              </Button>
+                            )}
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={joiningChallengeId === chal.id}
+                              onClick={() => handleJoinChallenge(chal, "momo")}
+                              className="h-8 rounded-full border-amber-500/40 text-amber-300 font-black text-xs px-3.5"
+                            >
+                              Accept (MoMo)
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
