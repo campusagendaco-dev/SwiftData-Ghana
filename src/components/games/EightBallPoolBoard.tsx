@@ -32,6 +32,7 @@ import {
   sampleGaussianError,
 } from "@/lib/game-sensory-engine";
 import { useDeviceScreenFit } from "@/hooks/use-device-screen-fit";
+import { InGameVoiceChat } from "./InGameVoiceChat";
 
 export interface PoolBall {
   id: number; // 0 = cue ball, 1..7 = solids, 8 = black 8-ball, 9..15 = stripes
@@ -275,6 +276,7 @@ export interface EightBallPoolBoardProps {
   mySide: "creator" | "opponent";
   creatorName: string;
   opponentName: string;
+  roomCode?: string;
   playerTotalPoints?: number;
   playerLevel?: number;
   reservedTopPx?: number;
@@ -289,6 +291,7 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
   mySide,
   creatorName,
   opponentName,
+  roomCode,
   playerTotalPoints = 0,
   reservedTopPx = 28,
   initialState,
@@ -1460,6 +1463,15 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
                     ? `💭 ${humanThoughtText}`
                     : `⏳ ${displayOpponentName.split(" ")[0]}'S TURN`}
                 </Badge>
+
+                <InGameVoiceChat
+                  roomCode={roomCode || "POOL-ARENA"}
+                  mySide={mySide}
+                  myName={mySide === "creator" ? creatorName : displayOpponentName}
+                  opponentName={mySide === "creator" ? displayOpponentName : creatorName}
+                  mode={mode}
+                  compact={true}
+                />
 
                 <span
                   title={`Auto-fitted for ${screenFit.deviceModelHint} (${poolMetrics.tableWidthPx}×${poolMetrics.tableHeightPx}px table)`}

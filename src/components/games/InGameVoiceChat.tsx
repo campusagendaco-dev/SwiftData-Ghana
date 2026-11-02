@@ -625,23 +625,25 @@ export const InGameVoiceChat: React.FC<InGameVoiceChatProps> = ({
   };
 
   return (
-    <div className="inline-flex items-center gap-1 shrink-0">
+    <div className="inline-flex items-center gap-1.5 shrink-0">
       {/* Primary Open Mic Toggle Button */}
       <button
         type="button"
         onClick={handleTogglePrimaryMic}
-        className={`h-6 px-2 rounded-full border text-[9px] sm:text-[10px] font-black flex items-center gap-1 transition-all cursor-pointer shrink-0 ${
+        className={`${
+          compact ? "h-6 px-2.5 text-[9px]" : "h-7 px-3 text-[10px] sm:text-xs"
+        } rounded-full border font-black flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
           !micEnabled
-            ? "bg-rose-500/20 hover:bg-rose-500/30 border-rose-400/50 text-rose-200 shadow-[0_0_12px_rgba(244,63,94,0.25)]"
+            ? "bg-gradient-to-r from-rose-600 via-orange-500 to-amber-500 hover:from-rose-500 hover:to-amber-400 border-amber-300/80 text-white shadow-[0_0_16px_rgba(245,158,11,0.45)]"
             : micMuted
-            ? "bg-amber-500/20 hover:bg-amber-500/30 border-amber-400/50 text-amber-300"
+            ? "bg-amber-500/25 hover:bg-amber-500/35 border-amber-400 text-amber-200"
             : isLocalSpeaking
-            ? "bg-emerald-500 text-slate-950 border-white ring-2 ring-emerald-400/70 shadow-[0_0_16px_rgba(16,185,129,0.7)]"
-            : "bg-emerald-500/25 hover:bg-emerald-500/35 border-emerald-400/60 text-emerald-200"
+            ? "bg-emerald-400 text-slate-950 border-white ring-2 ring-emerald-300 shadow-[0_0_20px_rgba(16,185,129,0.85)]"
+            : "bg-emerald-500 hover:bg-emerald-400 border-emerald-200 text-slate-950 shadow-[0_0_14px_rgba(16,185,129,0.5)]"
         }`}
         title={
           !micEnabled
-            ? "Tap to turn ON Open Mic for instant voice chat"
+            ? "Tap to turn ON Open Mic for instant live voice chat"
             : micMuted
             ? "Mic is Muted — Tap to Unmute"
             : "Open Mic is LIVE — Tap to Mute"
@@ -649,18 +651,18 @@ export const InGameVoiceChat: React.FC<InGameVoiceChatProps> = ({
       >
         {!micEnabled ? (
           <>
-            <Mic className="w-3 h-3 text-rose-300 animate-pulse" />
+            <Mic className="w-3.5 h-3.5 text-white animate-pulse" />
             <span>🎙️ Open Mic</span>
           </>
         ) : micMuted ? (
           <>
-            <MicOff className="w-3 h-3 text-amber-300" />
-            <span>Muted</span>
+            <MicOff className="w-3.5 h-3.5 text-amber-300" />
+            <span>Mic Muted</span>
           </>
         ) : (
           <>
-            <Radio className="w-3 h-3 animate-spin" />
-            <span>{isLocalSpeaking ? `Speaking (${localLevel}%)` : "Mic LIVE"}</span>
+            <Radio className="w-3.5 h-3.5 animate-spin" />
+            <span>{isLocalSpeaking ? `🗣️ Live (${localLevel}%)` : "🎙️ Mic LIVE"}</span>
           </>
         )}
       </button>
@@ -670,10 +672,10 @@ export const InGameVoiceChat: React.FC<InGameVoiceChatProps> = ({
         <button
           type="button"
           onClick={stopMicrophone}
-          className="h-6 px-1.5 rounded-full bg-slate-900/90 hover:bg-rose-950 border border-white/15 text-[8px] font-bold text-slate-300 hover:text-rose-300 cursor-pointer"
+          className="h-6 px-2 rounded-full bg-rose-600/90 hover:bg-rose-500 border border-rose-300/50 text-[9px] font-black text-white cursor-pointer"
           title="Turn Off Open Mic"
         >
-          Off
+          End Mic
         </button>
       )}
 
@@ -681,19 +683,21 @@ export const InGameVoiceChat: React.FC<InGameVoiceChatProps> = ({
       <button
         type="button"
         onClick={() => setSpeakerMuted((prev) => !prev)}
-        className={`h-6 w-6 rounded-full border flex items-center justify-center transition-all cursor-pointer shrink-0 ${
+        className={`${
+          compact ? "h-6 w-6" : "h-7 w-7"
+        } rounded-full border flex items-center justify-center transition-all cursor-pointer shrink-0 ${
           speakerMuted
-            ? "bg-slate-900 border-white/15 text-slate-500"
+            ? "bg-slate-900 border-white/20 text-slate-400"
             : isRemoteSpeaking
             ? "bg-amber-400 text-slate-950 border-white animate-bounce"
-            : "bg-white/10 hover:bg-white/15 border-white/15 text-emerald-300"
+            : "bg-slate-900/90 hover:bg-slate-800 border-emerald-400/50 text-emerald-300"
         }`}
         title={speakerMuted ? "Unmute Opponent Voice" : "Mute Opponent Voice"}
       >
         {speakerMuted ? (
-          <VolumeX className="w-3 h-3" />
+          <VolumeX className="w-3.5 h-3.5" />
         ) : (
-          <Volume2 className="w-3 h-3" />
+          <Volume2 className="w-3.5 h-3.5" />
         )}
       </button>
 

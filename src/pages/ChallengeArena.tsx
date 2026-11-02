@@ -3135,7 +3135,7 @@ export default function ChallengeArena() {
               </button>
             </div>
           ) : (
-            <CardHeader className="shrink-0 min-h-8 py-1 px-2 sm:px-3 border-b border-white/10 bg-[#0c1322] flex flex-row flex-wrap items-center justify-between gap-1.5 space-y-0">
+            <CardHeader className="relative z-[105] shrink-0 min-h-8 py-1 px-2 sm:px-3 border-b border-white/10 bg-[#0c1322] flex flex-row flex-wrap items-center justify-between gap-1.5 space-y-0">
               <div className="flex items-center gap-1.5 min-w-0 shrink-0">
                 {/* Left-Corner Profile / Settings / Help Micro Button */}
                 <button
@@ -3718,6 +3718,7 @@ export default function ChallengeArena() {
                     opponentName={
                       activeChallenge.opponent_name || HUMAN_CHALLENGER_PERSONAS.pool.name
                     }
+                    roomCode={activeChallenge.room_code}
                     reservedTopPx={topHudCollapsed ? 0 : 28}
                     initialState={activeChallenge.board_state}
                     onStateChange={handleBoardStateChange}
@@ -3815,6 +3816,7 @@ export default function ChallengeArena() {
                       opponentName={
                         activeChallenge.opponent_name || HUMAN_CHALLENGER_PERSONAS.buggy.name
                       }
+                      roomCode={activeChallenge.room_code}
                       initialState={activeChallenge.board_state}
                       onStateChange={handleBoardStateChange}
                       onMatchComplete={(winnerSide: "creator" | "opponent" | "draw", finalState?: any) =>
@@ -4294,20 +4296,30 @@ export default function ChallengeArena() {
               </button>
             </div>
 
-            {/* Top-Right Status Pill */}
-            <button
-              type="button"
-              onClick={() => {
-                setProfileDrawerTab("rooms");
-                setProfileDrawerOpen(true);
-              }}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-full bg-white/[0.06] hover:bg-white/[0.1] border border-white/12 text-xs font-bold text-slate-200 transition-all cursor-pointer"
-            >
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span>
-                7 games • {openChallenges.length > 0 ? `${openChallenges.length} open` : "free"}
-              </span>
-            </button>
+            {/* Top-Right Live Arena Open Mic + Status Pill */}
+            <div className="flex items-center gap-2 flex-wrap justify-end">
+              <InGameVoiceChat
+                roomCode="ARENA-LOBBY"
+                mySide="creator"
+                myName={displayFirstName}
+                opponentName="Arena Lobby"
+                mode="p2p"
+              />
+
+              <button
+                type="button"
+                onClick={() => {
+                  setProfileDrawerTab("rooms");
+                  setProfileDrawerOpen(true);
+                }}
+                className="flex items-center gap-2 px-3.5 py-2 rounded-full bg-white/[0.06] hover:bg-white/[0.1] border border-white/12 text-xs font-bold text-slate-200 transition-all cursor-pointer"
+              >
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span>
+                  7 games • {openChallenges.length > 0 ? `${openChallenges.length} open` : "free"}
+                </span>
+              </button>
+            </div>
           </div>
 
           {/* 2. Clean Editorial Hero Section */}

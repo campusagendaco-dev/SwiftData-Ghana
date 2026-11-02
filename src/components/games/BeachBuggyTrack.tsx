@@ -21,6 +21,7 @@ import {
   Minimize2,
   Crosshair,
 } from "lucide-react";
+import { InGameVoiceChat } from "./InGameVoiceChat";
 
 export type GhanaTrackId = "labadi" | "aburi" | "motorway";
 export type GhanaVehicleId = "buggy" | "pragya" | "trotro" | "kantanka";
@@ -249,6 +250,7 @@ interface BeachBuggyTrackProps {
   mySide: "creator" | "opponent";
   creatorName: string;
   opponentName: string;
+  roomCode?: string;
   initialState?: Partial<BuggyRaceBoardState>;
   onStateChange?: (state: BuggyRaceBoardState) => void;
   onMatchComplete?: (winner: "creator" | "opponent" | "draw") => void;
@@ -264,6 +266,7 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
   mySide,
   creatorName,
   opponentName,
+  roomCode,
   initialState,
   onStateChange,
   onMatchComplete,
@@ -2626,7 +2629,15 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
               <span>Lobby</span>
             </button>
           )}
-          <span className="px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-400/30 text-[10px] font-black text-amber-300 truncate max-w-[140px] sm:max-w-[220px]">
+          <InGameVoiceChat
+            roomCode={roomCode || "BUGGY-ARENA"}
+            mySide={mySide}
+            myName={mySide === "creator" ? creatorName : opponentName}
+            opponentName={mySide === "creator" ? opponentName : creatorName}
+            mode={mode}
+            compact={true}
+          />
+          <span className="px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-400/30 text-[10px] font-black text-amber-300 truncate max-w-[110px] sm:max-w-[200px]">
             {activeTrackMeta.badge} {activeTrackMeta.name}
           </span>
           <span className="hidden lg:inline-flex px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-400/30 text-[10px] font-black text-emerald-300">

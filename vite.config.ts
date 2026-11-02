@@ -112,16 +112,9 @@ export default defineConfig(({ mode }) => ({
         clientsClaim: true,
         cleanupOutdatedCaches: true,
         maximumFileSizeToCacheInBytes: 30 * 1024 * 1024,
-        globPatterns: ["**/*.{ico,png,svg,html}"],
-        // Never serve cached HTML for JS/CSS asset requests — prevents stale chunk errors
-        navigateFallback: "index.html",
-        navigateFallbackDenylist: [
-          /\/assets\//,
-          /^\/auth\/callback/,
-          /^\/reset-password/,
-          /^\/agent\/pending/,
-          /^\/sub-agent\/pending/
-        ],
+        globPatterns: ["**/*.{ico,png,svg}"],
+        // Never serve stale precached index.html for navigation — let Vercel serve fresh no-cache index.html
+        navigateFallback: null,
         runtimeCaching: [
           {
             urlPattern: /\/assets\/.*\.(?:js|css)$/i,
