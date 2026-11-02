@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { Check, X, Shuffle } from "lucide-react";
 import { toast } from "sonner";
 import { AnimatePresence, motion } from "framer-motion";
-import { generateLocalAvatarDataUri } from "@/lib/avatar";
+import { generateLocalAvatarDataUri, getRealEmojiForSeed } from "@/lib/avatar";
 
 interface AvatarPickerProps {
   isOpen: boolean;
@@ -14,8 +14,12 @@ interface AvatarPickerProps {
 
 const STYLES = [
   { id: "avataaars",        name: "Classic",       bg: "#eef2ff" },
-  { id: "avataaars-neutral",name: "Neutral",       bg: "#f0fdf4" },
+  { id: "fun-emoji",        name: "Emoji",         bg: "#fefce8" },
+  { id: "big-smile",        name: "Happy",         bg: "#fefce8" },
+  { id: "adventurer",       name: "Adventure",     bg: "#f0fdf4" },
   { id: "bottts",           name: "Robots",        bg: "#ecfdf5" },
+  { id: "thumbs",           name: "Thumbs",        bg: "#ecfdf5" },
+  { id: "avataaars-neutral",name: "Neutral",       bg: "#f0fdf4" },
   { id: "bottts-neutral",   name: "Bots 2",        bg: "#f0f9ff" },
   { id: "pixel-art",        name: "Pixel Art",     bg: "#fff7ed" },
   { id: "pixel-art-neutral",name: "Pixel Neutral", bg: "#fefce8" },
@@ -23,15 +27,11 @@ const STYLES = [
   { id: "lorelei-neutral",  name: "Modern 2",      bg: "#fff1f2" },
   { id: "notionists",       name: "Minimal",       bg: "#f0f9ff" },
   { id: "notionists-neutral",name: "Minimal 2",    bg: "#fafafa" },
-  { id: "big-smile",        name: "Happy",         bg: "#fefce8" },
-  { id: "adventurer",       name: "Adventure",     bg: "#f0fdf4" },
   { id: "adventurer-neutral",name: "Adventurer 2", bg: "#f5f3ff" },
   { id: "open-peeps",       name: "Peeps",         bg: "#fff1f2" },
   { id: "micah",            name: "Illustrative",  bg: "#f5f3ff" },
   { id: "croodles",         name: "Doodles",       bg: "#eff6ff" },
   { id: "croodles-neutral", name: "Doodles 2",     bg: "#fdf4ff" },
-  { id: "fun-emoji",        name: "Emoji",         bg: "#fefce8" },
-  { id: "thumbs",           name: "Thumbs",        bg: "#ecfdf5" },
   { id: "rings",            name: "Rings",         bg: "#f0f9ff" },
   { id: "shapes",           name: "Shapes",        bg: "#fff7ed" },
   { id: "identicon",        name: "Identity",      bg: "#eef2ff" },
@@ -48,12 +48,13 @@ const ALL_SEEDS = [
   "dax","arlo","poet","fern","max","beau","cleo","rome",
 ];
 
-export const AvatarPicker = ({ isOpen, onClose, onSelect, currentAvatarUrl }: AvatarPickerProps) => {
+export const AvatarPicker = ({ isOpen, onClose, onSelect }: AvatarPickerProps) => {
   const [style, setStyle] = useState(STYLES[0]);
   const [seed, setSeed]   = useState(ALL_SEEDS[0]);
   const [saving, setSaving] = useState(false);
 
   const previewUrl = generateLocalAvatarDataUri(seed, style.id);
+  const previewSpec = getRealEmojiForSeed(seed, style.id);
 
   // lock body scroll while open
   useEffect(() => {
@@ -63,7 +64,7 @@ export const AvatarPicker = ({ isOpen, onClose, onSelect, currentAvatarUrl }: Av
   }, [isOpen]);
 
   const shuffle = () => {
-    const random = Math.random().toString(36).substring(2, 9);
+    const random = ALL_SEEDS[Math.floor(Math.random() * ALL_SEEDS.length)];
     setSeed(random);
   };
 
@@ -118,15 +119,33 @@ export const AvatarPicker = ({ isOpen, onClose, onSelect, currentAvatarUrl }: Av
             <div className="flex items-center gap-3 px-4 pb-3 pt-1 shrink-0">
               {/* Live preview */}
               <div
-                className="w-12 h-12 rounded-2xl shrink-0 overflow-hidden flex items-center justify-center"
+                className="w-12 h-12 rounded-2xl shrink-0 overflow-hidden flex items-center justify-center p-1"
                 style={{ background: style.bg }}
               >
-                <img src={previewUrl} alt="Preview" className="w-10 h-10 object-contain" />
+                <div
+                  className="w-full h-full rounded-full relative overflow-hidden flex items-center justify-center shadow-inner"
+                  style={{
+                    background: `linear-gradient(135deg, ${previewSpec.c1} 0%, ${previewSpec.c2} 100%)`,
+                  }}
+                >
+                  <span
+                    role="img"
+                    aria-label={seed}
+                    className="relative z-10 text-2xl leading-none select-none"
+                    style={{
+                      fontFamily:
+                        "'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif",
+                      filter: "drop-shadow(0 2px 3px rgba(0,0,0,0.38))",
+                    }}
+                  >
+                    {previewSpec.emoji}
+                  </span>
+                </div>
               </div>
 
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-black text-white">Choose Avatar</p>
-                <p className="text-[11px] text-white/40">Pick a style and variation below</p>
+                <p className="text-[11px] text-white/40">Pick a style and real emoji variation below</p>
               </div>
 
               <button
@@ -194,14 +213,14 @@ export const AvatarPicker = ({ isOpen, onClose, onSelect, currentAvatarUrl }: Av
               <p className="text-[9px] font-black uppercase tracking-widest text-white/30 mb-2">Variation</p>
               <div className="grid grid-cols-4 gap-2.5">
                 {ALL_SEEDS.map((s) => {
-                  const url  = generateLocalAvatarDataUri(s, style.id);
+                  const spec = getRealEmojiForSeed(s, style.id);
                   const active = seed === s;
                   return (
                     <button
                       key={s}
                       type="button"
                       onClick={() => setSeed(s)}
-                      className="relative rounded-2xl overflow-hidden transition-all duration-150 active:scale-95"
+                      className="relative rounded-2xl overflow-hidden transition-all duration-150 active:scale-95 flex items-center justify-center p-2"
                       style={{
                         aspectRatio: "1",
                         background: style.bg,
@@ -210,15 +229,48 @@ export const AvatarPicker = ({ isOpen, onClose, onSelect, currentAvatarUrl }: Av
                         transform: active ? "scale(1.06)" : "scale(1)",
                       }}
                     >
-                      <img
-                        src={url}
-                        alt={s}
-                        className="w-full h-full object-contain"
-                        style={{ padding: "6px" }}
-                      />
+                      <div
+                        className="w-full h-full rounded-full relative overflow-hidden flex items-center justify-center shadow-md"
+                        style={{
+                          background: `linear-gradient(135deg, ${spec.c1} 0%, ${spec.c2} 100%)`,
+                        }}
+                      >
+                        <svg
+                          viewBox="0 0 100 100"
+                          className="w-full h-full block absolute inset-0 pointer-events-none"
+                          aria-hidden="true"
+                        >
+                          <path
+                            d="M 52 0 A 50 50 0 0 1 100 52 C 82 54 54 32 52 0 Z"
+                            fill={spec.accent}
+                            opacity="0.65"
+                          />
+                          <circle
+                            cx="50"
+                            cy="50"
+                            r="40"
+                            fill="none"
+                            stroke={spec.accent}
+                            strokeWidth="2.4"
+                            opacity="0.45"
+                          />
+                        </svg>
+                        <span
+                          role="img"
+                          aria-label={s}
+                          className="relative z-10 text-3xl sm:text-4xl leading-none select-none"
+                          style={{
+                            fontFamily:
+                              "'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif",
+                            filter: "drop-shadow(0 3px 5px rgba(0,0,0,0.4))",
+                          }}
+                        >
+                          {spec.emoji}
+                        </span>
+                      </div>
                       {active && (
                         <div
-                          className="absolute top-1 right-1 w-4 h-4 rounded-full flex items-center justify-center"
+                          className="absolute top-1 right-1 z-20 w-4 h-4 rounded-full flex items-center justify-center"
                           style={{ background: "#fbbf24" }}
                         >
                           <Check className="w-2.5 h-2.5 text-black" strokeWidth={3} />

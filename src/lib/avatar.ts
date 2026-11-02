@@ -1,23 +1,79 @@
 /**
- * Deterministic Local SVG Avatar Generator
- * Eliminates external `api.dicebear.com` network calls and `ERR_CONNECTION_TIMED_OUT` errors
- * while rendering crisp, instant 0ms SVG avatars for any seed, name, or preset.
+ * Deterministic Local Emoji & Character Avatar Generator
+ * Uses HTML5 Canvas in the browser to bake true, full-color OS Emojis
+ * onto glossy 3D spheres (bypassing SVG <img> font sandboxing) with
+ * rich vector SVG fallback for SSR/tests.
  */
 
 const PALETTES: Array<[string, string, string]> = [
-  ["#4f46e5", "#7c3aed", "#c4b5fd"], // Indigo -> Violet
-  ["#059669", "#0d9488", "#99f6e4"], // Emerald -> Teal
-  ["#0284c7", "#2563eb", "#bae6fd"], // Sky -> Blue
-  ["#d97706", "#ea580c", "#fed7aa"], // Amber -> Orange
-  ["#e11d48", "#db2777", "#fecdd3"], // Rose -> Pink
-  ["#7c3aed", "#c026d3", "#f5d0fe"], // Violet -> Fuchsia
-  ["#0d9488", "#0284c7", "#a5f3fc"], // Teal -> Cyan
-  ["#2563eb", "#4f46e5", "#c7d2fe"], // Blue -> Indigo
-  ["#16a34a", "#059669", "#bbf7d0"], // Green -> Emerald
-  ["#9333ea", "#4f46e5", "#e9d5ff"], // Purple -> Indigo
-  ["#ea580c", "#e11d48", "#fecaca"], // Orange -> Rose
-  ["#0891b2", "#3b82f6", "#bfdbfe"], // Cyan -> Blue
+  ["#1e6ae1", "#1449a6", "#5496ff"], // Royal Blue
+  ["#147c8c", "#0c5663", "#3fa4b5"], // Teal
+  ["#d96b12", "#9e4806", "#f5923e"], // Amber Orange
+  ["#e03e2d", "#a62416", "#f76d5e"], // Coral Red
+  ["#6938e6", "#491eb8", "#9065ff"], // Violet
+  ["#14854e", "#0a5c33", "#3eb078"], // Emerald
+  ["#9b30d9", "#6e1ba1", "#be5ef5"], // Orchid Purple
+  ["#2276c9", "#155291", "#54a0ec"], // Sky Blue
+  ["#e11d48", "#9f1239", "#fb7185"], // Rose Crimson
+  ["#0d9488", "#115e59", "#2dd4bf"], // Lagoon
+  ["#d97706", "#92400e", "#fbbf24"], // Gold
+  ["#4f46e5", "#312e81", "#818cf8"], // Indigo
 ];
+
+// 40 distinct real emojis mapped 1-to-1 to ALL_SEEDS in AvatarPicker
+export const AVATAR_REAL_EMOJIS = [
+  "😎", "🤠", "👑", "🦁", "🥷", "🤩", "🥳", "😈",
+  "🤖", "🦊", "🐼", "🐯", "👽", "🦄", "🐲", "🔥",
+  "⚡", "🎮", "🏆", "🦅", "🦈", "🐆", "🦍", "🤴",
+  "👸", "🧙‍♂️", "🦸‍♂️", "🏎️", "🎱", "🎲", "😜", "😂",
+  "🤯", "🤑", "🤓", "😇", "👻", "🎃", "💎", "🚀",
+];
+
+const STYLE_EMOJI_SETS: Record<string, string[]> = {
+  "fun-emoji": [
+    "😎", "🤩", "😍", "🥳", "😜", "😂", "🤠", "😈",
+    "🤯", "🤑", "🤓", "😇", "🥰", "🤪", "😏", "🥶",
+    "🥵", "🫡", "🤗", "🤭", "🧐", "😤", "😱", "🤠",
+    "🤡", "👻", "👽", "🤖", "🎃", "😺", "😸", "😹",
+    "😻", "😼", "😽", "🙀", "👑", "🔥", "⚡", "💎",
+  ],
+  "big-smile": [
+    "😄", "😁", "😆", "😃", "😊", "😋", "😎", "😍",
+    "😘", "🥰", "🤩", "🥳", "😺", "😸", "🤠", "😇",
+    "🤗", "🤭", "🤪", "😝", "😛", "🤑", "🤓", "😏",
+    "🫡", "🙌", "👏", "🫶", "💪", "🔥", "✨", "🌟",
+    "👑", "🏆", "🎉", "🎊", "🦁", "🐯", "🐼", "🦊",
+  ],
+  "bottts": [
+    "🤖", "👾", "🛸", "🚀", "⚡", "🔋", "🛰️", "🔮",
+    "🦾", "🦿", "💻", "🕹️", "🎮", "📡", "⚙️", "🧲",
+    "💎", "🛡️", "⚔️", "🧬", "🔬", "🔭", "🌐", "💠",
+    "🌀", "💥", "✨", "🌟", "💫", "☄️", "🪐", "🌙",
+    "☀️", "🌈", "🔥", "❄️", "🌊", "🌪️", "🎯", "🏆",
+  ],
+  "adventurer": [
+    "🥷", "🤠", "🤴", "👸", "🧙‍♂️", "🦸‍♂️", "🦸‍♀️", "🦹‍♂️",
+    "🕵️‍♂️", "🧑‍🚀", "🧑‍✈️", "🧑‍🚒", "🧑‍🎤", "🧑‍🎨", "🧑‍🔬", "🧑‍💻",
+    "🦁", "🐯", "🦅", "🐲", "🐺", "🦊", "🐆", "🦈",
+    "🦍", "🐼", "🦄", "🦖", "🐉", "凤凰", "⚔️", "🛡️",
+    "🏹", "👑", "🏆", "🔥", "⚡", "💎", "🏎️", "🚀",
+  ],
+  "thumbs": [
+    "👍", "🙌", "👏", "🫶", "✌️", "🤞", "🤟", "🤘",
+    "🤙", "👌", "🤌", "👊", "✊", "🤝", "🙏", "💪",
+    "🫡", "👑", "🔥", "⚡", "💯", "🏆", "🎯", "🚀",
+    "💎", "🌟", "✨", "🎉", "🎊", "🥇", "🏅", "🎖️",
+    "🦁", "🦅", "🐯", "🐲", "😎", "🤩", "🥳", "🤠",
+  ],
+};
+
+const SEED_TO_EMOJI_INDEX: Record<string, number> = {
+  swift: 0, ghana: 1, data: 2, ace: 3, nova: 4, bolt: 5, zara: 6, finn: 7,
+  luna: 8, koda: 9, rex: 10, mia: 11, jade: 12, sage: 13, leo: 14, ivy: 15,
+  cole: 16, tara: 17, alex: 18, sam: 19, pat: 20, riley: 21, quinn: 22, drew: 23,
+  kai: 24, eden: 25, cruz: 26, skye: 27, juno: 28, wren: 29, noor: 30, blaze: 31,
+  dax: 32, arlo: 33, poet: 34, fern: 35, max: 36, beau: 37, cleo: 38, rome: 39,
+};
 
 function hashSeed(input: string): number {
   let h = 2166136261;
@@ -28,112 +84,137 @@ function hashSeed(input: string): number {
   return Math.abs(h >>> 0);
 }
 
-function escapeXml(unsafe: string): string {
-  return unsafe.replace(/[<>&'"]/g, (c) => {
-    switch (c) {
-      case "<":
-        return "&lt;";
-      case ">":
-        return "&gt;";
-      case "&":
-        return "&amp;";
-      case "'":
-        return "&apos;";
-      case '"':
-        return "&quot;";
-      default:
-        return c;
-    }
-  });
+export function getRealEmojiForSeed(
+  seedInput?: string | null,
+  styleInput?: string | null
+): { emoji: string; c1: string; c2: string; accent: string } {
+  const seed = (seedInput || "swift").trim() || "swift";
+  const seedLower = seed.toLowerCase();
+  const style = (styleInput || "fun-emoji").toLowerCase();
+  const h = hashSeed(seed + ":" + style);
+  const [c1, c2, accent] = PALETTES[h % PALETTES.length];
+
+  const baseIdx =
+    SEED_TO_EMOJI_INDEX[seedLower] !== undefined
+      ? SEED_TO_EMOJI_INDEX[seedLower]
+      : hashSeed(seed) % AVATAR_REAL_EMOJIS.length;
+
+  let set = AVATAR_REAL_EMOJIS;
+  if (style.includes("smile")) set = STYLE_EMOJI_SETS["big-smile"];
+  else if (style.includes("bottts")) set = STYLE_EMOJI_SETS["bottts"];
+  else if (style.includes("adventurer") || style.includes("lorelei") || style.includes("personas"))
+    set = STYLE_EMOJI_SETS["adventurer"];
+  else if (style.includes("thumbs")) set = STYLE_EMOJI_SETS["thumbs"];
+  else if (style.includes("emoji")) set = STYLE_EMOJI_SETS["fun-emoji"];
+
+  const styleOffset =
+    style === "avataaars" || style === "fun-emoji"
+      ? 0
+      : hashSeed(style) % set.length;
+
+  const emoji = set[(baseIdx + styleOffset) % set.length] || "😎";
+  return { emoji, c1, c2, accent };
 }
 
-const UUID_LIKE_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-/i;
+const CANVAS_CACHE = new Map<string, string>();
 
-function extractInitials(seed: string): string | null {
-  const clean = seed.trim();
-  if (!clean || UUID_LIKE_RE.test(clean)) return null;
-  const base = clean.includes("@") ? clean.split("@")[0] : clean;
-  const parts = base
-    .replace(/[^a-zA-Z0-9\s._-]/g, " ")
-    .split(/[\s._-]+/)
-    .filter(Boolean);
-  if (parts.length === 0) return null;
-  if (parts.length >= 2) {
-    return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+function renderCanvasEmojiAvatarDataUri(
+  emoji: string,
+  c1: string,
+  c2: string,
+  accent: string
+): string | null {
+  if (typeof document === "undefined") return null;
+  const cacheKey = `${emoji}:${c1}:${c2}:${accent}`;
+  const cached = CANVAS_CACHE.get(cacheKey);
+  if (cached) return cached;
+
+  try {
+    const size = 160;
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+
+    const cx = size / 2;
+    const cy = size / 2;
+    const r = size / 2 - 2;
+
+    // 1. Clip to circle
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.clip();
+
+    // 2. Base 3D Sphere Gradient
+    const grad = ctx.createLinearGradient(0, 0, size, size);
+    grad.addColorStop(0, c1);
+    grad.addColorStop(1, c2);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, size, size);
+
+    // 3. Top-right glossy crescent highlight
+    ctx.beginPath();
+    ctx.arc(cx + r * 0.38, cy - r * 0.38, r * 0.72, 0, Math.PI * 2);
+    ctx.fillStyle = accent;
+    ctx.globalAlpha = 0.45;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // 4. Inner concentric ring
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * 0.79, 0, Math.PI * 2);
+    ctx.strokeStyle = accent;
+    ctx.globalAlpha = 0.5;
+    ctx.lineWidth = 3.5;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    // 5. Real Full-Color Native OS Emoji centered in sphere
+    ctx.font =
+      "92px 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.shadowColor = "rgba(0, 0, 0, 0.38)";
+    ctx.shadowBlur = 8;
+    ctx.shadowOffsetY = 4;
+    ctx.fillText(emoji, cx, cy + 5);
+
+    ctx.restore();
+
+    const dataUrl = canvas.toDataURL("image/png");
+    CANVAS_CACHE.set(cacheKey, dataUrl);
+    return dataUrl;
+  } catch {
+    return null;
   }
-  return parts[0].slice(0, 2).toUpperCase();
 }
 
 export function generateLocalAvatarDataUri(
   seedInput?: string | null,
   styleInput?: string | null
 ): string {
-  const seed = (seedInput || "swiftdata-user").trim() || "swiftdata-user";
-  const style = (styleInput || "avataaars").toLowerCase();
-  const h = hashSeed(seed + ":" + style);
-  const [c1, c2, accent] = PALETTES[h % PALETTES.length];
-  const variant = (h >> 4) % 4;
-  const eyeStyle = (h >> 8) % 3;
-  const smileCurve = 54 + ((h >> 10) % 5);
-  const initials = extractInitials(seed);
+  const { emoji, c1, c2, accent } = getRealEmojiForSeed(seedInput, styleInput);
 
-  let foregroundSvg = "";
-
-  if (style === "shapes" && initials) {
-    foregroundSvg = `
-      <circle cx="40" cy="40" r="30" fill="none" stroke="${accent}" stroke-opacity="0.35" stroke-width="1.5" />
-      <text x="40" y="46" text-anchor="middle" fill="#ffffff" font-family="system-ui, -apple-system, sans-serif" font-weight="800" font-size="22" letter-spacing="1">${escapeXml(initials)}</text>
-    `;
-  } else if (style === "bottts") {
-    // Sleek cyber bot avatar
-    foregroundSvg = `
-      <line x1="40" y1="12" x2="40" y2="21" stroke="${accent}" stroke-width="3" stroke-linecap="round"/>
-      <circle cx="40" cy="11" r="3.5" fill="${accent}"/>
-      <rect x="20" y="21" width="40" height="36" rx="10" fill="#ffffff" fill-opacity="0.94"/>
-      <rect x="25" y="29" width="30" height="12" rx="6" fill="${c1}"/>
-      <circle cx="33" cy="35" r="3" fill="${accent}"/>
-      <circle cx="47" cy="35" r="3" fill="${accent}"/>
-      <rect x="31" y="47" width="18" height="3.5" rx="1.75" fill="${c2}" fill-opacity="0.7"/>
-      <path d="M24 68 C24 59 56 59 56 68" fill="#ffffff" fill-opacity="0.88"/>
-    `;
-  } else {
-    // Character / geometric portrait avatar
-    const hairPath =
-      variant === 0
-        ? `<path d="M22 33 C22 19 58 19 58 33 C55 26 25 26 22 33 Z" fill="#1e1b4b" fill-opacity="0.75"/>`
-        : variant === 1
-        ? `<path d="M21 35 C20 18 60 18 59 35 C52 24 28 24 21 35 Z" fill="${accent}" fill-opacity="0.65"/>`
-        : variant === 2
-        ? `<circle cx="40" cy="21" r="9" fill="#1e1b4b" fill-opacity="0.55"/>`
-        : "";
-
-    const eyesSvg =
-      eyeStyle === 0
-        ? `<circle cx="33.5" cy="36" r="2.2" fill="${c1}"/><circle cx="46.5" cy="36" r="2.2" fill="${c1}"/>`
-        : eyeStyle === 1
-        ? `<rect x="30.5" y="34.5" width="6" height="2.6" rx="1.3" fill="${c1}"/><rect x="43.5" y="34.5" width="6" height="2.6" rx="1.3" fill="${c1}"/>`
-        : `<path d="M31 36 Q33.5 33.5 36 36" stroke="${c1}" stroke-width="2" stroke-linecap="round" fill="none"/><path d="M44 36 Q46.5 33.5 49 36" stroke="${c1}" stroke-width="2" stroke-linecap="round" fill="none"/>`;
-
-    foregroundSvg = `
-      <circle cx="40" cy="40" r="32" fill="none" stroke="#ffffff" stroke-opacity="0.16" stroke-width="1.5"/>
-      <path d="M18 76 C18 57 62 57 62 76 Z" fill="#ffffff" fill-opacity="0.92"/>
-      <circle cx="40" cy="36" r="15.5" fill="#ffffff" fill-opacity="0.96"/>
-      ${hairPath}
-      ${eyesSvg}
-      <path d="M35 43 Q40 ${smileCurve - 7} 45 43" stroke="${c2}" stroke-width="2.2" stroke-linecap="round" fill="none"/>
-    `;
+  // Use Canvas PNG in browser so <img src="..."> shows the true full-color OS emoji
+  const canvasDataUrl = renderCanvasEmojiAvatarDataUri(emoji, c1, c2, accent);
+  if (canvasDataUrl) {
+    return canvasDataUrl;
   }
 
+  // Fallback SVG for SSR / Node environments
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" width="80" height="80">
     <defs>
-      <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
         <stop offset="0%" stop-color="${c1}"/>
         <stop offset="100%" stop-color="${c2}"/>
       </linearGradient>
     </defs>
-    <rect width="80" height="80" rx="40" fill="url(#g)"/>
-    <circle cx="64" cy="16" r="18" fill="${accent}" fill-opacity="0.18"/>
-    ${foregroundSvg}
+    <circle cx="40" cy="40" r="39" fill="url(#bgGrad)"/>
+    <path d="M 42 1 A 39 39 0 0 1 79 42 C 64 44 43 26 42 1 Z" fill="${accent}" fill-opacity="0.55"/>
+    <circle cx="40" cy="40" r="31" fill="none" stroke="${accent}" stroke-opacity="0.45" stroke-width="2"/>
+    <text x="40" y="54" text-anchor="middle" font-size="42" font-family="'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif">${emoji}</text>
   </svg>`
     .replace(/\s+/g, " ")
     .trim();
@@ -143,9 +224,8 @@ export function generateLocalAvatarDataUri(
 
 /**
  * Safely resolves an avatar URL.
- * - If `avatarUrl` is a non-DiceBear custom URL (e.g. Supabase Storage or data URI), returns it directly.
- * - If `avatarUrl` points to `api.dicebear.com` (which frequently times out with ERR_CONNECTION_TIMED_OUT)
- *   or is null/empty, returns an instant local SVG data URI using the extracted seed or `fallbackSeed`.
+ * Automatically upgrades any legacy blank-white-silhouette SVG data URIs or DiceBear URLs
+ * to our rich, full-color 3D Emoji avatars.
  */
 export function getSafeAvatarUrl(
   avatarUrl?: string | null,
@@ -153,6 +233,12 @@ export function getSafeAvatarUrl(
   preferredStyle?: string
 ): string {
   const trimmed = (avatarUrl || "").trim();
+
+  // Upgrade any previously-saved SVG data URI that had the blank white silhouette
+  if (trimmed.startsWith("data:image/svg+xml")) {
+    return generateLocalAvatarDataUri(fallbackSeed || "swift", preferredStyle || "fun-emoji");
+  }
+
   if (trimmed && !trimmed.includes("dicebear.com")) {
     return trimmed;
   }
@@ -160,16 +246,14 @@ export function getSafeAvatarUrl(
   if (trimmed.includes("dicebear.com")) {
     try {
       const parsed = new URL(trimmed);
-      const seedParam = parsed.searchParams.get("seed") || fallbackSeed || "user";
+      const seedParam = parsed.searchParams.get("seed") || fallbackSeed || "swift";
       const pathParts = parsed.pathname.split("/").filter(Boolean);
-      // e.g. /7.x/avataaars/svg -> style is pathParts[1]
       const styleFromPath = pathParts.length >= 2 ? pathParts[1] : preferredStyle;
       return generateLocalAvatarDataUri(seedParam, styleFromPath);
     } catch {
-      return generateLocalAvatarDataUri(fallbackSeed || "user", preferredStyle);
+      return generateLocalAvatarDataUri(fallbackSeed || "swift", preferredStyle);
     }
   }
 
-  return generateLocalAvatarDataUri(fallbackSeed || "user", preferredStyle);
+  return generateLocalAvatarDataUri(fallbackSeed || "swift", preferredStyle || "fun-emoji");
 }
-

@@ -28,10 +28,11 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-// ── 1. 20 GLOSSY 3D CHARACTER AVATARS (MATCHING UPLOADED SCREENSHOTS) ─────────
+// ── 1. 20 GLOSSY 3D EMOJI GAMER AVATARS ───────────────────────────────────────
 export interface GamerAvatarSpec {
   id: string;
   label: string;
+  emoji: string;
   sphereBase: string;
   sphereDark: string;
   sphereCrescent: string;
@@ -46,6 +47,7 @@ export const GAMER_AVATAR_CATALOG: GamerAvatarSpec[] = [
   {
     id: "royal_headband",
     label: "Royal Striker",
+    emoji: "😎",
     sphereBase: "#1e6ae1",
     sphereDark: "#1449a6",
     sphereCrescent: "#5496ff",
@@ -57,6 +59,7 @@ export const GAMER_AVATAR_CATALOG: GamerAvatarSpec[] = [
   {
     id: "teal_calm",
     label: "Teal Tactician",
+    emoji: "🥷",
     sphereBase: "#147c8c",
     sphereDark: "#0c5663",
     sphereCrescent: "#3fa4b5",
@@ -66,7 +69,8 @@ export const GAMER_AVATAR_CATALOG: GamerAvatarSpec[] = [
   },
   {
     id: "orange_beam",
-    label: "Amber Champion",
+    label: "Amber Lion King",
+    emoji: "🦁",
     sphereBase: "#d96b12",
     sphereDark: "#9e4806",
     sphereCrescent: "#f5923e",
@@ -77,6 +81,7 @@ export const GAMER_AVATAR_CATALOG: GamerAvatarSpec[] = [
   {
     id: "red_wink",
     label: "Coral Ace",
+    emoji: "🤩",
     sphereBase: "#e03e2d",
     sphereDark: "#a62416",
     sphereCrescent: "#f76d5e",
@@ -88,6 +93,7 @@ export const GAMER_AVATAR_CATALOG: GamerAvatarSpec[] = [
   {
     id: "purple_joy",
     label: "Violet Legend",
+    emoji: "👑",
     sphereBase: "#6938e6",
     sphereDark: "#491eb8",
     sphereCrescent: "#9065ff",
@@ -98,6 +104,7 @@ export const GAMER_AVATAR_CATALOG: GamerAvatarSpec[] = [
   {
     id: "emerald_zen",
     label: "Emerald Master",
+    emoji: "🐲",
     sphereBase: "#14854e",
     sphereDark: "#0a5c33",
     sphereCrescent: "#3eb078",
@@ -108,6 +115,7 @@ export const GAMER_AVATAR_CATALOG: GamerAvatarSpec[] = [
   {
     id: "sky_bun",
     label: "Sky Samurai",
+    emoji: "🤖",
     sphereBase: "#2276c9",
     sphereDark: "#155291",
     sphereCrescent: "#54a0ec",
@@ -119,6 +127,7 @@ export const GAMER_AVATAR_CATALOG: GamerAvatarSpec[] = [
   {
     id: "crimson_smile",
     label: "Crimson Blaze",
+    emoji: "🔥",
     sphereBase: "#e03e2d",
     sphereDark: "#a32214",
     sphereCrescent: "#f76d5e",
@@ -130,6 +139,7 @@ export const GAMER_AVATAR_CATALOG: GamerAvatarSpec[] = [
   {
     id: "magenta_cool",
     label: "Orchid Mystic",
+    emoji: "😈",
     sphereBase: "#9b30d9",
     sphereDark: "#6e1ba1",
     sphereCrescent: "#be5ef5",
@@ -139,7 +149,8 @@ export const GAMER_AVATAR_CATALOG: GamerAvatarSpec[] = [
   },
   {
     id: "cobalt_band",
-    label: "Cobalt Ninja",
+    label: "Cobalt Sheriff",
+    emoji: "🤠",
     sphereBase: "#1e6ae1",
     sphereDark: "#1449a6",
     sphereCrescent: "#5496ff",
@@ -150,7 +161,8 @@ export const GAMER_AVATAR_CATALOG: GamerAvatarSpec[] = [
   },
   {
     id: "jade_grin",
-    label: "Jade Strategist",
+    label: "Jade Fox",
+    emoji: "🦊",
     sphereBase: "#167c8c",
     sphereDark: "#0d5561",
     sphereCrescent: "#43a5b5",
@@ -161,6 +173,7 @@ export const GAMER_AVATAR_CATALOG: GamerAvatarSpec[] = [
   {
     id: "violet_laugh",
     label: "Indigo Spark",
+    emoji: "⚡",
     sphereBase: "#6938e6",
     sphereDark: "#491eb8",
     sphereCrescent: "#9065ff",
@@ -172,6 +185,7 @@ export const GAMER_AVATAR_CATALOG: GamerAvatarSpec[] = [
   {
     id: "indigo_bun",
     label: "Amethyst Shogun",
+    emoji: "🐼",
     sphereBase: "#6938e6",
     sphereDark: "#491eb8",
     sphereCrescent: "#9065ff",
@@ -182,7 +196,8 @@ export const GAMER_AVATAR_CATALOG: GamerAvatarSpec[] = [
   },
   {
     id: "ocean_band",
-    label: "Ocean Captain",
+    label: "Ocean Tiger",
+    emoji: "🐯",
     sphereBase: "#2378cc",
     sphereDark: "#165494",
     sphereCrescent: "#56a2ed",
@@ -193,7 +208,8 @@ export const GAMER_AVATAR_CATALOG: GamerAvatarSpec[] = [
   },
   {
     id: "amethyst_zen",
-    label: "Royal Zen",
+    label: "Royal Unicorn",
+    emoji: "🦄",
     sphereBase: "#6938e6",
     sphereDark: "#491eb8",
     sphereCrescent: "#9065ff",
@@ -203,7 +219,8 @@ export const GAMER_AVATAR_CATALOG: GamerAvatarSpec[] = [
   },
   {
     id: "cerulean_bun",
-    label: "Cerulean Empress",
+    label: "Cerulean Party",
+    emoji: "🥳",
     sphereBase: "#2176c7",
     sphereDark: "#15518c",
     sphereCrescent: "#539fe8",
@@ -215,7 +232,8 @@ export const GAMER_AVATAR_CATALOG: GamerAvatarSpec[] = [
   // Row 5
   {
     id: "scarlet_crown",
-    label: "Scarlet Royalty",
+    label: "Scarlet Eagle",
+    emoji: "🦅",
     sphereBase: "#de4331",
     sphereDark: "#9e2619",
     sphereCrescent: "#f57062",
@@ -226,7 +244,8 @@ export const GAMER_AVATAR_CATALOG: GamerAvatarSpec[] = [
   },
   {
     id: "orchid_spark",
-    label: "Magenta Star",
+    label: "Cosmic Alien",
+    emoji: "👽",
     sphereBase: "#9c32db",
     sphereDark: "#6e1ca1",
     sphereCrescent: "#c062f7",
@@ -236,7 +255,8 @@ export const GAMER_AVATAR_CATALOG: GamerAvatarSpec[] = [
   },
   {
     id: "azure_visor",
-    label: "Azure Pro",
+    label: "Azure Champion",
+    emoji: "🏆",
     sphereBase: "#2479cc",
     sphereDark: "#165494",
     sphereCrescent: "#57a3ed",
@@ -247,7 +267,8 @@ export const GAMER_AVATAR_CATALOG: GamerAvatarSpec[] = [
   },
   {
     id: "turquoise_pro",
-    label: "Lagoon Boss",
+    label: "Lagoon Racer",
+    emoji: "🏎️",
     sphereBase: "#157d8c",
     sphereDark: "#0c5661",
     sphereCrescent: "#42a6b5",
@@ -266,11 +287,18 @@ export function resolveAvatarSpec(avatarIdOrSeed?: string | null): GamerAvatarSp
   if (!avatarIdOrSeed) return GAMER_AVATAR_CATALOG[0];
   const exact = AVATAR_LOOKUP.get(avatarIdOrSeed);
   if (exact) return exact;
+  const byEmoji = GAMER_AVATAR_CATALOG.find((item) => item.emoji === avatarIdOrSeed);
+  if (byEmoji) return byEmoji;
   let hash = 0;
   for (let i = 0; i < avatarIdOrSeed.length; i++) {
     hash = (hash * 31 + avatarIdOrSeed.charCodeAt(i)) >>> 0;
   }
-  return GAMER_AVATAR_CATALOG[hash % GAMER_AVATAR_CATALOG.length];
+  const base = GAMER_AVATAR_CATALOG[hash % GAMER_AVATAR_CATALOG.length];
+  // If a literal single emoji was passed, preserve it on top of the hashed sphere
+  if (avatarIdOrSeed.length <= 4 && /[^\u0000-\u007f]/.test(avatarIdOrSeed)) {
+    return { ...base, emoji: avatarIdOrSeed };
+  }
+  return base;
 }
 
 // ── 2. GLOSSY 3D VERIFIED GAMER AVATAR COMPONENT ─────────────────────────────
@@ -308,6 +336,7 @@ export const VerifiedGamerAvatar: React.FC<VerifiedGamerAvatarProps> = ({
   );
 
   const badgeSize = Math.max(14, Math.round(size * 0.36));
+  const emojiFontSize = Math.max(14, Math.round(size * 0.56));
 
   return (
     <div
@@ -337,137 +366,63 @@ export const VerifiedGamerAvatar: React.FC<VerifiedGamerAvatarProps> = ({
             className="w-full h-full object-cover"
           />
         ) : (
-          <svg
-            viewBox="0 0 100 100"
-            className="w-full h-full block"
-            aria-label={spec.label}
-          >
-            {/* Base Sphere */}
-            <circle cx="50" cy="50" r="50" fill={spec.sphereBase} />
+          <>
+            <svg
+              viewBox="0 0 100 100"
+              className="w-full h-full block absolute inset-0"
+              aria-hidden="true"
+            >
+              {/* Base Sphere */}
+              <circle cx="50" cy="50" r="50" fill={spec.sphereBase} />
 
-            {/* Top-Right Glossy Crescent Highlight (Matches Screenshot 1 & 2) */}
-            <path
-              d="M 52 0 A 50 50 0 0 1 100 52 C 82 54 54 32 52 0 Z"
-              fill={spec.sphereCrescent}
-              opacity="0.75"
-            />
+              {/* Top-Right Glossy Crescent Highlight */}
+              <path
+                d="M 52 0 A 50 50 0 0 1 100 52 C 82 54 54 32 52 0 Z"
+                fill={spec.sphereCrescent}
+                opacity="0.75"
+              />
 
-            {/* Subtle Bottom Rim Shadow */}
-            <path
-              d="M 12 82 A 50 50 0 0 0 88 82 C 74 93 26 93 12 82 Z"
-              fill={spec.sphereDark}
-              opacity="0.7"
-            />
+              {/* Subtle Bottom Rim Shadow */}
+              <path
+                d="M 12 82 A 50 50 0 0 0 88 82 C 74 93 26 93 12 82 Z"
+                fill={spec.sphereDark}
+                opacity="0.7"
+              />
 
-            {/* Inner Concentric Glossy Ring */}
-            <circle
-              cx="50"
-              cy="50"
-              r="39"
-              fill="none"
-              stroke={spec.ringColor}
-              strokeWidth="2.4"
-              opacity="0.45"
-            />
-
-            {/* Top Bun Accessory (behind head if enabled) */}
-            {spec.accessory === "top_bun" && (
+              {/* Inner Concentric Glossy Ring */}
               <circle
                 cx="50"
-                cy="24"
-                r="10.5"
-                fill="#1f3a5c"
-                opacity="0.92"
-              />
-            )}
-
-            {/* White Shoulders Silhouette */}
-            <path
-              d="M 23 89 C 24 72 76 72 77 89 Z"
-              fill="#ffffff"
-            />
-
-            {/* White Character Head */}
-            <circle cx="50" cy="48" r="19.5" fill="#ffffff" />
-
-            {/* Headband Accessories */}
-            {spec.accessory === "dark_band" && (
-              <path
-                d="M 27 40 Q 50 28 73 40 Q 68 32 50 32 Q 32 32 27 40 Z"
-                fill="#1d3557"
-              />
-            )}
-            {spec.accessory === "light_band" && (
-              <path
-                d="M 27 40 Q 50 28 73 40 Q 68 32 50 32 Q 32 32 27 40 Z"
-                fill="#d8e8ff"
-              />
-            )}
-            {spec.accessory === "gold_band" && (
-              <path
-                d="M 28 39 Q 50 27 72 39 Q 67 31 50 31 Q 33 31 28 39 Z"
-                fill="#fbbf24"
-              />
-            )}
-
-            {/* Eyes */}
-            {spec.eyes === "curve" && (
-              <g
+                cy="50"
+                r="40"
                 fill="none"
-                stroke={spec.sphereBase}
-                strokeWidth="3.4"
-                strokeLinecap="round"
-              >
-                <path d="M 38.5 46.5 Q 42.5 42 46.5 46.5" />
-                <path d="M 53.5 46.5 Q 57.5 42 61.5 46.5" />
-              </g>
-            )}
-            {spec.eyes === "dots" && (
-              <g fill={spec.sphereBase}>
-                <circle cx="42.5" cy="46" r="2.7" />
-                <circle cx="57.5" cy="46" r="2.7" />
-              </g>
-            )}
-            {spec.eyes === "flat" && (
-              <g
-                fill="none"
-                stroke={spec.sphereBase}
-                strokeWidth="3.2"
-                strokeLinecap="round"
-              >
-                <line x1="39" y1="45.5" x2="46" y2="45.5" />
-                <line x1="54" y1="45.5" x2="61" y2="45.5" />
-              </g>
-            )}
-
-            {/* Mouth */}
-            {spec.mouth === "smile" ? (
-              <path
-                d="M 43.5 54 Q 50 60.5 56.5 54"
-                fill="none"
-                stroke={spec.sphereBase}
-                strokeWidth="3.5"
-                strokeLinecap="round"
+                stroke={spec.ringColor}
+                strokeWidth="2.4"
+                opacity="0.45"
               />
-            ) : (
-              <line
-                x1="42.5"
-                y1="55.5"
-                x2="57.5"
-                y2="55.5"
-                stroke={spec.sphereBase}
-                strokeWidth="3.5"
-                strokeLinecap="round"
-              />
-            )}
-          </svg>
+            </svg>
+            {/* Real Full-Color Native Emoji Centered on Glossy Sphere */}
+            <span
+              role="img"
+              aria-label={spec.label}
+              className="relative z-10 flex items-center justify-center leading-none select-none"
+              style={{
+                fontSize: `${emojiFontSize}px`,
+                fontFamily:
+                  "'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif",
+                filter: "drop-shadow(0 3px 5px rgba(0,0,0,0.42))",
+                transform: "translateY(1px)",
+              }}
+            >
+              {spec.emoji}
+            </span>
+          </>
         )}
       </div>
 
-      {/* Cyan Scalloped Verified Badge at bottom-right (Matches Screenshot 1) */}
+      {/* Cyan Scalloped Verified Badge at bottom-right */}
       {showVerifiedBadge && (
         <div
-          className="absolute -bottom-0.5 -right-0.5 rounded-full flex items-center justify-center bg-[#00b4d8] shadow-md"
+          className="absolute -bottom-0.5 -right-0.5 z-20 rounded-full flex items-center justify-center bg-[#00b4d8] shadow-md"
           style={{
             width: badgeSize,
             height: badgeSize,
@@ -1820,3 +1775,4 @@ export const DailyStoriesBar: React.FC<DailyStoriesBarProps> = ({
 };
 
 export default DailyStoriesBar;
+
