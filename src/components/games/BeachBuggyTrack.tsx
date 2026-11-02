@@ -2017,9 +2017,9 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
     GHANA_VEHICLES.find((v) => v.id === saveData.vehicle) || GHANA_VEHICLES[0];
 
   return (
-    <div className="w-full flex flex-col items-center select-none touch-none">
+    <div className="w-full h-full flex-1 min-h-0 flex flex-col select-none touch-none">
       {/* Top Bar Info Strip */}
-      <div className="w-full max-w-[960px] flex flex-wrap items-center justify-between gap-2 px-3 py-2 mb-1.5 rounded-2xl bg-slate-900/90 border border-white/10">
+      <div className="w-full shrink-0 flex flex-wrap items-center justify-between gap-2 px-3 py-1.5 mb-1 rounded-xl bg-slate-900/90 border border-white/10">
         <div className="flex items-center gap-2">
           {onBackToLobby && (
             <button
@@ -2069,15 +2069,8 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
         </div>
       </div>
 
-      {/* Main 16:9 Pseudo-3D Racing Viewport */}
-      <div
-        className="relative w-full max-w-[960px] aspect-video rounded-2xl overflow-hidden bg-black border-2 border-amber-500/30 shadow-2xl"
-        style={{
-          maxHeight: screenFit.isLandscape
-            ? `${Math.max(260, screenFit.availHeight - 58)}px`
-            : undefined,
-        }}
-      >
+      {/* Main Full-Screen Pseudo-3D Racing Viewport */}
+      <div className="relative w-full flex-1 min-h-0 h-full rounded-2xl overflow-hidden bg-black border-2 border-amber-500/30 shadow-2xl">
         <canvas
           ref={canvasRef}
           width={960}
@@ -2087,7 +2080,7 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
 
         {/* ── 1. START / TRACK & RIDE MENU OVERLAY ────────────────────────── */}
         {uiScreen === "menu" && (
-          <div className="absolute inset-0 bg-gradient-to-b from-slate-950/80 via-slate-950/85 to-slate-950/95 backdrop-blur-sm flex flex-col items-center justify-between p-4 sm:p-6 text-center overflow-y-auto">
+          <div className="absolute inset-0 bg-gradient-to-b from-slate-950/85 via-slate-950/90 to-slate-950/95 backdrop-blur-sm flex flex-col items-center justify-evenly p-4 sm:p-6 text-center overflow-y-auto">
             <div className="space-y-1">
               <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-gradient-to-r from-red-600 via-amber-400 to-emerald-600 text-slate-950 text-[10px] font-black uppercase tracking-wider">
                 🇬🇭 Ghana Coastal &amp; Mountain Rally GP

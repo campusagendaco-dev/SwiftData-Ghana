@@ -2452,8 +2452,11 @@ export default function ChallengeArena() {
 
           <CardContent
             className={
-              activeChallenge.game_type === "pool" && activeChallenge.status === "in_progress"
-                ? "flex-1 min-h-0 w-full overflow-hidden overscroll-none p-0 flex flex-col items-center justify-center"
+              (activeChallenge.game_type === "pool" ||
+                activeChallenge.game_type === "buggy" ||
+                activeChallenge.game_type === "slash") &&
+              activeChallenge.status === "in_progress"
+                ? "flex-1 min-h-0 w-full h-full overflow-hidden overscroll-none p-0 sm:p-1.5 flex flex-col"
                 : "flex-1 min-h-0 w-full overflow-y-auto overflow-x-hidden overscroll-none p-1.5 sm:p-3 space-y-1.5 max-w-6xl mx-auto"
             }
           >

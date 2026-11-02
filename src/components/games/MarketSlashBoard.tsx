@@ -1809,10 +1809,10 @@ export function MarketSlashBoard({
   return (
     <div
       style={{ fontFamily: "'Lilita One', 'Trebuchet MS', Impact, sans-serif" }}
-      className="max-w-md mx-auto rounded-[28px] bg-[#120a07] border-2 border-[#3a2014] shadow-[0_28px_70px_rgba(0,0,0,0.9)] overflow-hidden select-none"
+      className="w-full h-full flex-1 min-h-0 flex flex-col rounded-none sm:rounded-[24px] bg-[#120a07] border-0 sm:border-2 border-[#3a2014] shadow-[0_28px_70px_rgba(0,0,0,0.9)] overflow-hidden select-none"
     >
       {/* ── Top Utility Bar: < Games | FRUIT SLASH | Haptics & Sound Controls ── */}
-      <div className="px-3 py-2 bg-[#1a0e09] border-b border-amber-500/15 flex items-center justify-between gap-1.5">
+      <div className="shrink-0 px-3 py-2 bg-[#1a0e09] border-b border-amber-500/15 flex items-center justify-between gap-1.5">
         <button
           type="button"
           onClick={() => (onBackToLobby ? onBackToLobby() : handleRestartGame())}
@@ -1873,7 +1873,7 @@ export function MarketSlashBoard({
       </div>
 
       {/* ── 5-Stage Dojo Progress Bar & Challenger Target Pill ── */}
-      <div className="px-3.5 py-1.5 bg-[#21110b] border-b border-amber-500/15 flex items-center justify-between gap-2 font-sans">
+      <div className="shrink-0 px-3.5 py-1.5 bg-[#21110b] border-b border-amber-500/15 flex items-center justify-between gap-2 font-sans">
         <div className="flex-1 space-y-1">
           <div className="grid grid-cols-5 gap-1.5 max-w-[180px]">
             {STALL_LEVELS.map((s, idx) => {
@@ -1911,11 +1911,8 @@ export function MarketSlashBoard({
         )}
       </div>
 
-      {/* ── Main Playfield Canvas Container with Floating Arcade HUD ── */}
-      <div
-        style={{ height: `${slashFit.slashCanvasHeightPx}px` }}
-        className="relative w-full bg-[#170b06] overflow-hidden"
-      >
+      {/* ── Main Full-Screen Playfield Canvas Container with Floating Arcade HUD ── */}
+      <div className="relative w-full flex-1 min-h-0 h-full bg-[#170b06] overflow-hidden">
         <canvas
           ref={canvasRef}
           onPointerDown={handlePointerDown}
