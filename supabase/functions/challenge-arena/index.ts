@@ -134,6 +134,59 @@ async function ensureChallengeSchema(supabaseAdmin: any) {
         ON public.game_reward_claims FOR SELECT
         USING (true);
 
+      CREATE TABLE IF NOT EXISTS public.game_community_messages (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        channel text NOT NULL DEFAULT 'global',
+        sender_id uuid,
+        sender_name text NOT NULL DEFAULT 'Ghana Gamer',
+        sender_phone_masked text,
+        sender_level integer NOT NULL DEFAULT 1,
+        sender_title text NOT NULL DEFAULT 'Rookie',
+        favorite_game text NOT NULL DEFAULT 'oware',
+        message_type text NOT NULL DEFAULT 'chat' CHECK (message_type IN ('chat', 'challenge_card', 'direct_invite', 'victory_shoutout')),
+        message text NOT NULL,
+        challenge_id uuid REFERENCES public.game_challenges(id) ON DELETE SET NULL,
+        room_code text,
+        game_type text,
+        stake_amount numeric(10,2) NOT NULL DEFAULT 0.00,
+        prize_pool numeric(10,2) NOT NULL DEFAULT 0.00,
+        target_user_id uuid,
+        target_user_name text,
+        reactions jsonb NOT NULL DEFAULT '{}'::jsonb,
+        created_at timestamptz NOT NULL DEFAULT now()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_game_community_messages_channel ON public.game_community_messages(channel, created_at DESC);
+
+      CREATE TABLE IF NOT EXISTS public.game_community_presence (
+        player_key text PRIMARY KEY,
+        user_id uuid,
+        display_name text NOT NULL,
+        masked_phone text,
+        raw_phone text,
+        player_level integer NOT NULL DEFAULT 1,
+        player_title text NOT NULL DEFAULT 'Arena Challenger',
+        favorite_game text NOT NULL DEFAULT 'oware',
+        status text NOT NULL DEFAULT 'online' CHECK (status IN ('online', 'looking_for_match', 'in_match')),
+        active_room_code text,
+        last_seen_at timestamptz NOT NULL DEFAULT now()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_game_community_presence_seen ON public.game_community_presence(last_seen_at DESC);
+
+      ALTER TABLE public.game_community_messages ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE public.game_community_presence ENABLE ROW LEVEL SECURITY;
+
+      DROP POLICY IF EXISTS "Anyone can view game community messages" ON public.game_community_messages;
+      CREATE POLICY "Anyone can view game community messages"
+        ON public.game_community_messages FOR SELECT
+        USING (true);
+
+      DROP POLICY IF EXISTS "Anyone can view game community presence" ON public.game_community_presence;
+      CREATE POLICY "Anyone can view game community presence"
+        ON public.game_community_presence FOR SELECT
+        USING (true);
+
       DO $$
       BEGIN
         IF NOT EXISTS (
@@ -141,6 +194,18 @@ async function ensureChallengeSchema(supabaseAdmin: any) {
           WHERE pubname = 'supabase_realtime' AND tablename = 'game_challenges'
         ) THEN
           ALTER PUBLICATION supabase_realtime ADD TABLE public.game_challenges;
+        END IF;
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_publication_tables
+          WHERE pubname = 'supabase_realtime' AND tablename = 'game_community_messages'
+        ) THEN
+          ALTER PUBLICATION supabase_realtime ADD TABLE public.game_community_messages;
+        END IF;
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_publication_tables
+          WHERE pubname = 'supabase_realtime' AND tablename = 'game_community_presence'
+        ) THEN
+          ALTER PUBLICATION supabase_realtime ADD TABLE public.game_community_presence;
         END IF;
       END $$;
     `);
@@ -874,6 +939,45 @@ serve(async (req: Request) => {
             createdByUserId: authUser?.id || null,
           }
         );
+
+        // Also drop an interactive Challenge Card directly into the Global Gamer Chat Room!
+        try {
+          const gameLabel = formatGameLabel(gameType);
+          const maskedCreatorPhone =
+            creatorPhone.length >= 7
+              ? `${creatorPhone.slice(0, 4)}***${creatorPhone.slice(-3)}`
+              : null;
+          const cardText = invitedName
+            ? `🎯 Challenged @${invitedName} to a live ${gameLabel} duel! Room #${roomCode} (${
+                rawStake > 0 ? `Stake GH₵ ${rawStake.toFixed(2)} • Win GH₵ ${netPrizePool.toFixed(2)}` : "Free Skill Duel"
+              }).`
+            : `⚔️ Open ${gameLabel} Challenge in Room #${roomCode}! ${
+                rawStake > 0
+                  ? `Stake GH₵ ${rawStake.toFixed(2)} to win GH₵ ${netPrizePool.toFixed(2)}!`
+                  : "Free entry — play to earn Free Data!"
+              } Who is stepping up?`;
+
+          await supabaseAdmin.from("game_community_messages").insert({
+            channel: "global",
+            sender_id: authUser?.id || null,
+            sender_name: creatorName,
+            sender_phone_masked: maskedCreatorPhone,
+            sender_level: Math.max(1, Number(body.player_level || 1)),
+            sender_title: String(body.player_title || "Arena Challenger"),
+            favorite_game: gameType,
+            message_type: invitedName || invitedUserId ? "direct_invite" : "challenge_card",
+            message: cardText,
+            challenge_id: created.id,
+            room_code: roomCode,
+            game_type: gameType,
+            stake_amount: rawStake,
+            prize_pool: netPrizePool,
+            target_user_id: invitedUserId || null,
+            target_user_name: invitedName || null,
+          });
+        } catch (chatErr) {
+          console.warn("[challenge-arena] Auto community challenge card insert warning:", chatErr);
+        }
       }
 
       return jsonResponse({
@@ -1386,6 +1490,36 @@ serve(async (req: Request) => {
         .select("*")
         .single();
 
+      if (humanWon && updatedChallenge) {
+        try {
+          const gameLabel = formatGameLabel(challenge.game_type);
+          const loserName = isCreatorWin
+            ? challenge.opponent_name || "Challenger"
+            : challenge.creator_name || "Challenger";
+          const shoutMsg =
+            prizePool > 0
+              ? `🏆 ${winnerName} just defeated ${loserName} in ${gameLabel} (Room #${challenge.room_code}) and won GH₵ ${prizePool.toFixed(2)}!`
+              : `🏆 ${winnerName} just won a ${gameLabel} match against ${loserName} (Room #${challenge.room_code})!`;
+          await supabaseAdmin.from("game_community_messages").insert({
+            channel: "global",
+            sender_id: winnerId || null,
+            sender_name: winnerName,
+            sender_level: Math.max(1, Number(body.player_level || 2)),
+            sender_title: "Arena Winner",
+            favorite_game: challenge.game_type,
+            message_type: "victory_shoutout",
+            message: shoutMsg,
+            challenge_id: challenge.id,
+            room_code: challenge.room_code,
+            game_type: challenge.game_type,
+            stake_amount: stake,
+            prize_pool: prizePool,
+          });
+        } catch (shoutErr) {
+          console.warn("[challenge-arena] Victory shoutout insert warning:", shoutErr);
+        }
+      }
+
       return jsonResponse({
         success: true,
         challenge: updatedChallenge,
@@ -1623,6 +1757,279 @@ serve(async (req: Request) => {
         success: true,
         claim: updatedClaim,
         message: `Reward claim marked as ${nextStatus.toUpperCase()}`,
+      });
+    }
+
+    // ── 9. GAMER COMMUNITY HUB & LIVE CHAT ROOM ACTIONS ─────────────────────────
+    if (action === "get_community_hub") {
+      const roomCode = String(body.room_code || "").trim().toUpperCase();
+      const channels = roomCode ? ["global", `room:${roomCode}`] : ["global"];
+
+      const [
+        { data: messages },
+        { data: presenceRows },
+        { data: profileRows },
+      ] = await Promise.all([
+        supabaseAdmin
+          .from("game_community_messages")
+          .select("*")
+          .in("channel", channels)
+          .order("created_at", { ascending: false })
+          .limit(70),
+        supabaseAdmin
+          .from("game_community_presence")
+          .select("*")
+          .order("last_seen_at", { ascending: false })
+          .limit(40),
+        supabaseAdmin
+          .from("profiles")
+          .select("user_id, full_name, phone, is_agent, updated_at")
+          .not("full_name", "is", null)
+          .order("updated_at", { ascending: false })
+          .limit(25),
+      ]);
+
+      // Merge live presence with registered profiles so the Meet Gamers directory is always rich
+      const seenKeys = new Set<string>();
+      const gamers: any[] = [];
+      const nowMs = Date.now();
+
+      for (const p of presenceRows || []) {
+        const key = String(p.user_id || p.player_key);
+        if (seenKeys.has(key)) continue;
+        seenKeys.add(key);
+        const ageMs = nowMs - new Date(p.last_seen_at || 0).getTime();
+        const isOnlineNow = ageMs < 15 * 60 * 1000;
+        gamers.push({
+          player_key: p.player_key,
+          user_id: p.user_id || null,
+          display_name: p.display_name || "Ghana Gamer",
+          masked_phone: p.masked_phone || "Arena Player",
+          raw_phone: p.raw_phone || "",
+          player_level: Number(p.player_level || 1),
+          player_title: p.player_title || "Arena Challenger",
+          favorite_game: p.favorite_game || "oware",
+          status: isOnlineNow ? p.status || "online" : "online",
+          is_online_now: isOnlineNow,
+          active_room_code: p.active_room_code || null,
+          last_seen_at: p.last_seen_at,
+        });
+      }
+
+      const defaultGames = ["oware", "pool", "ludo", "dame", "slash", "candy"];
+      let idx = 0;
+      for (const prof of profileRows || []) {
+        const key = String(prof.user_id);
+        if (seenKeys.has(key)) continue;
+        seenKeys.add(key);
+        const rawPhone = String(prof.phone || "").trim();
+        const maskedPhone =
+          rawPhone.length >= 7
+            ? `${rawPhone.slice(0, 4)}***${rawPhone.slice(-3)}`
+            : "Verified Gamer";
+        gamers.push({
+          player_key: key,
+          user_id: prof.user_id,
+          display_name: prof.full_name || "SwiftData Gamer",
+          masked_phone: maskedPhone,
+          raw_phone: rawPhone,
+          player_level: (idx % 5) + 2,
+          player_title: prof.is_agent ? "Pro Arena Host" : "Skill Contender",
+          favorite_game: defaultGames[idx % defaultGames.length],
+          status: idx < 4 ? "looking_for_match" : "online",
+          is_online_now: idx < 8,
+          active_room_code: null,
+          last_seen_at: prof.updated_at || new Date().toISOString(),
+        });
+        idx++;
+      }
+
+      return jsonResponse({
+        success: true,
+        messages: (messages || []).reverse(),
+        gamers: gamers.slice(0, 35),
+      });
+    }
+
+    if (action === "heartbeat_presence") {
+      const rawPhone = String(body.phone || "").trim();
+      const displayName = String(
+        body.display_name || authUser?.user_metadata?.full_name || "Ghana Gamer"
+      )
+        .trim()
+        .slice(0, 40);
+      const playerKey = String(
+        authUser?.id || body.player_key || normalizePhone(rawPhone) || displayName
+      ).slice(0, 80);
+      const maskedPhone =
+        rawPhone.length >= 7
+          ? `${rawPhone.slice(0, 4)}***${rawPhone.slice(-3)}`
+          : "Arena Gamer";
+      const status = ["online", "looking_for_match", "in_match"].includes(
+        String(body.status || "")
+      )
+        ? String(body.status)
+        : "online";
+
+      const { data: upserted } = await supabaseAdmin
+        .from("game_community_presence")
+        .upsert({
+          player_key: playerKey,
+          user_id: authUser?.id || null,
+          display_name: displayName,
+          masked_phone: maskedPhone,
+          raw_phone: rawPhone || null,
+          player_level: Math.max(1, Number(body.player_level || 1)),
+          player_title: String(body.player_title || "Arena Challenger").slice(0, 40),
+          favorite_game: String(body.favorite_game || "oware").toLowerCase(),
+          status,
+          active_room_code: body.active_room_code ? String(body.active_room_code) : null,
+          last_seen_at: new Date().toISOString(),
+        })
+        .select("*")
+        .single();
+
+      return jsonResponse({
+        success: true,
+        presence: upserted,
+      });
+    }
+
+    if (action === "send_community_message") {
+      const text = String(body.message || "").trim().slice(0, 360);
+      if (!text) {
+        return jsonResponse({ success: false, error: "Message cannot be empty" }, 400);
+      }
+
+      const channel = String(body.channel || "global").trim().slice(0, 40);
+      const senderName = String(
+        body.sender_name || authUser?.user_metadata?.full_name || "Ghana Gamer"
+      )
+        .trim()
+        .slice(0, 40);
+      const rawPhone = String(body.sender_phone || "").trim();
+      const maskedPhone =
+        rawPhone.length >= 7
+          ? `${rawPhone.slice(0, 4)}***${rawPhone.slice(-3)}`
+          : null;
+      const messageType = [
+        "chat",
+        "challenge_card",
+        "direct_invite",
+        "victory_shoutout",
+      ].includes(String(body.message_type || ""))
+        ? String(body.message_type)
+        : "chat";
+
+      const insertPayload = {
+        channel,
+        sender_id: authUser?.id || null,
+        sender_name: senderName,
+        sender_phone_masked: maskedPhone,
+        sender_level: Math.max(1, Number(body.sender_level || 1)),
+        sender_title: String(body.sender_title || "Arena Challenger").slice(0, 40),
+        favorite_game: String(body.favorite_game || "oware").toLowerCase(),
+        message_type: messageType,
+        message: text,
+        challenge_id: body.challenge_id || null,
+        room_code: body.room_code ? String(body.room_code).toUpperCase() : null,
+        game_type: body.game_type ? String(body.game_type).toLowerCase() : null,
+        stake_amount: Math.max(0, Number(body.stake_amount || 0)),
+        prize_pool: Math.max(0, Number(body.prize_pool || 0)),
+        target_user_id: body.target_user_id || null,
+        target_user_name: body.target_user_name ? String(body.target_user_name).slice(0, 40) : null,
+      };
+
+      const { data: createdMsg, error: msgErr } = await supabaseAdmin
+        .from("game_community_messages")
+        .insert(insertPayload)
+        .select("*")
+        .single();
+
+      if (msgErr) {
+        return jsonResponse({ success: false, error: msgErr.message }, 500);
+      }
+
+      // Also update sender's presence timestamp
+      const playerKey = String(
+        authUser?.id || normalizePhone(rawPhone) || senderName
+      ).slice(0, 80);
+      await supabaseAdmin.from("game_community_presence").upsert({
+        player_key: playerKey,
+        user_id: authUser?.id || null,
+        display_name: senderName,
+        masked_phone: maskedPhone || "Arena Gamer",
+        raw_phone: rawPhone || null,
+        player_level: insertPayload.sender_level,
+        player_title: insertPayload.sender_title,
+        favorite_game: insertPayload.favorite_game,
+        status: insertPayload.room_code ? "looking_for_match" : "online",
+        active_room_code: insertPayload.room_code,
+        last_seen_at: new Date().toISOString(),
+      });
+
+      // If this chat message tags a specific user for a direct invite and has a room code, notify them!
+      if (insertPayload.target_user_id && insertPayload.room_code) {
+        try {
+          const gameLabel = formatGameLabel(insertPayload.game_type || "oware");
+          await supabaseAdmin.from("notifications").insert({
+            title: `💬 ${senderName} Challenged You in Gamer Chat!`,
+            message: `${text} (Room #${insertPayload.room_code} • ${gameLabel})`,
+            target_type: "specific",
+            target_user_id: insertPayload.target_user_id,
+            created_by: authUser?.id || null,
+          });
+          await triggerWebPush(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+            user_id: insertPayload.target_user_id,
+            title: `💬 ${senderName} Challenged You in Gamer Chat!`,
+            body: `${text} — Tap to join Room #${insertPayload.room_code}!`,
+            url: `/challenges?room=${insertPayload.room_code}`,
+            tag: `chat-invite-${insertPayload.room_code}`,
+          });
+        } catch (inviteErr) {
+          console.warn("[challenge-arena] Chat direct invite push warning:", inviteErr);
+        }
+      }
+
+      return jsonResponse({
+        success: true,
+        message_row: createdMsg,
+      });
+    }
+
+    if (action === "react_community_message") {
+      const messageId = String(body.message_id || "").trim();
+      const emoji = String(body.emoji || "🔥").trim().slice(0, 8);
+      if (!messageId) {
+        return jsonResponse({ success: false, error: "Missing message_id" }, 400);
+      }
+
+      const { data: existing } = await supabaseAdmin
+        .from("game_community_messages")
+        .select("id, reactions")
+        .eq("id", messageId)
+        .maybeSingle();
+
+      if (!existing) {
+        return jsonResponse({ success: false, error: "Message not found" }, 404);
+      }
+
+      const prevReactions =
+        existing.reactions && typeof existing.reactions === "object"
+          ? { ...existing.reactions }
+          : {};
+      prevReactions[emoji] = Number(prevReactions[emoji] || 0) + 1;
+
+      const { data: updatedMsg } = await supabaseAdmin
+        .from("game_community_messages")
+        .update({ reactions: prevReactions })
+        .eq("id", messageId)
+        .select("*")
+        .single();
+
+      return jsonResponse({
+        success: true,
+        message_row: updatedMsg,
       });
     }
 

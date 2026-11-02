@@ -53,6 +53,10 @@ import { DameCheckersBoard, INITIAL_DAME_STATE } from "@/components/games/DameCh
 import { EightBallPoolBoard, INITIAL_POOL_STATE } from "@/components/games/EightBallPoolBoard";
 import { MarketSlashBoard, INITIAL_SLASH_STATE } from "@/components/games/MarketSlashBoard";
 import { CandyCrashBoard, INITIAL_CANDY_STATE } from "@/components/games/CandyCrashBoard";
+import {
+  GamerCommunityHub,
+  GamerCommunityPreviewCard,
+} from "@/components/games/GamerCommunityHub";
 import { GameInstructionPromptModal } from "@/components/games/ChallengeHowItWorks";
 import { playSuccessSound } from "@/lib/sound";
 import {
@@ -263,6 +267,8 @@ export default function ChallengeArena() {
   const [topHudCollapsed, setTopHudCollapsed] = useState<boolean>(false);
   const [profileDrawerOpen, setProfileDrawerOpen] = useState<boolean>(false);
   const [profileDrawerTab, setProfileDrawerTab] = useState<ProfileDrawerTab>("profile");
+  const [communityModalOpen, setCommunityModalOpen] = useState<boolean>(false);
+  const [communityModalTab, setCommunityModalTab] = useState<"chat" | "gamers" | "room">("chat");
   const [launchModalOpen, setLaunchModalOpen] = useState<boolean>(false);
   const [roomCodeInput, setRoomCodeInput] = useState<string>("");
   const [soundEnabled, setSoundEnabled] = useState<boolean>(
@@ -863,6 +869,8 @@ export default function ChallengeArena() {
           invited_phone: selectedInvitedUser?.phone || invitedPhone.trim() || undefined,
           invited_user_id: selectedInvitedUser?.user_id || undefined,
           invited_name: selectedInvitedUser?.full_name || undefined,
+          player_level: levelInfo.level,
+          player_title: levelInfo.title,
           notify_all_users: modeToStart === "p2p",
         },
       });
@@ -1031,8 +1039,11 @@ export default function ChallengeArena() {
     }
   };
 
-  const handleJoinByRoomCode = () => {
-    const code = roomCodeInput.trim().toUpperCase().replace(/^#/, "");
+  const handleJoinByRoomCode = (overrideCode?: string) => {
+    const code = (typeof overrideCode === "string" ? overrideCode : roomCodeInput)
+      .trim()
+      .toUpperCase()
+      .replace(/^#/, "");
     if (!code) return;
     const found = challenges.find((c) => String(c.room_code || "").toUpperCase() === code);
     if (!found) {
@@ -1043,6 +1054,7 @@ export default function ChallengeArena() {
       });
       return;
     }
+    setCommunityModalOpen(false);
     const myDetectedSide = resolveMySideForChallenge(found);
     if (found.status === "in_progress" || myDetectedSide === "creator") {
       const side = myDetectedSide || "opponent";
@@ -1309,6 +1321,27 @@ export default function ChallengeArena() {
                 className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white cursor-pointer"
               >
                 <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Quick Banner to Open the Full Gamer Chat & Community Hub */}
+            <div className="px-3 pt-2 bg-[#090e1a]">
+              <button
+                type="button"
+                onClick={() => {
+                  setProfileDrawerOpen(false);
+                  setCommunityModalTab(activeChallenge ? "room" : "chat");
+                  setCommunityModalOpen(true);
+                }}
+                className="w-full py-2.5 px-3 rounded-2xl bg-gradient-to-r from-amber-500/20 via-orange-500/20 to-emerald-500/20 hover:from-amber-500/30 hover:to-emerald-500/30 border border-amber-400/50 flex items-center justify-between text-xs font-black text-white cursor-pointer shadow"
+              >
+                <span className="flex items-center gap-2">
+                  <MessageCircle className="w-4 h-4 text-amber-400" />
+                  <span>Open Gamer Chat &amp; Community Hub</span>
+                </span>
+                <Badge className="bg-emerald-500 text-slate-950 font-black text-[9px]">
+                  LIVE
+                </Badge>
               </button>
             </div>
 
@@ -2103,6 +2136,57 @@ export default function ChallengeArena() {
         </div>
       )}
 
+      {/* ── GAMER COMMUNITY & LIVE CHAT HUB MODAL ── */}
+      {communityModalOpen && (
+        <div
+          className="fixed inset-0 z-[115] bg-black/80 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 animate-in fade-in duration-150"
+          onClick={() => setCommunityModalOpen(false)}
+        >
+          <div
+            className="w-full max-w-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <GamerCommunityHub
+              currentUserId={user?.id || null}
+              playerName={displayFirstName}
+              playerPhone={playerPhone || profile?.phone || ""}
+              playerLevel={levelInfo.level}
+              playerTitle={levelInfo.title}
+              activeRoomCode={activeChallenge?.room_code || null}
+              activeChallenge={activeChallenge}
+              openChallenges={openChallenges}
+              defaultTab={communityModalTab}
+              onClose={() => setCommunityModalOpen(false)}
+              onJoinByRoomCode={(code) => handleJoinByRoomCode(code)}
+              onJoinChallengeObject={(chal) => {
+                setCommunityModalOpen(false);
+                const isMine = user && chal.creator_id === user.id;
+                if (isMine) {
+                  setMySide("creator");
+                  setActiveChallenge(chal);
+                } else {
+                  handleJoinChallenge(chal, user ? "wallet" : "momo");
+                }
+              }}
+              onQuickCreateChallenge={(gKey, invitedTarget) => {
+                setCommunityModalOpen(false);
+                if (invitedTarget) {
+                  setSelectedInvitedUser({
+                    user_id: invitedTarget.user_id || "",
+                    full_name: invitedTarget.full_name,
+                    masked_phone: invitedTarget.phone || "",
+                    phone: invitedTarget.phone || "",
+                    is_agent: false,
+                  });
+                  setInvitedPhone(invitedTarget.phone || "");
+                }
+                openLaunchSheetForGame(gKey as GameType, "p2p");
+              }}
+            />
+          </div>
+        </div>
+      )}
+
       {/* ── ACTIVE GAME STAGE (ULTRA-COMPACT TOP BAR + FULL-SCREEN FITTED BOARD) ── */}
       {activeChallenge ? (
         <Card className="relative flex-1 min-h-0 w-full flex flex-col border-0 rounded-none bg-[#070b14] shadow-none overflow-hidden">
@@ -2115,6 +2199,17 @@ export default function ChallengeArena() {
                 className="px-2 py-0.5 rounded-full bg-white/10 hover:bg-white/20 text-[10px] font-black text-white flex items-center gap-1 cursor-pointer"
               >
                 <ArrowLeft className="w-3 h-3" /> Lobby
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setCommunityModalTab("room");
+                  setCommunityModalOpen(true);
+                }}
+                className="px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/40 text-[9px] font-black text-emerald-300 flex items-center gap-1 cursor-pointer"
+                title="Open Room & Community Chat"
+              >
+                <MessageCircle className="w-2.5 h-2.5" /> Chat
               </button>
               <button
                 type="button"
@@ -2208,6 +2303,20 @@ export default function ChallengeArena() {
                       : `GH₵ ${Number(activeChallenge.prize_pool || 0).toFixed(2)}`}
                   </span>
                 </div>
+
+                {/* 1-Tap Live Room & Community Chat Button */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCommunityModalTab("room");
+                    setCommunityModalOpen(true);
+                  }}
+                  className="h-5 px-1.5 rounded-md bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/40 text-[9px] font-black text-emerald-300 flex items-center gap-1 cursor-pointer shrink-0"
+                  title="Open Room & Community Chat"
+                >
+                  <MessageCircle className="w-2.5 h-2.5" />
+                  <span>Chat</span>
+                </button>
 
                 {/* 1-Tap Full Board Lock Toggle (Collapses Top Bar for 100% Screen Fit) */}
                 <button
@@ -2710,13 +2819,25 @@ export default function ChallengeArena() {
               <button
                 type="button"
                 onClick={() => {
-                  setProfileDrawerTab("rooms");
-                  setProfileDrawerOpen(true);
+                  setCommunityModalTab("chat");
+                  setCommunityModalOpen(true);
+                }}
+                className="px-4 py-2 rounded-full bg-amber-500/15 hover:bg-amber-500/25 border border-amber-400/40 text-xs sm:text-sm font-bold text-amber-300 flex items-center gap-2 transition-all cursor-pointer"
+              >
+                <span>💬</span>
+                <span>Gamer Chat Hub</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setCommunityModalTab("gamers");
+                  setCommunityModalOpen(true);
                 }}
                 className="px-4 py-2 rounded-full bg-white/[0.05] hover:bg-white/[0.1] border border-white/12 text-xs sm:text-sm font-bold text-slate-200 flex items-center gap-2 transition-all cursor-pointer"
               >
                 <span>👥</span>
-                <span>Play friends online</span>
+                <span>Meet &amp; Challenge Players</span>
               </button>
 
               <button
@@ -2734,6 +2855,19 @@ export default function ChallengeArena() {
               </button>
             </div>
           </div>
+
+          {/* 2B. Live Gamer Chat & Community Hub Preview Card */}
+          <GamerCommunityPreviewCard
+            onOpenChat={() => {
+              setCommunityModalTab("chat");
+              setCommunityModalOpen(true);
+            }}
+            onOpenMeetGamers={() => {
+              setCommunityModalTab("gamers");
+              setCommunityModalOpen(true);
+            }}
+            onJoinByRoomCode={(code) => handleJoinByRoomCode(code)}
+          />
 
           {/* 3. Live / Accepted Match Alert (Only shown when user has an active or invited room) */}
           {invitedSpotlightChallenge && (
