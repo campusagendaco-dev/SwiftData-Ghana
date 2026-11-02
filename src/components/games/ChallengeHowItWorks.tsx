@@ -48,39 +48,39 @@ interface GameStepGuide {
 
 export const GAME_STEP_GUIDES: Record<ArenaGameType, GameStepGuide> = {
   candy: {
-    title: "Candy Crash (Sweet Cascade Arena)",
-    tagline: "Swap candies to match 3+, forge Striped Candies & Chocolate Sprinkle Bombs!",
+    title: "Candy Crash (Alewa & Kube Edition)",
+    tagline: "Swap Ghanaian Alewa, Kube & Golden Cocoa Pods — forge Kente Boosters & Calabash Bombs!",
     emoji: "🍬",
-    badge: "✨ Match-3 Puzzle",
-    accentGradient: "from-pink-500 to-amber-500",
+    badge: "🇬🇭 Ghana Sweets",
+    accentGradient: "from-amber-500 to-rose-500",
     steps: [
       {
         stepNum: "01",
-        heading: "Swipe or Tap Adjacent Candies to Swap",
+        heading: "Swipe or Tap Adjacent Ghanaian Sweets",
         detail:
-          "Drag any candy toward a neighbor (or tap two adjacent candies) to line up 3 or more matching colors horizontally or vertically.",
-        tip: "Look near the bottom of the 8×8 board first — bottom matches trigger free falling cascades!",
+          "Drag any sweet (Alewa Toffee, Kube Coconut, Golden Cocoa Pod, Nkate Cake, Sobolo Crystal, or Bofrot Puff) to match 3 or more in a row or column.",
+        tip: "Match near the bottom of the 8×8 wooden tray to trigger free falling Makola cascades!",
       },
       {
         stepNum: "02",
-        heading: "Match 4 to Forge a Striped Candy",
+        heading: "Match 4 for a Kente-Striped Booster (🇬🇭)",
         detail:
-          "Matching 4 candies in a row or column creates a glowing Striped Candy. Matching it blasts an entire row or column!",
-        tip: "Swap two Striped Candies together to trigger an instant Row + Column Cross Blast!",
+          "Matching 4 sweets wraps a glowing Red-Gold-Green Kente-Striped Sweet. Matching it blasts an entire row or column across the tray!",
+        tip: "Swap two Kente-Striped sweets together to fire an instant Row + Column Cross Blast!",
       },
       {
         stepNum: "03",
-        heading: "Match 5 for a Chocolate Sprinkle Bomb",
+        heading: "Match 5 for a Takoradi Calabash Cocoa Bomb (🍫)",
         detail:
-          "Matching 5 candies creates a Chocolate Sprinkle Bomb. Swap it with any candy color to wipe out every candy of that color on the board!",
-        tip: "Save your Chocolate Bomb for the most common color on the board for massive combo points.",
+          "Matching 5 sweets forges a Golden Star Calabash Cocoa Bomb. Swap it with any sweet to detonate every sweet of that type on the board!",
+        tip: "Save your Calabash Cocoa Bomb for the most common sweet on the tray for a massive score surge.",
       },
       {
         stepNum: "04",
-        heading: "Reach the Target Score Before Moves Run Out",
+        heading: "Outscore Auntie Efua & Clear 10 Ghana Markets",
         detail:
-          "Hit the level goal with 8+ moves left to earn 3 Stars (★★★) and bonus Arena Points toward your Free Data Bundle!",
-        tip: "Stuck? Tap the Hint button at the bottom to pulse a valid move.",
+          "Advance from Makola Toffee Tray → Osu Oxford Street → Kejetia Kube Corner → Gold Coast Finale and earn up to 3 Stars (★★★) + Arena Points!",
+        tip: "Stuck? Tap the Hint button at the bottom to pulse a valid sweet swap.",
       },
     ],
   },
@@ -1186,6 +1186,7 @@ export function ChallengeHowItWorks({ onQuickStart }: ChallengeHowItWorksProps) 
                   <div className="flex flex-wrap items-center gap-2">
                     {(
                       [
+                        { id: "candy", label: "🍬 Alewa & Kube Crush (Match-3)" },
                         { id: "slash", label: "🍉 Market Slash (Fruit & Bombs)" },
                         { id: "pool", label: "🎱 8-Ball Pool (Landscape)" },
                         { id: "oware", label: "🪨 Ghana Oware (Nam-Nam)" },

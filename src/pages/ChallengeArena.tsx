@@ -191,21 +191,21 @@ const GAME_CATALOG: {
   },
   {
     id: "candy",
-    name: "Candy Crash",
+    name: "Candy Crash (Alewa & Kube)",
     shortTitle: "Candy Crash",
-    categoryTag: "PUZZLE",
+    categoryTag: "GHANA SWEETS",
     statusTag: "NEW",
     statusColor: "gold",
-    subtitle: "Match 3+ glossy candies, forge Striped Candies & Chocolate Sprinkle Bombs to clear levels.",
+    subtitle: "Match 3+ Ghanaian Alewa, Kube & Golden Cocoa Pods — forge Kente Boosters & Calabash Bombs.",
     rulesSummary: [
-      "Swipe or tap two adjacent candies on the 8×8 board to line up 3 or more matching colors.",
-      "Match 4 candies to create a Striped Candy that blasts an entire row or column.",
-      "Match 5 candies to create a Chocolate Sprinkle Bomb that wipes out all candies of a color.",
-      "Reach the target score before moves run out to earn up to 3 Stars and Arena Points!",
+      "Swipe or tap two adjacent Ghanaian sweets (Alewa, Kube, Cocoa Pod, Nkate Cake, Sobolo, Bofrot) on the 8×8 wooden tray.",
+      "Match 4 sweets to wrap a Red-Gold-Green Kente-Striped Booster that blasts an entire row or column.",
+      "Match 5 sweets to forge a Takoradi Calabash Cocoa Bomb that wipes out every sweet of that type.",
+      "Outscore Auntie Efua across 10 Ghana Markets (Makola, Osu, Kejetia) to earn up to 3 Stars and Free Data!",
     ],
-    badge: "Sweet Cascades",
+    badge: "Alewa & Kube",
     emoji: "🍬",
-    gradient: "from-pink-600/35 via-fuchsia-900/25 to-slate-950 border-pink-500/45",
+    gradient: "from-amber-600/35 via-rose-900/25 to-slate-950 border-amber-500/45",
   },
 ];
 
@@ -3068,45 +3068,67 @@ export default function ChallengeArena() {
                 </div>
               </div>
 
-              {/* Card 5: Candy Crash (Sweet Cascade Match-3 Puzzle) */}
+              {/* Card 5: Candy Crash — Alewa & Kube Ghanaian Sweet Match-3 */}
               <div
                 onClick={() => openLaunchSheetForGame("candy", "free_data")}
-                className="group relative rounded-3xl overflow-hidden border border-white/10 bg-[#101829] hover:border-pink-400/60 transition-all cursor-pointer flex flex-col justify-between shadow-xl col-span-2 sm:col-span-2"
+                className="group relative rounded-3xl overflow-hidden border border-white/10 bg-[#101829] hover:border-amber-400/60 transition-all cursor-pointer flex flex-col justify-between shadow-xl col-span-2 sm:col-span-2"
               >
-                <div className="relative h-36 sm:h-40 bg-gradient-to-br from-[#6a1b9a] via-[#4a1259] to-[#2a0a4a] p-3.5 flex flex-col justify-between overflow-hidden">
+                <div className="relative h-36 sm:h-40 bg-gradient-to-br from-[#5c260c] via-[#3b1507] to-[#1a0802] p-3.5 flex flex-col justify-between overflow-hidden">
+                  {/* Subtle Kente Top Accent Strip */}
+                  <div
+                    className="absolute inset-x-0 top-0 h-1"
+                    style={{
+                      background:
+                        "repeating-linear-gradient(90deg, #ef4444 0px 18px, #facc15 18px 36px, #22c55e 36px 54px, #111827 54px 60px)",
+                    }}
+                  />
                   <div className="relative z-10 flex items-center justify-between gap-1">
-                    <span className="px-2.5 py-1 rounded-full bg-slate-950/75 backdrop-blur-md text-white font-black text-[10px] uppercase tracking-wider">
-                      PUZZLE • MATCH-3
+                    <span className="px-2.5 py-1 rounded-full bg-slate-950/75 backdrop-blur-md text-amber-200 font-black text-[10px] uppercase tracking-wider">
+                      🇬🇭 GHANA SWEETS • MATCH-3
                     </span>
-                    <span className="px-2.5 py-1 rounded-full bg-gradient-to-r from-pink-400 to-amber-300 text-slate-950 font-black text-[10px] uppercase tracking-wider">
-                      NEW • CANDY CRASH
+                    <span className="px-2.5 py-1 rounded-full bg-gradient-to-r from-amber-400 via-orange-400 to-rose-400 text-slate-950 font-black text-[10px] uppercase tracking-wider">
+                      NEW • ALEWA &amp; KUBE
                     </span>
                   </div>
 
-                  {/* Glossy 3D Candies & Chocolate Sprinkle Bomb Art */}
+                  {/* Glossy 3D Alewa, Kube, Golden Cocoa Pod & Calabash Bomb Art */}
                   <div className="relative my-auto flex items-center justify-center gap-3">
-                    <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#ff9fb0] via-[#ff2e55] to-[#9c0f2c] border-2 border-white/50 shadow-lg flex items-center justify-center -rotate-12">
-                      <span className="w-5 h-2 rounded-full bg-white/75 -rotate-12" />
+                    <div
+                      title="Alewa Swirl Toffee"
+                      className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#ff9fb0] via-[#e11d48] to-[#7f1d1d] border-2 border-amber-200/60 shadow-lg flex items-center justify-center -rotate-12 relative overflow-hidden"
+                    >
+                      <span className="w-8 h-1.5 bg-white/80 rotate-45 block" />
                     </div>
-                    <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#9a6a4a] via-[#4a2a1a] to-[#1f0f08] border-2 border-amber-300/80 shadow-[0_0_20px_rgba(244,114,182,0.5)] flex items-center justify-center relative">
+                    <div
+                      title="Takoradi Calabash Cocoa Bomb"
+                      className="w-12 h-12 rounded-full bg-gradient-to-br from-[#a16207] via-[#451a03] to-[#1c0a00] border-2 border-amber-300 shadow-[0_0_20px_rgba(251,191,36,0.5)] flex items-center justify-center relative"
+                    >
                       <span className="text-xl">🍫</span>
                     </div>
-                    <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#a6f7c0] via-[#22c55e] to-[#0a6e31] border-2 border-white/50 shadow-lg flex items-center justify-center rotate-12">
-                      <span className="w-5 h-2 rounded-full bg-white/75 -rotate-12" />
+                    <div
+                      title="Nkate Groundnut Brittle"
+                      className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#bbf7d0] via-[#16a34a] to-[#14532d] border-2 border-amber-200/60 shadow-lg flex items-center justify-center rotate-12"
+                    >
+                      <span className="text-sm font-black text-amber-200">🥜</span>
                     </div>
-                    <div className="w-11 h-11 rounded-full bg-gradient-to-br from-[#fff9b0] via-[#ffd60a] to-[#b88400] border-2 border-white/50 shadow-lg hidden sm:flex items-center justify-center -rotate-6">
-                      <span className="w-4 h-2 rounded-full bg-white/75" />
+                    <div
+                      title="Golden Ghana Cocoa Pod"
+                      className="w-11 h-11 rounded-full bg-gradient-to-br from-[#fef9c3] via-[#eab308] to-[#854d0e] border-2 border-amber-200/60 shadow-lg hidden sm:flex items-center justify-center -rotate-6"
+                    >
+                      <span className="text-sm font-black text-amber-950">★</span>
                     </div>
                   </div>
                 </div>
 
                 <div className="p-3.5 sm:p-4 space-y-1 bg-[#0d1424]">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-base sm:text-lg font-black text-white">Candy Crash</h3>
-                    <ArrowRight className="w-4 h-4 text-pink-400 group-hover:translate-x-0.5 transition-transform" />
+                    <h3 className="text-base sm:text-lg font-black text-white">
+                      Candy Crash • Alewa &amp; Kube
+                    </h3>
+                    <ArrowRight className="w-4 h-4 text-amber-400 group-hover:translate-x-0.5 transition-transform" />
                   </div>
                   <p className="text-[11px] sm:text-xs text-slate-400 line-clamp-2">
-                    Match 3+ candies, forge Striped Candies &amp; Chocolate Sprinkle Bombs to clear levels and win Free Data.
+                    Match 3+ Ghanaian Alewa, Kube &amp; Golden Cocoa Pods, forge Kente Boosters &amp; Calabash Bombs across Makola &amp; Kejetia.
                   </p>
                 </div>
               </div>
