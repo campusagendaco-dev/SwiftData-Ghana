@@ -52,24 +52,24 @@ const OWARE_SPEED_PROFILES: Record<
 > = {
   slow: {
     label: "🐢 Slow",
-    moveMs: 650,
-    dropPauseMs: 250,
-    scoopBonusPauseMs: 550,
-    aiDelayMs: 2400,
+    moveMs: 800,
+    dropPauseMs: 320,
+    scoopBonusPauseMs: 850,
+    aiDelayMs: 2800,
   },
   normal: {
     label: "🚶 Normal",
-    moveMs: 480,
-    dropPauseMs: 180,
-    scoopBonusPauseMs: 420,
-    aiDelayMs: 1850,
+    moveMs: 580,
+    dropPauseMs: 230,
+    scoopBonusPauseMs: 620,
+    aiDelayMs: 2200,
   },
   fast: {
     label: "⚡ Fast",
-    moveMs: 320,
-    dropPauseMs: 110,
-    scoopBonusPauseMs: 240,
-    aiDelayMs: 1100,
+    moveMs: 380,
+    dropPauseMs: 140,
+    scoopBonusPauseMs: 340,
+    aiDelayMs: 1350,
   },
 };
 
@@ -1065,9 +1065,9 @@ export function OwareGameBoard({
         seedCount: 0,
       });
 
-      // Show every single bowl drop clearly (only subsample if an ultra-long relay exceeds 65 steps)
+      // Show every single bowl drop clearly (only subsample if an ultra-long relay exceeds 120 steps)
       const speedConfig = OWARE_SPEED_PROFILES[sowingSpeed] || OWARE_SPEED_PROFILES.normal;
-      const stride = steps.length > 65 ? Math.ceil(steps.length / 60) : 1;
+      const stride = steps.length > 120 ? Math.ceil(steps.length / 100) : 1;
       const sampledSteps = steps.filter(
         (s, idx) =>
           idx === 0 ||
@@ -1152,9 +1152,11 @@ export function OwareGameBoard({
           }
         }
 
-        // Add a clear human pause when scooping a relay bowl or harvesting 4 seeds so players can follow every capture
+        // Add a clear human pause when scooping the starting bowl, scooping a relay bowl, or harvesting 4 seeds
         const extraPause =
-          currentFrame.harvestedPit !== undefined || currentFrame.isRelayScoop
+          currentFrame.type === "pickup" ||
+          currentFrame.harvestedPit !== undefined ||
+          currentFrame.isRelayScoop
             ? speedConfig.scoopBonusPauseMs
             : 0;
 
@@ -1162,7 +1164,7 @@ export function OwareGameBoard({
         animTimerRef.current = window.setTimeout(tick, baseStepInterval + extraPause);
       };
 
-      animTimerRef.current = window.setTimeout(tick, 90);
+      animTimerRef.current = window.setTimeout(tick, 220);
     },
     [
       muted,
@@ -1598,11 +1600,62 @@ export function OwareGameBoard({
       </div>
 
       {/* AUTHENTIC HINGED MATTE-BLACK EBONY & CARVED TERRACOTTA OWARE BOARD */}
-      <div className="relative p-2 sm:p-4 rounded-[28px] sm:rounded-[36px] bg-slate-950/90 border border-white/10 shadow-2xl">
-        <div className="grid grid-cols-1 lg:grid-cols-8 gap-2.5 sm:gap-4 items-center">
+      <div className="relative p-2 sm:p-4 rounded-[28px] sm:rounded-[36px] bg-slate-950/90 border border-white/10 shadow-2xl space-y-2">
+        {/* DIRECT ON-BOARD VOICE, SPEED & REMATCH CONTROL DOCK (Always visible right on the Oware board) */}
+        <div className="flex flex-wrap items-center justify-between gap-1.5 px-2.5 py-1.5 rounded-2xl bg-slate-900/95 border border-amber-500/35 shadow-md">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <InGameVoiceChat
+              roomCode={roomCode || "OWARE"}
+              challengeId={challengeId}
+              mySide={mySide}
+              myName={mySide === "creator" ? creatorName : effectiveOpponentName}
+              opponentName={mySide === "creator" ? effectiveOpponentName : creatorName}
+              mode={mode}
+            />
+            <div className="inline-flex items-center rounded-xl bg-slate-950 p-0.5 border border-emerald-500/40">
+              {(["slow", "normal", "fast"] as const).map((spKey) => (
+                <button
+                  key={`board-speed-${spKey}`}
+                  type="button"
+                  onClick={() => handleSelectSowingSpeed(spKey)}
+                  className={`px-2 py-0.5 rounded-lg text-[10px] font-black transition-all cursor-pointer ${
+                    sowingSpeed === spKey
+                      ? "bg-emerald-500 text-slate-950 shadow"
+                      : "text-slate-300 hover:text-white"
+                  }`}
+                >
+                  {OWARE_SPEED_PROFILES[spKey].label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={handleInBoardRematch}
+              className="h-7 px-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[10px] flex items-center gap-1 cursor-pointer shadow"
+            >
+              <RotateCcw className="w-3 h-3" />
+              <span>Rematch</span>
+            </button>
+            {onPlayAnotherGame && (
+              <button
+                type="button"
+                onClick={onPlayAnotherGame}
+                className="h-7 px-2.5 rounded-xl border border-emerald-400/50 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 font-black text-[10px] flex items-center gap-1 cursor-pointer"
+              >
+                <Gamepad2 className="w-3 h-3" />
+                <span>Play Another</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-8 gap-2 sm:gap-3.5 items-center">
           {/* Opponent Kulo Storehouse (Left Ebony Bowl) */}
           <div
-            className={`flex lg:flex-col items-center justify-between lg:justify-center p-2.5 sm:p-3.5 rounded-[28px] sm:rounded-[36px] border-2 transition-all shadow-[0_14px_28px_rgba(0,0,0,0.85),inset_0_2px_3px_rgba(255,255,255,0.08)] min-h-[76px] lg:min-h-[240px] ${
+            className={`flex lg:flex-col items-center justify-between lg:justify-center px-3 py-1.5 sm:p-3.5 rounded-[22px] sm:rounded-[36px] border-2 transition-all shadow-[0_14px_28px_rgba(0,0,0,0.85),inset_0_2px_3px_rgba(255,255,255,0.08)] min-h-[54px] lg:min-h-[230px] ${
               animStep?.harvestedBy === "opponent"
                 ? "border-amber-400 ring-4 ring-amber-400/30 scale-[1.03]"
                 : "border-[#35373d]"
@@ -1830,7 +1883,7 @@ export function OwareGameBoard({
 
           {/* Creator Kulo Storehouse (Right Ebony Bowl) */}
           <div
-            className={`flex lg:flex-col items-center justify-between lg:justify-center p-2.5 sm:p-3.5 rounded-[28px] sm:rounded-[36px] border-2 transition-all shadow-[0_14px_28px_rgba(0,0,0,0.85),inset_0_2px_3px_rgba(255,255,255,0.08)] min-h-[76px] lg:min-h-[240px] ${
+            className={`flex lg:flex-col items-center justify-between lg:justify-center px-3 py-1.5 sm:p-3.5 rounded-[22px] sm:rounded-[36px] border-2 transition-all shadow-[0_14px_28px_rgba(0,0,0,0.85),inset_0_2px_3px_rgba(255,255,255,0.08)] min-h-[54px] lg:min-h-[230px] ${
               animStep?.harvestedBy === "creator"
                 ? "border-emerald-400 ring-4 ring-emerald-400/30 scale-[1.03]"
                 : "border-[#35373d]"
@@ -1925,10 +1978,20 @@ export function OwareGameBoard({
         {game.winner && !dismissedWinnerPopup && (
           <div className="fixed inset-0 z-[130] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
             <div className="relative w-full max-w-md rounded-3xl bg-gradient-to-b from-slate-900 via-[#111827] to-slate-950 border-2 border-amber-400/70 shadow-[0_0_60px_rgba(245,158,11,0.35)] p-5 sm:p-6 text-center space-y-4 overflow-hidden">
-              {/* Top Glow Ribbon */}
-              <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-amber-500/20 border border-amber-400/50 text-amber-300 text-[11px] font-black uppercase tracking-wider">
-                <Crown className="w-3.5 h-3.5 text-amber-400" />
-                <span>Oware Match Finished • Winner Spotlight</span>
+              {/* Top Glow Ribbon + Live Post-Match Open Mic */}
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-amber-500/20 border border-amber-400/50 text-amber-300 text-[11px] font-black uppercase tracking-wider">
+                  <Crown className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Oware Match Finished • Winner Spotlight</span>
+                </div>
+                <InGameVoiceChat
+                  roomCode={roomCode || "OWARE"}
+                  challengeId={challengeId}
+                  mySide={mySide}
+                  myName={mySide === "creator" ? creatorName : effectiveOpponentName}
+                  opponentName={mySide === "creator" ? effectiveOpponentName : creatorName}
+                  mode={mode}
+                />
               </div>
 
               {/* Winner Avatar & Trophy Spotlight */}

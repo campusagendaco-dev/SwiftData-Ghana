@@ -3544,8 +3544,12 @@ export default function ChallengeArena() {
                           HUMAN_CHALLENGER_PERSONAS[gType]?.name ||
                           "Player 2");
 
-                    // For Pool P2P, only show a slim 1-line bar when waiting on a P2P friend so Ping / vs AI buttons are handy
-                    if (activeChallenge.game_type === "pool" && isCurrentlyMyTurn) {
+                    // For Pool P2P or Oware (which has its own built-in turn & sowing banner), only show this bar when waiting on a P2P friend so Ping / vs AI buttons are handy
+                    if (
+                      (activeChallenge.game_type === "pool" ||
+                        activeChallenge.game_type === "oware") &&
+                      (isCurrentlyMyTurn || activeChallenge.mode !== "p2p")
+                    ) {
                       return null;
                     }
 
@@ -3886,11 +3890,31 @@ export default function ChallengeArena() {
 
                     {/* Top Winner Spotlight Header */}
                     <div className="text-center space-y-2 pt-1">
-                      <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-400/40 text-[11px] font-black uppercase tracking-wider text-amber-300">
-                        <Crown className="w-3.5 h-3.5 text-amber-400" />
-                        <span>
-                          {gameMeta.emoji} {gameMeta.name} • Room #{activeChallenge.room_code}
-                        </span>
+                      <div className="flex flex-wrap items-center justify-center gap-2">
+                        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-400/40 text-[11px] font-black uppercase tracking-wider text-amber-300">
+                          <Crown className="w-3.5 h-3.5 text-amber-400" />
+                          <span>
+                            {gameMeta.emoji} {gameMeta.name} • Room #{activeChallenge.room_code}
+                          </span>
+                        </div>
+                        <InGameVoiceChat
+                          roomCode={activeChallenge.room_code || "ARENA"}
+                          challengeId={activeChallenge.id}
+                          mySide={mySide}
+                          myName={
+                            mySide === "creator"
+                              ? activeChallenge.creator_name || displayFirstName
+                              : activeChallenge.opponent_name || displayFirstName
+                          }
+                          opponentName={
+                            mySide === "creator"
+                              ? activeChallenge.opponent_name ||
+                                HUMAN_CHALLENGER_PERSONAS[gType]?.name ||
+                                "Opponent"
+                              : activeChallenge.creator_name || "Creator"
+                          }
+                          mode={activeChallenge.mode || "free_data"}
+                        />
                       </div>
 
                       {/* Winning User Avatar & Trophy Spotlight */}
