@@ -326,6 +326,9 @@ export default function ChallengeArena() {
   );
 
   // Invite Player & Broadcast state
+  const [challengePrivacy, setChallengePrivacy] = useState<"public" | "private">("public");
+  const [incomingInviteChallenge, setIncomingInviteChallenge] = useState<any | null>(null);
+  const dismissedInviteIdsRef = useRef<Set<string>>(new Set());
   const [invitedPhone, setInvitedPhone] = useState<string>("");
   const [selectedInvitedUser, setSelectedInvitedUser] = useState<SuggestedPlayer | null>(null);
   const [playerSearchQuery, setPlayerSearchQuery] = useState<string>("");
@@ -661,6 +664,24 @@ export default function ChallengeArena() {
     [myJoinedSides, user?.id, playerPhone, profile?.phone]
   );
 
+  const isChallengeInvitedForMe = useCallback(
+    (chal: any): boolean => {
+      if (!chal || chal.status !== "open") return false;
+      if (resolveMySideForChallenge(chal) === "creator") return false;
+      const invitedUid = chal.metadata?.invited_user_id;
+      if (invitedUid && user?.id && invitedUid === user.id) return true;
+      const cleanMyPhone = String(playerPhone || profile?.phone || "").replace(/\D/g, "").slice(-9);
+      const cleanInvitedPhone = String(chal.metadata?.invited_phone || "")
+        .replace(/\D/g, "")
+        .slice(-9);
+      if (cleanMyPhone.length >= 9 && cleanInvitedPhone.length >= 9 && cleanMyPhone === cleanInvitedPhone) {
+        return true;
+      }
+      return false;
+    },
+    [resolveMySideForChallenge, user?.id, playerPhone, profile?.phone]
+  );
+
   const fetchLobby = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
@@ -736,24 +757,66 @@ export default function ChallengeArena() {
     return () => clearTimeout(t);
   }, [playerSearchQuery, searchPlayersToInvite]);
 
-  // Auto-open room if current user is creator or opponent of ?room=XXXXXX
+  // Auto-open or spotlight room if ?room=XXXXXX is in URL (fetches directly from backend if not in initial lobby list)
+  const fetchedRoomParamRef = useRef<string>("");
   useEffect(() => {
-    if (!roomQueryParam || challenges.length === 0 || activeChallenge) return;
+    if (!roomQueryParam || activeChallenge) return;
     const matched = challenges.find(
       (c) => String(c.room_code || "").toUpperCase() === roomQueryParam
     );
-    if (!matched) return;
-
-    const detectedSide = resolveMySideForChallenge(matched);
-    if (detectedSide) {
-      setMySide(detectedSide);
-      setActiveChallenge(matched);
-    } else if (matched.status === "in_progress") {
-      const fallbackSide = user?.id && matched.creator_id === user.id ? "creator" : "opponent";
-      setMySide(fallbackSide);
-      setActiveChallenge(matched);
+    if (matched) {
+      const detectedSide = resolveMySideForChallenge(matched);
+      if (detectedSide) {
+        setMySide(detectedSide);
+        setActiveChallenge(matched);
+      } else if (matched.status === "in_progress") {
+        const fallbackSide = user?.id && matched.creator_id === user.id ? "creator" : "opponent";
+        setMySide(fallbackSide);
+        setActiveChallenge(matched);
+      } else if (
+        matched.status === "open" &&
+        !dismissedInviteIdsRef.current.has(matched.id)
+      ) {
+        setIncomingInviteChallenge(matched);
+      }
+      return;
     }
-  }, [roomQueryParam, challenges, activeChallenge, resolveMySideForChallenge, user?.id]);
+
+    if (!loading && fetchedRoomParamRef.current !== roomQueryParam) {
+      fetchedRoomParamRef.current = roomQueryParam;
+      supabase.functions
+        .invoke("challenge-arena", {
+          body: { action: "get_room", room_code: roomQueryParam },
+        })
+        .then(({ data }) => {
+          if (data?.success && data.challenge) {
+            const roomObj = data.challenge;
+            setChallenges((prev) =>
+              prev.some((c) => c.id === roomObj.id) ? prev : [roomObj, ...prev]
+            );
+            const detectedSide = resolveMySideForChallenge(roomObj);
+            if (detectedSide) {
+              setMySide(detectedSide);
+              setActiveChallenge(roomObj);
+            } else if (roomObj.status === "open") {
+              setIncomingInviteChallenge(roomObj);
+            }
+          }
+        })
+        .catch(() => {});
+    }
+  }, [roomQueryParam, challenges, activeChallenge, loading, resolveMySideForChallenge, user?.id]);
+
+  // Also check if there is an un-dismissed direct private invite for the current user when challenges load
+  useEffect(() => {
+    if (activeChallenge || incomingInviteChallenge) return;
+    const pendingInvite = challenges.find(
+      (c) => isChallengeInvitedForMe(c) && !dismissedInviteIdsRef.current.has(c.id)
+    );
+    if (pendingInvite) {
+      setIncomingInviteChallenge(pendingInvite);
+    }
+  }, [challenges, activeChallenge, incomingInviteChallenge, isChallengeInvitedForMe]);
 
   // Background polling fallback while inside a live P2P challenge room
   useEffect(() => {
@@ -770,7 +833,7 @@ export default function ChallengeArena() {
     return () => window.clearInterval(pollTimer);
   }, [activeChallenge, fetchLobby]);
 
-  // Realtime subscription to game_challenges for live 1v1 moves & open challenge board
+  // Realtime subscription to game_challenges for live 1v1 moves, private invites & public challenges
   useEffect(() => {
     const uid = `${Math.random().toString(36).slice(2, 9)}_${Date.now()}`;
     let channel: ReturnType<typeof supabase.channel> | null = null;
@@ -781,62 +844,127 @@ export default function ChallengeArena() {
           "postgres_changes",
           { event: "*", schema: "public", table: "game_challenges" },
           (payload: any) => {
-          const updated = payload.new;
-          const oldRow = payload.old;
-          if (!updated) return;
+            const rawUpdated = payload.new;
+            const oldRow = payload.old;
+            if (!rawUpdated) return;
+            const updated = rawUpdated.metadata?.actual_game_type
+              ? { ...rawUpdated, game_type: rawUpdated.metadata.actual_game_type }
+              : rawUpdated;
 
-          setChallenges((prev) => {
-            const exists = prev.some((c) => c.id === updated.id);
-            if (!exists) return [updated, ...prev];
-            return prev.map((c) => (c.id === updated.id ? updated : c));
-          });
+            let isBrandNewRow = payload.eventType === "INSERT";
+            setChallenges((prev) => {
+              const exists = prev.some((c) => c.id === updated.id);
+              if (!exists) {
+                isBrandNewRow = true;
+                return [updated, ...prev];
+              }
+              return prev.map((c) => (c.id === updated.id ? updated : c));
+            });
 
-          setActiveChallenge((curr: any) => {
-            if (curr && curr.id === updated.id) {
-              if (curr.status === "open" && updated.status === "in_progress" && updated.opponent_name) {
+            // 1. New Open Challenge Created (Private Invite vs Public Challenge Notification)
+            const myRole = resolveMySideForChallenge(updated);
+            if (isBrandNewRow && updated.status === "open" && myRole !== "creator") {
+              const gName =
+                GAME_CATALOG.find((g) => g.id === updated.game_type)?.name ||
+                String(updated.game_type || "Arena").toUpperCase();
+              const stake = Number(updated.stake_amount || 0);
+              const pot = Number(updated.prize_pool || 0);
+
+              if (isChallengeInvitedForMe(updated)) {
                 window.setTimeout(() => {
-                  playSuccessSound();
+                  playLevelUpFanfare();
+                  triggerHapticSensor("victory");
+                  setIncomingInviteChallenge(updated);
                   toast({
-                    title: `🔥 ${updated.opponent_name} Accepted Your Challenge!`,
-                    description: `Room #${updated.room_code} is now LIVE! Make your opening move!`,
+                    title: `🎯 ${updated.creator_name} Sent You a ${
+                      updated.metadata?.is_private ? "Private " : ""
+                    }${gName} Challenge!`,
+                    description: `Room #${updated.room_code} • ${
+                      stake > 0
+                        ? `Stake GH₵ ${stake.toFixed(2)} to Win GH₵ ${pot.toFixed(2)}`
+                        : "Free 1v1 Match"
+                    }. Tap Accept to play now!`,
+                  });
+                }, 0);
+              } else if (!updated.metadata?.is_private && !activeChallenge) {
+                window.setTimeout(() => {
+                  playTurnNotificationSound(true);
+                  toast({
+                    title: `🌍 New Public ${gName} Challenge (#${updated.room_code})`,
+                    description: `${updated.creator_name} opened a ${
+                      stake > 0
+                        ? `GH₵ ${stake.toFixed(2)} room (Pot: GH₵ ${pot.toFixed(2)})`
+                        : "Free 1v1 room"
+                    } in the Public Lobby!`,
                   });
                 }, 0);
               }
-
-              const prevTurn = curr.current_turn || curr.board_state?.turn || "creator";
-              const nextTurn = updated.current_turn || updated.board_state?.turn || "creator";
-              const prevColor = curr.board_state?.currentPlayerColor;
-              const nextColor = updated.board_state?.currentPlayerColor;
-              if (
-                updated.status === "in_progress" &&
-                !updated.board_state?.winner &&
-                (prevTurn !== nextTurn || (prevColor && nextColor && prevColor !== nextColor))
-              ) {
-                window.setTimeout(() => {
-                  triggerOverallTurnNotification(updated, nextTurn, updated.board_state);
-                }, 0);
-              }
-              return updated;
             }
-            return curr;
-          });
 
-          if (
-            oldRow?.status === "open" &&
-            updated.status === "in_progress" &&
-            updated.opponent_name &&
-            (!activeChallenge || activeChallenge.id !== updated.id)
-          ) {
-            toast({
-              title: `⚔️ Challenge Accepted (#${updated.room_code})`,
-              description: `${updated.opponent_name} just accepted ${updated.creator_name}'s ${String(
-                updated.game_type || ""
-              ).toUpperCase()} challenge!`,
+            // 2. Active Challenge State & Turn Sync
+            setActiveChallenge((curr: any) => {
+              if (curr && curr.id === updated.id) {
+                if (curr.status === "open" && updated.status === "in_progress" && updated.opponent_name) {
+                  window.setTimeout(() => {
+                    playLevelUpFanfare();
+                    triggerHapticSensor("victory");
+                    toast({
+                      title: `🔥 ${updated.opponent_name} Accepted Your Challenge!`,
+                      description: `Room #${updated.room_code} is now LIVE! Make your move!`,
+                    });
+                  }, 0);
+                }
+
+                const prevTurn = curr.current_turn || curr.board_state?.turn || "creator";
+                const nextTurn = updated.current_turn || updated.board_state?.turn || "creator";
+                const prevColor = curr.board_state?.currentPlayerColor;
+                const nextColor = updated.board_state?.currentPlayerColor;
+                if (
+                  updated.status === "in_progress" &&
+                  !updated.board_state?.winner &&
+                  (prevTurn !== nextTurn || (prevColor && nextColor && prevColor !== nextColor))
+                ) {
+                  window.setTimeout(() => {
+                    triggerOverallTurnNotification(updated, nextTurn, updated.board_state);
+                  }, 0);
+                }
+                return updated;
+              }
+              return curr;
             });
+
+            // 3. If I created an Open Challenge and went back to the Lobby, auto-open the match when my opponent accepts!
+            if (
+              oldRow?.status === "open" &&
+              updated.status === "in_progress" &&
+              updated.opponent_name &&
+              (!activeChallenge || activeChallenge.id !== updated.id)
+            ) {
+              if (myRole === "creator") {
+                window.setTimeout(() => {
+                  playLevelUpFanfare();
+                  triggerHapticSensor("victory");
+                  toast({
+                    title: `🚨 ${updated.opponent_name} Accepted Your Challenge (#${updated.room_code})!`,
+                    description: `Launching your live ${String(
+                      updated.game_type || ""
+                    ).toUpperCase()} board now!`,
+                  });
+                  setMySide("creator");
+                  setActiveChallenge(updated);
+                }, 0);
+              } else if (!updated.metadata?.is_private) {
+                toast({
+                  title: `⚔️ Public Challenge Accepted (#${updated.room_code})`,
+                  description: `${updated.opponent_name} accepted ${updated.creator_name}'s ${String(
+                    updated.game_type || ""
+                  ).toUpperCase()} challenge!`,
+                });
+              }
+            }
           }
-        }
-      )
-      .subscribe();
+        )
+        .subscribe();
     } catch {
       // ignore realtime channel collision
     }
@@ -850,7 +978,13 @@ export default function ChallengeArena() {
         }
       }
     };
-  }, [activeChallenge, toast, triggerOverallTurnNotification]);
+  }, [
+    activeChallenge,
+    isChallengeInvitedForMe,
+    resolveMySideForChallenge,
+    toast,
+    triggerOverallTurnNotification,
+  ]);
 
   const [momoCheckoutState, setMomoCheckoutState] = useState<{
     isOpen: boolean;
@@ -876,6 +1010,7 @@ export default function ChallengeArena() {
     rematchOpts?: {
       rematchOfChallengeId?: string;
       overrideStake?: number;
+      isPrivate?: boolean;
       autoInviteOpponent?: {
         name?: string | null;
         phone?: string | null;
@@ -939,6 +1074,12 @@ export default function ChallengeArena() {
         rematchOpts?.autoInviteOpponent?.name ||
         selectedInvitedUser?.full_name ||
         undefined;
+      const isPrivateRoom =
+        modeToStart === "p2p"
+          ? rematchOpts?.isPrivate !== undefined
+            ? rematchOpts.isPrivate
+            : Boolean(rematchOpts?.rematchOfChallengeId) || challengePrivacy === "private"
+          : false;
 
       const { data, error } = await supabase.functions.invoke("challenge-arena", {
         body: {
@@ -954,13 +1095,14 @@ export default function ChallengeArena() {
             modeToStart === "free_data" || stake === 0 ? "data_bundle" : rewardType,
           reward_network: rewardNetwork,
           board_state: initialBoard,
+          is_private: isPrivateRoom,
           invited_phone: targetInvitedPhone,
           invited_user_id: targetInvitedUserId,
           invited_name: targetInvitedName,
           rematch_of_challenge_id: rematchOpts?.rematchOfChallengeId || undefined,
           player_level: levelInfo.level,
           player_title: levelInfo.title,
-          notify_all_users: modeToStart === "p2p",
+          notify_all_users: modeToStart === "p2p" && !isPrivateRoom,
         },
       });
 
@@ -997,6 +1139,15 @@ export default function ChallengeArena() {
       }
 
       playSuccessSound();
+      toast({
+        title:
+          modeToStart === "p2p"
+            ? isPrivateRoom
+              ? `🔒 Private Room #${data.challenge.room_code} Created!`
+              : `🌍 Public Challenge #${data.challenge.room_code} Live!`
+            : `🎮 Match Started!`,
+        description: data.message,
+      });
       setShowMatchResultModal(false);
       setShowPlayAnotherPicker(false);
       setLaunchModalOpen(false);
@@ -1041,11 +1192,17 @@ export default function ChallengeArena() {
         throw new Error(data?.error || error?.message || "Failed to send invite");
       }
       playSuccessSound();
+      if (data.challenge) {
+        setActiveChallenge((curr: any) =>
+          curr && curr.id === data.challenge.id ? data.challenge : curr
+        );
+      }
       toast({
         title: "📲 Challenge Notification Dispatched!",
         description: data.message,
       });
       setRoomInvitePhone("");
+      fetchLobby(true);
     } catch (err: any) {
       toast({
         title: "Invite Failed",
@@ -1057,7 +1214,11 @@ export default function ChallengeArena() {
     }
   };
 
-  const handleJoinChallenge = async (challenge: any, source: "wallet" | "momo") => {
+  const handleJoinChallenge = async (
+    challenge: any,
+    source: "wallet" | "momo",
+    byRoomCode = false
+  ) => {
     setJoiningChallengeId(challenge.id);
     try {
       const stake = Number(challenge.stake_amount || 0);
@@ -1071,6 +1232,8 @@ export default function ChallengeArena() {
         body: {
           action: "join_challenge",
           challenge_id: challenge.id,
+          room_code: challenge.room_code,
+          by_room_code: byRoomCode,
           payment_source: stake === 0 ? "free" : source,
           paystack_reference: paystackRef,
           opponent_name: (playerName || profile?.full_name || "Challenger 2").trim(),
@@ -1084,7 +1247,7 @@ export default function ChallengeArena() {
 
       playSuccessSound();
       toast({
-        title: "🔥 Match Started & All Users Notified!",
+        title: "🔥 Challenge Accepted — Match is LIVE!",
         description: data.message,
       });
 
@@ -1111,6 +1274,8 @@ export default function ChallengeArena() {
         joinedChallenge.board_state = joinedBoard;
       }
 
+      dismissedInviteIdsRef.current.add(joinedChallenge.id);
+      setIncomingInviteChallenge(null);
       setLaunchModalOpen(false);
       setProfileDrawerOpen(false);
       recordMyChallengeSide(joinedChallenge.id, "opponent");
@@ -1132,22 +1297,41 @@ export default function ChallengeArena() {
     }
   };
 
-  const handleJoinByRoomCode = (overrideCode?: string) => {
+  const handleJoinByRoomCode = async (overrideCode?: string) => {
     const code = (typeof overrideCode === "string" ? overrideCode : roomCodeInput)
       .trim()
       .toUpperCase()
       .replace(/^#/, "");
     if (!code) return;
-    const found = challenges.find((c) => String(c.room_code || "").toUpperCase() === code);
+
+    let found = challenges.find((c) => String(c.room_code || "").toUpperCase() === code);
+    if (!found) {
+      try {
+        const { data } = await supabase.functions.invoke("challenge-arena", {
+          body: { action: "get_room", room_code: code },
+        });
+        if (data?.success && data.challenge) {
+          found = data.challenge;
+          setChallenges((prev) =>
+            prev.some((c) => c.id === found.id) ? prev : [found, ...prev]
+          );
+        }
+      } catch {
+        // ignore lookup error
+      }
+    }
+
     if (!found) {
       toast({
         title: "Room Not Found",
-        description: `No active room found with code #${code}. Try refreshing the lobby.`,
+        description: `No active challenge room found with code #${code}. Check the code and try again.`,
         variant: "destructive",
       });
       return;
     }
+
     setCommunityModalOpen(false);
+    setRoomCodeInput("");
     const myDetectedSide = resolveMySideForChallenge(found);
     if (found.status === "in_progress" || myDetectedSide === "creator") {
       const side = myDetectedSide || "opponent";
@@ -1159,7 +1343,7 @@ export default function ChallengeArena() {
       return;
     }
     if (found.status === "open") {
-      handleJoinChallenge(found, user ? "wallet" : "momo");
+      handleJoinChallenge(found, user ? "wallet" : "momo", true);
     }
   };
 
@@ -1574,22 +1758,43 @@ export default function ChallengeArena() {
     }
   };
 
-  const openChallenges = challenges.filter(
-    (c) => c.status === "open" && (filterGame === "all" || c.game_type === filterGame)
-  );
+  // Public Challenges (plus any room I created or was personally invited to)
+  const openChallenges = challenges.filter((c) => {
+    if (c.status !== "open") return false;
+    if (filterGame !== "all" && c.game_type !== filterGame) return false;
+    if (c.metadata?.is_private) {
+      return resolveMySideForChallenge(c) === "creator" || isChallengeInvitedForMe(c);
+    }
+    return true;
+  });
+
+  // All Open Challenges specifically invited to the current player (or via ?room=CODE)
+  const myDirectInviteChallenges = challenges.filter((c) => {
+    if (c.status !== "open") return false;
+    if (resolveMySideForChallenge(c) === "creator") return false;
+    if (isChallengeInvitedForMe(c)) return true;
+    if (roomQueryParam && String(c.room_code || "").toUpperCase() === roomQueryParam) return true;
+    return false;
+  });
+
   const activeInProgressChallenges = challenges.filter((c) => {
     if (c.status !== "in_progress") return false;
     if (filterGame !== "all" && c.game_type !== filterGame) return false;
     const myRole = resolveMySideForChallenge(c);
+    if (c.metadata?.is_private) {
+      return Boolean(myRole);
+    }
     return Boolean(myRole) || c.mode === "p2p";
   });
+
   const invitedSpotlightChallenge = roomQueryParam
     ? challenges.find(
         (c) =>
           String(c.room_code || "").toUpperCase() === roomQueryParam &&
           (c.status === "open" || c.status === "in_progress")
       )
-    : null;
+    : myDirectInviteChallenges[0] || null;
+
   const remainingFreeDataToday = Math.max(
     0,
     Number(settings.daily_free_data_limit || 15) - todayFreeDataCount
@@ -1600,11 +1805,18 @@ export default function ChallengeArena() {
   const selectedGameMeta =
     GAME_CATALOG.find((g) => g.id === selectedGame) || GAME_CATALOG[0];
 
-  const openLaunchSheetForGame = (gId: GameType, defaultMode: ChallengeMode = "free_data") => {
+  const openLaunchSheetForGame = (
+    gId: GameType,
+    defaultMode: ChallengeMode = "free_data",
+    defaultPrivacy?: "public" | "private"
+  ) => {
     setSelectedGame(gId);
     setSelectedMode(defaultMode);
     if (defaultMode === "p2p") {
       setStakeAmount("0");
+      if (defaultPrivacy) {
+        setChallengePrivacy(defaultPrivacy);
+      }
     } else if (defaultMode === "ai" && Number(stakeAmount || 0) <= 0) {
       setStakeAmount("5");
     }
@@ -2384,8 +2596,8 @@ export default function ChallengeArena() {
                 }`}
               >
                 <Users className="w-4 h-4 text-emerald-400 mb-1" />
-                <p className="text-xs font-black">Play Friend</p>
-                <p className="text-[10px] opacity-80">Free or Staked 1v1</p>
+                <p className="text-xs font-black">1v1 Challenge</p>
+                <p className="text-[10px] opacity-80">Public or Private</p>
               </button>
 
               <button
@@ -2425,6 +2637,60 @@ export default function ChallengeArena() {
               </div>
             ) : (
               <div className="space-y-3 p-3.5 rounded-2xl bg-white/[0.03] border border-white/10">
+                {/* 🌍 PUBLIC vs 🔒 PRIVATE CHALLENGE SELECTOR FOR P2P */}
+                {selectedMode === "p2p" && (
+                  <div className="space-y-1.5">
+                    <Label className="text-[11px] text-slate-300 font-black uppercase tracking-wider">
+                      Challenge Visibility &amp; Notifications
+                    </Label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setChallengePrivacy("public")}
+                        className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                          challengePrivacy === "public"
+                            ? "bg-emerald-500/20 border-emerald-400 text-white ring-1 ring-emerald-400"
+                            : "bg-slate-950 border-white/10 text-slate-400 hover:text-white"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-black text-emerald-300">
+                            🌍 Public Challenge
+                          </span>
+                          {challengePrivacy === "public" && (
+                            <Check className="w-3.5 h-3.5 text-emerald-400" />
+                          )}
+                        </div>
+                        <p className="text-[10px] text-slate-300 mt-0.5 leading-snug">
+                          Listed on Live Arena Board &amp; alerts online players to accept
+                        </p>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setChallengePrivacy("private")}
+                        className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                          challengePrivacy === "private"
+                            ? "bg-amber-500/20 border-amber-400 text-white ring-1 ring-amber-400"
+                            : "bg-slate-950 border-white/10 text-slate-400 hover:text-white"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-black text-amber-300">
+                            🔒 Private Challenge
+                          </span>
+                          {challengePrivacy === "private" && (
+                            <Check className="w-3.5 h-3.5 text-amber-400" />
+                          )}
+                        </div>
+                        <p className="text-[10px] text-slate-300 mt-0.5 leading-snug">
+                          Invite a specific friend or share your secret #CODE only
+                        </p>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 {Number(stakeAmount || 0) > 0 && (
                   <div className="grid grid-cols-2 gap-2">
                     <button
@@ -2509,14 +2775,36 @@ export default function ChallengeArena() {
 
                 {selectedMode === "p2p" && (
                   <div className="space-y-2 pt-1 border-t border-white/10">
-                    <Label className="text-[11px] text-amber-300 font-bold">
-                      Invite Friend by Phone (Optional — or share room code after creating)
-                    </Label>
+                    <div className="flex items-center justify-between">
+                      <Label className="text-[11px] text-amber-300 font-bold">
+                        {challengePrivacy === "private"
+                          ? "🔒 Invite Specific Friend (SMS + Push + In-App Alert)"
+                          : "🎯 Optional Direct Friend Invite (Plus Public Lobby)"}
+                      </Label>
+                      {selectedInvitedUser && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedInvitedUser(null);
+                            setInvitedPhone("");
+                          }}
+                          className="text-[10px] font-black text-emerald-300 bg-emerald-500/15 border border-emerald-400/40 px-2 py-0.5 rounded-full flex items-center gap-1"
+                        >
+                          <span>@{selectedInvitedUser.full_name}</span>
+                          <X className="w-2.5 h-2.5" />
+                        </button>
+                      )}
+                    </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <Input
                         placeholder="Friend's Phone (024...)"
                         value={invitedPhone}
-                        onChange={(e) => setInvitedPhone(e.target.value)}
+                        onChange={(e) => {
+                          setInvitedPhone(e.target.value);
+                          if (e.target.value.trim().length >= 9) {
+                            setChallengePrivacy("private");
+                          }
+                        }}
                         className="h-9 rounded-xl bg-slate-950 border-white/15 text-xs font-mono text-white"
                       />
                       <div className="relative">
@@ -2538,8 +2826,13 @@ export default function ChallengeArena() {
                             onClick={() => {
                               setSelectedInvitedUser(p);
                               setInvitedPhone(p.phone || "");
+                              setChallengePrivacy("private");
                             }}
-                            className="px-2 py-0.5 rounded-lg bg-slate-900 border border-white/10 text-[10px] font-bold text-slate-300 hover:text-amber-300"
+                            className={`px-2 py-0.5 rounded-lg border text-[10px] font-bold transition-all cursor-pointer ${
+                              selectedInvitedUser?.user_id === p.user_id
+                                ? "bg-amber-500 text-slate-950 border-amber-300"
+                                : "bg-slate-900 border-white/10 text-slate-300 hover:text-amber-300"
+                            }`}
                           >
                             + {p.full_name}
                           </button>
@@ -2578,9 +2871,15 @@ export default function ChallengeArena() {
                       {selectedMode === "free_data"
                         ? `Play ${selectedGameMeta.shortTitle} Now`
                         : selectedMode === "p2p"
-                        ? Number(stakeAmount || 0) === 0
-                          ? `Create Free ${selectedGameMeta.shortTitle} Room`
-                          : `Create ${selectedGameMeta.shortTitle} Room (GH₵ ${Number(
+                        ? challengePrivacy === "private"
+                          ? Number(stakeAmount || 0) === 0
+                            ? `🔒 Create Private ${selectedGameMeta.shortTitle} Room`
+                            : `🔒 Private ${selectedGameMeta.shortTitle} (GH₵ ${Number(
+                                stakeAmount || 0
+                              ).toFixed(2)})`
+                          : Number(stakeAmount || 0) === 0
+                          ? `🌍 Post Public ${selectedGameMeta.shortTitle} Room`
+                          : `🌍 Post Public ${selectedGameMeta.shortTitle} (GH₵ ${Number(
                               stakeAmount || 0
                             ).toFixed(2)})`
                         : `Play vs Champion (GH₵ ${Number(stakeAmount || 0).toFixed(2)})`}
@@ -2589,6 +2888,107 @@ export default function ChallengeArena() {
                   </>
                 )}
               </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── REAL-TIME INCOMING PRIVATE / DIRECT CHALLENGE INVITE POPUP MODAL ── */}
+      {incomingInviteChallenge && incomingInviteChallenge.status === "open" && (
+        <div className="fixed inset-0 z-[140] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in zoom-in-95 duration-200">
+          <div className="relative w-full max-w-md rounded-3xl bg-gradient-to-b from-[#131d36] via-[#0e1628] to-[#090e1a] border-2 border-amber-400/70 p-6 shadow-[0_0_60px_rgba(245,158,11,0.35)] space-y-4 text-center">
+            <div className="mx-auto w-16 h-16 rounded-2xl bg-amber-500/20 border-2 border-amber-400 flex items-center justify-center text-3xl shadow-lg animate-bounce">
+              {GAME_CATALOG.find((g) => g.id === incomingInviteChallenge.game_type)?.emoji || "⚔️"}
+            </div>
+
+            <div className="space-y-1">
+              <Badge className="bg-amber-500 text-slate-950 font-black text-[10px] uppercase px-3 py-0.5">
+                {incomingInviteChallenge.metadata?.is_private
+                  ? `🔒 PRIVATE CHALLENGE INVITE • #${incomingInviteChallenge.room_code}`
+                  : `🎯 DIRECT CHALLENGE INVITE • #${incomingInviteChallenge.room_code}`}
+              </Badge>
+              <h3 className="text-xl font-black text-white pt-1">
+                {incomingInviteChallenge.creator_name} Challenged You!
+              </h3>
+              <p className="text-xs text-slate-300">
+                Game:{" "}
+                <strong className="text-amber-300">
+                  {GAME_CATALOG.find((g) => g.id === incomingInviteChallenge.game_type)?.name ||
+                    String(incomingInviteChallenge.game_type || "").toUpperCase()}
+                </strong>
+              </p>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-slate-950/90 border border-white/10 grid grid-cols-2 gap-2 text-left">
+              <div>
+                <p className="text-[10px] font-bold uppercase text-slate-400">Entry Stake</p>
+                <p className="text-sm font-black text-white font-mono">
+                  {Number(incomingInviteChallenge.stake_amount || 0) === 0
+                    ? "FREE 1v1"
+                    : `GH₵ ${Number(incomingInviteChallenge.stake_amount || 0).toFixed(2)}`}
+                </p>
+              </div>
+              <div>
+                <p className="text-[10px] font-bold uppercase text-slate-400">Winner Takes</p>
+                <p className="text-sm font-black text-emerald-400 font-mono">
+                  {Number(incomingInviteChallenge.stake_amount || 0) === 0
+                    ? "+35 Arena Pts"
+                    : `GH₵ ${Number(incomingInviteChallenge.prize_pool || 0).toFixed(2)}`}
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2 pt-1">
+              {Number(incomingInviteChallenge.stake_amount || 0) === 0 ? (
+                <Button
+                  type="button"
+                  disabled={joiningChallengeId === incomingInviteChallenge.id}
+                  onClick={() => handleJoinChallenge(incomingInviteChallenge, "wallet", true)}
+                  className="w-full h-12 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-sm gap-2 shadow-xl"
+                >
+                  {joiningChallengeId === incomingInviteChallenge.id ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Zap className="w-4 h-4" />
+                  )}
+                  Accept &amp; Play Now (Free)
+                </Button>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {user && (
+                    <Button
+                      type="button"
+                      disabled={joiningChallengeId === incomingInviteChallenge.id}
+                      onClick={() => handleJoinChallenge(incomingInviteChallenge, "wallet", true)}
+                      className="h-11 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs gap-1.5"
+                    >
+                      <Wallet className="w-4 h-4" />
+                      Accept (Wallet)
+                    </Button>
+                  )}
+                  <Button
+                    type="button"
+                    disabled={joiningChallengeId === incomingInviteChallenge.id}
+                    onClick={() => handleJoinChallenge(incomingInviteChallenge, "momo", true)}
+                    className="h-11 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs gap-1.5"
+                  >
+                    <Smartphone className="w-4 h-4" />
+                    Accept (MoMo)
+                  </Button>
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => {
+                  dismissedInviteIdsRef.current.add(incomingInviteChallenge.id);
+                  setIncomingInviteChallenge(null);
+                  if (roomQueryParam) setSearchParams({});
+                }}
+                className="w-full py-2 text-xs font-bold text-slate-400 hover:text-white cursor-pointer"
+              >
+                Maybe Later / Dismiss
+              </button>
             </div>
           </div>
         </div>
@@ -2952,12 +3352,35 @@ export default function ChallengeArena() {
             {activeChallenge.status === "open" && (
               <div className="p-5 sm:p-6 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-4">
                 <div className="text-center space-y-1.5">
-                  <Loader2 className="w-7 h-7 text-amber-400 animate-spin mx-auto" />
+                  <div className="flex items-center justify-center gap-2">
+                    <Loader2 className="w-6 h-6 text-amber-400 animate-spin" />
+                    <Badge
+                      className={
+                        activeChallenge.metadata?.is_private
+                          ? "bg-amber-500 text-slate-950 font-black text-[10px] uppercase"
+                          : "bg-emerald-500 text-slate-950 font-black text-[10px] uppercase"
+                      }
+                    >
+                      {activeChallenge.metadata?.is_private
+                        ? "🔒 PRIVATE CHALLENGE ROOM"
+                        : "🌍 PUBLIC CHALLENGE ROOM"}
+                    </Badge>
+                  </div>
                   <h3 className="text-base sm:text-lg font-black text-white">
-                    Room #{activeChallenge.room_code} — Waiting for Friend to Join
+                    Room #{activeChallenge.room_code} —{" "}
+                    {activeChallenge.metadata?.invited_name || activeChallenge.metadata?.invited_phone
+                      ? `Waiting for ${
+                          activeChallenge.metadata.invited_name ||
+                          activeChallenge.metadata.invited_phone
+                        } to Accept`
+                      : activeChallenge.metadata?.is_private
+                      ? "Waiting for Friend with Room Code"
+                      : "Waiting for Opponent in Public Lobby"}
                   </h3>
                   <p className="text-xs text-slate-300 max-w-md mx-auto">
-                    Send your room code <strong className="text-amber-300">#{activeChallenge.room_code}</strong> to a friend or invite them via SMS / WhatsApp below:
+                    {activeChallenge.metadata?.is_private
+                      ? `This room is private. Only your invited friend or someone with Room Code #${activeChallenge.room_code} can join.`
+                      : `Your challenge is live on the Public Arena Board! You can also share #${activeChallenge.room_code} directly with a friend:`}
                   </p>
                 </div>
 
@@ -2978,7 +3401,7 @@ export default function ChallengeArena() {
                       className="h-10 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs gap-1.5 shrink-0"
                     >
                       {sendingInvite ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                      Send SMS Invite
+                      Send SMS &amp; Push Invite
                     </Button>
                   </div>
 
@@ -2992,14 +3415,22 @@ export default function ChallengeArena() {
                       className="h-9 rounded-xl border-emerald-500/40 bg-emerald-500/10 text-emerald-300 font-bold text-xs gap-1.5"
                     >
                       <BellRing className="w-3.5 h-3.5" />
-                      Notify Online Players
+                      {activeChallenge.metadata?.is_private
+                        ? "Make Public & Notify All Players"
+                        : "Re-Notify Online Players"}
                     </Button>
 
                     <a
                       href={`https://wa.me/?text=${encodeURIComponent(
-                        `⚔️ Join my ${String(activeChallenge.game_type || "").toUpperCase()} match on SwiftData Games!\n🔑 Room Code: #${activeChallenge.room_code}\n👉 Tap to play: ${
-                          window.location.origin
-                        }/challenges?room=${activeChallenge.room_code}`
+                        `⚔️ Join my ${
+                          activeChallenge.metadata?.is_private ? "Private " : ""
+                        }${String(
+                          activeChallenge.game_type || ""
+                        ).toUpperCase()} match on SwiftData Games!\n🔑 Room Code: #${
+                          activeChallenge.room_code
+                        }\n👉 Tap to play: ${window.location.origin}/challenges?room=${
+                          activeChallenge.room_code
+                        }`
                       )}`}
                       target="_blank"
                       rel="noopener noreferrer"
@@ -3991,7 +4422,8 @@ export default function ChallengeArena() {
               });
               openLaunchSheetForGame(
                 (author.favorite_game as GameType) || "oware",
-                "p2p"
+                "p2p",
+                "private"
               );
             }}
           />
@@ -4030,7 +4462,8 @@ export default function ChallengeArena() {
               });
               openLaunchSheetForGame(
                 (g.favorite_game as GameType) || "oware",
-                "p2p"
+                "p2p",
+                "private"
               );
             }}
           />
@@ -4040,7 +4473,9 @@ export default function ChallengeArena() {
             <div className="p-4 rounded-3xl bg-gradient-to-r from-amber-500/20 to-emerald-500/15 border border-amber-400/60 flex items-center justify-between gap-3">
               <div>
                 <p className="text-xs font-black text-amber-300 uppercase">
-                  🎯 Direct Room Invite • #{invitedSpotlightChallenge.room_code}
+                  {invitedSpotlightChallenge.metadata?.is_private
+                    ? `🔒 Private Challenge Invite • #${invitedSpotlightChallenge.room_code}`
+                    : `🎯 Direct Room Invite • #${invitedSpotlightChallenge.room_code}`}
                 </p>
                 <p className="text-sm font-black text-white">
                   {invitedSpotlightChallenge.creator_name} invited you to play{" "}
@@ -4050,7 +4485,11 @@ export default function ChallengeArena() {
               <Button
                 size="sm"
                 onClick={() =>
-                  handleJoinChallenge(invitedSpotlightChallenge, user ? "wallet" : "momo")
+                  handleJoinChallenge(
+                    invitedSpotlightChallenge,
+                    user ? "wallet" : "momo",
+                    true
+                  )
                 }
                 className="h-10 rounded-full bg-[#f59e0b] hover:bg-[#fbbf24] text-slate-950 font-black text-xs px-5"
               >
@@ -4101,6 +4540,217 @@ export default function ChallengeArena() {
               })}
             </div>
           )}
+
+          {/* 3B. LIVE PUBLIC CHALLENGES & PRIVATE ROOM CODE HUB (Directly on Main Arena Lobby) */}
+          <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-b from-[#10192d] to-[#0b1220] border border-white/12 shadow-xl space-y-3.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
+                <h3 className="text-sm sm:text-base font-black text-white tracking-tight">
+                  🌍 Public Challenges &amp; Private Room Codes
+                </h3>
+                <Badge className="bg-amber-500/20 text-amber-300 border border-amber-400/40 font-black text-[10px]">
+                  {openChallenges.length} OPEN
+                </Badge>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => openLaunchSheetForGame(selectedGame, "p2p", "public")}
+                  className="h-8 px-3 rounded-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-[11px] flex items-center gap-1 cursor-pointer shadow"
+                >
+                  <PlusCircle className="w-3.5 h-3.5" />
+                  <span>+ Public Challenge</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openLaunchSheetForGame(selectedGame, "p2p", "private")}
+                  className="h-8 px-3 rounded-full bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/50 text-amber-300 font-black text-[11px] flex items-center gap-1 cursor-pointer"
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  <span>🔒 Private Friend</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => fetchLobby()}
+                  className="h-8 w-8 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center text-slate-300 cursor-pointer"
+                  title="Refresh Challenges"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+                </button>
+              </div>
+            </div>
+
+            {/* Quick Private / Friend Room Code Entry Bar */}
+            <div className="flex flex-col sm:flex-row gap-2 p-2.5 rounded-2xl bg-slate-950/80 border border-white/10">
+              <div className="flex items-center gap-2 flex-1">
+                <Hash className="w-4 h-4 text-amber-400 shrink-0 ml-1" />
+                <Input
+                  placeholder="Have a Private or Friend Room Code? Enter #CODE (e.g. 8F2K9A)"
+                  value={roomCodeInput}
+                  onChange={(e) => setRoomCodeInput(e.target.value.toUpperCase())}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleJoinByRoomCode();
+                  }}
+                  className="h-9 rounded-xl bg-slate-900 border-white/15 font-mono font-bold text-xs text-white uppercase"
+                />
+              </div>
+              <Button
+                type="button"
+                onClick={() => handleJoinByRoomCode()}
+                className="h-9 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs px-4 shrink-0"
+              >
+                Join by Code →
+              </Button>
+            </div>
+
+            {/* Live Open Public Challenges List */}
+            {openChallenges.length === 0 ? (
+              <div className="p-4 rounded-2xl border border-dashed border-white/10 bg-slate-950/40 flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left">
+                <div>
+                  <p className="text-xs font-bold text-slate-200">
+                    No open public challenges waiting right now.
+                  </p>
+                  <p className="text-[11px] text-slate-400">
+                    Post a Public Challenge to alert online players, or create a Private Challenge for a friend!
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <Button
+                    size="sm"
+                    onClick={() => openLaunchSheetForGame("oware", "p2p", "public")}
+                    className="h-8 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs"
+                  >
+                    🌍 Post Public Room
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => openLaunchSheetForGame("oware", "p2p", "private")}
+                    className="h-8 rounded-xl border-amber-400/50 text-amber-300 font-black text-xs"
+                  >
+                    🔒 Private Invite
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-[280px] overflow-y-auto pr-0.5">
+                {openChallenges.slice(0, 8).map((chal) => {
+                  const isMine = resolveMySideForChallenge(chal) === "creator";
+                  const isInvitedToMe = isChallengeInvitedForMe(chal);
+                  const isPrivate = Boolean(chal.metadata?.is_private);
+                  const stake = Number(chal.stake_amount || 0);
+                  const gMeta = GAME_CATALOG.find((g) => g.id === chal.game_type);
+                  return (
+                    <div
+                      key={chal.id}
+                      className={`p-3 rounded-2xl border flex flex-col justify-between gap-2.5 ${
+                        isInvitedToMe
+                          ? "bg-amber-500/15 border-amber-400/60"
+                          : "bg-slate-950/85 border-white/10"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="text-xl shrink-0">{gMeta?.emoji || "⚔️"}</span>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-xs font-black text-white uppercase">
+                                {gMeta?.shortTitle || chal.game_type}
+                              </span>
+                              <Badge
+                                className={
+                                  isPrivate
+                                    ? "bg-amber-500/20 text-amber-300 border border-amber-400/40 text-[9px] font-black px-1.5 py-0"
+                                    : "bg-emerald-500/20 text-emerald-300 border border-emerald-400/40 text-[9px] font-black px-1.5 py-0"
+                                }
+                              >
+                                {isPrivate ? "🔒 PRIVATE" : "🌍 PUBLIC"} • #{chal.room_code}
+                              </Badge>
+                            </div>
+                            <p className="text-[11px] text-slate-300 truncate">
+                              Host: <strong className="text-white">{chal.creator_name}</strong>
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="text-right shrink-0">
+                          <p className="text-[11px] font-mono font-black text-emerald-400">
+                            {stake === 0
+                              ? "FREE 1v1"
+                              : `Win GH₵ ${Number(chal.prize_pool || 0).toFixed(2)}`}
+                          </p>
+                          <p className="text-[10px] font-mono text-slate-400">
+                            {stake === 0 ? "+35 Pts" : `Stake GH₵ ${stake.toFixed(2)}`}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        {isMine ? (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setMySide("creator");
+                                setActiveChallenge(chal);
+                              }}
+                              className="h-8 flex-1 rounded-xl border-amber-400/40 text-amber-300 text-xs font-bold"
+                            >
+                              Open My Room
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleCancelOpenChallenge(chal.id)}
+                              className="h-8 text-rose-400 text-xs font-bold px-2.5"
+                            >
+                              Cancel
+                            </Button>
+                          </>
+                        ) : stake === 0 ? (
+                          <Button
+                            size="sm"
+                            disabled={joiningChallengeId === chal.id}
+                            onClick={() => handleJoinChallenge(chal, "wallet")}
+                            className="h-8 flex-1 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs"
+                          >
+                            {joiningChallengeId === chal.id ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />
+                            ) : null}
+                            ⚡ Accept Challenge (Free)
+                          </Button>
+                        ) : (
+                          <>
+                            {user && (
+                              <Button
+                                size="sm"
+                                disabled={joiningChallengeId === chal.id}
+                                onClick={() => handleJoinChallenge(chal, "wallet")}
+                                className="h-8 flex-1 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs"
+                              >
+                                Accept (Wallet)
+                              </Button>
+                            )}
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={joiningChallengeId === chal.id}
+                              onClick={() => handleJoinChallenge(chal, "momo")}
+                              className="h-8 flex-1 rounded-xl border-amber-500/40 text-amber-300 font-black text-xs"
+                            >
+                              Accept (MoMo)
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
 
           {/* 4. Featured Hero Game Card — OWARE (Carved Wooden Board + Seeds Showcase) */}
           <div

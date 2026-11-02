@@ -401,6 +401,7 @@ async function notifyOpenChallengeOrInvite(
     invitedUserId?: string | null;
     invitedName?: string | null;
     broadcastAll?: boolean;
+    isPrivate?: boolean;
     createdByUserId?: string | null;
   } = {}
 ): Promise<{
@@ -414,7 +415,8 @@ async function notifyOpenChallengeOrInvite(
   const prizePool = Number(challenge.prize_pool || 0);
   const roomCode = String(challenge.room_code || "");
   const creatorName = String(challenge.creator_name || "Ghana Champion");
-  const broadcastAll = opts.broadcastAll !== false;
+  const isPrivate = Boolean(opts.isPrivate ?? challenge?.metadata?.is_private);
+  const broadcastAll = isPrivate ? Boolean(opts.broadcastAll === true) : opts.broadcastAll !== false;
   const cleanInvitePhone = normalizePhone(opts.invitedPhone);
 
   let inAppSent = false;
@@ -441,10 +443,18 @@ async function notifyOpenChallengeOrInvite(
   try {
     const creatorId = opts.createdByUserId || challenge.creator_id || null;
     if (resolvedInvitedUserId && resolvedInvitedUserId !== creatorId) {
+      const stakeLabel =
+        stake > 0
+          ? `Stake: GH₵ ${stake.toFixed(2)}, Winner Pot: GH₵ ${prizePool.toFixed(2)}`
+          : "Free 1v1 Friendly Duel (+35 Arena Pts)";
       await supabaseAdmin.from("notifications").insert([
         {
-          title: `🎯 ${creatorName} Invited You to a ${gameLabel} Duel!`,
-          message: `${creatorName} challenged you to play ${gameLabel} in Room #${roomCode} (Stake: GH₵ ${stake.toFixed(2)}, Winner Pot: GH₵ ${prizePool.toFixed(2)}). Accept the challenge now!`,
+          title: isPrivate
+            ? `🔒 Private ${gameLabel} Challenge from ${creatorName}!`
+            : `🎯 ${creatorName} Invited You to a ${gameLabel} Duel!`,
+          message: `${creatorName} invited you to play ${gameLabel} in ${
+            isPrivate ? "Private " : ""
+          }Room #${roomCode} (${stakeLabel}). Tap to accept the challenge now!`,
           target_type: "specific",
           target_user_id: resolvedInvitedUserId,
           created_by: creatorId,
@@ -456,14 +466,19 @@ async function notifyOpenChallengeOrInvite(
     console.warn("[challenge-arena] In-app notification insert warning:", err);
   }
 
-  // 2. Web Push Notification (Broadcast + Specific Invited User)
+  // 2. Web Push Notification (Broadcast for Public + Specific Invited User for Private/Direct)
   const pushPromises: Promise<number>[] = [];
-  if (broadcastAll) {
+  if (broadcastAll && !isPrivate) {
     pushPromises.push(
       triggerWebPush(supabaseUrl, serviceRoleKey, {
         broadcast: true,
-        title: `⚔️ Open ${gameLabel} Challenge (Win GH₵ ${prizePool.toFixed(2)})!`,
-        body: `${creatorName} posted Room #${roomCode} (Stake: GH₵ ${stake.toFixed(2)}). Tap to accept & play live!`,
+        title:
+          stake > 0
+            ? `⚔️ Public ${gameLabel} Challenge (Win GH₵ ${prizePool.toFixed(2)})!`
+            : `⚔️ Public Free ${gameLabel} Challenge (#${roomCode})!`,
+        body: `${creatorName} posted Public Room #${roomCode}${
+          stake > 0 ? ` (Stake: GH₵ ${stake.toFixed(2)})` : " (Free 1v1)"
+        }. Tap to accept & play live!`,
         url: `/challenges?room=${roomCode}`,
         tag: `challenge-open-${roomCode}`,
       })
@@ -473,22 +488,37 @@ async function notifyOpenChallengeOrInvite(
     pushPromises.push(
       triggerWebPush(supabaseUrl, serviceRoleKey, {
         user_id: resolvedInvitedUserId,
-        title: `🎯 ${creatorName} Challenged You to ${gameLabel}!`,
-        body: `Room #${roomCode} • Stake GH₵ ${stake.toFixed(2)} • Win GH₵ ${prizePool.toFixed(2)}. Tap to accept now!`,
+        title: isPrivate
+          ? `🔒 Private ${gameLabel} Invite from ${creatorName}!`
+          : `🎯 ${creatorName} Challenged You to ${gameLabel}!`,
+        body: `Room #${roomCode} • ${
+          stake > 0
+            ? `Stake GH₵ ${stake.toFixed(2)} • Win GH₵ ${prizePool.toFixed(2)}`
+            : "Free 1v1 Match"
+        }. Tap to accept now!`,
         url: `/challenges?room=${roomCode}`,
         tag: `challenge-invite-${roomCode}`,
       })
     );
   }
 
-  // 3. SMS Notifications (Direct Invite SMS + Arena Players Broadcast SMS)
+  // 3. SMS Notifications (Direct Invite SMS + Arena Players Broadcast SMS for Public Challenges)
   const smsTask = (async () => {
     try {
       const smsConfig = await getSmsConfig(supabaseAdmin);
 
       // 3a. Direct Personal Invite SMS
       if (cleanInvitePhone) {
-        const inviteSmsBody = `SwiftData Arena: ${creatorName} invited you to a ${gameLabel} Challenge! Stake: GHS ${stake.toFixed(2)} | Winner Takes: GHS ${prizePool.toFixed(2)}. Room #${roomCode}. Accept live: https://swiftdatagh.shop/challenges?room=${roomCode}`;
+        const inviteSmsBody =
+          stake > 0
+            ? `SwiftData Arena: ${creatorName} sent you a ${
+                isPrivate ? "PRIVATE " : ""
+              }${gameLabel} Challenge! Stake: GHS ${stake.toFixed(2)} | Win: GHS ${prizePool.toFixed(
+                2
+              )}. Room #${roomCode}. Accept live: https://swiftdatagh.shop/challenges?room=${roomCode}`
+            : `SwiftData Arena: ${creatorName} invited you to a Free 1v1 ${
+                isPrivate ? "Private " : ""
+              }${gameLabel} Challenge! Room #${roomCode}. Tap to play live: https://swiftdatagh.shop/challenges?room=${roomCode}`;
         await dispatchUnifiedSms(
           smsConfig.gateway,
           smsConfig.apiKey,
@@ -500,15 +530,22 @@ async function notifyOpenChallengeOrInvite(
         directSmsSent = true;
       }
 
-      // 3b. Broadcast SMS to Active Arena Players
-      if (broadcastAll) {
+      // 3b. Broadcast SMS to Active Arena Players (ONLY for Public Challenges)
+      if (broadcastAll && !isPrivate) {
         const recipients = await collectArenaRecipientPhones(
           supabaseAdmin,
           [challenge.creator_phone, cleanInvitePhone],
           20
         );
         if (recipients.length > 0) {
-          const broadcastSmsBody = `SwiftData Arena: ${creatorName} posted an Open ${gameLabel} Challenge! Stake: GHS ${stake.toFixed(2)} | Win: GHS ${prizePool.toFixed(2)} (Room #${roomCode}). Accept now: https://swiftdatagh.shop/challenges?room=${roomCode}`;
+          const broadcastSmsBody =
+            stake > 0
+              ? `SwiftData Arena: ${creatorName} posted a Public ${gameLabel} Challenge! Stake: GHS ${stake.toFixed(
+                  2
+                )} | Win: GHS ${prizePool.toFixed(
+                  2
+                )} (Room #${roomCode}). Accept now: https://swiftdatagh.shop/challenges?room=${roomCode}`
+              : `SwiftData Arena: ${creatorName} opened a Public Free 1v1 ${gameLabel} Room (#${roomCode})! Join live: https://swiftdatagh.shop/challenges?room=${roomCode}`;
           const bulkRes = await dispatchUnifiedBulkSms(
             smsConfig.gateway,
             smsConfig.apiKey,
@@ -535,7 +572,7 @@ async function notifyOpenChallengeOrInvite(
  * Multi-channel notification dispatcher when an Open Challenge is ACCEPTED by an opponent.
  * Notifies:
  *  - The challenge creator directly (In-App + Web Push + Direct SMS)
- *  - All other users across the platform (In-App Broadcast + Web Push Broadcast + Arena SMS)
+ *  - Other Arena players ONLY if it was a Public Challenge
  */
 async function notifyChallengeAccepted(
   supabaseAdmin: any,
@@ -549,14 +586,18 @@ async function notifyChallengeAccepted(
   const roomCode = String(challenge.room_code || "");
   const creatorName = String(challenge.creator_name || "Challenger 1");
   const opponentName = String(challenge.opponent_name || "Challenger 2");
+  const isPrivate = Boolean(challenge?.metadata?.is_private);
 
   // 1. Insert In-App Notification ONLY for the challenge creator (never global `all` spam)
   try {
     if (challenge.creator_id && challenge.creator_id !== challenge.opponent_id) {
       await supabaseAdmin.from("notifications").insert([
         {
-          title: `🚨 Your ${gameLabel} Challenge (#${roomCode}) Was Accepted!`,
-          message: `${opponentName} accepted your GH₵ ${stake.toFixed(2)} ${gameLabel} Challenge! Open Room #${roomCode} now — it's your turn to play for GH₵ ${prizePool.toFixed(2)}!`,
+          title: `🚨 ${opponentName} Accepted Your ${gameLabel} Challenge (#${roomCode})!`,
+          message:
+            stake > 0
+              ? `${opponentName} accepted your GH₵ ${stake.toFixed(2)} ${gameLabel} Challenge! Open Room #${roomCode} now — the match is LIVE for GH₵ ${prizePool.toFixed(2)}!`
+              : `${opponentName} joined your ${gameLabel} Room #${roomCode}! The match is LIVE now!`,
           target_type: "specific",
           target_user_id: challenge.creator_id,
           created_by: challenge.opponent_id || null,
@@ -567,29 +608,37 @@ async function notifyChallengeAccepted(
     console.warn("[challenge-arena] Accepted in-app notification warning:", err);
   }
 
-  // 2. Web Push Broadcast + Creator Push
-  const pushJobs: Promise<number>[] = [
-    triggerWebPush(supabaseUrl, serviceRoleKey, {
-      broadcast: true,
-      title: `🔥 Challenge Accepted: ${creatorName} vs ${opponentName}!`,
-      body: `${opponentName} accepted the ${gameLabel} duel for GH₵ ${prizePool.toFixed(2)} (Room #${roomCode}). Join the Arena now!`,
-      url: `/challenges?room=${roomCode}`,
-      tag: `challenge-accepted-${roomCode}`,
-    }),
-  ];
+  // 2. Web Push (Creator Push + Public Broadcast if not private)
+  const pushJobs: Promise<number>[] = [];
+  if (!isPrivate) {
+    pushJobs.push(
+      triggerWebPush(supabaseUrl, serviceRoleKey, {
+        broadcast: true,
+        title: `🔥 Challenge Accepted: ${creatorName} vs ${opponentName}!`,
+        body: `${opponentName} accepted the ${gameLabel} duel${
+          prizePool > 0 ? ` for GH₵ ${prizePool.toFixed(2)}` : ""
+        } (Room #${roomCode}). Join the Arena now!`,
+        url: `/challenges?room=${roomCode}`,
+        tag: `challenge-accepted-${roomCode}`,
+      })
+    );
+  }
   if (challenge.creator_id) {
     pushJobs.push(
       triggerWebPush(supabaseUrl, serviceRoleKey, {
         user_id: challenge.creator_id,
-        title: `🚨 ${opponentName} Accepted Your ${gameLabel} Challenge!`,
-        body: `Room #${roomCode} is LIVE! Play your opening move now to win GH₵ ${prizePool.toFixed(2)}!`,
+        title: `🚨 ${opponentName} Joined Your ${gameLabel} Room (#${roomCode})!`,
+        body:
+          prizePool > 0
+            ? `Room #${roomCode} is LIVE! Play now to win GH₵ ${prizePool.toFixed(2)}!`
+            : `Room #${roomCode} is LIVE! Make your move now!`,
         url: `/challenges?room=${roomCode}`,
         tag: `challenge-creator-start-${roomCode}`,
       })
     );
   }
 
-  // 3. SMS to Creator + Active Arena Players
+  // 3. SMS to Creator (+ Active Arena Players if public)
   const smsJob = (async () => {
     try {
       const smsConfig = await getSmsConfig(supabaseAdmin);
@@ -597,7 +646,12 @@ async function notifyChallengeAccepted(
 
       // 3a. Direct SMS to Challenge Creator
       if (creatorPhone) {
-        const creatorSms = `SwiftData Arena: ${opponentName} just ACCEPTED your ${gameLabel} Challenge (Room #${roomCode}, Pot: GHS ${prizePool.toFixed(2)})! Play your turn now: https://swiftdatagh.shop/challenges?room=${roomCode}`;
+        const creatorSms =
+          prizePool > 0
+            ? `SwiftData Arena: ${opponentName} just ACCEPTED your ${gameLabel} Challenge (Room #${roomCode}, Pot: GHS ${prizePool.toFixed(
+                2
+              )})! Play your turn now: https://swiftdatagh.shop/challenges?room=${roomCode}`
+            : `SwiftData Arena: ${opponentName} just JOINED your ${gameLabel} Challenge (Room #${roomCode})! Play live now: https://swiftdatagh.shop/challenges?room=${roomCode}`;
         await dispatchUnifiedSms(
           smsConfig.gateway,
           smsConfig.apiKey,
@@ -608,22 +662,26 @@ async function notifyChallengeAccepted(
         );
       }
 
-      // 3b. Notify other Arena players via SMS that the challenge was accepted
-      const otherPlayers = await collectArenaRecipientPhones(
-        supabaseAdmin,
-        [challenge.creator_phone, challenge.opponent_phone],
-        15
-      );
-      if (otherPlayers.length > 0) {
-        const arenaAcceptedSms = `SwiftData Arena: ${opponentName} just accepted ${creatorName}'s ${gameLabel} Challenge for GHS ${prizePool.toFixed(2)} (Room #${roomCode})! Join or post your challenge: https://swiftdatagh.shop/challenges`;
-        await dispatchUnifiedBulkSms(
-          smsConfig.gateway,
-          smsConfig.apiKey,
-          smsConfig.senderId || "SwiftData",
-          otherPlayers,
-          arenaAcceptedSms,
-          "broadcast"
+      // 3b. Notify other Arena players via SMS ONLY for public challenges with a cash pot
+      if (!isPrivate && prizePool > 0) {
+        const otherPlayers = await collectArenaRecipientPhones(
+          supabaseAdmin,
+          [challenge.creator_phone, challenge.opponent_phone],
+          15
         );
+        if (otherPlayers.length > 0) {
+          const arenaAcceptedSms = `SwiftData Arena: ${opponentName} just accepted ${creatorName}'s ${gameLabel} Challenge for GHS ${prizePool.toFixed(
+            2
+          )} (Room #${roomCode})! Join or post your challenge: https://swiftdatagh.shop/challenges`;
+          await dispatchUnifiedBulkSms(
+            smsConfig.gateway,
+            smsConfig.apiKey,
+            smsConfig.senderId || "SwiftData",
+            otherPlayers,
+            arenaAcceptedSms,
+            "broadcast"
+          );
+        }
       }
     } catch (err) {
       console.warn("[challenge-arena] Accepted SMS dispatch warning:", err);
@@ -970,12 +1028,18 @@ serve(async (req: Request) => {
       const rematchOfChallengeId = body.rematch_of_challenge_id
         ? String(body.rematch_of_challenge_id).trim()
         : null;
+      const isPrivateChallenge =
+        body.is_private !== undefined
+          ? Boolean(body.is_private)
+          : Boolean(invitedPhone || invitedUserId || rematchOfChallengeId);
 
       const baseChallengePayload = {
         room_code: roomCode,
         game_type: gameType,
         mode,
-        title: body.title || `${creatorName}'s ${gameType.toUpperCase()} Challenge`,
+        title:
+          body.title ||
+          `${creatorName}'s ${isPrivateChallenge ? "Private " : ""}${gameType.toUpperCase()} Challenge`,
         creator_id: authUser?.id || null,
         creator_name: creatorName,
         creator_phone: creatorPhone || null,
@@ -995,6 +1059,7 @@ serve(async (req: Request) => {
         status: isImmediateStart ? "in_progress" : "open",
         metadata: {
           actual_game_type: gameType,
+          is_private: isPrivateChallenge,
           invited_phone: invitedPhone || null,
           invited_user_id: invitedUserId || null,
           invited_name: invitedName || null,
@@ -1070,7 +1135,9 @@ serve(async (req: Request) => {
         }
       }
 
-      // When an Open 1v1 Challenge is posted, notify all users (In-App + Web Push + SMS) + invited player
+      // When an Open 1v1 Challenge is posted:
+      //  - Private Challenge: Notify ONLY the invited friend (In-App + Web Push + Direct SMS)
+      //  - Public Challenge: Notify all online & subscribed Arena players + post Challenge Card to Global Chat
       let notifyStats = { inAppSent: false, pushSent: 0, directSmsSent: false, arenaSmsCount: 0 };
       if (!isImmediateStart && created) {
         notifyStats = await notifyOpenChallengeOrInvite(
@@ -1082,48 +1149,64 @@ serve(async (req: Request) => {
             invitedPhone: invitedPhone || null,
             invitedUserId: invitedUserId || null,
             invitedName: invitedName || null,
-            broadcastAll: true,
+            broadcastAll: !isPrivateChallenge,
+            isPrivate: isPrivateChallenge,
             createdByUserId: authUser?.id || null,
           }
         );
 
-        // Also drop an interactive Challenge Card directly into the Global Gamer Chat Room!
-        try {
-          const gameLabel = formatGameLabel(gameType);
-          const maskedCreatorPhone =
-            creatorPhone.length >= 7
-              ? `${creatorPhone.slice(0, 4)}***${creatorPhone.slice(-3)}`
-              : null;
-          const cardText = invitedName
-            ? `🎯 Challenged @${invitedName} to a live ${gameLabel} duel! Room #${roomCode} (${
-                rawStake > 0 ? `Stake GH₵ ${rawStake.toFixed(2)} • Win GH₵ ${netPrizePool.toFixed(2)}` : "Free Skill Duel"
-              }).`
-            : `⚔️ Open ${gameLabel} Challenge in Room #${roomCode}! ${
-                rawStake > 0
-                  ? `Stake GH₵ ${rawStake.toFixed(2)} to win GH₵ ${netPrizePool.toFixed(2)}!`
-                  : "Free entry — play to earn Free Data!"
-              } Who is stepping up?`;
+        // Drop an interactive Challenge Card into Global Gamer Chat for Public Challenges (or targeted invite)
+        if (!isPrivateChallenge || invitedUserId || invitedName) {
+          try {
+            const gameLabel = formatGameLabel(gameType);
+            const maskedCreatorPhone =
+              creatorPhone.length >= 7
+                ? `${creatorPhone.slice(0, 4)}***${creatorPhone.slice(-3)}`
+                : null;
+            const cardText = isPrivateChallenge
+              ? `🔒 Sent a Private ${gameLabel} Challenge invite to @${
+                  invitedName || "Friend"
+                }! (${
+                  rawStake > 0
+                    ? `Stake GH₵ ${rawStake.toFixed(2)} • Win GH₵ ${netPrizePool.toFixed(2)}`
+                    : "Free 1v1 Duel"
+                })`
+              : invitedName
+              ? `🎯 Challenged @${invitedName} to a live ${gameLabel} duel! Room #${roomCode} (${
+                  rawStake > 0
+                    ? `Stake GH₵ ${rawStake.toFixed(2)} • Win GH₵ ${netPrizePool.toFixed(2)}`
+                    : "Free Skill Duel"
+                }).`
+              : `⚔️ Open Public ${gameLabel} Challenge in Room #${roomCode}! ${
+                  rawStake > 0
+                    ? `Stake GH₵ ${rawStake.toFixed(2)} to win GH₵ ${netPrizePool.toFixed(2)}!`
+                    : "Free entry — play to earn Free Data!"
+                } Who is stepping up?`;
 
-          await supabaseAdmin.from("game_community_messages").insert({
-            channel: "global",
-            sender_id: authUser?.id || null,
-            sender_name: creatorName,
-            sender_phone_masked: maskedCreatorPhone,
-            sender_level: Math.max(1, Number(body.player_level || 1)),
-            sender_title: String(body.player_title || "Arena Challenger"),
-            favorite_game: gameType,
-            message_type: invitedName || invitedUserId ? "direct_invite" : "challenge_card",
-            message: cardText,
-            challenge_id: created.id,
-            room_code: roomCode,
-            game_type: gameType,
-            stake_amount: rawStake,
-            prize_pool: netPrizePool,
-            target_user_id: invitedUserId || null,
-            target_user_name: invitedName || null,
-          });
-        } catch (chatErr) {
-          console.warn("[challenge-arena] Auto community challenge card insert warning:", chatErr);
+            await supabaseAdmin.from("game_community_messages").insert({
+              channel: "global",
+              sender_id: authUser?.id || null,
+              sender_name: creatorName,
+              sender_phone_masked: maskedCreatorPhone,
+              sender_level: Math.max(1, Number(body.player_level || 1)),
+              sender_title: String(body.player_title || "Arena Challenger"),
+              favorite_game: gameType,
+              message_type:
+                isPrivateChallenge || invitedName || invitedUserId
+                  ? "direct_invite"
+                  : "challenge_card",
+              message: cardText,
+              challenge_id: created.id,
+              room_code: isPrivateChallenge ? null : roomCode,
+              game_type: gameType,
+              stake_amount: rawStake,
+              prize_pool: netPrizePool,
+              target_user_id: invitedUserId || null,
+              target_user_name: invitedName || null,
+            });
+          } catch (chatErr) {
+            console.warn("[challenge-arena] Auto community challenge card insert warning:", chatErr);
+          }
         }
       }
 
@@ -1133,9 +1216,43 @@ serve(async (req: Request) => {
         notifications: notifyStats,
         message: isImmediateStart
           ? `Match started against ${challengerPersonaName} (Medium Difficulty)! Earn points & win!`
+          : isPrivateChallenge
+          ? invitedPhone || invitedName
+            ? `Private Challenge #${roomCode} created! Direct invite sent to ${invitedName || invitedPhone}!`
+            : `Private Room #${roomCode} created! Share your Room Code with your friend to start!`
           : invitedPhone || invitedName
-          ? `Open Challenge #${roomCode} posted! All users notified + direct invite sent to ${invitedName || invitedPhone}!`
-          : `Open Challenge #${roomCode} posted! All users have been notified via In-App, Web Push & SMS!`,
+          ? `Public Challenge #${roomCode} posted to Arena Lobby + direct invite sent to ${invitedName || invitedPhone}!`
+          : `Public Challenge #${roomCode} posted to the Live Arena Lobby! Online players notified!`,
+      });
+    }
+
+    // ── 2A. GET SINGLE CHALLENGE ROOM BY CODE OR ID ─────────────────────────────
+    if (action === "get_room") {
+      const challengeId = String(body.challenge_id || "").trim();
+      const roomCode = String(body.room_code || "")
+        .trim()
+        .toUpperCase()
+        .replace(/^#/, "");
+
+      if (!challengeId && !roomCode) {
+        return jsonResponse({ success: false, error: "Provide a room_code or challenge_id" }, 400);
+      }
+
+      let query = supabaseAdmin.from("game_challenges").select("*");
+      query = challengeId ? query.eq("id", challengeId) : query.eq("room_code", roomCode);
+      const { data: roomRow } = await query.order("created_at", { ascending: false }).limit(1).maybeSingle();
+
+      if (!roomRow) {
+        return jsonResponse({ success: false, error: `No room found with code #${roomCode || challengeId}` }, 404);
+      }
+
+      if (roomRow.metadata?.actual_game_type) {
+        roomRow.game_type = roomRow.metadata.actual_game_type;
+      }
+
+      return jsonResponse({
+        success: true,
+        challenge: roomRow,
       });
     }
 
@@ -1164,6 +1281,20 @@ serve(async (req: Request) => {
         return jsonResponse({ success: false, error: "Open challenge not found or already started." }, 404);
       }
 
+      if (challenge.metadata?.actual_game_type) {
+        challenge.game_type = challenge.metadata.actual_game_type;
+      }
+
+      // If user explicitly clicks "Notify Online Players" (broadcast_all), also make the challenge public in metadata so others can see and join it
+      if (broadcastAll && challenge.metadata?.is_private) {
+        const updatedMeta = { ...(challenge.metadata || {}), is_private: false };
+        await supabaseAdmin
+          .from("game_challenges")
+          .update({ metadata: updatedMeta, updated_at: new Date().toISOString() })
+          .eq("id", challengeId);
+        challenge.metadata = updatedMeta;
+      }
+
       const stats = await notifyOpenChallengeOrInvite(
         supabaseAdmin,
         SUPABASE_URL,
@@ -1174,6 +1305,7 @@ serve(async (req: Request) => {
           invitedUserId,
           invitedName,
           broadcastAll,
+          isPrivate: broadcastAll ? false : Boolean(challenge.metadata?.is_private),
           createdByUserId: authUser?.id || challenge.creator_id || null,
         }
       );
@@ -1181,27 +1313,40 @@ serve(async (req: Request) => {
       return jsonResponse({
         success: true,
         stats,
+        challenge,
         message: invitedPhone || invitedName
           ? `Challenge invite sent to ${invitedName || invitedPhone} via SMS, Web Push & In-App alert!`
           : `Challenge #${challenge.room_code} broadcasted to all online & subscribed users!`,
       });
     }
 
-    // ── 3. JOIN OPEN P2P CHALLENGE ──────────────────────────────────────────────
+    // ── 3. JOIN OPEN P2P CHALLENGE (PUBLIC OR PRIVATE BY ROOM CODE) ─────────────
     if (action === "join_challenge") {
       const challengeId = String(body.challenge_id || "").trim();
+      const roomCodeInput = String(body.room_code || "")
+        .trim()
+        .toUpperCase()
+        .replace(/^#/, "");
+      const joinedByRoomCode = Boolean(body.by_room_code || roomCodeInput);
       const paymentSource = String(body.payment_source || "wallet").toLowerCase();
-      const opponentName = String(body.opponent_name || authUser?.user_metadata?.full_name || "Challenger 2").trim().slice(0, 40);
+      const opponentName = String(
+        body.opponent_name || authUser?.user_metadata?.full_name || "Challenger 2"
+      )
+        .trim()
+        .slice(0, 40);
       const opponentPhone = String(body.opponent_phone || "").trim().slice(0, 15);
 
-      const { data: challenge } = await supabaseAdmin
-        .from("game_challenges")
-        .select("*")
-        .eq("id", challengeId)
+      let lookupQuery = supabaseAdmin.from("game_challenges").select("*");
+      lookupQuery = challengeId
+        ? lookupQuery.eq("id", challengeId)
+        : lookupQuery.eq("room_code", roomCodeInput);
+      const { data: challenge } = await lookupQuery
+        .order("created_at", { ascending: false })
+        .limit(1)
         .maybeSingle();
 
       if (!challenge) {
-        return jsonResponse({ success: false, error: "Challenge not found" }, 404);
+        return jsonResponse({ success: false, error: "Challenge room not found" }, 404);
       }
       if (challenge.status !== "open") {
         return jsonResponse({ success: false, error: "This challenge is no longer open" }, 400);
@@ -1209,10 +1354,34 @@ serve(async (req: Request) => {
       if (authUser && challenge.creator_id && challenge.creator_id === authUser.id) {
         return jsonResponse({
           success: false,
-          error: "You created this challenge! Share the room code with a friend or wait for another player to join.",
+          error:
+            "You created this challenge! Share the room code with your friend or wait for them to join.",
         }, 400);
       }
 
+      // If this is a Private Challenge with a specific invited user/phone, verify access unless joining with the Room Code
+      if (challenge.metadata?.is_private && !joinedByRoomCode) {
+        const invitedUid = challenge.metadata?.invited_user_id;
+        const invitedPh = String(challenge.metadata?.invited_phone || "")
+          .replace(/\D/g, "")
+          .slice(-9);
+        const myPh = opponentPhone.replace(/\D/g, "").slice(-9);
+        const matchesUser = Boolean(invitedUid && authUser?.id && invitedUid === authUser.id);
+        const matchesPhone = Boolean(invitedPh && myPh && invitedPh.length >= 9 && invitedPh === myPh);
+
+        if ((invitedUid || invitedPh) && !matchesUser && !matchesPhone) {
+          return jsonResponse(
+            {
+              success: false,
+              error:
+                "This is a Private Challenge reserved for the invited player. Enter the Room Code to join if you were invited.",
+            },
+            403
+          );
+        }
+      }
+
+      const targetChallengeId = challenge.id;
       const stake = Number(challenge.stake_amount || 0);
       let verifiedPaystackRef: string | null = null;
 
@@ -1309,7 +1478,7 @@ serve(async (req: Request) => {
           status: "in_progress",
           updated_at: new Date().toISOString(),
         })
-        .eq("id", challengeId)
+        .eq("id", targetChallengeId)
         .eq("status", "open")
         .select("*")
         .single();
@@ -1318,7 +1487,11 @@ serve(async (req: Request) => {
         return jsonResponse({ success: false, error: "Could not join challenge (it may have just been taken)" }, 400);
       }
 
-      // Notify the challenge creator AND all other users via Web Push, SMS & In-App notifications!
+      if (updated.metadata?.actual_game_type) {
+        updated.game_type = updated.metadata.actual_game_type;
+      }
+
+      // Notify the challenge creator (+ Arena players if public) via Web Push, SMS & In-App notifications!
       await notifyChallengeAccepted(
         supabaseAdmin,
         SUPABASE_URL,
@@ -1329,7 +1502,9 @@ serve(async (req: Request) => {
       return jsonResponse({
         success: true,
         challenge: updated,
-        message: `Joined ${challenge.creator_name}'s ${challenge.game_type.toUpperCase()} challenge! Creator & Arena players notified — Match is LIVE!`,
+        message: `Joined ${challenge.creator_name}'s ${String(
+          updated.game_type || challenge.game_type
+        ).toUpperCase()} challenge! Match is LIVE!`,
       });
     }
 
