@@ -187,8 +187,9 @@ async function ensureChallengeSchema(supabaseAdmin: any) {
         ON public.game_community_presence FOR SELECT
         USING (true);
 
-      ALTER TABLE public.game_community_messages ADD COLUMN IF NOT EXISTS avatar_id text DEFAULT 'blue_band';
-      ALTER TABLE public.game_community_presence ADD COLUMN IF NOT EXISTS avatar_id text DEFAULT 'blue_band';
+      ALTER TABLE public.game_community_messages ADD COLUMN IF NOT EXISTS avatar_id text DEFAULT 'royal_headband';
+      ALTER TABLE public.game_community_presence ADD COLUMN IF NOT EXISTS avatar_id text DEFAULT 'royal_headband';
+      ALTER TABLE public.game_community_presence ADD COLUMN IF NOT EXISTS ig_note text;
 
       CREATE TABLE IF NOT EXISTS public.game_user_stories (
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -1939,7 +1940,7 @@ serve(async (req: Request) => {
           status: isOnlineNow ? p.status || "online" : "online",
           is_online_now: isOnlineNow,
           active_room_code: p.active_room_code || null,
-          ig_note: defaultNotes[i % defaultNotes.length],
+          ig_note: p.ig_note || null,
           last_seen_at: p.last_seen_at,
         });
       }
@@ -1954,21 +1955,23 @@ serve(async (req: Request) => {
         const maskedPhone =
           rawPhone.length >= 7
             ? `${rawPhone.slice(0, 4)}***${rawPhone.slice(-3)}`
-            : "Verified Gamer";
+            : "Verified Member";
+        const ageMs = nowMs - new Date(prof.updated_at || 0).getTime();
+        const isRecentlyActive = ageMs < 30 * 60 * 1000;
         gamers.push({
           player_key: key,
           user_id: prof.user_id,
-          display_name: prof.full_name || "SwiftData Gamer",
+          display_name: prof.full_name || "SwiftData User",
           masked_phone: maskedPhone,
           raw_phone: rawPhone,
           avatar_id: avatarCatalogIds[idx % avatarCatalogIds.length],
-          player_level: (idx % 5) + 2,
-          player_title: prof.is_agent ? "Pro Arena Host" : "Skill Contender",
+          player_level: 1,
+          player_title: prof.is_agent ? "Verified Agent" : "Registered Member",
           favorite_game: defaultGames[idx % defaultGames.length],
-          status: idx < 5 ? "looking_for_match" : "online",
-          is_online_now: idx < 9,
+          status: isRecentlyActive ? "online" : "online",
+          is_online_now: isRecentlyActive,
           active_room_code: null,
-          ig_note: defaultNotes[(idx + 2) % defaultNotes.length],
+          ig_note: null,
           last_seen_at: prof.updated_at || new Date().toISOString(),
         });
         idx++;
@@ -1977,7 +1980,7 @@ serve(async (req: Request) => {
       return jsonResponse({
         success: true,
         messages: combinedMessages,
-        gamers: gamers.slice(0, 35),
+        gamers: gamers.slice(0, 50),
       });
     }
 
@@ -2001,23 +2004,29 @@ serve(async (req: Request) => {
         ? String(body.status)
         : "online";
       const avatarId = String(body.avatar_id || "royal_headband").trim().slice(0, 120);
+      const igNote = body.ig_note !== undefined ? String(body.ig_note || "").trim().slice(0, 60) : undefined;
+
+      const upsertPayload: Record<string, any> = {
+        player_key: playerKey,
+        user_id: authUser?.id || null,
+        display_name: displayName,
+        masked_phone: maskedPhone,
+        raw_phone: rawPhone || null,
+        avatar_id: avatarId,
+        player_level: Math.max(1, Number(body.player_level || 1)),
+        player_title: String(body.player_title || "Arena Challenger").slice(0, 40),
+        favorite_game: String(body.favorite_game || "oware").toLowerCase(),
+        status,
+        active_room_code: body.active_room_code ? String(body.active_room_code) : null,
+        last_seen_at: new Date().toISOString(),
+      };
+      if (igNote !== undefined) {
+        upsertPayload.ig_note = igNote || null;
+      }
 
       const { data: upserted } = await supabaseAdmin
         .from("game_community_presence")
-        .upsert({
-          player_key: playerKey,
-          user_id: authUser?.id || null,
-          display_name: displayName,
-          masked_phone: maskedPhone,
-          raw_phone: rawPhone || null,
-          avatar_id: avatarId,
-          player_level: Math.max(1, Number(body.player_level || 1)),
-          player_title: String(body.player_title || "Arena Challenger").slice(0, 40),
-          favorite_game: String(body.favorite_game || "oware").toLowerCase(),
-          status,
-          active_room_code: body.active_room_code ? String(body.active_room_code) : null,
-          last_seen_at: new Date().toISOString(),
-        })
+        .upsert(upsertPayload)
         .select("*")
         .single();
 
