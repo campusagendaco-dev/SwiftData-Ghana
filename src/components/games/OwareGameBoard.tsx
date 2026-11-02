@@ -52,24 +52,24 @@ const OWARE_SPEED_PROFILES: Record<
 > = {
   slow: {
     label: "🐢 Slow",
-    moveMs: 800,
-    dropPauseMs: 320,
-    scoopBonusPauseMs: 850,
-    aiDelayMs: 2800,
+    moveMs: 950,
+    dropPauseMs: 580,
+    scoopBonusPauseMs: 1150,
+    aiDelayMs: 3400,
   },
   normal: {
     label: "🚶 Normal",
-    moveMs: 580,
-    dropPauseMs: 230,
-    scoopBonusPauseMs: 620,
-    aiDelayMs: 2200,
+    moveMs: 720,
+    dropPauseMs: 420,
+    scoopBonusPauseMs: 850,
+    aiDelayMs: 2600,
   },
   fast: {
     label: "⚡ Fast",
-    moveMs: 380,
-    dropPauseMs: 140,
-    scoopBonusPauseMs: 340,
-    aiDelayMs: 1350,
+    moveMs: 460,
+    dropPauseMs: 240,
+    scoopBonusPauseMs: 480,
+    aiDelayMs: 1600,
   },
 };
 
@@ -930,12 +930,12 @@ export function OwareGameBoard({
   const [aiDifficultyDepth, setAiDifficultyDepth] = useState<number>(4); // 2 = Easy, 4 = Medium, 6 = Hard
   const [sowingSpeed, setSowingSpeed] = useState<OwareSowingSpeed>(() => {
     try {
-      const saved = localStorage.getItem("swiftdata_oware_speed") as OwareSowingSpeed | null;
+      const saved = localStorage.getItem("swiftdata_oware_speed_v2") as OwareSowingSpeed | null;
       if (saved === "slow" || saved === "normal" || saved === "fast") return saved;
     } catch {
       // ignore
     }
-    return "normal";
+    return "slow";
   });
   const [muted, setMuted] = useState(() => !getGameSensoryPreferences().soundEnabled);
   const [vibrationEnabled, setVibrationEnabled] = useState(
@@ -967,10 +967,12 @@ export function OwareGameBoard({
 
   const boardPlanksRef = useRef<HTMLDivElement | null>(null);
   const animTimerRef = useRef<number | null>(null);
+  const animSubTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     return () => {
       if (animTimerRef.current) window.clearTimeout(animTimerRef.current);
+      if (animSubTimerRef.current) window.clearTimeout(animSubTimerRef.current);
     };
   }, []);
 
@@ -1005,23 +1007,6 @@ export function OwareGameBoard({
     };
   }, []);
 
-  // Keep synced with external realtime board_state updates in P2P mode (including when opponent wins!)
-  useEffect(() => {
-    if (
-      !isAnimating &&
-      initialState &&
-      Array.isArray(initialState.pits) &&
-      initialState.pits.length === 12 &&
-      ((initialState.moveCount || 0) > (game.moveCount || 0) ||
-        Boolean(initialState.winner && !game.winner) ||
-        ((initialState.moveCount || 0) === (game.moveCount || 0) &&
-          initialState.turn &&
-          initialState.turn !== game.turn))
-    ) {
-      setGame({ variant: game.variant || "nam-nam", ...initialState });
-    }
-  }, [initialState, game.moveCount, game.turn, game.variant, game.winner, isAnimating]);
-
   // Whenever game.winner becomes set (from local move, AI move, or P2P opponent move),
   // open the Winner Spotlight Popup and notify parent onMatchComplete once!
   useEffect(() => {
@@ -1033,7 +1018,7 @@ export function OwareGameBoard({
     onMatchComplete?.(game.winner, game);
   }, [game, isAnimating, onMatchComplete]);
 
-  // Step-by-step animated sowing player with live SVG Hand gliding across bowls
+  // Step-by-step animated sowing player with Two-Phase Hand Glide -> Seed Drop/Scoop & Pause
   const playAnimatedMove = useCallback(
     (
       steps: OwareAnimationStep[],
@@ -1047,6 +1032,9 @@ export function OwareGameBoard({
         if (finalState.winner) onMatchComplete?.(finalState.winner, finalState);
         return;
       }
+
+      if (animTimerRef.current) window.clearTimeout(animTimerRef.current);
+      if (animSubTimerRef.current) window.clearTimeout(animSubTimerRef.current);
 
       setIsAnimating(true);
       const isTopPlayer = moverSide === "opponent";
@@ -1065,9 +1053,8 @@ export function OwareGameBoard({
         seedCount: 0,
       });
 
-      // Show every single bowl drop clearly (only subsample if an ultra-long relay exceeds 120 steps)
-      const speedConfig = OWARE_SPEED_PROFILES[sowingSpeed] || OWARE_SPEED_PROFILES.normal;
-      const stride = steps.length > 120 ? Math.ceil(steps.length / 100) : 1;
+      const speedConfig = OWARE_SPEED_PROFILES[sowingSpeed] || OWARE_SPEED_PROFILES.slow;
+      const stride = steps.length > 140 ? Math.ceil(steps.length / 120) : 1;
       const sampledSteps = steps.filter(
         (s, idx) =>
           idx === 0 ||
@@ -1080,7 +1067,6 @@ export function OwareGameBoard({
       );
 
       let cursor = 0;
-      const baseStepInterval = speedConfig.moveMs + speedConfig.dropPauseMs;
 
       const tick = () => {
         if (cursor >= sampledSteps.length) {
@@ -1124,47 +1110,65 @@ export function OwareGameBoard({
         }
 
         const currentFrame = sampledSteps[cursor];
-        setAnimStep(currentFrame);
-
         const pitCoords = getPitCenterInsideBoard(currentFrame.activePit);
-        setHandPose({
+
+        // PHASE 1: Smoothly glide the hand to the target bowl BEFORE dropping/scooping the seed
+        setHandPose((prev) => ({
           visible: true,
           x: pitCoords.x,
           y: pitCoords.y,
           widthPx: pitCoords.widthPx,
           isTopPlayer,
           isInstant: false,
-          isPulsing: true,
-          seedCount: currentFrame.inHand,
-        });
+          isPulsing: false,
+          seedCount: prev.seedCount,
+        }));
 
-        window.setTimeout(() => {
-          setHandPose((prev) => ({ ...prev, isPulsing: false }));
-        }, speedConfig.dropPauseMs);
+        // PHASE 2: Once the hand arrives at the bowl, scoop/drop the seed, play sound, and pause clearly
+        animSubTimerRef.current = window.setTimeout(() => {
+          setAnimStep(currentFrame);
+          setHandPose({
+            visible: true,
+            x: pitCoords.x,
+            y: pitCoords.y,
+            widthPx: pitCoords.widthPx,
+            isTopPlayer,
+            isInstant: false,
+            isPulsing: true,
+            seedCount: currentFrame.inHand,
+          });
 
-        if (!muted) {
-          if (currentFrame.harvestedPit !== undefined) {
-            playSuccessSound();
-            triggerHapticSensor("pocket_drop");
-          } else {
-            playWoodSeedClack(cursor);
-            triggerHapticSensor("seed_drop");
+          window.setTimeout(() => {
+            setHandPose((prev) => ({ ...prev, isPulsing: false }));
+          }, Math.min(260, speedConfig.dropPauseMs));
+
+          if (!muted) {
+            if (currentFrame.harvestedPit !== undefined) {
+              playSuccessSound();
+              triggerHapticSensor("pocket_drop");
+            } else {
+              playWoodSeedClack(cursor);
+              triggerHapticSensor("seed_drop");
+            }
           }
-        }
 
-        // Add a clear human pause when scooping the starting bowl, scooping a relay bowl, or harvesting 4 seeds
-        const extraPause =
-          currentFrame.type === "pickup" ||
-          currentFrame.harvestedPit !== undefined ||
-          currentFrame.isRelayScoop
-            ? speedConfig.scoopBonusPauseMs
-            : 0;
+          // Extra human pause when scooping the starting bowl, scooping a relay bowl, or harvesting 4 seeds
+          const extraPause =
+            currentFrame.type === "pickup" ||
+            currentFrame.harvestedPit !== undefined ||
+            currentFrame.isRelayScoop
+              ? speedConfig.scoopBonusPauseMs
+              : 0;
 
-        cursor += 1;
-        animTimerRef.current = window.setTimeout(tick, baseStepInterval + extraPause);
+          cursor += 1;
+          animTimerRef.current = window.setTimeout(
+            tick,
+            speedConfig.dropPauseMs + extraPause
+          );
+        }, speedConfig.moveMs);
       };
 
-      animTimerRef.current = window.setTimeout(tick, 220);
+      animTimerRef.current = window.setTimeout(tick, 180);
     },
     [
       muted,
@@ -1177,6 +1181,56 @@ export function OwareGameBoard({
       onPointsEarned,
     ]
   );
+
+  // Keep synced with external realtime board_state updates in P2P mode (and animate the opponent's move!)
+  useEffect(() => {
+    if (
+      !isAnimating &&
+      initialState &&
+      Array.isArray(initialState.pits) &&
+      initialState.pits.length === 12 &&
+      ((initialState.moveCount || 0) > (game.moveCount || 0) ||
+        Boolean(initialState.winner && !game.winner) ||
+        ((initialState.moveCount || 0) === (game.moveCount || 0) &&
+          initialState.turn &&
+          initialState.turn !== game.turn))
+    ) {
+      const incomingMoveCount = initialState.moveCount || 0;
+      const currentMoveCount = game.moveCount || 0;
+      const lastMovePit = initialState.lastMove?.pit;
+      const lastMovePlayer = initialState.lastMove?.player;
+
+      if (
+        incomingMoveCount === currentMoveCount + 1 &&
+        typeof lastMovePit === "number" &&
+        lastMovePlayer &&
+        lastMovePlayer !== mySide
+      ) {
+        const activeVariant = initialState.variant || game.variant || "nam-nam";
+        const sim =
+          activeVariant === "nam-nam"
+            ? simulateNamNamMoveWithSteps(game, lastMovePit, lastMovePlayer, true)
+            : simulateAbapaMoveWithSteps(game, lastMovePit, lastMovePlayer, true);
+        if (sim && sim.steps.length > 0) {
+          playAnimatedMove(
+            sim.steps,
+            { variant: activeVariant, ...initialState },
+            false,
+            lastMovePlayer
+          );
+          return;
+        }
+      }
+
+      setGame({ variant: game.variant || "nam-nam", ...initialState });
+    }
+  }, [
+    initialState,
+    game,
+    isAnimating,
+    mySide,
+    playAnimatedMove,
+  ]);
 
   const variant: OwareRuleVariant = game.variant || "nam-nam";
 
@@ -1193,7 +1247,7 @@ export function OwareGameBoard({
   const handleSelectSowingSpeed = (nextSpeed: OwareSowingSpeed) => {
     setSowingSpeed(nextSpeed);
     try {
-      localStorage.setItem("swiftdata_oware_speed", nextSpeed);
+      localStorage.setItem("swiftdata_oware_speed_v2", nextSpeed);
     } catch {
       // ignore
     }
