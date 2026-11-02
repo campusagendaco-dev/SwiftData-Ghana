@@ -392,6 +392,26 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
     };
   }, [forcedLandscape]);
 
+  // Prevent browser page scroll / rubber-band bounce when touching or dragging on the pool table or cue trays
+  useEffect(() => {
+    const preventScroll = (e: TouchEvent) => {
+      if (e.cancelable) e.preventDefault();
+    };
+    const svgEl = svgRef.current;
+    const fineEl = fineTrayRef.current;
+    const powerEl = powerTrayRef.current;
+
+    svgEl?.addEventListener("touchmove", preventScroll, { passive: false });
+    fineEl?.addEventListener("touchmove", preventScroll, { passive: false });
+    powerEl?.addEventListener("touchmove", preventScroll, { passive: false });
+
+    return () => {
+      svgEl?.removeEventListener("touchmove", preventScroll);
+      fineEl?.removeEventListener("touchmove", preventScroll);
+      powerEl?.removeEventListener("touchmove", preventScroll);
+    };
+  }, [isPortraitViewport, forcedLandscape]);
+
   const isMyTurn =
     !state.winner &&
     !isSimulating &&
@@ -1351,8 +1371,8 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
         <div
           className={
             forcedLandscape && isPortraitViewport
-              ? "fixed inset-0 z-[90] bg-[#0b1324] flex items-center justify-center overflow-hidden"
-              : "relative rounded-3xl bg-gradient-to-b from-[#131e36] via-[#0d1629] to-[#090f1d] border-2 border-sky-500/30 p-3 sm:p-5 shadow-[0_25px_70px_rgba(0,0,0,0.85)] overflow-hidden"
+              ? "fixed inset-0 z-[90] bg-[#0b1324] flex items-center justify-center overflow-hidden touch-none overscroll-none select-none"
+              : "relative rounded-3xl bg-gradient-to-b from-[#131e36] via-[#0d1629] to-[#090f1d] border-2 border-sky-500/30 p-2.5 sm:p-4 shadow-[0_25px_70px_rgba(0,0,0,0.85)] overflow-hidden touch-none overscroll-none select-none"
           }
         >
           <div

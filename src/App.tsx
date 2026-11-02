@@ -369,6 +369,11 @@ const AppContent = () => {
   const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
   const isDashboard = location.pathname.startsWith("/dashboard");
   const isAdmin = location.pathname.startsWith("/admin");
+  const isChallengeArenaPage =
+    location.pathname.startsWith("/challenges") ||
+    location.pathname.startsWith("/dashboard/challenges") ||
+    location.pathname.startsWith("/games") ||
+    location.pathname.startsWith("/dashboard/games");
   const isAgentStore = location.pathname.startsWith("/store/") || (!!activeDomain && !isDashboard && !isAdmin);
   const isMaintenanceBypassRoute =
     location.pathname.startsWith("/admin") ||
@@ -393,10 +398,10 @@ const AppContent = () => {
     <>
       <TraditionalBackground className="fixed inset-0 z-0 opacity-[0.35] dark:opacity-[0.45] pointer-events-none" />
       <div className="relative z-10 min-h-screen flex flex-col">
-        {!isDashboard && !isAgentStore && !isAdmin && <Navbar />}
+        {!isDashboard && !isAgentStore && !isAdmin && !isChallengeArenaPage && <Navbar />}
         <ChunkErrorBoundary>
         <Suspense fallback={<LoadingScreen />}>
-      <main className="flex-1 w-full flex flex-col min-h-[calc(100vh-4rem)]">
+      <main className={isChallengeArenaPage ? "flex-1 w-full flex flex-col min-h-[100dvh]" : "flex-1 w-full flex flex-col min-h-[calc(100vh-4rem)]"}>
       <Routes>
         {/* Public pages */}
         <Route path="/" element={isAdminSubdomain ? <Navigate to="/admin" replace /> : (activeDomain ? <AgentStore /> : <Index />)} />
@@ -587,19 +592,19 @@ const AppContent = () => {
       </main>
       </Suspense>
         </ChunkErrorBoundary>
-      {!isDashboard && !isAgentStore && !isAdmin && <Footer />}
+      {!isDashboard && !isAgentStore && !isAdmin && !isChallengeArenaPage && <Footer />}
         <Suspense fallback={null}>
-          {!isDashboard && !isAdmin && <TutorialModal />}
+          {!isDashboard && !isAdmin && !isChallengeArenaPage && <TutorialModal />}
           <AudioUnlocker />
           <NotificationPopup />
           <ChallengeLiveNotifier />
-          <AIConcierge />
-          <PushNotificationPrompt variant="floating" />
+          {!isChallengeArenaPage && <AIConcierge />}
+          {!isChallengeArenaPage && <PushNotificationPrompt variant="floating" />}
           <AccountSwitcherModal />
-          {!isAgentStore && <FreeDataButton />}
-          {!isAgentStore && <DataPromoPopupModal />}
+          {!isAgentStore && !isChallengeArenaPage && <FreeDataButton />}
+          {!isAgentStore && !isChallengeArenaPage && <DataPromoPopupModal />}
         </Suspense>
-        {!isAgentStore && <WhatsAppButton />}
+        {!isAgentStore && !isChallengeArenaPage && <WhatsAppButton />}
       </div>
     </>
   );

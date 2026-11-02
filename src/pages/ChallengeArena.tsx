@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
@@ -134,6 +134,7 @@ function getInitialBoardForGame(gameType: GameType) {
 export default function ChallengeArena() {
   const { user, profile } = useAuth();
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const roomQueryParam = (searchParams.get("room") || "").trim().toUpperCase();
 
@@ -287,6 +288,36 @@ export default function ChallengeArena() {
     const t = setTimeout(() => setTurnNotificationBanner(null), 4200);
     return () => clearTimeout(t);
   }, [turnNotificationBanner]);
+
+  // Lock page scrolling & rubber-banding whenever an active game board (Snooker Pool, Oware, Ludo, Dame, Slash) is open
+  useEffect(() => {
+    const prevBodyOverscroll = document.body.style.overscrollBehavior;
+    const prevHtmlOverscroll = document.documentElement.style.overscrollBehavior;
+    document.body.style.overscrollBehavior = "none";
+    document.documentElement.style.overscrollBehavior = "none";
+
+    if (activeChallenge) {
+      const prevBodyOverflow = document.body.style.overflow;
+      const prevHtmlOverflow = document.documentElement.style.overflow;
+      document.body.style.overflow = "hidden";
+      document.documentElement.style.overflow = "hidden";
+      document.body.setAttribute("data-full-game-mode", "true");
+      window.scrollTo(0, 0);
+
+      return () => {
+        document.body.style.overflow = prevBodyOverflow;
+        document.documentElement.style.overflow = prevHtmlOverflow;
+        document.body.style.overscrollBehavior = prevBodyOverscroll;
+        document.documentElement.style.overscrollBehavior = prevHtmlOverscroll;
+        document.body.removeAttribute("data-full-game-mode");
+      };
+    }
+
+    return () => {
+      document.body.style.overscrollBehavior = prevBodyOverscroll;
+      document.documentElement.style.overscrollBehavior = prevHtmlOverscroll;
+    };
+  }, [activeChallenge]);
 
   const levelInfo = getPlayerLevelStatus(arenaPoints);
   const selectedTargetOption =
@@ -1071,12 +1102,29 @@ export default function ChallengeArena() {
   );
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6 pb-16">
-      {/* ── Hero Banner ── */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-amber-950/40 to-emerald-950/40 border border-amber-500/30 p-6 sm:p-8 shadow-2xl">
+    <div
+      className={
+        activeChallenge
+          ? "fixed inset-0 z-[85] w-screen h-[100dvh] bg-slate-950 flex flex-col overflow-hidden overscroll-none select-none"
+          : "max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-6 pb-16 overscroll-none"
+      }
+    >
+      {/* ── Hero Banner (Lobby Only — Hidden in Full Game Mode) ── */}
+      {!activeChallenge && (
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-amber-950/40 to-emerald-950/40 border border-amber-500/30 p-5 sm:p-8 shadow-2xl">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
           <div className="space-y-2.5 max-w-2xl">
             <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => navigate(user ? "/dashboard" : "/")}
+                className="h-7 rounded-xl border-white/20 bg-slate-950/70 hover:bg-slate-900 text-white font-black text-xs px-2.5 gap-1"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                {user ? "Dashboard" : "Home"}
+              </Button>
               <Badge className="bg-amber-500 text-slate-950 font-black text-xs px-3 py-1 gap-1">
                 <Trophy className="w-3.5 h-3.5" /> GHANA TRADITIONAL GAMES ARENA
               </Badge>
@@ -1124,8 +1172,10 @@ export default function ChallengeArena() {
           </div>
         </div>
       </div>
+      )}
 
-      {/* ── PRO LEVEL & TARGET DATA BUNDLE ACCUMULATION CONSOLE (1GB / 2GB / 5GB) ── */}
+      {/* ── PRO LEVEL & TARGET DATA BUNDLE ACCUMULATION CONSOLE (Lobby Only — Hidden in Full Game Mode) ── */}
+      {!activeChallenge && (
       <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-slate-900/95 via-sky-950/40 to-purple-950/40 border border-sky-500/35 shadow-xl space-y-4">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           {/* Player Level & Human-Sense Difficulty Badge */}
@@ -1261,6 +1311,7 @@ export default function ChallengeArena() {
           </div>
         )}
       </div>
+      )}
 
       {/* ── Deep-Link Invited Challenge Spotlight Banner (?room=XXXXXX) ── */}
       {!activeChallenge && invitedSpotlightChallenge && (
@@ -1326,55 +1377,77 @@ export default function ChallengeArena() {
         onStartGame={() => setInstructionModalOpen(false)}
       />
 
-      {/* ── Active Game Stage (When Playing or Waiting in Room) ── */}
+      {/* ── Active Game Stage (Locked Full-Screen Game Mode View — Zero Page Movement) ── */}
       {activeChallenge ? (
-        <Card className="border-2 border-amber-500/40 bg-slate-950/90 shadow-2xl overflow-hidden">
-          <CardHeader className="border-b border-white/10 bg-slate-900/60 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="space-y-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setActiveChallenge(null)}
-                  className="h-8 px-2.5 text-xs text-slate-300 hover:text-white gap-1"
-                >
-                  <ArrowLeft className="w-4 h-4" /> Back to Lobby
-                </Button>
-                <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/40 font-mono">
-                  Room #{activeChallenge.room_code}
-                </Badge>
-                <Badge
-                  className={
-                    activeChallenge.status === "in_progress"
-                      ? "bg-emerald-500 text-slate-950 font-black"
-                      : activeChallenge.status === "open"
-                      ? "bg-amber-500 text-slate-950 font-black animate-pulse"
-                      : "bg-purple-500 text-white font-black"
-                  }
-                >
-                  {activeChallenge.status === "open"
-                    ? "⏳ WAITING FOR OPPONENT"
-                    : activeChallenge.status === "in_progress"
-                    ? "🟢 MATCH LIVE"
-                    : "🏁 MATCH COMPLETED"}
-                </Badge>
-              </div>
-              <CardTitle className="text-lg sm:text-xl font-black text-white">
-                {activeChallenge.creator_name} vs.{" "}
-                {activeChallenge.opponent_name || "Waiting for Challenger..."}
-              </CardTitle>
+        <Card className="flex-1 min-h-0 w-full flex flex-col border-0 rounded-none bg-slate-950 shadow-none overflow-hidden">
+          <CardHeader className="shrink-0 py-2 px-3 sm:px-5 border-b border-white/10 bg-slate-900/95 flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setActiveChallenge(null)}
+                className="h-8 px-2.5 rounded-xl border-white/15 bg-white/5 text-xs text-slate-200 hover:text-white gap-1 font-bold"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" /> Lobby
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => navigate(user ? "/dashboard" : "/")}
+                className="h-8 px-2 text-xs text-slate-400 hover:text-white font-bold"
+              >
+                Exit
+              </Button>
+              <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/40 font-mono text-[11px]">
+                #{activeChallenge.room_code}
+              </Badge>
+              <Badge
+                className={
+                  activeChallenge.status === "in_progress"
+                    ? "bg-emerald-500 text-slate-950 font-black text-[10px]"
+                    : activeChallenge.status === "open"
+                    ? "bg-amber-500 text-slate-950 font-black animate-pulse text-[10px]"
+                    : "bg-purple-500 text-white font-black text-[10px]"
+                }
+              >
+                {activeChallenge.status === "open"
+                  ? "⏳ WAITING"
+                  : activeChallenge.status === "in_progress"
+                  ? "🟢 LIVE"
+                  : "🏁 DONE"}
+              </Badge>
+              <span className="text-xs sm:text-sm font-black text-white truncate max-w-[220px] sm:max-w-none">
+                {activeChallenge.creator_name} <span className="text-amber-400">vs.</span>{" "}
+                {activeChallenge.opponent_name || "Waiting..."}
+              </span>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2.5">
-              <div className="px-3.5 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-right">
-                <p className="text-[10px] uppercase font-bold text-emerald-300">
-                  {activeChallenge.mode === "free_data" ? "Free Data Prize" : "Winner Prize Pool"}
-                </p>
-                <p className="text-sm sm:text-base font-black text-emerald-400 font-mono">
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Compact Level & Target Data Progress Pill inside Full Game Mode */}
+              <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-500/10 border border-amber-500/30 text-[11px] font-black text-amber-300">
+                <span>L{levelInfo.level}</span>
+                <span>•</span>
+                <span className="font-mono text-white">⚡ {arenaPoints.toLocaleString()} Pts</span>
+                <span className="text-emerald-300 font-mono">
+                  ({targetProgressPercent}% → {targetDataSize})
+                </span>
+              </div>
+
+              {lastPointsPopup && (
+                <Badge className="bg-amber-400 text-slate-950 font-black text-[10px] animate-bounce px-2 py-0.5">
+                  +{lastPointsPopup.pts} PTS
+                </Badge>
+              )}
+
+              <div className="px-2.5 py-1 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center gap-1.5">
+                <span className="text-[10px] uppercase font-bold text-emerald-300 hidden sm:inline">
+                  {activeChallenge.mode === "free_data" ? "Prize:" : "Pot:"}
+                </span>
+                <span className="text-xs sm:text-sm font-black text-emerald-400 font-mono">
                   {activeChallenge.mode === "free_data"
-                    ? `🎁 Free ${activeChallenge.reward_data_size || "1GB"} Data`
+                    ? `🎁 Free ${activeChallenge.reward_data_size || "1GB"}`
                     : `GH₵ ${Number(activeChallenge.prize_pool || 0).toFixed(2)}`}
-                </p>
+                </span>
               </div>
 
               {activeChallenge.status === "open" && (
@@ -1392,25 +1465,25 @@ export default function ChallengeArena() {
                       });
                       setTimeout(() => setCopiedCode(false), 2000);
                     }}
-                    className="h-9 rounded-xl border-amber-500/40 bg-amber-500/10 text-amber-300 font-bold text-xs gap-1.5"
+                    className="h-8 rounded-xl border-amber-500/40 bg-amber-500/10 text-amber-300 font-bold text-xs gap-1"
                   >
                     {copiedCode ? <Check className="w-3.5 h-3.5" /> : <Share2 className="w-3.5 h-3.5" />}
-                    Copy Invite Link
+                    Copy Link
                   </Button>
                   <Button
                     size="sm"
                     variant="destructive"
                     onClick={() => handleCancelOpenChallenge(activeChallenge.id)}
-                    className="h-9 rounded-xl text-xs font-bold gap-1"
+                    className="h-8 rounded-xl text-xs font-bold gap-1"
                   >
-                    <XCircle className="w-3.5 h-3.5" /> Cancel &amp; Refund
+                    <XCircle className="w-3.5 h-3.5" /> Cancel
                   </Button>
                 </>
               )}
             </div>
           </CardHeader>
 
-          <CardContent className="p-4 sm:p-6 space-y-6">
+          <CardContent className="flex-1 min-h-0 w-full overflow-y-auto overflow-x-hidden overscroll-none p-2 sm:p-4 space-y-2.5 max-w-6xl mx-auto">
             {/* Waiting for Opponent + Live Invite & Broadcast Console (Open P2P Challenge) */}
             {activeChallenge.status === "open" && (
               <div className="p-5 sm:p-6 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-5">
