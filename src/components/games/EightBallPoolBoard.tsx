@@ -16,6 +16,10 @@ import {
   Brain,
   BellRing,
   Hand,
+  Trophy,
+  Crown,
+  Gamepad2,
+  Eye,
 } from "lucide-react";
 import {
   playCueStrikeSound,
@@ -277,6 +281,8 @@ export interface EightBallPoolBoardProps {
   creatorName: string;
   opponentName: string;
   roomCode?: string;
+  challengeId?: string;
+  prizePoolGhs?: number;
   playerTotalPoints?: number;
   playerLevel?: number;
   reservedTopPx?: number;
@@ -284,6 +290,8 @@ export interface EightBallPoolBoardProps {
   onStateChange?: (state: EightBallPoolState) => void;
   onPointsEarned?: (points: number, reason: string) => void;
   onMatchComplete?: (winner: "creator" | "opponent" | "draw", finalState: EightBallPoolState) => void;
+  onRematch?: () => void;
+  onPlayAnotherGame?: () => void;
 }
 
 export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
@@ -292,12 +300,16 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
   creatorName,
   opponentName,
   roomCode,
+  challengeId,
+  prizePoolGhs = 0,
   playerTotalPoints = 0,
   reservedTopPx = 28,
   initialState,
   onStateChange,
   onPointsEarned,
   onMatchComplete,
+  onRematch,
+  onPlayAnotherGame,
 }) => {
   const screenFit = useDeviceScreenFit();
   const levelInfo = getPlayerLevelStatus(playerTotalPoints);
@@ -1466,12 +1478,46 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
 
                 <InGameVoiceChat
                   roomCode={roomCode || "POOL-ARENA"}
+                  challengeId={challengeId}
                   mySide={mySide}
                   myName={mySide === "creator" ? creatorName : displayOpponentName}
                   opponentName={mySide === "creator" ? displayOpponentName : creatorName}
                   mode={mode}
                   compact={true}
                 />
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onRematch) {
+                      onRematch();
+                      if (mode !== "p2p") {
+                        setState(INITIAL_POOL_STATE);
+                        onStateChange?.(INITIAL_POOL_STATE);
+                      }
+                    } else {
+                      setState(INITIAL_POOL_STATE);
+                      onStateChange?.(INITIAL_POOL_STATE);
+                    }
+                  }}
+                  title="Rematch / Rack New Frame"
+                  className="h-5 sm:h-6 px-2 rounded-md bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[8px] sm:text-[9px] flex items-center gap-0.5 cursor-pointer shrink-0 shadow"
+                >
+                  <RotateCcw className="w-2.5 h-2.5" />
+                  <span>Rematch</span>
+                </button>
+
+                {onPlayAnotherGame && (
+                  <button
+                    type="button"
+                    onClick={onPlayAnotherGame}
+                    title="Play Another Game"
+                    className="h-5 sm:h-6 px-2 rounded-md bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/50 text-emerald-200 font-black text-[8px] sm:text-[9px] flex items-center gap-0.5 cursor-pointer shrink-0"
+                  >
+                    <Gamepad2 className="w-2.5 h-2.5" />
+                    <span className="hidden sm:inline">Play Another</span>
+                  </button>
+                )}
 
                 <span
                   title={`Auto-fitted for ${screenFit.deviceModelHint} (${poolMetrics.tableWidthPx}×${poolMetrics.tableHeightPx}px table)`}
@@ -2093,6 +2139,87 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
                 </Button>
               </div>
             </div>
+
+            {/* ── IN-TABLE 8-BALL POOL WINNER SPOTLIGHT & REMATCH OVERLAY ── */}
+            {state.winner && (
+              <div className="absolute inset-0 z-50 flex items-center justify-center p-3 bg-slate-950/85 backdrop-blur-md animate-in fade-in duration-200">
+                <div className="w-full max-w-md rounded-3xl bg-gradient-to-b from-slate-900 via-[#111827] to-slate-950 border-2 border-amber-400/70 shadow-[0_0_50px_rgba(245,158,11,0.35)] p-4 sm:p-5 text-center space-y-3">
+                  <div className="flex flex-wrap items-center justify-center gap-2">
+                    <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-amber-500/20 border border-amber-400/50 text-amber-300 text-[10px] font-black uppercase tracking-wider">
+                      <Crown className="w-3 h-3 text-amber-400" />
+                      <span>8-Ball Pool • Frame Winner</span>
+                    </div>
+                    <InGameVoiceChat
+                      roomCode={roomCode || "POOL-ARENA"}
+                      challengeId={challengeId}
+                      mySide={mySide}
+                      myName={mySide === "creator" ? creatorName : displayOpponentName}
+                      opponentName={mySide === "creator" ? displayOpponentName : creatorName}
+                      mode={mode}
+                      compact={true}
+                    />
+                  </div>
+
+                  <div className="flex flex-col items-center gap-1.5">
+                    <div className="w-14 h-14 rounded-full bg-gradient-to-br from-amber-300 via-amber-500 to-orange-600 p-1 shadow-lg">
+                      <div className="w-full h-full rounded-full bg-slate-950 flex items-center justify-center">
+                        <Trophy className="w-7 h-7 text-amber-400 animate-bounce" />
+                      </div>
+                    </div>
+                    <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">
+                      🏆 {state.winner === "creator" ? creatorName : displayOpponentName} Wins!
+                    </h2>
+                    <p className="text-xs text-slate-300 font-semibold max-w-xs mx-auto">
+                      {state.lastAction}
+                    </p>
+                    {prizePoolGhs > 0 && (
+                      <div className="px-3 py-1 rounded-xl bg-emerald-500/20 border border-emerald-400/50 text-emerald-300 text-xs font-black">
+                        💰 Winner Payout: GH₵ {prizePoolGhs.toFixed(2)}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                    <Button
+                      type="button"
+                      onClick={() => {
+                        if (onRematch) {
+                          onRematch();
+                          if (mode !== "p2p") {
+                            setState(INITIAL_POOL_STATE);
+                            onStateChange?.(INITIAL_POOL_STATE);
+                          }
+                        } else {
+                          setState(INITIAL_POOL_STATE);
+                          onStateChange?.(INITIAL_POOL_STATE);
+                        }
+                      }}
+                      className="h-10 px-4 rounded-xl bg-gradient-to-r from-emerald-400 via-amber-400 to-orange-500 text-slate-950 font-black text-xs shadow-lg gap-1.5 cursor-pointer"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>
+                        {state.winner === mySide
+                          ? "🔄 Play Rematch"
+                          : `🔄 Request Rematch vs ${
+                              state.winner === "creator" ? creatorName : displayOpponentName
+                            }`}
+                      </span>
+                    </Button>
+                    {onPlayAnotherGame && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={onPlayAnotherGame}
+                        className="h-10 px-4 rounded-xl border-sky-400/50 bg-sky-500/15 text-sky-200 font-black text-xs gap-1.5 cursor-pointer"
+                      >
+                        <Gamepad2 className="w-3.5 h-3.5" />
+                        <span>Play Another Game</span>
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

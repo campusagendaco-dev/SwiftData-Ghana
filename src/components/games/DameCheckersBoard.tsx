@@ -1,9 +1,21 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Crown, HelpCircle, Brain, Volume2, VolumeX, Smartphone } from "lucide-react";
+import {
+  Crown,
+  HelpCircle,
+  Brain,
+  Volume2,
+  VolumeX,
+  Smartphone,
+  Trophy,
+  RotateCcw,
+  Gamepad2,
+  Eye,
+} from "lucide-react";
 import { playSound, playSuccessSound } from "@/lib/sound";
 import { useDeviceScreenFit } from "@/hooks/use-device-screen-fit";
+import { InGameVoiceChat } from "@/components/games/InGameVoiceChat";
 import {
   playWoodSeedClack,
   playLevelUpFanfare,
@@ -279,11 +291,16 @@ interface DameCheckersBoardProps {
   mySide: "creator" | "opponent";
   creatorName: string;
   opponentName: string;
+  roomCode?: string;
+  challengeId?: string;
   initialState?: DameState;
   onStateChange?: (nextState: DameState) => void;
   onMatchComplete?: (winnerSide: "creator" | "opponent" | "draw", finalState: DameState) => void;
   onPointsEarned?: (points: number, reason: string) => void;
   playerLevel?: number;
+  prizePoolGhs?: number;
+  onRematch?: () => void;
+  onPlayAnotherGame?: () => void;
 }
 
 export function DameCheckersBoard({
@@ -291,11 +308,16 @@ export function DameCheckersBoard({
   mySide,
   creatorName,
   opponentName,
+  roomCode,
+  challengeId,
   initialState,
   onStateChange,
   onMatchComplete,
   onPointsEarned,
   playerLevel = 1,
+  prizePoolGhs = 0,
+  onRematch,
+  onPlayAnotherGame,
 }: DameCheckersBoardProps) {
   const persona = HUMAN_CHALLENGER_PERSONAS.dame;
   const effectiveOpponentName =
@@ -316,12 +338,15 @@ export function DameCheckersBoard({
   const [vibrationEnabled, setVibrationEnabled] = useState(
     () => getGameSensoryPreferences().vibrationEnabled
   );
+  const [dismissedWinnerPopup, setDismissedWinnerPopup] = useState(false);
+  const notifiedWinnerRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (
       initialState &&
       Array.isArray(initialState.board) &&
       ((initialState.moveCount || 0) > (game.moveCount || 0) ||
+        Boolean(initialState.winner && !game.winner) ||
         ((initialState.moveCount || 0) === (game.moveCount || 0) &&
           initialState.turn &&
           initialState.turn !== game.turn))
@@ -329,7 +354,31 @@ export function DameCheckersBoard({
       setGame(initialState);
       setSelectedSq(null);
     }
-  }, [initialState, game.moveCount, game.turn]);
+  }, [initialState, game.moveCount, game.turn, game.winner]);
+
+  useEffect(() => {
+    if (!game.winner) return;
+    const winKey = `${game.moveCount || 0}-${game.winner}`;
+    if (notifiedWinnerRef.current === winKey) return;
+    notifiedWinnerRef.current = winKey;
+    setDismissedWinnerPopup(false);
+    onMatchComplete?.(game.winner, game);
+  }, [game, onMatchComplete]);
+
+  const handleInBoardRematch = useCallback(() => {
+    setDismissedWinnerPopup(false);
+    notifiedWinnerRef.current = null;
+    if (onRematch) {
+      onRematch();
+      if (mode !== "p2p") {
+        setGame(INITIAL_DAME_STATE);
+        onStateChange?.(INITIAL_DAME_STATE);
+      }
+      return;
+    }
+    setGame(INITIAL_DAME_STATE);
+    onStateChange?.(INITIAL_DAME_STATE);
+  }, [onRematch, mode, onStateChange]);
 
   const isMyTurn =
     !game.winner &&
@@ -434,7 +483,36 @@ export function DameCheckersBoard({
             </Badge>
           )}
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <InGameVoiceChat
+            roomCode={roomCode || "DAME"}
+            challengeId={challengeId}
+            mySide={mySide}
+            myName={mySide === "creator" ? creatorName : effectiveOpponentName}
+            opponentName={mySide === "creator" ? effectiveOpponentName : creatorName}
+            mode={mode}
+          />
+          <Button
+            type="button"
+            size="sm"
+            onClick={handleInBoardRematch}
+            className="h-7 px-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[10px] gap-1 cursor-pointer shadow"
+          >
+            <RotateCcw className="w-3 h-3" />
+            <span>Rematch</span>
+          </Button>
+          {onPlayAnotherGame && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={onPlayAnotherGame}
+              className="h-7 px-2.5 rounded-xl border-emerald-400/50 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-200 font-black text-[10px] gap-1 cursor-pointer"
+            >
+              <Gamepad2 className="w-3 h-3" />
+              <span>Play Another</span>
+            </Button>
+          )}
           <Button
             size="sm"
             variant="ghost"
@@ -554,6 +632,101 @@ export function DameCheckersBoard({
           )}
         </div>
       </div>
+
+      {/* ── GHANAIAN DAME WINNER SPOTLIGHT & REMATCH / PLAY ANOTHER POPUP ── */}
+      {game.winner && !dismissedWinnerPopup && (
+        <div className="fixed inset-0 z-[130] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="relative w-full max-w-md rounded-3xl bg-gradient-to-b from-slate-900 via-[#111827] to-slate-950 border-2 border-amber-400/70 shadow-[0_0_60px_rgba(245,158,11,0.35)] p-5 sm:p-6 text-center space-y-4">
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-amber-500/20 border border-amber-400/50 text-amber-300 text-[11px] font-black uppercase tracking-wider">
+                <Crown className="w-3.5 h-3.5 text-amber-400" />
+                <span>Ghanaian Dame • Winner Spotlight</span>
+              </div>
+              <InGameVoiceChat
+                roomCode={roomCode || "DAME"}
+                challengeId={challengeId}
+                mySide={mySide}
+                myName={mySide === "creator" ? creatorName : effectiveOpponentName}
+                opponentName={mySide === "creator" ? effectiveOpponentName : creatorName}
+                mode={mode}
+              />
+            </div>
+
+            <div className="flex flex-col items-center gap-2">
+              <div className="w-20 h-20 rounded-full bg-gradient-to-br from-amber-300 via-amber-500 to-orange-600 p-1 shadow-[0_0_35px_rgba(251,191,36,0.6)]">
+                <div className="w-full h-full rounded-full bg-slate-950 flex items-center justify-center">
+                  <Trophy className="w-10 h-10 text-amber-400 animate-bounce" />
+                </div>
+              </div>
+              <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+                {game.winner === "draw"
+                  ? "🤝 Match Draw!"
+                  : `🏆 ${
+                      game.winner === "creator" ? creatorName : effectiveOpponentName
+                    } Wins!`}
+              </h2>
+              <p className="text-xs text-slate-300 font-semibold">
+                Captured Pieces: {creatorName} ({game.capturedCount.creator}/12) vs{" "}
+                {effectiveOpponentName} ({game.capturedCount.opponent}/12)
+              </p>
+              {prizePoolGhs > 0 && game.winner !== "draw" && (
+                <div className="px-4 py-1.5 rounded-2xl bg-emerald-500/20 border border-emerald-400/50 text-emerald-300 text-xs font-black">
+                  💰 Winner Payout: GH₵ {prizePoolGhs.toFixed(2)}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-2 pt-1">
+              <Button
+                type="button"
+                onClick={handleInBoardRematch}
+                className="w-full h-12 rounded-2xl bg-gradient-to-r from-emerald-400 via-amber-400 to-orange-500 text-slate-950 font-black text-sm shadow-lg gap-2 cursor-pointer"
+              >
+                <RotateCcw className="w-4 h-4" />
+                <span>
+                  {game.winner === mySide
+                    ? "🔄 Play Rematch"
+                    : `🔄 Request Rematch vs ${
+                        game.winner === "creator" ? creatorName : effectiveOpponentName
+                      }`}
+                </span>
+              </Button>
+              <div className="grid grid-cols-2 gap-2">
+                {onPlayAnotherGame ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={onPlayAnotherGame}
+                    className="h-10 rounded-xl border-sky-400/50 bg-sky-500/15 text-sky-200 font-black text-xs gap-1.5 cursor-pointer"
+                  >
+                    <Gamepad2 className="w-4 h-4" />
+                    <span>Play Another Game</span>
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleInBoardRematch}
+                    className="h-10 rounded-xl border-sky-400/50 bg-sky-500/15 text-sky-200 font-black text-xs gap-1.5 cursor-pointer"
+                  >
+                    <Gamepad2 className="w-4 h-4" />
+                    <span>New Match</span>
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setDismissedWinnerPopup(true)}
+                  className="h-10 rounded-xl border border-white/15 bg-white/5 text-slate-300 font-bold text-xs gap-1.5 cursor-pointer"
+                >
+                  <Eye className="w-4 h-4" />
+                  <span>View Board</span>
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

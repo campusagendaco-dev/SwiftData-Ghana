@@ -14,9 +14,14 @@ import {
   History,
   MessageCircle,
   RotateCcw,
+  Trophy,
+  Crown,
+  Gamepad2,
+  Eye,
 } from "lucide-react";
 import { playSuccessSound } from "@/lib/sound";
 import { useDeviceScreenFit } from "@/hooks/use-device-screen-fit";
+import { InGameVoiceChat } from "@/components/games/InGameVoiceChat";
 import {
   playDiceRattleSound,
   playWoodSeedClack,
@@ -306,12 +311,16 @@ export interface GhanaLudoBoardProps {
   creatorName: string;
   opponentName: string;
   roomCode?: string;
+  challengeId?: string;
   initialState?: any;
   onStateChange?: (nextState: LudoState) => void;
   onMatchComplete?: (winnerSide: "creator" | "opponent" | "draw", finalState: LudoState) => void;
   onPointsEarned?: (points: number, reason: string) => void;
   onInvitePlayer?: (phoneOrUser: { phone?: string; name?: string; seat?: LudoPlayerId }) => void;
   playerLevel?: number;
+  prizePoolGhs?: number;
+  onRematch?: () => void;
+  onPlayAnotherGame?: () => void;
 }
 
 function normalizeIncomingLudoState(
@@ -354,11 +363,15 @@ export function GhanaLudoBoard({
   creatorName,
   opponentName,
   roomCode,
+  challengeId,
   initialState,
   onStateChange,
   onMatchComplete,
   onPointsEarned,
   onInvitePlayer,
+  prizePoolGhs = 0,
+  onRematch,
+  onPlayAnotherGame,
 }: GhanaLudoBoardProps) {
   const persona = HUMAN_CHALLENGER_PERSONAS.ludo;
   const effectiveOpponentName =
@@ -394,6 +407,8 @@ export function GhanaLudoBoard({
   const [vibrationEnabled, setVibrationEnabled] = useState(
     () => getGameSensoryPreferences().vibrationEnabled
   );
+  const [dismissedWinnerPopup, setDismissedWinnerPopup] = useState(false);
+  const notifiedWinnerRef = useRef<string | null>(null);
 
   // Sync incoming P2P state
   useEffect(() => {
@@ -401,6 +416,7 @@ export function GhanaLudoBoard({
       initialState &&
       initialState.engine &&
       ((initialState.moveCount || 0) > (ludo.moveCount || 0) ||
+        Boolean(initialState.engine.winner && !ludo.engine.winner) ||
         ((initialState.moveCount || 0) === (ludo.moveCount || 0) &&
           (initialState.engine.currentPlayer !== ludo.engine.currentPlayer ||
             initialState.engine.diceResult !== ludo.engine.diceResult)))
@@ -413,10 +429,27 @@ export function GhanaLudoBoard({
         setLastRolledVisual(initialState.engine.diceResult);
       }
     }
-  }, [initialState, ludo.moveCount, ludo.engine.currentPlayer, ludo.engine.diceResult]);
+  }, [
+    initialState,
+    ludo.moveCount,
+    ludo.engine.currentPlayer,
+    ludo.engine.diceResult,
+    ludo.engine.winner,
+  ]);
 
   const engine = ludo.engine;
   const myColor: LudoPlayerId = mySide === "creator" ? "RED" : "YELLOW";
+
+  useEffect(() => {
+    if (!engine.winner || isAnimatingMove) return;
+    const winKey = `${engine.moveCount || 0}-${engine.winner}`;
+    if (notifiedWinnerRef.current === winKey) return;
+    notifiedWinnerRef.current = winKey;
+    setDismissedWinnerPopup(false);
+    const mappedWinner: "creator" | "opponent" =
+      engine.winner === "RED" ? "creator" : "opponent";
+    onMatchComplete?.(mappedWinner, ludo);
+  }, [engine.winner, engine.moveCount, isAnimatingMove, ludo, onMatchComplete]);
 
   // Resolve visual token state during step-by-step animation
   const resolveVisualToken = useCallback(
@@ -928,17 +961,44 @@ export function GhanaLudoBoard({
         </div>
 
         <div className="flex flex-wrap items-center gap-1">
-          {mode !== "p2p" && (
+          <InGameVoiceChat
+            roomCode={roomCode || "LUDO"}
+            challengeId={challengeId}
+            mySide={mySide}
+            myName={mySide === "creator" ? creatorName : effectiveOpponentName}
+            opponentName={mySide === "creator" ? effectiveOpponentName : creatorName}
+            mode={mode}
+          />
+
+          <Button
+            size="sm"
+            onClick={() => {
+              setDismissedWinnerPopup(false);
+              notifiedWinnerRef.current = null;
+              if (onRematch) {
+                onRematch();
+                if (mode !== "p2p") {
+                  startNewLudoGame((engine.players.length as 2 | 3 | 4) || 2, opponentType);
+                }
+              } else {
+                startNewLudoGame((engine.players.length as 2 | 3 | 4) || 2, opponentType);
+              }
+            }}
+            className="h-7 px-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-[10px] font-black gap-1 cursor-pointer shadow"
+          >
+            <RotateCcw className="w-3 h-3" />
+            Rematch
+          </Button>
+
+          {onPlayAnotherGame && (
             <Button
               size="sm"
               variant="outline"
-              onClick={() =>
-                startNewLudoGame((engine.players.length as 2 | 3 | 4) || 2, opponentType)
-              }
-              className="h-7 px-2 rounded-xl border-indigo-500/40 bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-200 text-[10px] font-black gap-1"
+              onClick={onPlayAnotherGame}
+              className="h-7 px-2.5 rounded-xl border-emerald-400/50 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-200 text-[10px] font-black gap-1 cursor-pointer"
             >
-              <RotateCcw className="w-3 h-3" />
-              New
+              <Gamepad2 className="w-3 h-3" />
+              Play Another
             </Button>
           )}
 
@@ -1592,6 +1652,111 @@ export function GhanaLudoBoard({
           </div>
         )}
       </div>
+
+      {/* ── GHANA LUDO WINNER SPOTLIGHT & REMATCH / PLAY ANOTHER POPUP ── */}
+      {engine.winner && !dismissedWinnerPopup && (
+        <div className="fixed inset-0 z-[130] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="relative w-full max-w-md rounded-3xl bg-gradient-to-b from-slate-900 via-[#111827] to-slate-950 border-2 border-amber-400/70 shadow-[0_0_60px_rgba(245,158,11,0.35)] p-5 sm:p-6 text-center space-y-4">
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-amber-500/20 border border-amber-400/50 text-amber-300 text-[11px] font-black uppercase tracking-wider">
+                <Crown className="w-3.5 h-3.5 text-amber-400" />
+                <span>Ghana Ludo • Winner Spotlight</span>
+              </div>
+              <InGameVoiceChat
+                roomCode={roomCode || "LUDO"}
+                challengeId={challengeId}
+                mySide={mySide}
+                myName={mySide === "creator" ? creatorName : effectiveOpponentName}
+                opponentName={mySide === "creator" ? effectiveOpponentName : creatorName}
+                mode={mode}
+              />
+            </div>
+
+            <div className="flex flex-col items-center gap-2">
+              <div className="w-20 h-20 rounded-full bg-gradient-to-br from-amber-300 via-amber-500 to-orange-600 p-1 shadow-[0_0_35px_rgba(251,191,36,0.6)]">
+                <div className="w-full h-full rounded-full bg-slate-950 flex items-center justify-center">
+                  <Trophy className="w-10 h-10 text-amber-400 animate-bounce" />
+                </div>
+              </div>
+              <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+                🏆 {engine.playerMeta[engine.winner]?.name || engine.winner} Wins!
+              </h2>
+              <p className="text-xs text-slate-300 font-semibold">
+                All 4 tokens safely reached the Ludo Center Home Triangle!
+              </p>
+              {prizePoolGhs > 0 && (
+                <div className="px-4 py-1.5 rounded-2xl bg-emerald-500/20 border border-emerald-400/50 text-emerald-300 text-xs font-black">
+                  💰 Winner Payout: GH₵ {prizePoolGhs.toFixed(2)}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-2 pt-1">
+              <Button
+                type="button"
+                onClick={() => {
+                  setDismissedWinnerPopup(false);
+                  notifiedWinnerRef.current = null;
+                  if (onRematch) {
+                    onRematch();
+                    if (mode !== "p2p") {
+                      startNewLudoGame((engine.players.length as 2 | 3 | 4) || 2, opponentType);
+                    }
+                  } else {
+                    startNewLudoGame((engine.players.length as 2 | 3 | 4) || 2, opponentType);
+                  }
+                }}
+                className="w-full h-12 rounded-2xl bg-gradient-to-r from-emerald-400 via-amber-400 to-orange-500 text-slate-950 font-black text-sm shadow-lg gap-2 cursor-pointer"
+              >
+                <RotateCcw className="w-4 h-4" />
+                <span>
+                  {engine.winner === myColor
+                    ? "🔄 Play Rematch"
+                    : `🔄 Request Rematch vs ${
+                        engine.playerMeta[engine.winner]?.name || engine.winner
+                      }`}
+                </span>
+              </Button>
+              <div className="grid grid-cols-2 gap-2">
+                {onPlayAnotherGame ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={onPlayAnotherGame}
+                    className="h-10 rounded-xl border-sky-400/50 bg-sky-500/15 text-sky-200 font-black text-xs gap-1.5 cursor-pointer"
+                  >
+                    <Gamepad2 className="w-4 h-4" />
+                    <span>Play Another Game</span>
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setDismissedWinnerPopup(false);
+                      notifiedWinnerRef.current = null;
+                      startNewLudoGame((engine.players.length as 2 | 3 | 4) || 2, opponentType);
+                    }}
+                    className="h-10 rounded-xl border-sky-400/50 bg-sky-500/15 text-sky-200 font-black text-xs gap-1.5 cursor-pointer"
+                  >
+                    <Gamepad2 className="w-4 h-4" />
+                    <span>New Match</span>
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setDismissedWinnerPopup(true)}
+                  className="h-10 rounded-xl border border-white/15 bg-white/5 text-slate-300 font-bold text-xs gap-1.5 cursor-pointer"
+                >
+                  <Eye className="w-4 h-4" />
+                  <span>View Board</span>
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

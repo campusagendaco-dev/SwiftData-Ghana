@@ -24,7 +24,19 @@ function getGameTitle(gameType: string): string {
   if (g === "ludo") return "Ghana Ludo";
   if (g === "dame") return "Ghanaian Dame";
   if (g === "pool") return "8-Ball Pool";
+  if (g === "slash") return "Chale Slash";
+  if (g === "candy") return "Alewa & Kube Crush";
+  if (g === "buggy") return "Beach Buggy Racing";
   return g.toUpperCase();
+}
+
+function isRowPrivateAndNotForUser(row: any, currentUserId?: string | null): boolean {
+  const meta = row?.metadata && typeof row.metadata === "object" ? row.metadata : {};
+  if (!meta.is_private) return false;
+  if (!currentUserId) return true;
+  if (row.creator_id === currentUserId || row.opponent_id === currentUserId) return false;
+  if (meta.invited_user_id && meta.invited_user_id === currentUserId) return false;
+  return true;
 }
 
 function fireBrowserNotification(title: string, body: string, url: string) {
@@ -96,8 +108,9 @@ export function ChallengeLiveNotifier() {
 
         if (!mounted || !Array.isArray(rows) || rows.length === 0) return;
 
-        // Prefer showing an open challenge created by someone else, or a recently accepted match
+        // Prefer showing an open public challenge created by someone else, or a recently accepted match
         for (const row of rows) {
+          if (isRowPrivateAndNotForUser(row, user?.id)) continue;
           if (row.status === "open") {
             if (user?.id && row.creator_id === user.id) continue;
             const eventKey = `open:${row.id}`;
@@ -163,6 +176,7 @@ export function ChallengeLiveNotifier() {
           const row = payload.new;
           if (!row || row.mode !== "p2p" || row.status !== "open") return;
           if (user?.id && row.creator_id === user.id) return;
+          if (isRowPrivateAndNotForUser(row, user?.id)) return;
 
           const eventKey = `open:${row.id}`;
           if (hasSeen(eventKey)) return;
@@ -199,6 +213,7 @@ export function ChallengeLiveNotifier() {
           const row = payload.new;
           const oldRow = payload.old;
           if (!row || row.mode !== "p2p") return;
+          if (isRowPrivateAndNotForUser(row, user?.id)) return;
 
           // Trigger only when status transitions to in_progress with an opponent
           if (row.status === "in_progress" && row.opponent_name && oldRow?.status !== "in_progress") {
@@ -246,11 +261,8 @@ export function ChallengeLiveNotifier() {
 
   if (!alert) return null;
 
-  // Hide if already viewing that exact room on /challenges
-  const isAlreadyInRoom =
-    location.pathname.includes("challenges") &&
-    location.search.toUpperCase().includes(alert.roomCode.toUpperCase());
-  if (isAlreadyInRoom) return null;
+  // Hide if already inside the Challenge Arena (which has its own Live Public Lobby & Private Invite Modal)
+  if (location.pathname.startsWith("/challenges")) return null;
 
   const gameLabel = getGameTitle(alert.gameType);
   const isCreatorAlert = Boolean(user?.id && alert.creatorId && user.id === alert.creatorId);

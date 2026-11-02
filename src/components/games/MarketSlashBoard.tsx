@@ -11,6 +11,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { useDeviceScreenFit } from "@/hooks/use-device-screen-fit";
+import { InGameVoiceChat } from "@/components/games/InGameVoiceChat";
 import {
   playFruitSliceSound,
   playBombExplosionSound,
@@ -279,6 +280,8 @@ interface MarketSlashBoardProps {
   mySide: "creator" | "opponent";
   creatorName: string;
   opponentName: string;
+  roomCode?: string;
+  challengeId?: string;
   initialState?: MarketSlashState;
   onStateChange?: (nextState: MarketSlashState) => void;
   onMatchComplete?: (
@@ -302,6 +305,8 @@ export function MarketSlashBoard({
   mySide,
   creatorName,
   opponentName,
+  roomCode,
+  challengeId,
   initialState,
   onStateChange,
   onMatchComplete,
@@ -1852,7 +1857,24 @@ export function MarketSlashBoard({
           </span>
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 font-sans">
+          <InGameVoiceChat
+            roomCode={roomCode || "SLASH"}
+            challengeId={challengeId}
+            mySide={mySide}
+            myName={mySide === "creator" ? creatorName : effectiveOpponentName}
+            opponentName={mySide === "creator" ? effectiveOpponentName : creatorName}
+            mode={mode}
+            compact={true}
+          />
+          <button
+            type="button"
+            onClick={() => (onRematch ? onRematch() : handleRestartGame())}
+            className="h-6 px-2 rounded-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[10px] flex items-center gap-1 cursor-pointer shadow"
+          >
+            <RotateCcw className="w-3 h-3" />
+            <span>Rematch</span>
+          </button>
           <button
             type="button"
             onClick={() => {

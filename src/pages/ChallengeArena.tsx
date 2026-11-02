@@ -3670,7 +3670,7 @@ export default function ChallengeArena() {
                     onMatchComplete={handleMatchComplete}
                     onPointsEarned={handlePointsEarned}
                     playerLevel={levelInfo.level}
-                    prizePoolGhs={Number(activeChallenge.prize_pool_ghs || 0)}
+                    prizePoolGhs={Number(activeChallenge.prize_pool || activeChallenge.prize_pool_ghs || 0)}
                     onRematch={handleRematchCurrentGame}
                     onPlayAnotherGame={() => {
                       setShowPlayAnotherPicker(true);
@@ -3687,6 +3687,8 @@ export default function ChallengeArena() {
                       activeChallenge.opponent_name || HUMAN_CHALLENGER_PERSONAS.ludo.name
                     }
                     roomCode={activeChallenge.room_code}
+                    challengeId={activeChallenge.id}
+                    prizePoolGhs={Number(activeChallenge.prize_pool || activeChallenge.prize_pool_ghs || 0)}
                     initialState={activeChallenge.board_state}
                     onStateChange={handleBoardStateChange}
                     onMatchComplete={handleMatchComplete}
@@ -3697,6 +3699,11 @@ export default function ChallengeArena() {
                       }
                     }}
                     playerLevel={levelInfo.level}
+                    onRematch={handleRematchCurrentGame}
+                    onPlayAnotherGame={() => {
+                      setShowPlayAnotherPicker(true);
+                      setShowMatchResultModal(true);
+                    }}
                   />
                 )}
                 {activeChallenge.game_type === "dame" && (
@@ -3707,11 +3714,19 @@ export default function ChallengeArena() {
                     opponentName={
                       activeChallenge.opponent_name || HUMAN_CHALLENGER_PERSONAS.dame.name
                     }
+                    roomCode={activeChallenge.room_code}
+                    challengeId={activeChallenge.id}
+                    prizePoolGhs={Number(activeChallenge.prize_pool || activeChallenge.prize_pool_ghs || 0)}
                     initialState={activeChallenge.board_state}
                     onStateChange={handleBoardStateChange}
                     onMatchComplete={handleMatchComplete}
                     onPointsEarned={handlePointsEarned}
                     playerLevel={levelInfo.level}
+                    onRematch={handleRematchCurrentGame}
+                    onPlayAnotherGame={() => {
+                      setShowPlayAnotherPicker(true);
+                      setShowMatchResultModal(true);
+                    }}
                   />
                 )}
                 {activeChallenge.game_type === "pool" && (
@@ -3723,12 +3738,19 @@ export default function ChallengeArena() {
                       activeChallenge.opponent_name || HUMAN_CHALLENGER_PERSONAS.pool.name
                     }
                     roomCode={activeChallenge.room_code}
+                    challengeId={activeChallenge.id}
+                    prizePoolGhs={Number(activeChallenge.prize_pool || activeChallenge.prize_pool_ghs || 0)}
                     reservedTopPx={topHudCollapsed ? 0 : 28}
                     initialState={activeChallenge.board_state}
                     onStateChange={handleBoardStateChange}
                     onMatchComplete={handleMatchComplete}
                     onPointsEarned={handlePointsEarned}
                     playerLevel={levelInfo.level}
+                    onRematch={handleRematchCurrentGame}
+                    onPlayAnotherGame={() => {
+                      setShowPlayAnotherPicker(true);
+                      setShowMatchResultModal(true);
+                    }}
                   />
                 )}
                 {activeChallenge.game_type === "slash" && (
@@ -3739,6 +3761,8 @@ export default function ChallengeArena() {
                     opponentName={
                       activeChallenge.opponent_name || HUMAN_CHALLENGER_PERSONAS.slash.name
                     }
+                    roomCode={activeChallenge.room_code}
+                    challengeId={activeChallenge.id}
                     initialState={activeChallenge.board_state}
                     onStateChange={handleBoardStateChange}
                     onMatchComplete={handleMatchComplete}
@@ -3760,6 +3784,8 @@ export default function ChallengeArena() {
                     opponentName={
                       activeChallenge.opponent_name || HUMAN_CHALLENGER_PERSONAS.candy.name
                     }
+                    roomCode={activeChallenge.room_code}
+                    challengeId={activeChallenge.id}
                     initialState={activeChallenge.board_state}
                     onStateChange={handleBoardStateChange}
                     onMatchComplete={handleMatchComplete}

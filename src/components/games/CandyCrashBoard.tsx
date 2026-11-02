@@ -12,6 +12,7 @@ import {
   Flame,
 } from "lucide-react";
 import { useDeviceScreenFit } from "@/hooks/use-device-screen-fit";
+import { InGameVoiceChat } from "@/components/games/InGameVoiceChat";
 import {
   playCandyPopSound,
   playLevelUpFanfare,
@@ -413,6 +414,8 @@ interface CandyCrashBoardProps {
   mySide: "creator" | "opponent";
   creatorName: string;
   opponentName: string;
+  roomCode?: string;
+  challengeId?: string;
   initialState?: CandyCrashState;
   onStateChange?: (state: CandyCrashState) => void;
   onMatchComplete?: (
@@ -433,6 +436,8 @@ export function CandyCrashBoard({
   mySide,
   creatorName,
   opponentName,
+  roomCode,
+  challengeId,
   initialState,
   onStateChange,
   onMatchComplete,
@@ -1263,6 +1268,15 @@ export function CandyCrashBoard({
           </div>
 
           <div className="flex items-center gap-1 shrink-0">
+            <InGameVoiceChat
+              roomCode={roomCode || "CANDY"}
+              challengeId={challengeId}
+              mySide={mySide}
+              myName={mySide === "creator" ? creatorName : effectiveOpponentName}
+              opponentName={mySide === "creator" ? effectiveOpponentName : creatorName}
+              mode={mode}
+              compact={true}
+            />
             <span
               title={`Auto-fitted for ${screenFit.deviceModelHint} (${candyFit.squareBoardSizePx}×${candyFit.squareBoardSizePx}px tray)`}
               className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/15 border border-amber-400/35 text-[9px] font-mono font-bold text-amber-200"

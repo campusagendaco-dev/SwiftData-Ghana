@@ -57,15 +57,18 @@ function isAutomatedChallengeRoomSpam(n: {
   target_type?: string;
 }): boolean {
   const combined = `${n.title || ""} ${n.message || ""}`.toLowerCase();
-  // Global broadcast rows created every time someone opens or accepts a game room should never spam modal popups
+  // Automated challenge room broadcasts, turns, and rematches should be handled by ChallengeLiveNotifier / ChallengeArena, never this announcement modal
   if (
-    n.target_type === "all" &&
-    (combined.includes("just posted an open") ||
-      combined.includes("open ghana oware challenge") ||
-      combined.includes("open ghana ludo challenge") ||
-      combined.includes("open ghana dame challenge") ||
-      combined.includes("challenge accepted!") ||
-      combined.includes("room #"))
+    combined.includes("just posted an open") ||
+    combined.includes("just posted a public") ||
+    combined.includes("open ghana oware challenge") ||
+    combined.includes("open ghana ludo challenge") ||
+    combined.includes("open ghana dame challenge") ||
+    combined.includes("public challenge:") ||
+    combined.includes("challenge accepted!") ||
+    combined.includes("room #") ||
+    combined.includes("turn in room") ||
+    combined.includes("rematch requested")
   ) {
     return true;
   }
