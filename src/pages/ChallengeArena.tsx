@@ -1470,7 +1470,7 @@ export default function ChallengeArena() {
             className="fixed inset-0 bg-black/75 backdrop-blur-sm"
             onClick={() => setProfileDrawerOpen(false)}
           />
-          <div className="relative z-10 w-full max-w-md bg-[#0c1322] border-r border-white/10 h-[100dvh] flex flex-col shadow-2xl animate-in slide-in-from-left duration-200">
+          <div className="relative z-10 w-full max-w-md sm:max-w-xl bg-[#0c1322] border-r border-white/10 h-[100dvh] flex flex-col shadow-2xl animate-in slide-in-from-left duration-200">
             {/* Drawer Header */}
             <div className="p-4 border-b border-white/10 flex items-center justify-between bg-[#0f172a]">
               <div className="flex items-center gap-3">
@@ -1531,7 +1531,7 @@ export default function ChallengeArena() {
                   { id: "profile", label: "Profile", icon: User },
                   { id: "rooms", label: "Online", icon: Users },
                   { id: "settings", label: "Settings", icon: Settings },
-                  { id: "help", label: "Help", icon: HelpCircle },
+                  { id: "help", label: "🎬 Help & Video", icon: HelpCircle },
                 ] as const
               ).map((tab) => {
                 const Icon = tab.icon;
@@ -2021,8 +2021,16 @@ export default function ChallengeArena() {
               )}
 
               {profileDrawerTab === "help" && (
-                <div className="space-y-3">
-                  <p className="text-xs font-black uppercase tracking-wider text-amber-300">
+                <div className="space-y-4">
+                  {/* Live 60FPS Gameplay Video Showcase Starting from Ghana Oware */}
+                  <ChallengeHowItWorks
+                    onQuickStart={(g, m) => {
+                      setProfileDrawerOpen(false);
+                      openLaunchSheetForGame(g, m);
+                    }}
+                  />
+
+                  <p className="text-xs font-black uppercase tracking-wider text-amber-300 pt-1">
                     Game Rules &amp; How to Play
                   </p>
                   {GAME_CATALOG.map((g) => (
@@ -2495,6 +2503,19 @@ export default function ChallengeArena() {
                   <Settings className="w-2.5 h-2.5 text-amber-400" />
                 </button>
 
+                <button
+                  type="button"
+                  onClick={() => {
+                    setProfileDrawerTab("help");
+                    setProfileDrawerOpen(true);
+                  }}
+                  className="h-5 px-1.5 rounded-md bg-amber-500/15 hover:bg-amber-500/25 border border-amber-400/40 flex items-center gap-1 text-[9px] font-black text-amber-300 cursor-pointer shrink-0"
+                  title="Watch Gameplay Videos & Rules"
+                >
+                  <HelpCircle className="w-2.5 h-2.5 text-amber-400" />
+                  <span>🎬 Help</span>
+                </button>
+
                 <Button
                   size="sm"
                   variant="outline"
@@ -2610,10 +2631,12 @@ export default function ChallengeArena() {
 
           <CardContent
             className={
-              (activeChallenge.game_type === "pool" ||
-                activeChallenge.game_type === "buggy" ||
-                activeChallenge.game_type === "slash") &&
+              activeChallenge.game_type === "buggy" &&
               activeChallenge.status === "in_progress"
+                ? "flex-1 min-h-0 w-full h-full overflow-hidden overscroll-none p-0 flex flex-col"
+                : (activeChallenge.game_type === "pool" ||
+                    activeChallenge.game_type === "slash") &&
+                  activeChallenge.status === "in_progress"
                 ? "flex-1 min-h-0 w-full h-full overflow-hidden overscroll-none p-0 sm:p-1.5 flex flex-col"
                 : "flex-1 min-h-0 w-full overflow-y-auto overflow-x-hidden overscroll-none p-1.5 sm:p-3 space-y-1.5 max-w-6xl mx-auto"
             }
@@ -3037,18 +3060,31 @@ export default function ChallengeArena() {
                     </span>
                   </div>
                   <span className="text-[10px] text-slate-400 flex items-center gap-1">
-                    Avatar • Menu • Settings
+                    Menu • Help &amp; Video
                   </span>
                 </div>
               </button>
 
               <button
                 type="button"
+                onClick={() => {
+                  setProfileDrawerTab("help");
+                  setProfileDrawerOpen(true);
+                }}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-amber-500/15 hover:bg-amber-500/25 border border-amber-400/40 text-xs font-black text-amber-300 transition-all cursor-pointer shadow"
+                title="Watch Live Gameplay Videos & Rules (Starting from Ghana Oware)"
+              >
+                <HelpCircle className="w-3.5 h-3.5 text-amber-400" />
+                <span>🎬 Help &amp; Video</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => navigate(user ? "/dashboard" : "/")}
-                className="flex items-center gap-1 px-3.5 py-2 rounded-full bg-white/[0.05] hover:bg-white/[0.1] border border-white/10 text-xs font-bold text-slate-300 hover:text-white transition-all cursor-pointer"
+                className="flex items-center gap-1 px-3 py-2 rounded-full bg-white/[0.05] hover:bg-white/[0.1] border border-white/10 text-xs font-bold text-slate-300 hover:text-white transition-all cursor-pointer"
               >
                 <ChevronLeft className="w-3.5 h-3.5" />
-                <span>Home</span>
+                <span className="hidden sm:inline">Home</span>
               </button>
             </div>
 
@@ -3387,20 +3423,16 @@ export default function ChallengeArena() {
                   onClick={(e) => {
                     e.stopPropagation();
                     setSelectedGame("oware");
-                    setInstructionModalOpen(true);
+                    setProfileDrawerTab("help");
+                    setProfileDrawerOpen(true);
                   }}
                   className="inline-flex items-center gap-2 px-5 py-3 rounded-full bg-slate-950/90 hover:bg-slate-900 border border-amber-400/50 text-amber-300 font-black text-xs sm:text-sm shadow-lg transition-all cursor-pointer"
                 >
-                  <span>🎬 Watch Gameplay Video</span>
+                  <span>🎬 Help &amp; Gameplay Video</span>
                 </button>
               </div>
             </div>
           </div>
-
-          {/* 4B. Live Gameplay Video Showcase (Starting from Oware -> All 7 Games) */}
-          <ChallengeHowItWorks
-            onQuickStart={(g, m) => openLaunchSheetForGame(g, m)}
-          />
 
           {/* 5. "All games" Grid Section */}
           <div className="space-y-4">

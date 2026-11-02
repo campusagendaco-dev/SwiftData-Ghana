@@ -11,9 +11,13 @@ export interface DeviceScreenProfile {
   screenWidth: number;
   screenHeight: number;
   pixelRatio: number;
+  orientationAngle: number;
+  landscapeAspectRatio: number;
   isPortraitViewport: boolean;
   isCompactLandscape: boolean;
   isMobileDevice: boolean;
+  hasTouchScreen: boolean;
+  hasMotionSensors: boolean;
   isFullscreen: boolean;
 }
 
@@ -31,6 +35,18 @@ export interface PoolStageFitMetrics {
   fitSummaryLabel: string;
 }
 
+export interface RacingStageFitMetrics {
+  stageWidthPx: number;
+  stageHeightPx: number;
+  canvasWidth: number;
+  canvasHeight: number;
+  aspectRatio: number;
+  isRotatedPortrait: boolean;
+  isCompactLandscape: boolean;
+  orientationAngle: number;
+  fitSummaryLabel: string;
+}
+
 export interface BoardStageFitMetrics {
   stageWidthPx: number;
   stageHeightPx: number;
@@ -42,6 +58,8 @@ export interface BoardStageFitMetrics {
   fitSummaryLabel: string;
 }
 
+let cachedHighEntropyModel = "";
+
 function detectDeviceBrandAndCategory(
   ua: string,
   screenW: number,
@@ -52,13 +70,19 @@ function detectDeviceBrandAndCategory(
   deviceModelHint: string;
   isMobileDevice: boolean;
 } {
-  const lower = ua.toLowerCase();
+  const lower = `${ua} ${cachedHighEntropyModel}`.toLowerCase();
   const shortSide = Math.min(screenW, screenH);
   const longSide = Math.max(screenW, screenH);
+  const coarsePointer =
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(pointer: coarse)").matches;
+  const touchPoints =
+    typeof navigator !== "undefined" ? Number(navigator.maxTouchPoints || 0) : 0;
 
   if (
     /ipad|tablet|playbook|silk/i.test(lower) ||
-    (/macintosh/i.test(lower) && navigator.maxTouchPoints > 1 && shortSide >= 600)
+    (/macintosh/i.test(lower) && touchPoints > 1 && shortSide >= 600)
   ) {
     return {
       deviceCategory: "tablet",
@@ -83,7 +107,10 @@ function detectDeviceBrandAndCategory(
     };
   }
 
-  if (/android/i.test(lower) || (shortSide <= 540 && navigator.maxTouchPoints > 0)) {
+  if (
+    /android/i.test(lower) ||
+    ((shortSide <= 580 || coarsePointer) && touchPoints > 0 && shortSide < 960)
+  ) {
     let brand = "Android";
     if (/samsung|sm-|gt-/i.test(lower)) brand = "Samsung";
     else if (/tecno/i.test(lower)) brand = "Tecno";
@@ -92,13 +119,22 @@ function detectDeviceBrandAndCategory(
     else if (/xiaomi|redmi|poco/i.test(lower)) brand = "Xiaomi";
     else if (/pixel/i.test(lower)) brand = "Pixel";
     else if (/huawei|honor/i.test(lower)) brand = "Huawei";
-    else if (/oppo|realme|oneplus|vivo/i.test(lower)) brand = "Android";
+    else if (/oppo/i.test(lower)) brand = "Oppo";
+    else if (/realme/i.test(lower)) brand = "Realme";
+    else if (/vivo/i.test(lower)) brand = "Vivo";
+    else if (/oneplus/i.test(lower)) brand = "OnePlus";
+    else if (/nokia/i.test(lower)) brand = "Nokia";
+    else if (/motorola|moto/i.test(lower)) brand = "Motorola";
 
     const isTabletSize = shortSide >= 600;
+    const modelLabel = cachedHighEntropyModel
+      ? `${brand} ${cachedHighEntropyModel}`
+      : `${brand} (${longSide}×${shortSide})`;
+
     return {
       deviceCategory: isTabletSize ? "tablet" : "android_phone",
       deviceBrand: brand,
-      deviceModelHint: `${brand} (${longSide}×${shortSide})`,
+      deviceModelHint: modelLabel,
       isMobileDevice: true,
     };
   }
@@ -107,8 +143,28 @@ function detectDeviceBrandAndCategory(
     deviceCategory: "desktop",
     deviceBrand: "Desktop",
     deviceModelHint: `Display ${screenW}×${screenH}`,
-    isMobileDevice: shortSide < 768,
+    isMobileDevice: shortSide < 768 || (coarsePointer && touchPoints > 0),
   };
+}
+
+function readOrientationAngle(): number {
+  if (typeof window === "undefined") return 0;
+  try {
+    if (
+      window.screen &&
+      window.screen.orientation &&
+      typeof window.screen.orientation.angle === "number"
+    ) {
+      return window.screen.orientation.angle;
+    }
+    const legacyAngle = (window as any).orientation;
+    if (typeof legacyAngle === "number") {
+      return legacyAngle;
+    }
+  } catch {
+    // ignore orientation read errors
+  }
+  return 0;
 }
 
 function readViewportSnapshot(): DeviceScreenProfile {
@@ -122,30 +178,46 @@ function readViewportSnapshot(): DeviceScreenProfile {
       screenWidth: 1024,
       screenHeight: 640,
       pixelRatio: 1,
+      orientationAngle: 0,
+      landscapeAspectRatio: 16 / 9,
       isPortraitViewport: false,
       isCompactLandscape: false,
       isMobileDevice: false,
+      hasTouchScreen: false,
+      hasMotionSensors: false,
       isFullscreen: false,
     };
   }
 
   const vv = window.visualViewport;
-  const rawW = vv ? vv.width : document.documentElement.clientWidth || window.innerWidth;
-  const rawH = vv ? vv.height : document.documentElement.clientHeight || window.innerHeight;
+  const rawW = vv ? vv.width : window.innerWidth || document.documentElement.clientWidth;
+  const rawH = vv ? vv.height : window.innerHeight || document.documentElement.clientHeight;
 
-  const availWidth = Math.max(280, Math.round(rawW));
-  const availHeight = Math.max(240, Math.round(rawH));
+  const availWidth = Math.max(260, Math.round(rawW));
+  const availHeight = Math.max(220, Math.round(rawH));
   const screenWidth = Math.round(window.screen?.width || availWidth);
   const screenHeight = Math.round(window.screen?.height || availHeight);
   const pixelRatio = Number((window.devicePixelRatio || 1).toFixed(2));
+  const orientationAngle = readOrientationAngle();
 
   const ua = typeof navigator !== "undefined" ? navigator.userAgent || "" : "";
   const { deviceCategory, deviceBrand, deviceModelHint, isMobileDevice } =
     detectDeviceBrandAndCategory(ua, screenWidth, screenHeight);
 
-  const isPortraitViewport = availHeight > availWidth && availWidth < 960;
-  const isCompactLandscape = availWidth > availHeight && availHeight <= 480;
-  const isFullscreen = Boolean(document.fullscreenElement);
+  const isPortraitViewport = availHeight > availWidth;
+  const longEdge = Math.max(availWidth, availHeight);
+  const shortEdge = Math.max(1, Math.min(availWidth, availHeight));
+  const landscapeAspectRatio = Number((longEdge / shortEdge).toFixed(3));
+  const isCompactLandscape = shortEdge <= 500 || isMobileDevice;
+  const isFullscreen = Boolean(
+    document.fullscreenElement || (document as any).webkitFullscreenElement
+  );
+  const hasTouchScreen =
+    (typeof navigator !== "undefined" && Number(navigator.maxTouchPoints || 0) > 0) ||
+    "ontouchstart" in window;
+  const hasMotionSensors =
+    typeof window !== "undefined" &&
+    ("DeviceOrientationEvent" in window || "DeviceMotionEvent" in window);
 
   return {
     deviceCategory,
@@ -156,16 +228,20 @@ function readViewportSnapshot(): DeviceScreenProfile {
     screenWidth,
     screenHeight,
     pixelRatio,
+    orientationAngle,
+    landscapeAspectRatio,
     isPortraitViewport,
     isCompactLandscape,
     isMobileDevice,
+    hasTouchScreen,
+    hasMotionSensors,
     isFullscreen,
   };
 }
 
 /**
  * Real-time Device & Screen-Size Auto-Detection Hook.
- * Tracks `window.visualViewport` (accurate across iOS Safari, Android Chrome, Samsung, Tecno & Infinix browsers),
+ * Tracks `window.visualViewport`, `window.screen.orientation`, `navigator.userAgentData`,
  * orientation changes, and fullscreen transitions to compute exact pixel dimensions that fit 100% of the screen.
  */
 export function useDeviceScreenFit() {
@@ -180,13 +256,37 @@ export function useDeviceScreenFit() {
       });
     };
 
+    // Query Client Hints high-entropy model name on Android Chrome/Edge if supported
+    const navAny = typeof navigator !== "undefined" ? (navigator as any) : null;
+    if (
+      navAny?.userAgentData &&
+      typeof navAny.userAgentData.getHighEntropyValues === "function" &&
+      !cachedHighEntropyModel
+    ) {
+      navAny.userAgentData
+        .getHighEntropyValues(["model", "platform"])
+        .then((vals: any) => {
+          if (vals?.model && typeof vals.model === "string") {
+            cachedHighEntropyModel = vals.model.trim();
+            handleUpdate();
+          }
+        })
+        .catch(() => {});
+    }
+
     handleUpdate();
-    // Run a delayed re-measurement after orientation/toolbar settle on mobile browsers
-    const settleTimer = window.setTimeout(handleUpdate, 180);
+    const settleTimer1 = window.setTimeout(handleUpdate, 120);
+    const settleTimer2 = window.setTimeout(handleUpdate, 360);
 
     window.addEventListener("resize", handleUpdate);
     window.addEventListener("orientationchange", handleUpdate);
     document.addEventListener("fullscreenchange", handleUpdate);
+    document.addEventListener("webkitfullscreenchange", handleUpdate);
+
+    const screenOrientation = window.screen?.orientation;
+    if (screenOrientation && typeof screenOrientation.addEventListener === "function") {
+      screenOrientation.addEventListener("change", handleUpdate);
+    }
 
     const vv = window.visualViewport;
     if (vv) {
@@ -196,10 +296,15 @@ export function useDeviceScreenFit() {
 
     return () => {
       window.cancelAnimationFrame(rafId);
-      window.clearTimeout(settleTimer);
+      window.clearTimeout(settleTimer1);
+      window.clearTimeout(settleTimer2);
       window.removeEventListener("resize", handleUpdate);
       window.removeEventListener("orientationchange", handleUpdate);
       document.removeEventListener("fullscreenchange", handleUpdate);
+      document.removeEventListener("webkitfullscreenchange", handleUpdate);
+      if (screenOrientation && typeof screenOrientation.removeEventListener === "function") {
+        screenOrientation.removeEventListener("change", handleUpdate);
+      }
       if (vv) {
         vv.removeEventListener("resize", handleUpdate);
         vv.removeEventListener("scroll", handleUpdate);
@@ -215,7 +320,6 @@ export function useDeviceScreenFit() {
       const forcedLandscape = Boolean(opts?.forcedLandscape);
       const reservedTopPx = opts?.reservedTopPx ?? 0;
 
-      // When forcedLandscape is active on a portrait phone, the stage is rotated 90deg so width & height swap
       const effectiveW =
         forcedLandscape && profile.isPortraitViewport
           ? profile.availHeight
@@ -236,7 +340,6 @@ export function useDeviceScreenFit() {
       const maxTableW = Math.max(220, Math.min(980, effectiveW - horizontalChromePx));
       const maxTableH = Math.max(110, Math.min(490, effectiveH - verticalChromePx));
 
-      // Exact 2:1 aspect ratio solver guaranteed to fit BOTH width and height of the device screen
       const tableHeightPx = Math.floor(Math.min(maxTableH, maxTableW / 2));
       const tableWidthPx = Math.floor(tableHeightPx * 2);
       const railPaddingPx = isCompact ? 6 : 12;
@@ -257,6 +360,35 @@ export function useDeviceScreenFit() {
     };
   }, [profile]);
 
+  const computeRacingStageMetrics = useMemo(() => {
+    return (opts?: { forcedLandscape?: boolean }): RacingStageFitMetrics => {
+      const forcedLandscape = opts?.forcedLandscape ?? true;
+      const isRotatedPortrait = forcedLandscape && profile.isPortraitViewport;
+
+      const stageWidthPx = isRotatedPortrait ? profile.availHeight : profile.availWidth;
+      const stageHeightPx = isRotatedPortrait ? profile.availWidth : profile.availHeight;
+
+      const rawAspect = stageWidthPx / Math.max(1, stageHeightPx);
+      const clampedAspect = Math.max(1.45, Math.min(2.4, rawAspect));
+
+      // Internal 3D render buffer matches the exact device widescreen aspect ratio
+      const canvasHeight = 540;
+      const canvasWidth = Math.round(canvasHeight * clampedAspect);
+
+      return {
+        stageWidthPx,
+        stageHeightPx,
+        canvasWidth,
+        canvasHeight,
+        aspectRatio: Number(clampedAspect.toFixed(3)),
+        isRotatedPortrait,
+        isCompactLandscape: stageHeightPx <= 480 || profile.isMobileDevice,
+        orientationAngle: profile.orientationAngle,
+        fitSummaryLabel: `${profile.deviceBrand} ${stageWidthPx}×${stageHeightPx}`,
+      };
+    };
+  }, [profile]);
+
   const computeBoardStageMetrics = useMemo(() => {
     return (
       gameType: "oware" | "ludo" | "dame" | "slash" | "candy",
@@ -271,19 +403,15 @@ export function useDeviceScreenFit() {
       const horizontalPad = isCompactViewport ? 16 : 36;
       const maxWidthForBoard = Math.max(250, stageWidthPx - horizontalPad);
 
-      // Reserve vertical space for each game's HUD & controls so the board never overflows the screen
       let verticalChromeForSquare = 150;
       let maxCapSquare = 520;
       if (gameType === "ludo") {
-        // Ludo has top status bar + player chips + bottom 3D Dice dock
         verticalChromeForSquare = isShortViewport ? 148 : isCompactViewport ? 172 : 210;
         maxCapSquare = 500;
       } else if (gameType === "dame") {
-        // Dame has top bar + compact score strip + bottom status bar
         verticalChromeForSquare = isShortViewport ? 116 : isCompactViewport ? 136 : 180;
         maxCapSquare = 460;
       } else if (gameType === "candy") {
-        // Candy Crash has compact 4-stat header + goal progress bar + bottom Hint/Sound/Restart dock
         verticalChromeForSquare = isShortViewport ? 138 : isCompactViewport ? 162 : 196;
         maxCapSquare = 470;
       }
@@ -293,15 +421,15 @@ export function useDeviceScreenFit() {
         Math.min(maxWidthForBoard, maxHeightForSquare, maxCapSquare)
       );
 
-      // Oware pit size calculation so 2 rows of 6 pits + Kulo storehouses + turn banner fit inside stageHeightPx
       const owareMaxPitByWidth = Math.floor((maxWidthForBoard - 68) / 6);
-      const owareMaxPitByHeight = Math.floor((stageHeightPx - (isCompactViewport ? 210 : 260)) / 2.4);
+      const owareMaxPitByHeight = Math.floor(
+        (stageHeightPx - (isCompactViewport ? 210 : 260)) / 2.4
+      );
       const owarePitSizePx = Math.max(
         46,
         Math.min(92, owareMaxPitByWidth, owareMaxPitByHeight)
       );
 
-      // Market Slash canvas height so the top HUD + canvas fit inside stageHeightPx
       const slashCanvasHeightPx = Math.max(
         260,
         Math.min(540, stageHeightPx - (isCompactViewport ? 96 : 124))
@@ -323,6 +451,7 @@ export function useDeviceScreenFit() {
   return {
     ...profile,
     computePoolStageMetrics,
+    computeRacingStageMetrics,
     computeBoardStageMetrics,
   };
 }
