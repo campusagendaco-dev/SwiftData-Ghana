@@ -51,7 +51,7 @@ async function ensureChallengeSchema(supabaseAdmin: any) {
       CREATE TABLE IF NOT EXISTS public.game_challenges (
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         room_code text NOT NULL UNIQUE DEFAULT upper(substr(md5(random()::text), 1, 6)),
-        game_type text NOT NULL CHECK (game_type IN ('oware', 'ludo', 'dame', 'pool', 'slash', 'ampe')),
+        game_type text NOT NULL CHECK (game_type IN ('oware', 'ludo', 'dame', 'pool', 'slash', 'ampe', 'candy')),
         mode text NOT NULL DEFAULT 'p2p' CHECK (mode IN ('p2p', 'ai', 'free_data')),
         title text,
         creator_id uuid,
@@ -85,7 +85,7 @@ async function ensureChallengeSchema(supabaseAdmin: any) {
       );
 
       ALTER TABLE public.game_challenges DROP CONSTRAINT IF EXISTS game_challenges_game_type_check;
-      ALTER TABLE public.game_challenges ADD CONSTRAINT game_challenges_game_type_check CHECK (game_type IN ('oware', 'ludo', 'dame', 'pool', 'slash', 'ampe'));
+      ALTER TABLE public.game_challenges ADD CONSTRAINT game_challenges_game_type_check CHECK (game_type IN ('oware', 'ludo', 'dame', 'pool', 'slash', 'ampe', 'candy'));
 
       CREATE INDEX IF NOT EXISTS idx_game_challenges_status ON public.game_challenges(status, created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_game_challenges_game_type ON public.game_challenges(game_type, status);
@@ -166,6 +166,7 @@ function formatGameLabel(gameType: string): string {
   if (g === "dame") return "Ghanaian Dame";
   if (g === "pool") return "8-Ball Pool";
   if (g === "slash") return "Market Slash";
+  if (g === "candy") return "Candy Crash";
   return g.toUpperCase();
 }
 
@@ -708,7 +709,7 @@ serve(async (req: Request) => {
       }
 
       const gameType = String(body.game_type || "oware").toLowerCase();
-      if (!["oware", "ludo", "dame", "pool", "slash"].includes(gameType)) {
+      if (!["oware", "ludo", "dame", "pool", "slash", "candy"].includes(gameType)) {
         return jsonResponse({ success: false, error: "Unsupported game type" }, 400);
       }
       if (settings.enabled_games && settings.enabled_games[gameType] === false) {
@@ -811,6 +812,7 @@ serve(async (req: Request) => {
       const roomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
       const humanSenseChallengerMap: Record<string, string> = {
         slash: "Auntie Ama Serwaa (94% Human Sense)",
+        candy: "Efua Mensah (93% Human Sense)",
         pool: "Yaw Boateng (92% Human Sense)",
         oware: "Nana Kwame Asante (93% Human Sense)",
         ludo: "Abena Osei (91% Human Sense)",

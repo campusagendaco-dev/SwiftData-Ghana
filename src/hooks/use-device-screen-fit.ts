@@ -259,7 +259,7 @@ export function useDeviceScreenFit() {
 
   const computeBoardStageMetrics = useMemo(() => {
     return (
-      gameType: "oware" | "ludo" | "dame" | "slash",
+      gameType: "oware" | "ludo" | "dame" | "slash" | "candy",
       opts?: { reservedTopPx?: number }
     ): BoardStageFitMetrics => {
       const reservedTopPx = opts?.reservedTopPx ?? 38;
@@ -282,6 +282,10 @@ export function useDeviceScreenFit() {
         // Dame has top bar + compact score strip + bottom status bar
         verticalChromeForSquare = isShortViewport ? 116 : isCompactViewport ? 136 : 180;
         maxCapSquare = 460;
+      } else if (gameType === "candy") {
+        // Candy Crash has compact 4-stat header + goal progress bar + bottom Hint/Sound/Restart dock
+        verticalChromeForSquare = isShortViewport ? 138 : isCompactViewport ? 162 : 196;
+        maxCapSquare = 470;
       }
 
       const maxHeightForSquare = Math.max(230, stageHeightPx - verticalChromeForSquare);

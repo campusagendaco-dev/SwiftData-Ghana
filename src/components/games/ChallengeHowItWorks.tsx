@@ -26,7 +26,7 @@ import {
   X,
 } from "lucide-react";
 
-export type ArenaGameType = "oware" | "ludo" | "dame" | "pool" | "slash";
+export type ArenaGameType = "oware" | "ludo" | "dame" | "pool" | "slash" | "candy";
 
 interface ChallengeHowItWorksProps {
   onQuickStart?: (game: ArenaGameType, mode: "p2p" | "ai" | "free_data") => void;
@@ -47,6 +47,43 @@ interface GameStepGuide {
 }
 
 export const GAME_STEP_GUIDES: Record<ArenaGameType, GameStepGuide> = {
+  candy: {
+    title: "Candy Crash (Sweet Cascade Arena)",
+    tagline: "Swap candies to match 3+, forge Striped Candies & Chocolate Sprinkle Bombs!",
+    emoji: "🍬",
+    badge: "✨ Match-3 Puzzle",
+    accentGradient: "from-pink-500 to-amber-500",
+    steps: [
+      {
+        stepNum: "01",
+        heading: "Swipe or Tap Adjacent Candies to Swap",
+        detail:
+          "Drag any candy toward a neighbor (or tap two adjacent candies) to line up 3 or more matching colors horizontally or vertically.",
+        tip: "Look near the bottom of the 8×8 board first — bottom matches trigger free falling cascades!",
+      },
+      {
+        stepNum: "02",
+        heading: "Match 4 to Forge a Striped Candy",
+        detail:
+          "Matching 4 candies in a row or column creates a glowing Striped Candy. Matching it blasts an entire row or column!",
+        tip: "Swap two Striped Candies together to trigger an instant Row + Column Cross Blast!",
+      },
+      {
+        stepNum: "03",
+        heading: "Match 5 for a Chocolate Sprinkle Bomb",
+        detail:
+          "Matching 5 candies creates a Chocolate Sprinkle Bomb. Swap it with any candy color to wipe out every candy of that color on the board!",
+        tip: "Save your Chocolate Bomb for the most common color on the board for massive combo points.",
+      },
+      {
+        stepNum: "04",
+        heading: "Reach the Target Score Before Moves Run Out",
+        detail:
+          "Hit the level goal with 8+ moves left to earn 3 Stars (★★★) and bonus Arena Points toward your Free Data Bundle!",
+        tip: "Stuck? Tap the Hint button at the bottom to pulse a valid move.",
+      },
+    ],
+  },
   slash: {
     title: "Market Slash (Makola & Kejetia Edition)",
     tagline: "Swipe fast across the wooden board to slice fruits, build combos & dodge bombs!",

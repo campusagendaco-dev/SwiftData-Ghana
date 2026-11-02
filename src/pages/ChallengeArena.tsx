@@ -52,6 +52,7 @@ import { GhanaLudoBoard, INITIAL_LUDO_STATE } from "@/components/games/GhanaLudo
 import { DameCheckersBoard, INITIAL_DAME_STATE } from "@/components/games/DameCheckersBoard";
 import { EightBallPoolBoard, INITIAL_POOL_STATE } from "@/components/games/EightBallPoolBoard";
 import { MarketSlashBoard, INITIAL_SLASH_STATE } from "@/components/games/MarketSlashBoard";
+import { CandyCrashBoard, INITIAL_CANDY_STATE } from "@/components/games/CandyCrashBoard";
 import { GameInstructionPromptModal } from "@/components/games/ChallengeHowItWorks";
 import { playSuccessSound } from "@/lib/sound";
 import {
@@ -72,7 +73,7 @@ declare global {
   }
 }
 
-type GameType = "oware" | "ludo" | "dame" | "pool" | "slash";
+type GameType = "oware" | "ludo" | "dame" | "pool" | "slash" | "candy";
 type ChallengeMode = "p2p" | "ai" | "free_data";
 type PaymentSource = "wallet" | "momo" | "free";
 type ProfileDrawerTab = "profile" | "settings" | "rooms" | "help";
@@ -188,11 +189,30 @@ const GAME_CATALOG: {
     emoji: "♟️",
     gradient: "from-emerald-600/30 via-teal-900/20 to-slate-950 border-emerald-500/40",
   },
+  {
+    id: "candy",
+    name: "Candy Crash",
+    shortTitle: "Candy Crash",
+    categoryTag: "PUZZLE",
+    statusTag: "NEW",
+    statusColor: "gold",
+    subtitle: "Match 3+ glossy candies, forge Striped Candies & Chocolate Sprinkle Bombs to clear levels.",
+    rulesSummary: [
+      "Swipe or tap two adjacent candies on the 8×8 board to line up 3 or more matching colors.",
+      "Match 4 candies to create a Striped Candy that blasts an entire row or column.",
+      "Match 5 candies to create a Chocolate Sprinkle Bomb that wipes out all candies of a color.",
+      "Reach the target score before moves run out to earn up to 3 Stars and Arena Points!",
+    ],
+    badge: "Sweet Cascades",
+    emoji: "🍬",
+    gradient: "from-pink-600/35 via-fuchsia-900/25 to-slate-950 border-pink-500/45",
+  },
 ];
 
 const QUICK_STAKES = [2, 5, 10, 20, 50];
 
 function getInitialBoardForGame(gameType: GameType) {
+  if (gameType === "candy") return INITIAL_CANDY_STATE;
   if (gameType === "slash") return INITIAL_SLASH_STATE;
   if (gameType === "oware") return INITIAL_OWARE_STATE;
   if (gameType === "ludo") return INITIAL_LUDO_STATE;
@@ -848,6 +868,32 @@ export default function ChallengeArena() {
       });
 
       if (error || !data?.success) {
+        // Seamless instant fallback for free_data mode if edge function schema is still updating
+        if (modeToStart === "free_data") {
+          const persona = HUMAN_CHALLENGER_PERSONAS[gameToStart] || HUMAN_CHALLENGER_PERSONAS.oware;
+          const localChallenge = {
+            id: `local_${Date.now()}`,
+            room_code: Math.random().toString(36).slice(2, 8).toUpperCase(),
+            game_type: gameToStart,
+            mode: "free_data",
+            status: "in_progress",
+            creator_name: (playerName || profile?.full_name || "Ghana Champion").trim(),
+            opponent_name: `${persona.name} (${persona.humanSensePercent}% Human Sense)`,
+            stake_amount: 0,
+            prize_pool: 0,
+            reward_type: "data_bundle",
+            reward_network: rewardNetwork,
+            reward_data_size: settings.free_data_package_size || "1GB",
+            board_state: initialBoard,
+            current_turn: "creator",
+          };
+          playSuccessSound();
+          setLaunchModalOpen(false);
+          setProfileDrawerOpen(false);
+          setMySide("creator");
+          setActiveChallenge(localChallenge);
+          return;
+        }
         throw new Error(data?.error || error?.message || "Failed to create challenge");
       }
 
@@ -2555,6 +2601,22 @@ export default function ChallengeArena() {
                     onBackToLobby={() => setActiveChallenge(null)}
                   />
                 )}
+                {activeChallenge.game_type === "candy" && (
+                  <CandyCrashBoard
+                    mode={activeChallenge.mode}
+                    mySide={mySide}
+                    creatorName={activeChallenge.creator_name}
+                    opponentName={
+                      activeChallenge.opponent_name || HUMAN_CHALLENGER_PERSONAS.candy.name
+                    }
+                    initialState={activeChallenge.board_state}
+                    onStateChange={handleBoardStateChange}
+                    onMatchComplete={handleMatchComplete}
+                    onPointsEarned={handlePointsEarned}
+                    playerLevel={levelInfo.level}
+                    onBackToLobby={() => setActiveChallenge(null)}
+                  />
+                )}
               </>
             )}
           </CardContent>
@@ -2612,7 +2674,7 @@ export default function ChallengeArena() {
             >
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
               <span>
-                5 games • {openChallenges.length > 0 ? `${openChallenges.length} open` : "free"}
+                6 games • {openChallenges.length > 0 ? `${openChallenges.length} open` : "free"}
               </span>
             </button>
           </div>
@@ -3002,6 +3064,49 @@ export default function ChallengeArena() {
                   </div>
                   <p className="text-[11px] sm:text-xs text-slate-400 line-clamp-2">
                     8×8 Ghanaian checkers with mandatory jumps &amp; crowned Kings.
+                  </p>
+                </div>
+              </div>
+
+              {/* Card 5: Candy Crash (Sweet Cascade Match-3 Puzzle) */}
+              <div
+                onClick={() => openLaunchSheetForGame("candy", "free_data")}
+                className="group relative rounded-3xl overflow-hidden border border-white/10 bg-[#101829] hover:border-pink-400/60 transition-all cursor-pointer flex flex-col justify-between shadow-xl col-span-2 sm:col-span-2"
+              >
+                <div className="relative h-36 sm:h-40 bg-gradient-to-br from-[#6a1b9a] via-[#4a1259] to-[#2a0a4a] p-3.5 flex flex-col justify-between overflow-hidden">
+                  <div className="relative z-10 flex items-center justify-between gap-1">
+                    <span className="px-2.5 py-1 rounded-full bg-slate-950/75 backdrop-blur-md text-white font-black text-[10px] uppercase tracking-wider">
+                      PUZZLE • MATCH-3
+                    </span>
+                    <span className="px-2.5 py-1 rounded-full bg-gradient-to-r from-pink-400 to-amber-300 text-slate-950 font-black text-[10px] uppercase tracking-wider">
+                      NEW • CANDY CRASH
+                    </span>
+                  </div>
+
+                  {/* Glossy 3D Candies & Chocolate Sprinkle Bomb Art */}
+                  <div className="relative my-auto flex items-center justify-center gap-3">
+                    <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#ff9fb0] via-[#ff2e55] to-[#9c0f2c] border-2 border-white/50 shadow-lg flex items-center justify-center -rotate-12">
+                      <span className="w-5 h-2 rounded-full bg-white/75 -rotate-12" />
+                    </div>
+                    <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#9a6a4a] via-[#4a2a1a] to-[#1f0f08] border-2 border-amber-300/80 shadow-[0_0_20px_rgba(244,114,182,0.5)] flex items-center justify-center relative">
+                      <span className="text-xl">🍫</span>
+                    </div>
+                    <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#a6f7c0] via-[#22c55e] to-[#0a6e31] border-2 border-white/50 shadow-lg flex items-center justify-center rotate-12">
+                      <span className="w-5 h-2 rounded-full bg-white/75 -rotate-12" />
+                    </div>
+                    <div className="w-11 h-11 rounded-full bg-gradient-to-br from-[#fff9b0] via-[#ffd60a] to-[#b88400] border-2 border-white/50 shadow-lg hidden sm:flex items-center justify-center -rotate-6">
+                      <span className="w-4 h-2 rounded-full bg-white/75" />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-3.5 sm:p-4 space-y-1 bg-[#0d1424]">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-base sm:text-lg font-black text-white">Candy Crash</h3>
+                    <ArrowRight className="w-4 h-4 text-pink-400 group-hover:translate-x-0.5 transition-transform" />
+                  </div>
+                  <p className="text-[11px] sm:text-xs text-slate-400 line-clamp-2">
+                    Match 3+ candies, forge Striped Candies &amp; Chocolate Sprinkle Bombs to clear levels and win Free Data.
                   </p>
                 </div>
               </div>

@@ -455,6 +455,25 @@ export function playFineAimTickSound() {
 
 // ── Human-Sense Challenger Personas & Progressive Level / Point System ───────
 
+export function playCandyPopSound(combo = 1) {
+  triggerHapticSensor(combo > 1 ? [18, 24, 28] : 14);
+  const ctx = getAudioContext();
+  if (!ctx) return;
+  try {
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "triangle";
+    osc.frequency.setValueAtTime(330 + Math.min(8, combo) * 80, now);
+    gain.gain.setValueAtTime(0.11, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.165);
+  } catch (_e) {}
+}
+
 export interface HumanChallengerPersona {
   name: string;
   city: string;
@@ -463,7 +482,10 @@ export interface HumanChallengerPersona {
   avatarInitials: string;
 }
 
-const PERSONA_MAP: Record<"oware" | "ludo" | "dame" | "pool" | "slash", HumanChallengerPersona> = {
+const PERSONA_MAP: Record<
+  "oware" | "ludo" | "dame" | "pool" | "slash" | "candy",
+  HumanChallengerPersona
+> = {
   oware: {
     name: "Nana Kwame Asante",
     city: "Kumasi",
@@ -499,19 +521,28 @@ const PERSONA_MAP: Record<"oware" | "ludo" | "dame" | "pool" | "slash", HumanCha
     styleTag: "Makola Fruit Stall Queen",
     avatarInitials: "AS",
   },
+  candy: {
+    name: "Efua Mensah",
+    city: "Osu Oxford Street",
+    humanSensePercent: 93,
+    styleTag: "Oxford Street Sweet Cascade Pro",
+    avatarInitials: "EM",
+  },
 };
 
 export const HUMAN_CHALLENGER_PERSONAS: HumanChallengerPersona[] &
-  Record<"oware" | "ludo" | "dame" | "pool" | "slash", HumanChallengerPersona> = Object.assign(
-  [
-    PERSONA_MAP.oware,
-    PERSONA_MAP.ludo,
-    PERSONA_MAP.dame,
-    PERSONA_MAP.pool,
-    PERSONA_MAP.slash,
-  ],
-  PERSONA_MAP
-);
+  Record<"oware" | "ludo" | "dame" | "pool" | "slash" | "candy", HumanChallengerPersona> =
+  Object.assign(
+    [
+      PERSONA_MAP.oware,
+      PERSONA_MAP.ludo,
+      PERSONA_MAP.dame,
+      PERSONA_MAP.pool,
+      PERSONA_MAP.slash,
+      PERSONA_MAP.candy,
+    ],
+    PERSONA_MAP
+  );
 
 export type DataTargetTier = "1GB" | "2GB" | "5GB";
 
