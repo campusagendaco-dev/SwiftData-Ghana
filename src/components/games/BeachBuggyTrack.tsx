@@ -1408,7 +1408,7 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
         engineFilterRef.current
       ) {
         engineGainRef.current.gain.value =
-          st === "menu" || mutedRef.current ? 0 : 0.04 + sp * 0.028;
+          (st as string) === "menu" || mutedRef.current ? 0 : 0.04 + sp * 0.028;
         engineOscRef.current.frequency.value =
           55 + sp * 175 + (P.boosting ? 42 : 0) + (P.drifting ? 18 : 0);
         engineFilterRef.current.frequency.value = 300 + sp * 950;

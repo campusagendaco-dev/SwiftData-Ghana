@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { playSound, playSuccessSound } from "@/lib/sound";
 import { useDeviceScreenFit } from "@/hooks/use-device-screen-fit";
+import { InGameVoiceChat } from "@/components/games/InGameVoiceChat";
 import {
   playWoodSeedClack,
   playLevelUpFanfare,
@@ -28,15 +29,49 @@ import {
 } from "@/lib/game-sensory-engine";
 
 export type OwareRuleVariant = "nam-nam" | "abapa";
+export type OwareSowingSpeed = "slow" | "normal" | "fast";
 
 const PITS_PER_PLAYER = 6;
 const TOTAL_PIT_COUNT = PITS_PER_PLAYER * 2;
 const SEEDS_NEEDED_TO_WIN = 25;
 const MAXIMUM_RELAY_SEGMENTS = 200;
-const HAND_MOVE_DURATION_MS = 220;
-const HAND_DROP_PAUSE_MS = 85;
+const HAND_MOVE_DURATION_MS = 480;
+const HAND_DROP_PAUSE_MS = 180;
 const HAND_MAXIMUM_SEEDS_DRAWN = 12;
 const MAXIMUM_SEEDS_DRAWN_PER_PIT = 28;
+
+const OWARE_SPEED_PROFILES: Record<
+  OwareSowingSpeed,
+  {
+    label: string;
+    moveMs: number;
+    dropPauseMs: number;
+    scoopBonusPauseMs: number;
+    aiDelayMs: number;
+  }
+> = {
+  slow: {
+    label: "🐢 Slow",
+    moveMs: 650,
+    dropPauseMs: 250,
+    scoopBonusPauseMs: 550,
+    aiDelayMs: 2400,
+  },
+  normal: {
+    label: "🚶 Normal",
+    moveMs: 480,
+    dropPauseMs: 180,
+    scoopBonusPauseMs: 420,
+    aiDelayMs: 1850,
+  },
+  fast: {
+    label: "⚡ Fast",
+    moveMs: 320,
+    dropPauseMs: 110,
+    scoopBonusPauseMs: 240,
+    aiDelayMs: 1100,
+  },
+};
 
 export interface OwareAnimationStep {
   type?: "pickup" | "drop" | "capture";
@@ -705,6 +740,7 @@ function OwareAnimatedHand({
   isInstant,
   isPulsing,
   seedCount,
+  moveDurationMs = HAND_MOVE_DURATION_MS,
 }: {
   visible: boolean;
   x: number;
@@ -714,6 +750,7 @@ function OwareAnimatedHand({
   isInstant: boolean;
   isPulsing: boolean;
   seedCount: number;
+  moveDurationMs?: number;
 }) {
   const heightPx = widthPx * 1.4;
   const skinLight = isTopPlayer ? "#f0c08a" : "#d79a5b";
@@ -732,7 +769,7 @@ function OwareAnimatedHand({
         transformOrigin: "50% 20%",
         transform: isPulsing ? "scale(0.88)" : "scale(1)",
         transitionProperty: isInstant ? "none" : "left, top, opacity, transform",
-        transitionDuration: isInstant ? "0ms" : `${HAND_MOVE_DURATION_MS}ms`,
+        transitionDuration: isInstant ? "0ms" : `${moveDurationMs}ms`,
         transitionTimingFunction: "cubic-bezier(0.22, 1, 0.36, 1)",
         filter: "drop-shadow(0 12px 10px rgba(0, 0, 0, 0.6))",
       }}
@@ -845,6 +882,8 @@ interface OwareGameBoardProps {
   mySide: "creator" | "opponent";
   creatorName: string;
   opponentName: string;
+  roomCode?: string;
+  challengeId?: string;
   initialState?: OwareState;
   onStateChange?: (nextState: OwareState) => void;
   onMatchComplete?: (winnerSide: "creator" | "opponent" | "draw", finalState: OwareState) => void;
@@ -860,6 +899,8 @@ export function OwareGameBoard({
   mySide,
   creatorName,
   opponentName,
+  roomCode,
+  challengeId,
   initialState,
   onStateChange,
   onMatchComplete,
@@ -887,6 +928,15 @@ export function OwareGameBoard({
   const [hoveredPit, setHoveredPit] = useState<number | null>(null);
   const [showRules, setShowRules] = useState(false);
   const [aiDifficultyDepth, setAiDifficultyDepth] = useState<number>(4); // 2 = Easy, 4 = Medium, 6 = Hard
+  const [sowingSpeed, setSowingSpeed] = useState<OwareSowingSpeed>(() => {
+    try {
+      const saved = localStorage.getItem("swiftdata_oware_speed") as OwareSowingSpeed | null;
+      if (saved === "slow" || saved === "normal" || saved === "fast") return saved;
+    } catch {
+      // ignore
+    }
+    return "normal";
+  });
   const [muted, setMuted] = useState(() => !getGameSensoryPreferences().soundEnabled);
   const [vibrationEnabled, setVibrationEnabled] = useState(
     () => getGameSensoryPreferences().vibrationEnabled
@@ -1015,8 +1065,9 @@ export function OwareGameBoard({
         seedCount: 0,
       });
 
-      // Cap total animation frames to ~22 steps so long relay chains remain snappy and thrilling
-      const stride = steps.length > 24 ? Math.ceil(steps.length / 22) : 1;
+      // Show every single bowl drop clearly (only subsample if an ultra-long relay exceeds 65 steps)
+      const speedConfig = OWARE_SPEED_PROFILES[sowingSpeed] || OWARE_SPEED_PROFILES.normal;
+      const stride = steps.length > 65 ? Math.ceil(steps.length / 60) : 1;
       const sampledSteps = steps.filter(
         (s, idx) =>
           idx === 0 ||
@@ -1029,8 +1080,7 @@ export function OwareGameBoard({
       );
 
       let cursor = 0;
-      const stepInterval =
-        sampledSteps.length > 14 ? HAND_MOVE_DURATION_MS : HAND_MOVE_DURATION_MS + HAND_DROP_PAUSE_MS;
+      const baseStepInterval = speedConfig.moveMs + speedConfig.dropPauseMs;
 
       const tick = () => {
         if (cursor >= sampledSteps.length) {
@@ -1090,7 +1140,7 @@ export function OwareGameBoard({
 
         window.setTimeout(() => {
           setHandPose((prev) => ({ ...prev, isPulsing: false }));
-        }, HAND_DROP_PAUSE_MS);
+        }, speedConfig.dropPauseMs);
 
         if (!muted) {
           if (currentFrame.harvestedPit !== undefined) {
@@ -1102,15 +1152,22 @@ export function OwareGameBoard({
           }
         }
 
+        // Add a clear human pause when scooping a relay bowl or harvesting 4 seeds so players can follow every capture
+        const extraPause =
+          currentFrame.harvestedPit !== undefined || currentFrame.isRelayScoop
+            ? speedConfig.scoopBonusPauseMs
+            : 0;
+
         cursor += 1;
-        animTimerRef.current = window.setTimeout(tick, stepInterval);
+        animTimerRef.current = window.setTimeout(tick, baseStepInterval + extraPause);
       };
 
-      animTimerRef.current = window.setTimeout(tick, 45);
+      animTimerRef.current = window.setTimeout(tick, 90);
     },
     [
       muted,
       mySide,
+      sowingSpeed,
       getPitCenterInsideBoard,
       getHandRestPosition,
       onStateChange,
@@ -1129,6 +1186,15 @@ export function OwareGameBoard({
     };
     setGame(updated);
     onStateChange?.(updated);
+  };
+
+  const handleSelectSowingSpeed = (nextSpeed: OwareSowingSpeed) => {
+    setSowingSpeed(nextSpeed);
+    try {
+      localStorage.setItem("swiftdata_oware_speed", nextSpeed);
+    } catch {
+      // ignore
+    }
   };
 
   const handlePitClick = useCallback(
@@ -1158,7 +1224,8 @@ export function OwareGameBoard({
       !game.winner &&
       game.turn === "opponent"
     ) {
-      const humanDelay = 620 + Math.floor(Math.random() * 420);
+      const speedConfig = OWARE_SPEED_PROFILES[sowingSpeed] || OWARE_SPEED_PROFILES.normal;
+      const humanDelay = speedConfig.aiDelayMs + Math.floor(Math.random() * 520);
       const timer = window.setTimeout(() => {
         const aiPit = pickBestAiMove(game, playerLevel, aiDifficultyDepth);
         if (aiPit === -1) return;
@@ -1173,7 +1240,7 @@ export function OwareGameBoard({
 
       return () => window.clearTimeout(timer);
     }
-  }, [mode, game, isAnimating, variant, playerLevel, aiDifficultyDepth, playAnimatedMove]);
+  }, [mode, game, isAnimating, variant, playerLevel, aiDifficultyDepth, sowingSpeed, playAnimatedMove]);
 
   // Display state (either live animation frame or settled game state)
   const displayPits = animStep ? animStep.pits : game.pits;
@@ -1335,9 +1402,65 @@ export function OwareGameBoard({
               <option value={6}>Hard</option>
             </select>
           )}
+
+          {/* Sowing Speed Selector (Slow / Normal / Fast) */}
+          <div
+            className="inline-flex items-center rounded-xl bg-slate-950 p-0.5 border border-emerald-500/30"
+            title="Adjust Oware hand & seed sowing speed"
+          >
+            {(["slow", "normal", "fast"] as const).map((spKey) => (
+              <button
+                key={spKey}
+                type="button"
+                onClick={() => handleSelectSowingSpeed(spKey)}
+                className={`px-2 py-0.5 rounded-lg text-[10px] font-black transition-all cursor-pointer ${
+                  sowingSpeed === spKey
+                    ? "bg-emerald-500 text-slate-950 shadow"
+                    : "text-slate-400 hover:text-white"
+                }`}
+              >
+                {OWARE_SPEED_PROFILES[spKey].label}
+              </button>
+            ))}
+          </div>
         </div>
 
-        <div className="flex items-center gap-1">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {/* 🎙️ LIVE IN-GAME OPEN MIC VOICE CHAT */}
+          <InGameVoiceChat
+            roomCode={roomCode || "OWARE"}
+            challengeId={challengeId}
+            mySide={mySide}
+            myName={mySide === "creator" ? creatorName : effectiveOpponentName}
+            opponentName={mySide === "creator" ? effectiveOpponentName : creatorName}
+            mode={mode}
+          />
+
+          {/* 🔄 1-Tap Rematch Button Directly on Oware Board */}
+          <Button
+            type="button"
+            size="sm"
+            onClick={handleInBoardRematch}
+            className="h-7 px-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[10px] gap-1 cursor-pointer shadow"
+          >
+            <RotateCcw className="w-3 h-3" />
+            <span>Rematch</span>
+          </Button>
+
+          {/* 🎮 1-Tap Play Another Game Button Directly on Oware Board */}
+          {onPlayAnotherGame && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={onPlayAnotherGame}
+              className="h-7 px-2.5 rounded-xl border-emerald-400/50 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-200 font-black text-[10px] gap-1 cursor-pointer"
+            >
+              <Gamepad2 className="w-3 h-3" />
+              <span>Play Another</span>
+            </Button>
+          )}
+
           <Button
             size="sm"
             variant="ghost"
@@ -1508,7 +1631,10 @@ export function OwareGameBoard({
 
           {/* TWO HINGED MATTE-BLACK EBONY PLANKS WITH BRASS HINGES, 12 TERRACOTTA BOWLS & ANIMATED SOWING HAND */}
           <div ref={boardPlanksRef} className="lg:col-span-6 relative space-y-1.5">
-            <OwareAnimatedHand {...handPose} />
+            <OwareAnimatedHand
+              {...handPose}
+              moveDurationMs={(OWARE_SPEED_PROFILES[sowingSpeed] || OWARE_SPEED_PROFILES.normal).moveMs}
+            />
 
             {/* TOP EBONY PLANK — Opponent's 6 Carved Terracotta Bowls (North: 11..6) */}
             <div

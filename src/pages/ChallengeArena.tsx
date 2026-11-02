@@ -2735,7 +2735,7 @@ export default function ChallengeArena() {
               </button>
             </div>
           ) : (
-            <CardHeader className="shrink-0 h-8 py-0.5 px-2 sm:px-3 border-b border-white/10 bg-[#0c1322] flex flex-row flex-nowrap items-center justify-between gap-1.5 space-y-0 overflow-x-auto no-scrollbar">
+            <CardHeader className="shrink-0 min-h-8 py-1 px-2 sm:px-3 border-b border-white/10 bg-[#0c1322] flex flex-row flex-wrap items-center justify-between gap-1.5 space-y-0">
               <div className="flex items-center gap-1.5 min-w-0 shrink-0">
                 {/* Left-Corner Profile / Settings / Help Micro Button */}
                 <button
@@ -3228,6 +3228,8 @@ export default function ChallengeArena() {
                     opponentName={
                       activeChallenge.opponent_name || HUMAN_CHALLENGER_PERSONAS.oware.name
                     }
+                    roomCode={activeChallenge.room_code}
+                    challengeId={activeChallenge.id}
                     initialState={activeChallenge.board_state}
                     onStateChange={handleBoardStateChange}
                     onMatchComplete={handleMatchComplete}
@@ -3412,7 +3414,7 @@ export default function ChallengeArena() {
               const iWon = !isDraw && winnerSide === mySide;
               const gType = (activeChallenge.game_type || "oware") as GameType;
               const gameMeta =
-                GAME_CATALOG.find((g) => g.type === gType) || GAME_CATALOG[0];
+                GAME_CATALOG.find((g) => g.id === gType) || GAME_CATALOG[0];
               const winnerDisplayName = isDraw
                 ? "Match Draw"
                 : winnerSide === "creator"
@@ -3454,7 +3456,7 @@ export default function ChallengeArena() {
                       <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-400/40 text-[11px] font-black uppercase tracking-wider text-amber-300">
                         <Crown className="w-3.5 h-3.5 text-amber-400" />
                         <span>
-                          {gameMeta.emoji} {gameMeta.label} • Room #{activeChallenge.room_code}
+                          {gameMeta.emoji} {gameMeta.name} • Room #{activeChallenge.room_code}
                         </span>
                       </div>
 
@@ -3492,7 +3494,7 @@ export default function ChallengeArena() {
                             {activeChallenge.board_state?.summary ||
                               (isDraw
                                 ? "Both players matched skill for skill!"
-                                : `${winnerDisplayName} defeated ${runnerUpDisplayName} in ${gameMeta.label}!`)}
+                                : `${winnerDisplayName} defeated ${runnerUpDisplayName} in ${gameMeta.name}!`)}
                           </p>
                         </div>
                       </div>
@@ -3717,7 +3719,7 @@ export default function ChallengeArena() {
                                 ? activeChallenge.opponent_name || "Opponent"
                                 : activeChallenge.creator_name || "Creator"
                             }`
-                          : `🔄 Rematch (${gameMeta.shortLabel})`}
+                          : `🔄 Rematch (${gameMeta.shortTitle})`}
                       </Button>
 
                       <Button
@@ -3742,25 +3744,25 @@ export default function ChallengeArena() {
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                           {GAME_CATALOG.map((g) => (
                             <button
-                              key={g.type}
+                              key={g.id}
                               type="button"
                               disabled={submitting}
                               onClick={() => {
-                                setSelectedGame(g.type);
+                                setSelectedGame(g.id);
                                 startChallengeWithConfig(
-                                  g.type,
+                                  g.id,
                                   (activeChallenge.mode || selectedMode) as ChallengeMode
                                 );
                               }}
                               className={`p-2.5 rounded-xl border text-left transition-all flex items-center gap-2 cursor-pointer ${
-                                g.type === activeChallenge.game_type
+                                g.id === activeChallenge.game_type
                                   ? "bg-amber-500/20 border-amber-400/60 text-white"
                                   : "bg-white/[0.04] hover:bg-white/[0.1] border-white/10 text-slate-200"
                               }`}
                             >
                               <span className="text-lg shrink-0">{g.emoji}</span>
                               <div className="min-w-0">
-                                <p className="text-xs font-black truncate">{g.shortLabel}</p>
+                                <p className="text-xs font-black truncate">{g.shortTitle}</p>
                                 <p className="text-[9px] text-emerald-300 font-bold truncate">
                                   Play Now →
                                 </p>

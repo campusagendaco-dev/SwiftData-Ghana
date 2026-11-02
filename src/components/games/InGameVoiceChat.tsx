@@ -125,10 +125,10 @@ export const InGameVoiceChat: React.FC<InGameVoiceChatProps> = ({
         utter.onerror = () => setIsRemoteSpeaking(false);
         window.speechSynthesis.speak(utter);
       } catch {
-        window.setTimeout(() => setIsRemoteSpeaking(false), 2600);
+        setTimeout(() => setIsRemoteSpeaking(false), 2600);
       }
     } else {
-      window.setTimeout(() => setIsRemoteSpeaking(false), 2600);
+      setTimeout(() => setIsRemoteSpeaking(false), 2600);
     }
   }, [mode, opponentName]);
 
