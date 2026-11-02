@@ -967,6 +967,10 @@ serve(async (req: Request) => {
       const challengerPersonaName =
         humanSenseChallengerMap[gameType] || "Kojo Mensah (94% Human Sense)";
 
+      const rematchOfChallengeId = body.rematch_of_challenge_id
+        ? String(body.rematch_of_challenge_id).trim()
+        : null;
+
       const baseChallengePayload = {
         room_code: roomCode,
         game_type: gameType,
@@ -994,6 +998,7 @@ serve(async (req: Request) => {
           invited_phone: invitedPhone || null,
           invited_user_id: invitedUserId || null,
           invited_name: invitedName || null,
+          rematch_of_challenge_id: rematchOfChallengeId,
         },
       };
 
@@ -1022,6 +1027,47 @@ serve(async (req: Request) => {
       }
       if (created && created.metadata?.actual_game_type) {
         created.game_type = created.metadata.actual_game_type;
+      }
+
+      // If this challenge is a rematch of a completed match, link the new room code back onto the completed challenge so the opponent's Winner Popup updates in real time!
+      if (rematchOfChallengeId && created) {
+        try {
+          const { data: prevFinished } = await supabaseAdmin
+            .from("game_challenges")
+            .select("metadata, board_state")
+            .eq("id", rematchOfChallengeId)
+            .maybeSingle();
+
+          const prevMeta =
+            prevFinished?.metadata && typeof prevFinished.metadata === "object"
+              ? prevFinished.metadata
+              : {};
+          const prevBoard =
+            prevFinished?.board_state && typeof prevFinished.board_state === "object"
+              ? prevFinished.board_state
+              : {};
+
+          await supabaseAdmin
+            .from("game_challenges")
+            .update({
+              metadata: {
+                ...prevMeta,
+                next_rematch_room_code: created.room_code,
+                next_rematch_challenge_id: created.id,
+                rematch_requested_by: creatorName,
+              },
+              board_state: {
+                ...prevBoard,
+                nextRematchRoomCode: created.room_code,
+                nextRematchChallengeId: created.id,
+                rematchRequestedBy: creatorName,
+              },
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", rematchOfChallengeId);
+        } catch (rematchLinkErr) {
+          console.warn("[challenge-arena] Rematch link update warning:", rematchLinkErr);
+        }
       }
 
       // When an Open 1v1 Challenge is posted, notify all users (In-App + Web Push + SMS) + invited player
@@ -1253,7 +1299,7 @@ serve(async (req: Request) => {
       const { data: updated, error: joinErr } = await supabaseAdmin
         .from("game_challenges")
         .update({
-          opponent_id: authUser?.id || null,
+          opponent_id: authUser?.id || (body.opponent_id ? String(body.opponent_id) : null),
           opponent_name: opponentName,
           opponent_phone: opponentPhone || null,
           opponent_payment_source: stake > 0 ? paymentSource : "free",
@@ -1515,11 +1561,21 @@ serve(async (req: Request) => {
       if (winnerSide === "draw" && stake > 0) {
         if (challenge.creator_payment_source === "wallet" && challenge.creator_id) {
           const { data: w1 } = await supabaseAdmin.from("wallets").select("balance").eq("agent_id", challenge.creator_id).maybeSingle();
-          await supabaseAdmin.from("wallets").update({ balance: Number((Number(w1?.balance || 0) + stake).toFixed(2)) }).eq("agent_id", challenge.creator_id);
+          const nextBal1 = Number((Number(w1?.balance || 0) + stake).toFixed(2));
+          if (w1) {
+            await supabaseAdmin.from("wallets").update({ balance: nextBal1, updated_at: new Date().toISOString() }).eq("agent_id", challenge.creator_id);
+          } else {
+            await supabaseAdmin.from("wallets").insert({ agent_id: challenge.creator_id, balance: nextBal1, updated_at: new Date().toISOString() });
+          }
         }
         if (challenge.opponent_payment_source === "wallet" && challenge.opponent_id) {
           const { data: w2 } = await supabaseAdmin.from("wallets").select("balance").eq("agent_id", challenge.opponent_id).maybeSingle();
-          await supabaseAdmin.from("wallets").update({ balance: Number((Number(w2?.balance || 0) + stake).toFixed(2)) }).eq("agent_id", challenge.opponent_id);
+          const nextBal2 = Number((Number(w2?.balance || 0) + stake).toFixed(2));
+          if (w2) {
+            await supabaseAdmin.from("wallets").update({ balance: nextBal2, updated_at: new Date().toISOString() }).eq("agent_id", challenge.opponent_id);
+          } else {
+            await supabaseAdmin.from("wallets").insert({ agent_id: challenge.opponent_id, balance: nextBal2, updated_at: new Date().toISOString() });
+          }
         }
         rewardClaimed = true;
         settlementMessage = "Match ended in a draw! Wallet stakes have been returned.";
@@ -1539,10 +1595,20 @@ serve(async (req: Request) => {
             .maybeSingle();
 
           const nextBal = Number((Number(winnerWallet?.balance || 0) + prizePool).toFixed(2));
-          await supabaseAdmin
-            .from("wallets")
-            .update({ balance: nextBal, updated_at: new Date().toISOString() })
-            .eq("agent_id", winnerId);
+          if (winnerWallet) {
+            await supabaseAdmin
+              .from("wallets")
+              .update({ balance: nextBal, updated_at: new Date().toISOString() })
+              .eq("agent_id", winnerId);
+          } else {
+            await supabaseAdmin
+              .from("wallets")
+              .insert({
+                agent_id: winnerId,
+                balance: nextBal,
+                updated_at: new Date().toISOString(),
+              });
+          }
 
           rewardClaimed = true;
           settlementMessage = `🎉 Victory! GH₵ ${prizePool.toFixed(2)} has been credited to ${winnerName}'s Wallet!`;
@@ -1564,14 +1630,28 @@ serve(async (req: Request) => {
             .select("*")
             .single();
           rewardClaimRow = claim;
+
+          try {
+            await supabaseAdmin.from("notifications").insert({
+              user_id: winnerId,
+              title: `🏆 +GH₵ ${prizePool.toFixed(2)} Match Prize Credited!`,
+              message: `Congratulations ${winnerName}! You won the ${formatGameLabel(challenge.game_type)} duel (Room #${challenge.room_code}) and GH₵ ${prizePool.toFixed(2)} has been added to your Wallet.`,
+              type: "promo",
+              is_read: false,
+            });
+          } catch (notifErr) {
+            console.warn("[challenge-arena] Winner wallet notification warning:", notifErr);
+          }
         } else {
           // Winner either played via MoMo as guest or selected Data Bundle prize -> allow claiming phone/network
-          settlementMessage = `🎉 ${winnerName} won GH₵ ${prizePool.toFixed(2)}! Enter your phone number below to claim your Data Bundle or MoMo/Wallet prize.`;
+          settlementMessage = `🎉 ${winnerName} won GH₵ ${prizePool.toFixed(2)}! Enter your phone number in the Victory Popup to claim your Data Bundle or MoMo/Wallet prize.`;
         }
       } else if (humanWon && challenge.mode === "free_data") {
-        settlementMessage = `🎉 You defeated the Grandmaster AI in ${challenge.game_type.toUpperCase()}! Claim your Free ${challenge.reward_data_size || "1GB"} Data Reward below!`;
+        settlementMessage = `🎉 You defeated the Grandmaster AI in ${challenge.game_type.toUpperCase()}! +35 Arena Points credited toward your Free ${challenge.reward_data_size || "1GB"} Data Reward!`;
+      } else if (humanWon && stake === 0) {
+        settlementMessage = `🎉 ${winnerName} won the 1v1 ${formatGameLabel(challenge.game_type)} duel! +35 Arena Points credited!`;
       } else if (!humanWon && winnerSide !== "draw") {
-        settlementMessage = "Nana Grandmaster AI won this round! Challenge again to claim victory!";
+        settlementMessage = `${winnerName} won this round! Tap Rematch to win the next match!`;
       }
 
       const { data: updatedChallenge } = await supabaseAdmin
