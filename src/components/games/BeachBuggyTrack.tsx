@@ -309,9 +309,25 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
     () => !getGameSensoryPreferences().soundEnabled
   );
   const [autoGas, setAutoGas] = useState<boolean>(true);
+  const [steeringMode, setSteeringMode] = useState<"wheel" | "tilt" | "arrows">(
+    () => {
+      try {
+        const saved = localStorage.getItem("swiftdata_buggy_steering_mode");
+        if (saved === "wheel" || saved === "tilt" || saved === "arrows") {
+          return saved;
+        }
+      } catch {
+        // ignore
+      }
+      return "wheel";
+    }
+  );
+  const [wheelAngleDeg, setWheelAngleDeg] = useState<number>(0);
+  const [tiltAngleDeg, setTiltAngleDeg] = useState<number>(0);
   const [endSummary, setEndSummary] = useState<{
     won: boolean;
     wrecked: boolean;
+    timedOut?: boolean;
     rank: number;
     lap: number;
     raceTime: number;
@@ -328,6 +344,110 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
 
   const autoGasRef = useRef<boolean>(autoGas);
   autoGasRef.current = autoGas;
+
+  const steeringModeRef = useRef<"wheel" | "tilt" | "arrows">(steeringMode);
+  steeringModeRef.current = steeringMode;
+
+  const steerAxisRef = useRef<number>(0);
+  const wheelDraggingRef = useRef<boolean>(false);
+  const wheelPadRef = useRef<HTMLDivElement | null>(null);
+
+  const changeSteeringMode = useCallback(
+    async (nextMode: "wheel" | "tilt" | "arrows") => {
+      triggerHapticSensor("tap");
+      if (nextMode === "tilt") {
+        try {
+          const DevOrient = (window as any).DeviceOrientationEvent;
+          if (
+            DevOrient &&
+            typeof DevOrient.requestPermission === "function"
+          ) {
+            const perm = await DevOrient.requestPermission();
+            if (perm !== "granted") {
+              // Still allow switching so user sees status
+            }
+          }
+        } catch {
+          // ignore iOS permission error on non-HTTPS or desktop
+        }
+      }
+      steerAxisRef.current = 0;
+      setWheelAngleDeg(0);
+      setTiltAngleDeg(0);
+      setSteeringMode(nextMode);
+      try {
+        localStorage.setItem("swiftdata_buggy_steering_mode", nextMode);
+      } catch {
+        // ignore
+      }
+    },
+    []
+  );
+
+  // Attempt hardware landscape lock on mount
+  useEffect(() => {
+    try {
+      const orient = (window.screen as any)?.orientation;
+      if (orient && typeof orient.lock === "function") {
+        orient.lock("landscape").catch(() => {});
+      }
+    } catch {
+      // ignore
+    }
+    return () => {
+      try {
+        const orient = (window.screen as any)?.orientation;
+        if (orient && typeof orient.unlock === "function") {
+          orient.unlock();
+        }
+      } catch {
+        // ignore
+      }
+    };
+  }, []);
+
+  // DeviceOrientation motion sensor steering when steeringMode === "tilt"
+  useEffect(() => {
+    if (steeringMode !== "tilt") {
+      steerAxisRef.current = 0;
+      setTiltAngleDeg(0);
+      return;
+    }
+
+    const handleOrientation = (e: DeviceOrientationEvent) => {
+      const beta = Number(e.beta || 0); // front-back tilt [-180,180]
+      const gamma = Number(e.gamma || 0); // left-right tilt [-90,90]
+      const screenAngle =
+        Number((window.screen as any)?.orientation?.angle) ||
+        Number((window as any).orientation) ||
+        0;
+
+      // Determine horizontal steering tilt in landscape (or forced 90deg portrait stage)
+      let rawTiltDeg = 0;
+      if (screenFit.isPortraitViewport) {
+        // Phone is in portrait orientation while stage is rotated 90deg clockwise:
+        // Tilting top/bottom of phone (beta) or left/right (gamma)
+        rawTiltDeg = Math.abs(gamma) > Math.abs(beta * 0.6) ? gamma : beta;
+      } else if (screenAngle === 90) {
+        rawTiltDeg = beta;
+      } else if (screenAngle === -90 || screenAngle === 270) {
+        rawTiltDeg = -beta;
+      } else {
+        rawTiltDeg = Math.abs(gamma) > 2 ? gamma : beta;
+      }
+
+      const clampedDeg = Math.max(-35, Math.min(35, rawTiltDeg));
+      const deadzoneDeg = Math.abs(clampedDeg) < 2.2 ? 0 : clampedDeg;
+      const normalized = Math.max(-1, Math.min(1, deadzoneDeg / 22));
+      steerAxisRef.current = normalized;
+      setTiltAngleDeg(Math.round(deadzoneDeg));
+    };
+
+    window.addEventListener("deviceorientation", handleOrientation, true);
+    return () => {
+      window.removeEventListener("deviceorientation", handleOrientation, true);
+    };
+  }, [steeringMode, screenFit.isPortraitViewport]);
 
   const initialStateRef = useRef(initialState);
   initialStateRef.current = initialState;
@@ -723,7 +843,9 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
       }
     }
 
-    function triggerGameOver() {
+    const RACE_CUTOFF_SECONDS = 95;
+
+    function triggerGameOver(timedOut = false) {
       st = "over";
       P.boosting = false;
       shake = 1;
@@ -753,7 +875,8 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
       window.setTimeout(() => {
         setEndSummary({
           won: false,
-          wrecked: true,
+          wrecked: !timedOut,
+          timedOut,
           rank: 6,
           lap,
           raceTime: P.time,
@@ -783,14 +906,14 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
       persistSave(nextSave);
       syncProgressToArena(true, true, false);
 
-      if (r <= 2) {
+      if (r <= 2 && P.time <= RACE_CUTOFF_SECONDS) {
         playLevelUpFanfare();
         triggerHapticSensor("win");
         onPointsEarnedRef.current?.(
-          r === 1 ? 85 : 45,
+          r === 1 ? 35 : 15,
           r === 1
-            ? "🏆 1st Place Labadi Buggy GP Finish!"
-            : "🥈 2nd Place Podium Finish!"
+            ? "🏆 1st Place Timed Labadi Buggy GP Finish (+35 pts)!"
+            : "🥈 2nd Place Timed Podium Finish (+15 pts)!"
         );
       }
 
@@ -798,6 +921,7 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
         setEndSummary({
           won: r === 1,
           wrecked: false,
+          timedOut: false,
           rank: r,
           lap: LAPS,
           raceTime: P.time,
@@ -860,6 +984,12 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
         if (P.pad > 0) P.pad -= dt;
         P.time += dt;
 
+        // Enforce 95-second 3-Lap Race Cutoff Timer
+        if (P.time >= RACE_CUTOFF_SECONDS) {
+          triggerGameOver(true);
+          return;
+        }
+
         const up = Boolean(keys.up || (autoGasRef.current && !keys.down));
         const cap =
           MAX *
@@ -883,7 +1013,11 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
         if (P.speed > cap) P.speed = Math.max(cap, P.speed - MAX * 0.6 * dt);
 
         const dx = dt * 2.45 * veh.steerBonus * sp;
-        const tg = (keys.right ? 1 : 0) - (keys.left ? 1 : 0);
+        const keySteer = (keys.right ? 1 : 0) - (keys.left ? 1 : 0);
+        const tg =
+          Math.abs(steerAxisRef.current) > 0.04
+            ? steerAxisRef.current
+            : keySteer;
         P.x += tg * dx;
         P.st += (tg - P.st) * Math.min(1, dt * 9);
         P.x -= dx * sp * ps.curve * CENT;
@@ -912,7 +1046,6 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
           P.lastPad = ps.i;
           playBeep(990, 0.25);
           triggerHapticSensor("capture");
-          onPointsEarnedRef.current?.(12, "⚡ Hit Kente Turbo Boost Pad!");
         }
         if (!ps.boost) P.lastPad = -1;
 
@@ -943,10 +1076,10 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
               s.got = 1;
               P.coins++;
               playBeep(1200 + (P.coins % 8) * 60, 0.08, 0.06);
-              if (P.coins % 4 === 0) {
+              if (P.coins % 12 === 0) {
                 onPointsEarnedRef.current?.(
-                  10,
-                  "🪙 Collected Ghana Cedi Track Coins!"
+                  4,
+                  "🪙 Collected 12 Ghana Cedi Track Coins (+4 pts)!"
                 );
               }
             }
@@ -974,8 +1107,8 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
           P.lastLapReported = currentLap;
           playTurnNotificationSound();
           onPointsEarnedRef.current?.(
-            35,
-            `🏁 Completed Lap ${currentLap - 1} of ${LAPS}!`
+            5,
+            `🏁 Completed Lap ${currentLap - 1} of ${LAPS} (+5 pts)!`
           );
         }
 
@@ -1667,15 +1800,19 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
       ctx!.font = "900 16px Impact, sans-serif";
       ctx!.fillText(["", "1st", "2nd", "3rd", "4th", "5th", "6th"][r], 112, 72);
 
-      drawPill(W - 186, 14, 170, 70);
+      drawPill(W - 196, 14, 180, 74);
       ctx!.fillStyle = "#fff";
       ctx!.font = "700 13px Trebuchet MS, sans-serif";
-      ctx!.fillText("LAP", W - 172, 34);
-      ctx!.font = "900 34px Impact, sans-serif";
-      ctx!.fillText(lap + " / " + LAPS, W - 172, 66);
-      ctx!.font = "700 13px Trebuchet MS, sans-serif";
+      ctx!.fillText("LAP", W - 182, 34);
+      ctx!.font = "900 32px Impact, sans-serif";
+      ctx!.fillText(lap + " / " + LAPS, W - 182, 68);
+      const remainingSec = Math.max(0, RACE_CUTOFF_SECONDS - P.time);
+      ctx!.font = "700 12px Trebuchet MS, sans-serif";
       ctx!.textAlign = "right";
-      ctx!.fillText(P.time.toFixed(1) + " s", W - 26, 34);
+      ctx!.fillStyle = remainingSec <= 15 ? "#ff4d4d" : "#ffd24a";
+      ctx!.fillText("⏱️ " + remainingSec.toFixed(1) + "s left", W - 24, 34);
+      ctx!.fillStyle = "#e2e8f0";
+      ctx!.fillText(P.time.toFixed(1) + "s", W - 24, 68);
 
       const bx = W / 2 - 170;
       const by = 26;
@@ -1993,6 +2130,56 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
     keysRef.current[k] = v;
   };
 
+  // Interactive Steering Wheel Drag Handlers (supports both native landscape & 90deg rotated portrait stage)
+  const updateWheelFromPointer = useCallback(
+    (clientX: number, clientY: number) => {
+      const pad = wheelPadRef.current;
+      if (!pad) return;
+      const rect = pad.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+
+      // In rotated 90deg clockwise portrait stage, screen clientY corresponds to stage horizontal X
+      const horizontalDelta = screenFit.isPortraitViewport
+        ? clientY - cy
+        : clientX - cx;
+
+      const radius = Math.max(36, Math.min(rect.width, rect.height) * 0.45);
+      const norm = Math.max(-1, Math.min(1, horizontalDelta / radius));
+      steerAxisRef.current = norm;
+      setWheelAngleDeg(Math.round(norm * 65));
+    },
+    [screenFit.isPortraitViewport]
+  );
+
+  const handleWheelPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
+    wheelDraggingRef.current = true;
+    updateWheelFromPointer(e.clientX, e.clientY);
+  };
+
+  const handleWheelPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!wheelDraggingRef.current) return;
+    e.preventDefault();
+    updateWheelFromPointer(e.clientX, e.clientY);
+  };
+
+  const handleWheelPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    wheelDraggingRef.current = false;
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
+    steerAxisRef.current = 0;
+    setWheelAngleDeg(0);
+  };
+
   const handleBuyUpgrade = (key: "eng" | "nit" | "arm") => {
     const curLvl = saveData.up[key];
     const c = upgradeCost(curLvl);
@@ -2016,37 +2203,61 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
   const activeVehicleMeta =
     GHANA_VEHICLES.find((v) => v.id === saveData.vehicle) || GHANA_VEHICLES[0];
 
-  return (
+  const landscapeStageContent = (
     <div className="w-full h-full flex-1 min-h-0 flex flex-col select-none touch-none">
-      {/* Top Bar Info Strip */}
-      <div className="w-full shrink-0 flex flex-wrap items-center justify-between gap-2 px-3 py-1.5 mb-1 rounded-xl bg-slate-900/90 border border-white/10">
-        <div className="flex items-center gap-2">
+      {/* Top Bar Info Strip + 3-Way Steering Switcher */}
+      <div className="w-full shrink-0 flex flex-wrap items-center justify-between gap-1.5 px-2.5 py-1 mb-1 rounded-xl bg-slate-900/95 border border-white/10">
+        <div className="flex items-center gap-1.5">
           {onBackToLobby && (
             <button
               type="button"
               onClick={onBackToLobby}
-              className="px-2.5 py-1 rounded-xl bg-white/10 hover:bg-white/15 text-xs font-black text-white flex items-center gap-1"
+              className="px-2.5 py-1 rounded-xl bg-white/10 hover:bg-white/15 text-xs font-black text-white flex items-center gap-1 cursor-pointer"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
               Lobby
             </button>
           )}
-          <span className="px-2.5 py-1 rounded-xl bg-amber-500/20 border border-amber-400/30 text-[11px] font-black text-amber-300">
+          <span className="px-2 py-0.5 rounded-xl bg-amber-500/20 border border-amber-400/30 text-[10px] sm:text-[11px] font-black text-amber-300 truncate max-w-[180px] sm:max-w-none">
             {activeTrackMeta.badge} {activeTrackMeta.name}
           </span>
-          <span className="hidden sm:inline-flex px-2.5 py-1 rounded-xl bg-emerald-500/15 border border-emerald-400/30 text-[11px] font-black text-emerald-300">
+          <span className="hidden md:inline-flex px-2 py-0.5 rounded-xl bg-emerald-500/15 border border-emerald-400/30 text-[10px] font-black text-emerald-300">
             🏎️ {activeVehicleMeta.name}
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
-          <span className="px-2.5 py-1 rounded-xl bg-slate-950 border border-white/10 text-xs font-black text-amber-300">
+        {/* Live 3-Way Steering Control Selector (Wheel / Motion Tilt / Arrows) */}
+        <div className="flex items-center gap-1 bg-slate-950/90 p-0.5 rounded-xl border border-white/15">
+          {(
+            [
+              { id: "wheel", label: "🛞 Wheel" },
+              { id: "tilt", label: "📱 Motion Tilt" },
+              { id: "arrows", label: "◀▶ Arrows" },
+            ] as const
+          ).map((opt) => (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => changeSteeringMode(opt.id)}
+              className={`px-2 py-0.5 rounded-lg text-[10px] font-black transition cursor-pointer ${
+                steeringMode === opt.id
+                  ? "bg-amber-400 text-slate-950 shadow"
+                  : "text-slate-300 hover:text-white"
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          <span className="px-2 py-0.5 rounded-xl bg-slate-950 border border-white/10 text-[11px] font-black text-amber-300">
             💰 GH₵ {saveData.bank.toLocaleString()}
           </span>
           <button
             type="button"
             onClick={() => setAutoGas((v) => !v)}
-            className={`px-2.5 py-1 rounded-xl text-[10px] font-black border ${
+            className={`px-2 py-0.5 rounded-xl text-[10px] font-black border cursor-pointer ${
               autoGas
                 ? "bg-emerald-500/20 text-emerald-300 border-emerald-400/40"
                 : "bg-white/5 text-slate-400 border-white/10"
@@ -2057,13 +2268,13 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
           <button
             type="button"
             onClick={() => setMuted((m) => !m)}
-            className="p-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-white"
+            className="p-1 rounded-xl bg-white/10 hover:bg-white/15 text-white cursor-pointer"
             title={muted ? "Unmute Engine Sound" : "Mute Engine Sound"}
           >
             {muted ? (
-              <VolumeX className="w-4 h-4 text-rose-400" />
+              <VolumeX className="w-3.5 h-3.5 text-rose-400" />
             ) : (
-              <Volume2 className="w-4 h-4 text-emerald-400" />
+              <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
             )}
           </button>
         </div>
@@ -2080,22 +2291,60 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
 
         {/* ── 1. START / TRACK & RIDE MENU OVERLAY ────────────────────────── */}
         {uiScreen === "menu" && (
-          <div className="absolute inset-0 bg-gradient-to-b from-slate-950/85 via-slate-950/90 to-slate-950/95 backdrop-blur-sm flex flex-col items-center justify-evenly p-4 sm:p-6 text-center overflow-y-auto">
-            <div className="space-y-1">
+          <div className="absolute inset-0 bg-gradient-to-b from-slate-950/85 via-slate-950/90 to-slate-950/95 backdrop-blur-sm flex flex-col items-center justify-evenly p-3 sm:p-5 text-center overflow-y-auto">
+            <div className="space-y-0.5">
               <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-gradient-to-r from-red-600 via-amber-400 to-emerald-600 text-slate-950 text-[10px] font-black uppercase tracking-wider">
-                🇬🇭 Ghana Coastal &amp; Mountain Rally GP
+                🇬🇭 Strict Landscape Rally • ⏱️ 95s 3-Lap Cutoff
               </div>
-              <h1 className="text-2xl sm:text-4xl font-black uppercase tracking-tight bg-gradient-to-b from-amber-200 via-amber-400 to-orange-600 bg-clip-text text-transparent drop-shadow">
+              <h1 className="text-xl sm:text-3xl font-black uppercase tracking-tight bg-gradient-to-b from-amber-200 via-amber-400 to-orange-600 bg-clip-text text-transparent drop-shadow">
                 Labadi Beach &amp; Aburi Buggy GP
               </h1>
-              <p className="text-xs text-slate-300 max-w-xl mx-auto">
-                3 Laps • 6 Racers ({creatorName} vs {opponentName} &amp; Pack) • Hit
-                Kente Boost Pads • Collect GH₵ Coins &amp; Earn Free Data Points!
+              <p className="text-[11px] text-slate-300 max-w-xl mx-auto">
+                3 Laps • 6 Racers ({creatorName} vs {opponentName} &amp; Pack) • Finish inside 95s to earn Arena Data Points!
               </p>
             </div>
 
+            {/* Steering Control Mode Selector in Pre-Race Menu */}
+            <div className="flex flex-wrap items-center justify-center gap-1.5 bg-slate-900/90 px-3 py-1.5 rounded-2xl border border-white/15">
+              <span className="text-[10px] font-black uppercase tracking-wider text-amber-300 mr-1">
+                Steering Control:
+              </span>
+              {(
+                [
+                  {
+                    id: "wheel",
+                    label: "🛞 Steering Wheel",
+                    desc: "Rotate wheel left/right",
+                  },
+                  {
+                    id: "tilt",
+                    label: "📱 Motion Tilt Sensor",
+                    desc: "Tilt phone to steer",
+                  },
+                  {
+                    id: "arrows",
+                    label: "◀ ▶ Touch Arrows",
+                    desc: "Tap left/right buttons",
+                  },
+                ] as const
+              ).map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => changeSteeringMode(m.id)}
+                  className={`px-2.5 py-1 rounded-xl text-[11px] font-black border transition cursor-pointer ${
+                    steeringMode === m.id
+                      ? "bg-amber-400 text-slate-950 border-amber-300 shadow"
+                      : "bg-white/5 text-slate-200 border-white/10 hover:bg-white/10"
+                  }`}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+
             {/* Circuit Selector */}
-            <div className="w-full max-w-2xl grid grid-cols-1 sm:grid-cols-3 gap-2 my-2">
+            <div className="w-full max-w-2xl grid grid-cols-3 gap-2 my-1">
               {GHANA_TRACKS.map((trk) => {
                 const selected = saveData.track === trk.id;
                 return (
@@ -2106,26 +2355,26 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
                       triggerHapticSensor("tap");
                       persistSave({ ...saveData, track: trk.id });
                     }}
-                    className={`p-2.5 rounded-xl border text-left transition ${
+                    className={`p-2 rounded-xl border text-left transition cursor-pointer ${
                       selected
                         ? "bg-amber-500/20 border-amber-400 ring-2 ring-amber-400/40"
                         : "bg-white/5 border-white/10 hover:bg-white/10"
                     }`}
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-black text-amber-300">
+                      <span className="text-[9px] font-black text-amber-300">
                         {trk.badge}
                       </span>
                       {selected && (
-                        <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-amber-400 text-slate-950">
+                        <span className="text-[8px] font-black px-1.5 py-0.2 rounded bg-amber-400 text-slate-950">
                           ACTIVE
                         </span>
                       )}
                     </div>
-                    <p className="text-xs font-black text-white mt-0.5 truncate">
+                    <p className="text-[11px] font-black text-white mt-0.5 truncate">
                       {trk.name}
                     </p>
-                    <p className="text-[10px] text-slate-400 line-clamp-1">
+                    <p className="text-[9px] text-slate-400 line-clamp-1">
                       {trk.subtitle}
                     </p>
                   </button>
@@ -2134,7 +2383,7 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
             </div>
 
             {/* Vehicle Selector */}
-            <div className="w-full max-w-2xl grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div className="w-full max-w-2xl grid grid-cols-4 gap-2">
               {GHANA_VEHICLES.map((v) => {
                 const selected = saveData.vehicle === v.id;
                 return (
@@ -2145,7 +2394,7 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
                       triggerHapticSensor("tap");
                       persistSave({ ...saveData, vehicle: v.id });
                     }}
-                    className={`p-2 rounded-xl border text-left transition ${
+                    className={`p-1.5 rounded-xl border text-left transition cursor-pointer ${
                       selected
                         ? "bg-emerald-500/20 border-emerald-400 ring-2 ring-emerald-400/40"
                         : "bg-white/5 border-white/10 hover:bg-white/10"
@@ -2153,14 +2402,14 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
                   >
                     <div className="flex items-center gap-1.5">
                       <span
-                        className="w-3 h-3 rounded-full shrink-0 border border-white/40"
+                        className="w-2.5 h-2.5 rounded-full shrink-0 border border-white/40"
                         style={{ background: v.color }}
                       />
-                      <span className="text-[11px] font-black text-white truncate">
+                      <span className="text-[10px] font-black text-white truncate">
                         {v.name}
                       </span>
                     </div>
-                    <p className="text-[9px] text-slate-400 line-clamp-1 mt-0.5">
+                    <p className="text-[8px] text-slate-400 line-clamp-1 mt-0.5">
                       {v.tagline}
                     </p>
                   </button>
@@ -2169,13 +2418,22 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
             </div>
 
             {/* Action Buttons */}
-            <div className="flex flex-wrap items-center justify-center gap-3 mt-2">
+            <div className="flex flex-wrap items-center justify-center gap-3 mt-1">
               <button
                 type="button"
-                onClick={() => startRaceFnRef.current?.()}
-                className="px-7 py-3 rounded-full bg-gradient-to-r from-amber-400 via-orange-500 to-red-600 text-slate-950 font-black text-sm sm:text-base tracking-wider uppercase shadow-xl flex items-center gap-2 hover:scale-105 active:scale-95 transition"
+                onClick={() => {
+                  try {
+                    (window.screen as any)?.orientation
+                      ?.lock?.("landscape")
+                      ?.catch?.(() => {});
+                  } catch {
+                    // ignore
+                  }
+                  startRaceFnRef.current?.();
+                }}
+                className="px-6 py-2.5 rounded-full bg-gradient-to-r from-amber-400 via-orange-500 to-red-600 text-slate-950 font-black text-xs sm:text-sm tracking-wider uppercase shadow-xl flex items-center gap-2 hover:scale-105 active:scale-95 transition cursor-pointer"
               >
-                <Play className="w-5 h-5 fill-current" />
+                <Play className="w-4 h-4 fill-current" />
                 Start 3-Lap Race
               </button>
               <button
@@ -2184,7 +2442,7 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
                   triggerHapticSensor("tap");
                   setUiScreen("garage");
                 }}
-                className="px-5 py-3 rounded-full bg-gradient-to-r from-sky-500 to-blue-700 text-white font-black text-xs sm:text-sm uppercase tracking-wider shadow-lg flex items-center gap-2 hover:scale-105 active:scale-95 transition"
+                className="px-4 py-2.5 rounded-full bg-gradient-to-r from-sky-500 to-blue-700 text-white font-black text-xs uppercase tracking-wider shadow-lg flex items-center gap-2 hover:scale-105 active:scale-95 transition cursor-pointer"
               >
                 <Wrench className="w-4 h-4" />
                 Suame Garage (GH₵ {saveData.bank})
@@ -2197,11 +2455,11 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
         {uiScreen === "garage" && (
           <div className="absolute inset-0 bg-slate-950/95 backdrop-blur-md flex flex-col items-center justify-between p-4 sm:p-6 overflow-y-auto">
             <div className="text-center space-y-1">
-              <h2 className="text-xl sm:text-3xl font-black uppercase text-amber-400 flex items-center justify-center gap-2">
-                <Wrench className="w-6 h-6" />
+              <h2 className="text-xl sm:text-2xl font-black uppercase text-amber-400 flex items-center justify-center gap-2">
+                <Wrench className="w-5 h-5" />
                 Suame Magazine Mechanic Workshop
               </h2>
-              <p className="text-xs sm:text-sm text-slate-300">
+              <p className="text-xs text-slate-300">
                 Workshop Balance:{" "}
                 <strong className="text-emerald-400 font-black">
                   GH₵ {saveData.bank.toLocaleString()}
@@ -2212,7 +2470,7 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
               </p>
             </div>
 
-            <div className="w-full max-w-xl space-y-2.5 my-2">
+            <div className="w-full max-w-xl space-y-2 my-1">
               {(["eng", "nit", "arm"] as const).map((k) => {
                 const lvl = saveData.up[k];
                 const c = upgradeCost(lvl);
@@ -2222,15 +2480,15 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
                 return (
                   <div
                     key={k}
-                    className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-slate-900 border border-white/15"
+                    className="flex items-center justify-between gap-3 p-2.5 rounded-2xl bg-slate-900 border border-white/15"
                   >
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-amber-300">
-                        <Icon className="w-5 h-5" />
+                      <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-amber-300">
+                        <Icon className="w-4 h-4" />
                       </div>
                       <div className="text-left">
                         <div className="flex items-center gap-2">
-                          <span className="text-xs sm:text-sm font-black text-white">
+                          <span className="text-xs font-black text-white">
                             {meta.title}
                           </span>
                           <span className="text-xs font-mono text-amber-400">
@@ -2238,7 +2496,7 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
                             {"○".repeat(5 - lvl)}
                           </span>
                         </div>
-                        <p className="text-[11px] text-slate-400">
+                        <p className="text-[10px] text-slate-400">
                           {meta.subtitle}
                         </p>
                       </div>
@@ -2249,7 +2507,7 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
                         type="button"
                         disabled={saveData.bank < c}
                         onClick={() => handleBuyUpgrade(k)}
-                        className="px-4 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 disabled:opacity-40 text-slate-950 font-black text-xs shrink-0"
+                        className="px-3.5 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 disabled:opacity-40 text-slate-950 font-black text-xs shrink-0 cursor-pointer"
                       >
                         GH₵ {c}
                       </button>
@@ -2267,14 +2525,14 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
               <button
                 type="button"
                 onClick={() => setUiScreen("menu")}
-                className="px-6 py-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white font-black text-xs uppercase"
+                className="px-5 py-2 rounded-full bg-white/10 hover:bg-white/20 text-white font-black text-xs uppercase cursor-pointer"
               >
                 ← Back
               </button>
               <button
                 type="button"
                 onClick={() => startRaceFnRef.current?.()}
-                className="px-7 py-2.5 rounded-full bg-gradient-to-r from-amber-400 to-orange-500 text-slate-950 font-black text-xs uppercase flex items-center gap-1.5"
+                className="px-6 py-2 rounded-full bg-gradient-to-r from-amber-400 to-orange-500 text-slate-950 font-black text-xs uppercase flex items-center gap-1.5 cursor-pointer"
               >
                 <Play className="w-4 h-4 fill-current" />
                 Race Now
@@ -2285,32 +2543,36 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
 
         {/* ── 3. RACE FINISH / GAME OVER SUMMARY OVERLAY ──────────────────── */}
         {uiScreen === "end" && endSummary && (
-          <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-md flex flex-col items-center justify-center p-5 text-center space-y-3">
-            <div className="w-14 h-14 rounded-2xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-amber-300">
-              {endSummary.wrecked ? (
-                <Flame className="w-8 h-8 text-rose-400" />
+          <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-md flex flex-col items-center justify-center p-5 text-center space-y-2.5">
+            <div className="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-amber-300">
+              {endSummary.wrecked || endSummary.timedOut ? (
+                <Flame className="w-7 h-7 text-rose-400" />
               ) : (
-                <Trophy className="w-8 h-8 text-amber-300" />
+                <Trophy className="w-7 h-7 text-amber-300" />
               )}
             </div>
 
-            <h2 className="text-2xl sm:text-4xl font-black uppercase text-amber-300">
-              {endSummary.wrecked
+            <h2 className="text-xl sm:text-3xl font-black uppercase text-amber-300">
+              {endSummary.timedOut
+                ? "⏱️ Time's Up (95s Cutoff)!"
+                : endSummary.wrecked
                 ? "💥 Buggy Wrecked!"
                 : endSummary.rank === 1
                 ? "🏆 1st Place Champion!"
                 : `🏁 Finished #${endSummary.rank} of 6`}
             </h2>
 
-            <p className="text-xs sm:text-sm text-slate-200 max-w-md">
-              {endSummary.wrecked
+            <p className="text-xs text-slate-200 max-w-md">
+              {endSummary.timedOut
+                ? `You reached Lap ${endSummary.lap} of 3 when the 95-second race clock expired. Hit Kente boost pads and upgrade your engine in Suame Garage to beat the clock!`
+                : endSummary.wrecked
                 ? `Crashed out on Lap ${endSummary.lap} of 3. Upgrade Kantanka Armor in Suame Garage or dodge roadside rocks & coconut palms!`
                 : `Completed 3 Laps on ${activeTrackMeta.name} in ${endSummary.raceTime.toFixed(
                     2
                   )}s!`}
             </p>
 
-            <div className="px-4 py-2.5 rounded-2xl bg-slate-900 border border-white/10 text-xs font-bold text-emerald-300 space-y-1">
+            <div className="px-4 py-2 rounded-2xl bg-slate-900 border border-white/10 text-xs font-bold text-emerald-300 space-y-1">
               <div>
                 💰 Race Prize: GH₵ {endSummary.prizeCoins} + Track Coins: GH₵{" "}
                 {endSummary.collectedCoins} ={" "}
@@ -2325,11 +2587,11 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
               )}
             </div>
 
-            <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+            <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
               <button
                 type="button"
                 onClick={() => startRaceFnRef.current?.()}
-                className="px-6 py-2.5 rounded-full bg-gradient-to-r from-amber-400 to-orange-500 text-slate-950 font-black text-xs sm:text-sm uppercase flex items-center gap-1.5 shadow-lg"
+                className="px-6 py-2 rounded-full bg-gradient-to-r from-amber-400 to-orange-500 text-slate-950 font-black text-xs uppercase flex items-center gap-1.5 shadow-lg cursor-pointer"
               >
                 <RotateCcw className="w-4 h-4" />
                 Race Again
@@ -2337,7 +2599,7 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
               <button
                 type="button"
                 onClick={() => setUiScreen("garage")}
-                className="px-5 py-2.5 rounded-full bg-sky-600 hover:bg-sky-500 text-white font-black text-xs sm:text-sm uppercase flex items-center gap-1.5"
+                className="px-5 py-2 rounded-full bg-sky-600 hover:bg-sky-500 text-white font-black text-xs uppercase flex items-center gap-1.5 cursor-pointer"
               >
                 <Wrench className="w-4 h-4" />
                 Suame Garage
@@ -2346,40 +2608,155 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
           </div>
         )}
 
-        {/* ── 4. ON-SCREEN TOUCH PEDALS & STEERING (ISOLATED POINTER EVENTS) ─ */}
+        {/* ── 4. ON-SCREEN COCKPIT STEERING (WHEEL / TILT / ARROWS) & PEDALS ─ */}
         {uiScreen === "racing" && (
-          <div className="absolute inset-x-0 bottom-2.5 px-3 sm:px-5 flex items-center justify-between pointer-events-none z-20">
+          <div className="absolute inset-x-0 bottom-2 px-3 sm:px-5 flex items-end justify-between pointer-events-none z-20">
+            {/* LEFT SIDE: STEERING WHEEL | MOTION TILT METER | TOUCH ARROWS */}
             <div className="flex items-center gap-2.5 pointer-events-auto">
-              <button
-                type="button"
-                onPointerDown={(e) => {
-                  e.preventDefault();
-                  setTouchKey("left", 1);
-                }}
-                onPointerUp={() => setTouchKey("left", 0)}
-                onPointerCancel={() => setTouchKey("left", 0)}
-                onPointerLeave={() => setTouchKey("left", 0)}
-                className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-black/55 active:bg-amber-400 active:text-slate-950 border-2 border-white/75 text-white font-black text-xl flex items-center justify-center shadow-lg backdrop-blur-sm"
-                aria-label="Steer Left"
-              >
-                ◀
-              </button>
-              <button
-                type="button"
-                onPointerDown={(e) => {
-                  e.preventDefault();
-                  setTouchKey("right", 1);
-                }}
-                onPointerUp={() => setTouchKey("right", 0)}
-                onPointerCancel={() => setTouchKey("right", 0)}
-                onPointerLeave={() => setTouchKey("right", 0)}
-                className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-black/55 active:bg-amber-400 active:text-slate-950 border-2 border-white/75 text-white font-black text-xl flex items-center justify-center shadow-lg backdrop-blur-sm"
-                aria-label="Steer Right"
-              >
-                ▶
-              </button>
+              {steeringMode === "wheel" ? (
+                <div
+                  ref={wheelPadRef}
+                  onPointerDown={handleWheelPointerDown}
+                  onPointerMove={handleWheelPointerMove}
+                  onPointerUp={handleWheelPointerUp}
+                  onPointerCancel={handleWheelPointerUp}
+                  className="relative w-28 h-28 sm:w-32 sm:h-32 rounded-full bg-slate-950/65 border-2 border-amber-400/60 shadow-[0_10px_28px_rgba(0,0,0,0.85)] flex items-center justify-center touch-none cursor-grab active:cursor-grabbing backdrop-blur-sm"
+                  title="Drag Left or Right to Steer Wheel"
+                >
+                  <svg
+                    viewBox="0 0 100 100"
+                    className="w-24 h-24 sm:w-28 sm:h-28 transition-transform duration-75"
+                    style={{ transform: `rotate(${wheelAngleDeg}deg)` }}
+                  >
+                    {/* Outer Racing Rim */}
+                    <circle
+                      cx="50"
+                      cy="50"
+                      r="42"
+                      fill="none"
+                      stroke="#1e293b"
+                      strokeWidth="12"
+                    />
+                    <circle
+                      cx="50"
+                      cy="50"
+                      r="42"
+                      fill="none"
+                      stroke="#f59e0b"
+                      strokeWidth="9"
+                      strokeDasharray="36 190"
+                      strokeDashoffset="-25"
+                    />
+                    {/* Top Center Marker (Red Racing Stripe) */}
+                    <rect
+                      x="46"
+                      y="3"
+                      width="8"
+                      height="11"
+                      rx="2"
+                      fill="#ef4444"
+                    />
+                    {/* 3 Metallic Spokes */}
+                    <line
+                      x1="12"
+                      y1="48"
+                      x2="88"
+                      y2="48"
+                      stroke="#94a3b8"
+                      strokeWidth="7"
+                      strokeLinecap="round"
+                    />
+                    <line
+                      x1="50"
+                      y1="50"
+                      x2="50"
+                      y2="88"
+                      stroke="#94a3b8"
+                      strokeWidth="8"
+                      strokeLinecap="round"
+                    />
+                    {/* Center Horn Cap */}
+                    <circle
+                      cx="50"
+                      cy="50"
+                      r="14"
+                      fill="#0f172a"
+                      stroke="#fbbf24"
+                      strokeWidth="3"
+                    />
+                    <text
+                      x="50"
+                      y="54"
+                      textAnchor="middle"
+                      fill="#fbbf24"
+                      fontSize="9"
+                      fontWeight="900"
+                    >
+                      GP
+                    </text>
+                  </svg>
+                  <span className="absolute -top-5 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full bg-black/80 border border-amber-400/40 text-[9px] font-black text-amber-300 whitespace-nowrap">
+                    🛞 {wheelAngleDeg > 0 ? `+${wheelAngleDeg}°` : `${wheelAngleDeg}°`}
+                  </span>
+                </div>
+              ) : steeringMode === "tilt" ? (
+                <div className="p-2.5 rounded-2xl bg-slate-950/80 border border-amber-400/50 backdrop-blur-md space-y-1.5 min-w-[155px]">
+                  <div className="flex items-center justify-between text-[10px] font-black text-amber-300">
+                    <span>📱 MOTION TILT</span>
+                    <span>
+                      {tiltAngleDeg > 0 ? `+${tiltAngleDeg}°` : `${tiltAngleDeg}°`}
+                    </span>
+                  </div>
+                  <div className="w-full h-2.5 rounded-full bg-slate-800 overflow-hidden relative">
+                    <div
+                      className="absolute top-0 bottom-0 w-3 rounded-full bg-amber-400 transition-all"
+                      style={{
+                        left: `${Math.max(
+                          5,
+                          Math.min(90, 50 + (tiltAngleDeg / 35) * 45)
+                        )}%`,
+                      }}
+                    />
+                  </div>
+                  <p className="text-[9px] text-slate-300 leading-tight">
+                    Tilt phone left/right to steer (or tap Wheel/Arrows above)
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onPointerDown={(e) => {
+                      e.preventDefault();
+                      setTouchKey("left", 1);
+                    }}
+                    onPointerUp={() => setTouchKey("left", 0)}
+                    onPointerCancel={() => setTouchKey("left", 0)}
+                    onPointerLeave={() => setTouchKey("left", 0)}
+                    className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-black/60 active:bg-amber-400 active:text-slate-950 border-2 border-white/80 text-white font-black text-xl flex items-center justify-center shadow-lg backdrop-blur-sm"
+                    aria-label="Steer Left"
+                  >
+                    ◀
+                  </button>
+                  <button
+                    type="button"
+                    onPointerDown={(e) => {
+                      e.preventDefault();
+                      setTouchKey("right", 1);
+                    }}
+                    onPointerUp={() => setTouchKey("right", 0)}
+                    onPointerCancel={() => setTouchKey("right", 0)}
+                    onPointerLeave={() => setTouchKey("right", 0)}
+                    className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-black/60 active:bg-amber-400 active:text-slate-950 border-2 border-white/80 text-white font-black text-xl flex items-center justify-center shadow-lg backdrop-blur-sm"
+                    aria-label="Steer Right"
+                  >
+                    ▶
+                  </button>
+                </>
+              )}
             </div>
 
+            {/* RIGHT SIDE: GAS, BRAKE & NITRO PEDALS */}
             <div className="flex items-center gap-2.5 pointer-events-auto">
               {!autoGas && (
                 <button
@@ -2405,7 +2782,7 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
                 onPointerUp={() => setTouchKey("down", 0)}
                 onPointerCancel={() => setTouchKey("down", 0)}
                 onPointerLeave={() => setTouchKey("down", 0)}
-                className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-black/55 active:bg-rose-500 border-2 border-white/75 text-white font-black text-lg flex items-center justify-center shadow-lg backdrop-blur-sm"
+                className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-black/60 active:bg-rose-500 border-2 border-white/80 text-white font-black text-lg flex items-center justify-center shadow-lg backdrop-blur-sm"
                 aria-label="Brake"
               >
                 ■
@@ -2431,6 +2808,27 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
       </div>
     </div>
   );
+
+  // Strict Landscape Enforcement: if device viewport is currently portrait, rotate stage 90deg full-screen!
+  if (screenFit.isPortraitViewport) {
+    return (
+      <div className="fixed inset-0 z-[90] bg-[#070b14] flex items-center justify-center overflow-hidden touch-none overscroll-none select-none">
+        <div
+          style={{
+            width: `${screenFit.availHeight}px`,
+            height: `${screenFit.availWidth}px`,
+            transform: "rotate(90deg)",
+            transformOrigin: "center center",
+          }}
+          className="flex flex-col p-1.5 overflow-hidden select-none touch-none"
+        >
+          {landscapeStageContent}
+        </div>
+      </div>
+    );
+  }
+
+  return landscapeStageContent;
 };
 
 export default BeachBuggyTrack;

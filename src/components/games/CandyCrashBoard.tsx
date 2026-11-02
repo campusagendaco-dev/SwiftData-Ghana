@@ -466,8 +466,10 @@ export function CandyCrashBoard({
   const [floatingPopups, setFloatingPopups] = useState<FloatingScorePopup[]>([]);
   const [blastBeams, setBlastBeams] = useState<BlastBeam[]>([]);
   const [activeComboBanner, setActiveComboBanner] = useState<string | null>(null);
+  const [timeRemainingSec, setTimeRemainingSec] = useState<number>(75);
   const [overModal, setOverModal] = useState<{
     win: boolean;
+    timedOut?: boolean;
     stars: number;
     finalScore: number;
     challengerScore: number;
@@ -687,6 +689,7 @@ export function CandyCrashBoard({
       setSelectedId(null);
       setOverModal(null);
       setActiveComboBanner(null);
+      setTimeRemainingSec(75);
 
       const newGrid: (CandyTile | null)[][] = [];
       for (let r = 0; r < N; r++) {
@@ -875,7 +878,7 @@ export function CandyCrashBoard({
         } else if (combo >= 3) {
           setStatusMsg(`🔥 Eiii! Heavy Makola Cascade x${combo}! +${pts} pts`);
           setActiveComboBanner(`🔥 x${combo} MAKOLA CASCADE!`);
-          onPointsEarned?.(combo * 15, `Alewa & Kube ${combo}x Cascade!`);
+          onPointsEarned?.(4, `Alewa & Kube ${combo}x Cascade (+4 pts)!`);
         } else if (combo === 2) {
           setStatusMsg(`⚡ Chale! Double Sweet Combo x2! +${pts} pts`);
           setActiveComboBanner("⚡ x2 DOUBLE SWEET!");
@@ -961,7 +964,7 @@ export function CandyCrashBoard({
   );
 
   const finishLevel = useCallback(
-    (win: boolean) => {
+    (win: boolean, timedOut = false) => {
       const currentScore = scoreRef.current;
       const currentGoal = goalRef.current;
       const currentMoves = movesRef.current;
@@ -977,12 +980,12 @@ export function CandyCrashBoard({
       }
 
       const stars = win ? (currentMoves >= 8 ? 3 : currentMoves >= 4 ? 2 : 1) : 0;
-      if (win) {
+      if (win && !timedOut) {
         playLevelUpFanfare();
         triggerHapticSensor("victory");
         onPointsEarned?.(
-          150 + stars * 50,
-          `Cleared ${getMarketStage(currentLv).market} (${stars}★)`
+          35,
+          `Cleared ${getMarketStage(currentLv).market} Timed Rush (${stars}★)`
         );
       }
 
@@ -1005,12 +1008,16 @@ export function CandyCrashBoard({
       onStateChange?.(nextState);
       if (win) {
         onMatchComplete?.(mySide, nextState);
+      } else if (timedOut) {
+        const otherSide = mySide === "creator" ? "opponent" : "creator";
+        onMatchComplete?.(otherSide, nextState);
       }
 
       busyRef.current = true;
       window.setTimeout(() => {
         setOverModal({
           win,
+          timedOut,
           stars,
           finalScore: currentScore,
           challengerScore: finalChallengerScore,
@@ -1028,6 +1035,23 @@ export function CandyCrashBoard({
       onStateChange,
     ]
   );
+
+  // 75-Second Rush Countdown Timer per Level
+  useEffect(() => {
+    if (overModal) return;
+    const timer = window.setInterval(() => {
+      setTimeRemainingSec((prev) => {
+        if (prev <= 1) {
+          window.clearInterval(timer);
+          setStatusMsg("⏱️ 75-Second Sweet Rush Clock Expired!");
+          finishLevel(false, true);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [overModal, level, finishLevel]);
 
   const trySwap = useCallback(
     async (a: CandyTile, b: CandyTile) => {
@@ -1335,10 +1359,17 @@ export function CandyCrashBoard({
           </div>
           <div className="rounded-xl bg-[#2a1207]/90 border border-amber-500/25 py-1 px-1.5 text-center">
             <span className="block text-[8px] uppercase font-bold text-amber-200/75">
-              Record
+              ⏱️ Rush Clock
             </span>
-            <strong className="text-sm sm:text-base font-black text-orange-300 font-mono">
-              {Math.max(bestScore, score).toLocaleString()}
+            <strong
+              className={`text-sm sm:text-base font-black font-mono ${
+                timeRemainingSec <= 15
+                  ? "text-rose-400 animate-pulse"
+                  : "text-amber-300"
+              }`}
+            >
+              {Math.floor(timeRemainingSec / 60)}:
+              {String(timeRemainingSec % 60).padStart(2, "0")}
             </strong>
           </div>
         </div>

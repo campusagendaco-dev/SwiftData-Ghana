@@ -188,6 +188,8 @@ async function ensureChallengeSchema(supabaseAdmin: any) {
         USING (true);
 
       ALTER TABLE public.game_community_messages ADD COLUMN IF NOT EXISTS avatar_id text DEFAULT 'royal_headband';
+      ALTER TABLE public.game_community_messages ADD COLUMN IF NOT EXISTS liked_by jsonb NOT NULL DEFAULT '[]'::jsonb;
+      ALTER TABLE public.game_community_messages ADD COLUMN IF NOT EXISTS comments jsonb NOT NULL DEFAULT '[]'::jsonb;
       ALTER TABLE public.game_community_presence ADD COLUMN IF NOT EXISTS avatar_id text DEFAULT 'royal_headband';
       ALTER TABLE public.game_community_presence ADD COLUMN IF NOT EXISTS ig_note text;
 
@@ -215,6 +217,11 @@ async function ensureChallengeSchema(supabaseAdmin: any) {
       CREATE INDEX IF NOT EXISTS idx_game_user_stories_expires ON public.game_user_stories(expires_at DESC, created_at DESC);
 
       ALTER TABLE public.game_user_stories ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE public.game_user_stories ADD COLUMN IF NOT EXISTS liked_by jsonb NOT NULL DEFAULT '[]'::jsonb;
+      ALTER TABLE public.game_user_stories ADD COLUMN IF NOT EXISTS comments jsonb NOT NULL DEFAULT '[]'::jsonb;
+      ALTER TABLE public.game_user_stories ADD COLUMN IF NOT EXISTS favorite_game text DEFAULT 'oware';
+      ALTER TABLE public.game_user_stories ADD COLUMN IF NOT EXISTS room_code text;
+      ALTER TABLE public.game_user_stories ADD COLUMN IF NOT EXISTS game_type text;
 
       DROP POLICY IF EXISTS "Anyone can view game user stories" ON public.game_user_stories;
       CREATE POLICY "Anyone can view game user stories"
@@ -1639,22 +1646,12 @@ serve(async (req: Request) => {
         return jsonResponse({ success: false, error: "Only winning challenges are eligible for rewards" }, 400);
       }
 
-      // Check daily free data cap if this was a free_data challenge
+      // Check daily free data cap & profit guardrails if this was a free_data challenge
       if (challenge.mode === "free_data") {
-        const todayStart = new Date();
-        todayStart.setUTCHours(0, 0, 0, 0);
-        const { count: todayClaims } = await supabaseAdmin
-          .from("game_reward_claims")
-          .select("id", { count: "exact", head: true })
-          .eq("reward_type", "free_data")
-          .gte("created_at", todayStart.toISOString());
-
-        if ((todayClaims || 0) >= Number(settings.daily_free_data_limit || 15)) {
-          return jsonResponse({
-            success: false,
-            error: "Today's Free Data pool has been fully claimed! Join a Wallet or MoMo challenge, or return tomorrow at midnight.",
-          }, 400);
-        }
+        return jsonResponse({
+          success: false,
+          error: "Free Data matches award Arena Points toward the 5,000 Pt (1GB) Data Vault! Keep winning timed matches to unlock your Free Data Bundle.",
+        }, 400);
       }
 
       const dataSize = challenge.reward_data_size || settings.free_data_package_size || "1GB";
@@ -1699,14 +1696,24 @@ serve(async (req: Request) => {
     }
 
     // ── 7B. CLAIM ACCUMULATED LEVEL & TARGET POINTS DATA BUNDLE REWARD ──────────
-    if (action === "claim_points_reward") {
+    if (action === "claim_points_reward" || action === "redeem_points_bundle") {
+      if (!authUser?.id) {
+        return jsonResponse(
+          {
+            success: false,
+            error: "Please sign in to your verified SwiftData account before redeeming Arena Points for Free Data.",
+          },
+          401
+        );
+      }
+
       const phone = String(body.phone || "").replace(/\D+/g, "");
       const network = String(body.network || "MTN").toUpperCase();
-      const targetSize = String(body.target_data_size || "1GB").toUpperCase();
-      const pointsSpent = Math.max(1000, Number(body.points_spent || 1000));
-      const playerLevel = Math.max(1, Number(body.player_level || 1));
+      const targetSize = String(body.target_data_size || body.data_size || "1GB").toUpperCase();
+      const pointsSpent = Math.max(0, Number(body.points_spent || 0));
+      const playerLevel = Math.max(1, Number(body.player_level || 7));
       const winnerName = String(
-        body.winner_name || authUser?.user_metadata?.full_name || "Arena Champion"
+        body.winner_name || body.player_name || authUser?.user_metadata?.full_name || "Arena Champion"
       )
         .trim()
         .slice(0, 40);
@@ -1722,21 +1729,65 @@ serve(async (req: Request) => {
       }
 
       const requiredMap: Record<string, number> = {
-        "1GB": 1000,
-        "2GB": 2000,
-        "5GB": 4500,
+        "1GB": 5000,
+        "2GB": 9500,
+        "5GB": 20000,
       };
-      const requiredPts = requiredMap[targetSize] || 1000;
+      const requiredPts = requiredMap[targetSize] || 5000;
       if (pointsSpent < requiredPts) {
         return jsonResponse(
           {
             success: false,
-            error: `You need at least ${requiredPts.toLocaleString()} Points to redeem the ${targetSize} Free Data Bundle.`,
+            error: `You need at least ${requiredPts.toLocaleString()} Arena Points to redeem the ${targetSize} Free Data Bundle.`,
           },
           400
         );
       }
 
+      // 1. Verify at least 10 legitimate timed completed wins in database (duration >= 45s)
+      const { data: completedWins } = await supabaseAdmin
+        .from("game_challenges")
+        .select("id, created_at, completed_at, updated_at")
+        .eq("status", "completed")
+        .or(`winner_id.eq.${authUser.id},creator_id.eq.${authUser.id}`)
+        .limit(30);
+
+      const validTimedWins = (completedWins || []).filter((row: any) => {
+        const startMs = new Date(row.created_at || 0).getTime();
+        const endMs = new Date(row.completed_at || row.updated_at || 0).getTime();
+        return endMs - startMs >= 45000;
+      });
+
+      if (validTimedWins.length < 10) {
+        return jsonResponse(
+          {
+            success: false,
+            error: `Anti-Abuse Verification: You have ${validTimedWins.length}/10 verified timed Arena victories (minimum 45s play time per match). Win ${10 - validTimedWins.length} more full timed matches to unlock Free Data redemption!`,
+          },
+          400
+        );
+      }
+
+      // 2. Enforce 7-day per-user / per-phone cooldown
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      const { count: recentUserClaims } = await supabaseAdmin
+        .from("game_reward_claims")
+        .select("id", { count: "exact", head: true })
+        .eq("reward_type", "free_data")
+        .or(`user_id.eq.${authUser.id},winner_phone.eq.${phone}`)
+        .gte("created_at", sevenDaysAgo);
+
+      if ((recentUserClaims || 0) > 0) {
+        return jsonResponse(
+          {
+            success: false,
+            error: "Weekly Limit Reached: Each account/phone can redeem 1 Free Data Bundle every 7 days. Keep stacking points for next week!",
+          },
+          400
+        );
+      }
+
+      // 3. Tightened Global Company Daily Cap (max 3 free_data bundles/day unless overridden lower)
       const todayStart = new Date();
       todayStart.setUTCHours(0, 0, 0, 0);
       const { count: todayClaims } = await supabaseAdmin
@@ -1745,12 +1796,13 @@ serve(async (req: Request) => {
         .eq("reward_type", "free_data")
         .gte("created_at", todayStart.toISOString());
 
-      if ((todayClaims || 0) >= Number(settings.daily_free_data_limit || 15)) {
+      const companySafeDailyLimit = Math.min(3, Number(settings.daily_free_data_limit || 3));
+      if ((todayClaims || 0) >= companySafeDailyLimit) {
         return jsonResponse(
           {
             success: false,
             error:
-              "Today's Free Data pool has been fully claimed! Your points are safe — redeem tomorrow at midnight.",
+              "Today's company Free Data pool (3 bundles/day) has been fully claimed! Your points are safe — redeem tomorrow at midnight or play a P2P cash/data match.",
           },
           400
         );
@@ -1760,7 +1812,7 @@ serve(async (req: Request) => {
         .from("game_reward_claims")
         .insert({
           challenge_id: null,
-          user_id: authUser?.id || null,
+          user_id: authUser.id,
           winner_name: winnerName,
           winner_phone: phone,
           network,
@@ -1768,7 +1820,7 @@ serve(async (req: Request) => {
           cash_amount: 0,
           data_package_size: targetSize,
           status: "pending",
-          notes: `Redeemed ${requiredPts.toLocaleString()} Arena Points (Level ${playerLevel}) for ${targetSize} Free Data`,
+          notes: `Verified ${validTimedWins.length} timed wins • Redeemed ${requiredPts.toLocaleString()} Arena Points (Level ${playerLevel}) for ${targetSize} Free Data`,
         })
         .select("*")
         .single();
@@ -2155,14 +2207,22 @@ serve(async (req: Request) => {
 
     if (action === "react_community_message") {
       const messageId = String(body.message_id || "").trim();
-      const emoji = String(body.emoji || "🔥").trim().slice(0, 8);
+      const emoji = String(body.emoji || "❤️").trim().slice(0, 8);
+      const likerName = String(
+        body.liker_name || authUser?.user_metadata?.full_name || "Ghana Gamer"
+      )
+        .trim()
+        .slice(0, 40);
+      const likerAvatar = String(body.liker_avatar || "royal_headband").trim().slice(0, 120);
+      const likerKey = String(authUser?.id || body.liker_key || likerName.toLowerCase()).trim();
+
       if (!messageId) {
         return jsonResponse({ success: false, error: "Missing message_id" }, 400);
       }
 
       const { data: existing } = await supabaseAdmin
         .from("game_community_messages")
-        .select("id, reactions")
+        .select("id, sender_id, sender_name, message, reactions, liked_by")
         .eq("id", messageId)
         .maybeSingle();
 
@@ -2174,17 +2234,213 @@ serve(async (req: Request) => {
         existing.reactions && typeof existing.reactions === "object"
           ? { ...existing.reactions }
           : {};
-      prevReactions[emoji] = Number(prevReactions[emoji] || 0) + 1;
+      const prevLikedBy: any[] = Array.isArray(existing.liked_by) ? [...existing.liked_by] : [];
+
+      let nextLikedBy = prevLikedBy;
+      let likedNow = true;
+
+      if (emoji === "❤️") {
+        const alreadyIdx = prevLikedBy.findIndex(
+          (u: any) =>
+            (authUser?.id && u.user_id === authUser.id) ||
+            (u.key && u.key === likerKey) ||
+            String(u.name || "").toLowerCase() === likerName.toLowerCase()
+        );
+        if (alreadyIdx >= 0) {
+          // Unlike!
+          likedNow = false;
+          nextLikedBy = prevLikedBy.filter((_, idx) => idx !== alreadyIdx);
+          prevReactions["❤️"] = Math.max(0, Number(prevReactions["❤️"] || 1) - 1);
+        } else {
+          // Like!
+          likedNow = true;
+          nextLikedBy = [
+            ...prevLikedBy,
+            {
+              user_id: authUser?.id || null,
+              key: likerKey,
+              name: likerName,
+              avatar_id: likerAvatar,
+              liked_at: new Date().toISOString(),
+            },
+          ];
+          prevReactions["❤️"] = Math.max(nextLikedBy.length, Number(prevReactions["❤️"] || 0) + 1);
+        }
+      } else {
+        prevReactions[emoji] = Number(prevReactions[emoji] || 0) + 1;
+      }
 
       const { data: updatedMsg } = await supabaseAdmin
         .from("game_community_messages")
-        .update({ reactions: prevReactions })
+        .update({
+          reactions: prevReactions,
+          liked_by: nextLikedBy,
+        })
         .eq("id", messageId)
         .select("*")
         .single();
 
+      // Notify post author when their post is liked!
+      if (
+        emoji === "❤️" &&
+        likedNow &&
+        existing.sender_id &&
+        existing.sender_id !== authUser?.id
+      ) {
+        try {
+          const snippet = String(existing.message || "your post").slice(0, 60);
+          await supabaseAdmin.from("notifications").insert({
+            title: `❤️ ${likerName} liked your post in SwiftGram!`,
+            message: `${likerName} liked "${snippet}"`,
+            target_type: "specific",
+            target_user_id: existing.sender_id,
+            created_by: authUser?.id || null,
+          });
+          await triggerWebPush(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+            user_id: existing.sender_id,
+            title: `❤️ ${likerName} liked your SwiftGram post!`,
+            body: `"${snippet}"`,
+            url: `/challenges`,
+            tag: `swiftgram-like-${messageId}`,
+          });
+        } catch {
+          // ignore notification error
+        }
+      }
+
       return jsonResponse({
         success: true,
+        liked: likedNow,
+        message_row: updatedMsg,
+      });
+    }
+
+    if (action === "add_post_comment") {
+      const postId = String(body.post_id || "").trim();
+      const isStoryPost = Boolean(body.is_story_post);
+      const commentText = String(body.comment || "").trim().slice(0, 280);
+      const authorName = String(
+        body.author_name || authUser?.user_metadata?.full_name || "Ghana Gamer"
+      )
+        .trim()
+        .slice(0, 40);
+      const avatarId = String(body.avatar_id || "royal_headband").trim().slice(0, 120);
+      const authorLevel = Math.max(1, Number(body.author_level || 1));
+
+      if (!postId || !commentText) {
+        return jsonResponse({ success: false, error: "Post ID and comment text required" }, 400);
+      }
+
+      const newComment = {
+        id: `cmt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        user_id: authUser?.id || null,
+        author_name: authorName,
+        avatar_id: avatarId,
+        author_level: authorLevel,
+        text: commentText,
+        created_at: new Date().toISOString(),
+      };
+
+      if (isStoryPost) {
+        const rawStoryId = postId.replace(/^story-feed-/, "");
+        const { data: existingStory } = await supabaseAdmin
+          .from("game_user_stories")
+          .select("id, user_id, author_name, caption, comments")
+          .eq("id", rawStoryId)
+          .maybeSingle();
+
+        if (!existingStory) {
+          return jsonResponse({ success: false, error: "Story post not found" }, 404);
+        }
+
+        const nextComments = [
+          ...(Array.isArray(existingStory.comments) ? existingStory.comments : []),
+          newComment,
+        ];
+
+        const { data: updatedStory } = await supabaseAdmin
+          .from("game_user_stories")
+          .update({ comments: nextComments })
+          .eq("id", rawStoryId)
+          .select("*")
+          .single();
+
+        if (existingStory.user_id && existingStory.user_id !== authUser?.id) {
+          try {
+            await supabaseAdmin.from("notifications").insert({
+              title: `💬 ${authorName} commented on your SwiftGram post!`,
+              message: `${authorName}: "${commentText}"`,
+              target_type: "specific",
+              target_user_id: existingStory.user_id,
+              created_by: authUser?.id || null,
+            });
+            await triggerWebPush(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+              user_id: existingStory.user_id,
+              title: `💬 ${authorName} commented on your post!`,
+              body: commentText,
+              url: `/challenges`,
+              tag: `swiftgram-cmt-${rawStoryId}`,
+            });
+          } catch {
+            // ignore
+          }
+        }
+
+        return jsonResponse({
+          success: true,
+          comment: newComment,
+          comments: nextComments,
+          story: updatedStory,
+        });
+      }
+
+      const { data: existingMsg } = await supabaseAdmin
+        .from("game_community_messages")
+        .select("id, sender_id, sender_name, message, comments")
+        .eq("id", postId)
+        .maybeSingle();
+
+      if (!existingMsg) {
+        return jsonResponse({ success: false, error: "Post not found" }, 404);
+      }
+
+      const nextComments = [
+        ...(Array.isArray(existingMsg.comments) ? existingMsg.comments : []),
+        newComment,
+      ];
+
+      const { data: updatedMsg } = await supabaseAdmin
+        .from("game_community_messages")
+        .update({ comments: nextComments })
+        .eq("id", postId)
+        .select("*")
+        .single();
+
+      if (existingMsg.sender_id && existingMsg.sender_id !== authUser?.id) {
+        try {
+          await supabaseAdmin.from("notifications").insert({
+            title: `💬 ${authorName} commented on your SwiftGram post!`,
+            message: `${authorName}: "${commentText}"`,
+            target_type: "specific",
+            target_user_id: existingMsg.sender_id,
+            created_by: authUser?.id || null,
+          });
+          await triggerWebPush(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+            user_id: existingMsg.sender_id,
+            title: `💬 ${authorName} commented on your post!`,
+            body: commentText,
+            url: `/challenges`,
+            tag: `swiftgram-cmt-${postId}`,
+          });
+        } catch {
+          // ignore
+        }
+      }
+
+      return jsonResponse({
+        success: true,
+        comment: newComment,
+        comments: nextComments,
         message_row: updatedMsg,
       });
     }
@@ -2205,13 +2461,16 @@ serve(async (req: Request) => {
       });
     }
 
-    if (action === "create_story") {
+    if (action === "create_story" || action === "post_story") {
       const authorName = String(
         body.author_name || authUser?.user_metadata?.full_name || "Ghana Gamer"
       )
         .trim()
         .slice(0, 40);
       const rawPhone = String(body.author_phone || "").trim();
+      const playerKey = String(
+        authUser?.id || body.player_key || normalizePhone(rawPhone) || authorName
+      ).slice(0, 80);
       const maskedPhone =
         rawPhone.length >= 7
           ? `${rawPhone.slice(0, 4)}***${rawPhone.slice(-3)}`
@@ -2227,8 +2486,12 @@ serve(async (req: Request) => {
       )
         .trim()
         .slice(0, 100);
-      const roomCode = body.room_code ? String(body.room_code).trim().toUpperCase().slice(0, 12) : null;
-      const gameType = body.game_type ? String(body.game_type).trim().toLowerCase().slice(0, 20) : null;
+      const roomCode = (body.room_code || body.attached_room_code)
+        ? String(body.room_code || body.attached_room_code).trim().toUpperCase().slice(0, 12)
+        : null;
+      const gameType = (body.game_type || body.attached_game_type)
+        ? String(body.game_type || body.attached_game_type).trim().toLowerCase().slice(0, 20)
+        : null;
 
       if (mediaType !== "text" && !mediaUrl) {
         return jsonResponse({ success: false, error: "Please attach an image or video for this story." }, 400);
@@ -2241,6 +2504,7 @@ serve(async (req: Request) => {
         .from("game_user_stories")
         .insert({
           user_id: authUser?.id || null,
+          player_key: playerKey,
           author_name: authorName,
           author_phone_masked: maskedPhone,
           avatar_id: avatarId,
@@ -2251,6 +2515,8 @@ serve(async (req: Request) => {
           media_url: mediaUrl,
           caption: caption || null,
           bg_gradient: bgGradient,
+          attached_room_code: roomCode,
+          attached_game_type: gameType,
           room_code: roomCode,
           game_type: gameType,
         })
@@ -2271,6 +2537,13 @@ serve(async (req: Request) => {
       const storyId = String(body.story_id || "").trim();
       const emoji = body.emoji ? String(body.emoji).trim().slice(0, 8) : null;
       const incrementView = Boolean(body.increment_view);
+      const likerName = String(
+        body.liker_name || authUser?.user_metadata?.full_name || "Ghana Gamer"
+      )
+        .trim()
+        .slice(0, 40);
+      const likerAvatar = String(body.liker_avatar || "royal_headband").trim().slice(0, 120);
+      const likerKey = String(authUser?.id || body.liker_key || likerName.toLowerCase()).trim();
 
       if (!storyId) {
         return jsonResponse({ success: false, error: "Missing story_id" }, 400);
@@ -2278,7 +2551,7 @@ serve(async (req: Request) => {
 
       const { data: existing } = await supabaseAdmin
         .from("game_user_stories")
-        .select("id, views_count, reactions")
+        .select("id, user_id, author_name, caption, views_count, reactions, liked_by")
         .eq("id", storyId)
         .maybeSingle();
 
@@ -2293,7 +2566,36 @@ serve(async (req: Request) => {
         existing.reactions && typeof existing.reactions === "object"
           ? { ...existing.reactions }
           : {};
-      if (emoji) {
+      const prevLikedBy: any[] = Array.isArray(existing.liked_by) ? [...existing.liked_by] : [];
+      let nextLikedBy = prevLikedBy;
+      let likedNow = true;
+
+      if (emoji === "❤️") {
+        const alreadyIdx = prevLikedBy.findIndex(
+          (u: any) =>
+            (authUser?.id && u.user_id === authUser.id) ||
+            (u.key && u.key === likerKey) ||
+            String(u.name || "").toLowerCase() === likerName.toLowerCase()
+        );
+        if (alreadyIdx >= 0) {
+          likedNow = false;
+          nextLikedBy = prevLikedBy.filter((_, idx) => idx !== alreadyIdx);
+          prevReactions["❤️"] = Math.max(0, Number(prevReactions["❤️"] || 1) - 1);
+        } else {
+          likedNow = true;
+          nextLikedBy = [
+            ...prevLikedBy,
+            {
+              user_id: authUser?.id || null,
+              key: likerKey,
+              name: likerName,
+              avatar_id: likerAvatar,
+              liked_at: new Date().toISOString(),
+            },
+          ];
+          prevReactions["❤️"] = Math.max(nextLikedBy.length, Number(prevReactions["❤️"] || 0) + 1);
+        }
+      } else if (emoji) {
         prevReactions[emoji] = Number(prevReactions[emoji] || 0) + 1;
       }
 
@@ -2302,13 +2604,42 @@ serve(async (req: Request) => {
         .update({
           views_count: nextViews,
           reactions: prevReactions,
+          liked_by: nextLikedBy,
         })
         .eq("id", storyId)
         .select("*")
         .single();
 
+      if (
+        emoji === "❤️" &&
+        likedNow &&
+        existing.user_id &&
+        existing.user_id !== authUser?.id
+      ) {
+        try {
+          const snippet = String(existing.caption || "your story post").slice(0, 60);
+          await supabaseAdmin.from("notifications").insert({
+            title: `❤️ ${likerName} liked your SwiftGram story!`,
+            message: `${likerName} liked "${snippet}"`,
+            target_type: "specific",
+            target_user_id: existing.user_id,
+            created_by: authUser?.id || null,
+          });
+          await triggerWebPush(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+            user_id: existing.user_id,
+            title: `❤️ ${likerName} liked your SwiftGram story!`,
+            body: `"${snippet}"`,
+            url: `/challenges`,
+            tag: `swiftgram-story-like-${storyId}`,
+          });
+        } catch {
+          // ignore
+        }
+      }
+
       return jsonResponse({
         success: true,
+        liked: likedNow,
         story: updatedStory,
       });
     }

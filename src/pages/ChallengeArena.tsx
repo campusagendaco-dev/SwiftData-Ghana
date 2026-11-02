@@ -343,9 +343,9 @@ export default function ChallengeArena() {
   const [arenaPoints, setArenaPoints] = useState<number>(() => {
     try {
       const saved = Number(window.localStorage.getItem("swiftdata_arena_points_v1"));
-      return Number.isFinite(saved) && saved >= 0 ? saved : 120;
+      return Number.isFinite(saved) && saved >= 0 ? saved : 0;
     } catch {
-      return 120;
+      return 0;
     }
   });
   const [targetDataSize, setTargetDataSize] = useState<DataTargetTier>(() => {
@@ -494,9 +494,10 @@ export default function ChallengeArena() {
   const handlePointsEarned = useCallback(
     (pts: number, reason: string) => {
       if (!pts || pts <= 0) return;
+      const cappedPts = Math.min(35, Math.max(1, Math.round(pts)));
       setArenaPoints((prev) => {
         const prevLevel = getPlayerLevelStatus(prev).level;
-        const nextTotal = prev + pts;
+        const nextTotal = prev + cappedPts;
         const nextLevelInfo = getPlayerLevelStatus(nextTotal);
         try {
           window.localStorage.setItem("swiftdata_arena_points_v1", String(nextTotal));
@@ -515,7 +516,7 @@ export default function ChallengeArena() {
         }
         return nextTotal;
       });
-      setLastPointsPopup({ pts, reason });
+      setLastPointsPopup({ pts: cappedPts, reason });
       window.setTimeout(() => setLastPointsPopup(null), 2600);
     },
     [targetDataSize, toast]
@@ -541,7 +542,9 @@ export default function ChallengeArena() {
           phone: cleanPhone,
           network: claimNetwork,
           data_size: selectedTargetOption.size,
+          target_data_size: selectedTargetOption.size,
           points_spent: selectedTargetOption.pointsRequired,
+          player_level: levelInfo.level,
           player_name: playerName || profile?.full_name || "Arena Champion",
         },
       });
@@ -1240,6 +1243,85 @@ export default function ChallengeArena() {
     },
     [activeChallenge, mySide, playerPhone, profile, toast, fetchWalletAndPaystackKey, fetchLobby]
   );
+
+  // Live Turn Shot Clock (18s Free Data / AI, 25s P2P) for Turn-Based Games
+  const [turnShotClockSec, setTurnShotClockSec] = useState<number>(18);
+  const turnTimeoutStrikesRef = useRef<number>(0);
+
+  useEffect(() => {
+    turnTimeoutStrikesRef.current = 0;
+  }, [activeChallenge?.id]);
+
+  useEffect(() => {
+    if (
+      !activeChallenge ||
+      activeChallenge.status !== "in_progress" ||
+      activeChallenge.game_type === "slash" ||
+      activeChallenge.game_type === "candy" ||
+      activeChallenge.game_type === "buggy"
+    ) {
+      return;
+    }
+
+    const limitSec = activeChallenge.mode === "p2p" ? 25 : 18;
+    setTurnShotClockSec(limitSec);
+
+    const currentTurnSide =
+      activeChallenge.current_turn ||
+      activeChallenge.board_state?.turn ||
+      "creator";
+    const isMyTurnNow = currentTurnSide === mySide;
+
+    const timer = window.setInterval(() => {
+      setTurnShotClockSec((prev) => {
+        if (prev <= 1) {
+          if (isMyTurnNow) {
+            turnTimeoutStrikesRef.current += 1;
+            playTurnNotificationSound(true);
+            if (turnTimeoutStrikesRef.current >= 2) {
+              window.clearInterval(timer);
+              const otherSide = mySide === "creator" ? "opponent" : "creator";
+              window.setTimeout(() => {
+                toast({
+                  title: "⏱️ Turn Shot Clock Expired Twice!",
+                  description:
+                    "Match forfeited due to inactivity. Make your moves before the shot clock hits 0s!",
+                  variant: "destructive",
+                });
+                handleMatchComplete(otherSide, activeChallenge.board_state || {});
+              }, 0);
+              return 0;
+            } else {
+              window.setTimeout(() => {
+                toast({
+                  title: "⏱️ Shot Clock Warning (Strike 1/2)!",
+                  description:
+                    "Make your move before the timer hits 0s or the match will be forfeited!",
+                  variant: "destructive",
+                });
+              }, 0);
+            }
+          }
+          return limitSec;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [
+    activeChallenge?.id,
+    activeChallenge?.status,
+    activeChallenge?.game_type,
+    activeChallenge?.mode,
+    activeChallenge?.current_turn,
+    activeChallenge?.board_state?.turn,
+    activeChallenge?.board_state?.moveCount,
+    activeChallenge?.board_state?.shotCount,
+    mySide,
+    handleMatchComplete,
+    toast,
+  ]);
 
   const handleClaimDataReward = async () => {
     if (!activeChallenge) return;
@@ -2534,7 +2616,7 @@ export default function ChallengeArena() {
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                       <div className="space-y-0.5">
                         <h3 className="text-xs sm:text-sm font-black text-white">
-                          🏆 Victory! +300 Points Added (Lv.{levelInfo.level} • {targetProgressPercent}% to {selectedTargetOption.size})
+                          🏆 Timed Victory! +35 Points Added (Lv.{levelInfo.level} • {targetProgressPercent}% to {selectedTargetOption.size})
                         </h3>
                         <p className="text-[11px] text-emerald-200">
                           {arenaPoints.toLocaleString()} / {selectedTargetOption.pointsRequired.toLocaleString()} Pts accumulated.
@@ -2547,7 +2629,7 @@ export default function ChallengeArena() {
                         className="h-8 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs gap-1.5 px-3 shrink-0"
                       >
                         <Zap className="w-3.5 h-3.5" />
-                        Play Next Match (+300 Pts)
+                        Play Next Timed Match (+35 Pts)
                       </Button>
                     </div>
                   ) : (
@@ -2633,7 +2715,7 @@ export default function ChallengeArena() {
                             : "bg-amber-950/40 border-amber-500/40"
                         }`}
                       >
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-2">
                           <span
                             className={`w-2 h-2 rounded-full shrink-0 ${
                               isCurrentlyMyTurn
@@ -2645,6 +2727,15 @@ export default function ChallengeArena() {
                             {isCurrentlyMyTurn
                               ? `🟢 YOUR TURN (${nextUpName})`
                               : `🔔 NEXT TURN: ${nextUpName.toUpperCase()}`}
+                          </span>
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-black border ${
+                              turnShotClockSec <= 6
+                                ? "bg-rose-600/90 border-rose-300 text-white animate-pulse"
+                                : "bg-slate-950/80 border-amber-400/40 text-amber-300"
+                            }`}
+                          >
+                            ⏱️ {turnShotClockSec}s
                           </span>
                         </div>
 

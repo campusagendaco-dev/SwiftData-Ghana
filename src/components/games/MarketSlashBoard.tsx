@@ -332,8 +332,9 @@ export function MarketSlashBoard({
   const [remainingLives, setRemainingLives] = useState<number>(MAXIMUM_LIVES);
   const [totalSliced, setTotalSliced] = useState<number>(0);
   const [bestCombo, setBestCombo] = useState<number>(1);
+  const [timeRemainingSec, setTimeRemainingSec] = useState<number>(60);
   const [gameOverReason, setGameOverReason] = useState<
-    "bomb" | "missed" | "cleared_all" | null
+    "bomb" | "missed" | "timeout" | "cleared_all" | null
   >(null);
   const [bannerOverlay, setBannerOverlay] = useState<{
     type: "level_intro" | "stall_cleared";
@@ -392,7 +393,7 @@ export function MarketSlashBoard({
   const slowMotionFactorRef = useRef<number>(1);
   const screenShakeStrengthRef = useRef<number>(0);
   const whiteFlashAlphaRef = useRef<number>(0);
-  const gameOverRef = useRef<"bomb" | "missed" | "cleared_all" | null>(null);
+  const gameOverRef = useRef<"bomb" | "missed" | "timeout" | "cleared_all" | null>(null);
   const isPausedForBannerRef = useRef<boolean>(true);
   const matchSettledRef = useRef<boolean>(false);
   const mutedRef = useRef<boolean>(muted);
@@ -592,7 +593,7 @@ export function MarketSlashBoard({
   }, [clearPendingWaveTimers]);
 
   const triggerEndGame = useCallback(
-    (reason: "bomb" | "missed" | "cleared_all") => {
+    (reason: "bomb" | "missed" | "timeout" | "cleared_all") => {
       if (gameOverRef.current) return;
       gameOverRef.current = reason;
       clearPendingWaveTimers();
@@ -622,7 +623,11 @@ export function MarketSlashBoard({
             ? initialState?.opponentScore || 0
             : aiTargetScore.current;
         const winnerSide: "creator" | "opponent" | "draw" =
-          finalPts > oppScore
+          reason === "timeout" && finalPts < oppScore
+            ? mySide === "creator"
+              ? "opponent"
+              : "creator"
+            : finalPts > oppScore
             ? mySide
             : finalPts < oppScore
             ? mySide === "creator"
@@ -630,9 +635,9 @@ export function MarketSlashBoard({
               : "creator"
             : "draw";
 
-        if (winnerSide === mySide) {
+        if (winnerSide === mySide && reason !== "bomb") {
           playLevelUpFanfare();
-          onPointsEarned?.(250, `Fruit Slash Victory (${finalPts} pts)`);
+          onPointsEarned?.(35, `Fruit Slash Timed Victory (${finalPts} pts)`);
         }
 
         const nextState: MarketSlashState = {
@@ -682,6 +687,7 @@ export function MarketSlashBoard({
     setRemainingLives(MAXIMUM_LIVES);
     setTotalSliced(0);
     setBestCombo(1);
+    setTimeRemainingSec(60);
     setGameOverReason(null);
     setBannerOverlay({
       type: "level_intro",
@@ -896,8 +902,8 @@ export function MarketSlashBoard({
       totalSlicedRef.current += 1;
       setTotalSliced(totalSlicedRef.current);
 
-      if (totalSlicedRef.current % 5 === 0) {
-        onPointsEarned?.(25, "5 Fruits Sliced (+25 Arena Pts)");
+      if (totalSlicedRef.current % 25 === 0) {
+        onPointsEarned?.(5, "25 Fruits Sliced (+5 Arena Pts)");
       }
 
       addFloatingText(
@@ -1575,7 +1581,15 @@ export function MarketSlashBoard({
         viewportHeight * GRAVITY_SCREEN_HEIGHTS_PER_SECOND_SQUARED;
 
       if (!gameOverRef.current && !isPausedForBannerRef.current) {
+        const prevSecFloor = Math.floor(elapsedPlaySecondsRef.current);
         elapsedPlaySecondsRef.current += deltaSeconds;
+        const nextSecFloor = Math.floor(elapsedPlaySecondsRef.current);
+        if (nextSecFloor !== prevSecFloor) {
+          setTimeRemainingSec(Math.max(0, 60 - nextSecFloor));
+        }
+        if (elapsedPlaySecondsRef.current >= 60) {
+          triggerEndGame("timeout");
+        }
         secondsUntilNextWaveRef.current -= scaledDeltaSeconds;
         if (secondsUntilNextWaveRef.current <= 0) {
           spawnWave();
@@ -1942,8 +1956,21 @@ export function MarketSlashBoard({
             </div>
           </div>
 
-          {/* 3 Life Crosses (✕ ✕ ✕) */}
-          <div className="flex items-center gap-2">
+          {/* 60s Blitz Countdown Timer + 3 Life Crosses (✕ ✕ ✕) */}
+          <div className="flex items-center gap-2.5">
+            <div
+              className={`px-2.5 py-1 rounded-full border text-xs font-sans font-black flex items-center gap-1 shadow-md ${
+                timeRemainingSec <= 12
+                  ? "bg-rose-600/90 border-rose-300 text-white animate-pulse"
+                  : "bg-black/65 border-amber-400/40 text-[#ffd23c]"
+              }`}
+            >
+              <span>⏱️</span>
+              <span>
+                {Math.floor(timeRemainingSec / 60)}:
+                {String(timeRemainingSec % 60).padStart(2, "0")}
+              </span>
+            </div>
             {[0, 1, 2].map((lifeIndex) => {
               const isLost = lifeIndex >= remainingLives;
               return (
@@ -2057,6 +2084,8 @@ export function MarketSlashBoard({
                     ? "💣 You sliced a bomb!"
                     : gameOverReason === "missed"
                     ? "🍉 3 fruits dropped!"
+                    : gameOverReason === "timeout"
+                    ? "⏱️ 60-Second Blitz Clock Expired!"
                     : "🏆 All 5 Dojo Market Stages Cleared!"}
                 </p>
               </div>

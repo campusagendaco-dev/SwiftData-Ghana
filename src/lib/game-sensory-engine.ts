@@ -569,23 +569,23 @@ const DATA_TARGET_LIST: DataTargetOption[] = [
   {
     size: "1GB",
     label: "1GB Free Data Bundle",
-    pointsRequired: 1000,
-    badge: "Starter Goal (Lvl 3)",
-    desc: "Accumulate 1,000 Arena Points across matches, sliced fruit & potted balls to unlock 1GB Free Data!",
+    pointsRequired: 5000,
+    badge: "Starter Goal (Lvl 5)",
+    desc: "Win 10+ verified timed matches & accumulate 5,000 Arena Points to unlock 1GB Free Data!",
   },
   {
     size: "2GB",
     label: "2GB Free Data Bundle",
-    pointsRequired: 2000,
-    badge: "Pro Goal (Lvl 6)",
-    desc: "Accumulate 2,000 Arena Points across levels to unlock a 2GB Data Bundle!",
+    pointsRequired: 9500,
+    badge: "Pro Goal (Lvl 8)",
+    desc: "Accumulate 9,500 Arena Points across timed victories to unlock a 2GB Data Bundle!",
   },
   {
     size: "5GB",
     label: "5GB Non-Expiry Data Bundle",
-    pointsRequired: 4500,
+    pointsRequired: 20000,
     badge: "Master Goal (Lvl 10)",
-    desc: "Accumulate 4,500 Arena Points to claim a massive 5GB Non-Expiry Data Bundle!",
+    desc: "Accumulate 20,000 Arena Points across verified timed matches to claim a 5GB Non-Expiry Data Bundle!",
   },
 ];
 
@@ -609,7 +609,7 @@ export interface PlayerLevelStatus {
 
 export function getPlayerLevelStatus(totalPoints: number): PlayerLevelStatus {
   const safePts = Math.max(0, Math.floor(totalPoints || 0));
-  const stepPts = 350;
+  const stepPts = 750;
   const level = Math.min(10, Math.floor(safePts / stepPts) + 1);
   const pointsInCurrentLevel = safePts % stepPts;
   const levelProgressPercent = Math.min(100, Math.round((pointsInCurrentLevel / stepPts) * 100));

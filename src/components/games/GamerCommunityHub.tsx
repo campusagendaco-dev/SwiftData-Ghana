@@ -34,6 +34,7 @@ import {
   triggerHapticSensor,
 } from "@/lib/game-sensory-engine";
 import { VerifiedGamerAvatar, DailyStoriesBar, GamerStoryItem } from "./DailyStoriesBar";
+import { toast } from "sonner";
 
 export type CommunityGameType =
   | "oware"
@@ -43,6 +44,24 @@ export type CommunityGameType =
   | "slash"
   | "candy"
   | "buggy";
+
+export interface PostLikerEntry {
+  user_id?: string | null;
+  key?: string;
+  name: string;
+  avatar_id?: string | null;
+  liked_at?: string;
+}
+
+export interface PostCommentEntry {
+  id: string;
+  user_id?: string | null;
+  author_name: string;
+  avatar_id?: string | null;
+  author_level?: number;
+  text: string;
+  created_at: string;
+}
 
 export interface CommunityChatMessage {
   id: string;
@@ -68,6 +87,8 @@ export interface CommunityChatMessage {
   target_user_id?: string | null;
   target_user_name?: string | null;
   reactions?: Record<string, number>;
+  liked_by?: PostLikerEntry[];
+  comments?: PostCommentEntry[];
   created_at: string;
   is_story_post?: boolean;
 }
@@ -317,6 +338,7 @@ export function GamerCommunityHub({
   const [likedPostIds, setLikedPostIds] = useState<Set<string>>(() => new Set());
   const [replyingToPostId, setReplyingToPostId] = useState<string | null>(null);
   const [inlineReplyText, setInlineReplyText] = useState<string>("");
+  const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
 
   // Inline Photo / Video Attachment State for Feed Posts
   const [attachedMediaType, setAttachedMediaType] = useState<"image" | "video" | null>(
@@ -346,7 +368,7 @@ export function GamerCommunityHub({
   }, [initialDmPartner]);
 
   const mapStoryRowToFeedPost = useCallback(
-    (s: GamerStoryItem): CommunityChatMessage => ({
+    (s: any): CommunityChatMessage => ({
       id: `story-feed-${s.id}`,
       channel: "global",
       sender_id: s.user_id || null,
@@ -365,6 +387,8 @@ export function GamerCommunityHub({
       room_code: s.room_code || null,
       game_type: s.game_type || s.favorite_game || "oware",
       reactions: s.reactions || {},
+      liked_by: Array.isArray(s.liked_by) ? s.liked_by : [],
+      comments: Array.isArray(s.comments) ? s.comments : [],
       created_at: s.created_at || new Date().toISOString(),
       is_story_post: true,
     }),
@@ -537,6 +561,91 @@ export function GamerCommunityHub({
             typingTimeoutRef.current = window.setTimeout(() => {
               setPartnerTypingName(null);
             }, 3000);
+          }
+        })
+        .on("broadcast", { event: "post_liked" }, (payload: any) => {
+          const info = payload?.payload;
+          if (!info) return;
+          const isFromMe =
+            (currentUserId && info.liker_id === currentUserId) ||
+            namesMatch(info.liker_name, playerName);
+          // Sync post reactions & liked_by
+          if (info.is_story_post) {
+            setStoryPosts((prev) =>
+              prev.map((m) =>
+                m.id === info.post_id
+                  ? {
+                      ...m,
+                      reactions: info.reactions || m.reactions,
+                      liked_by: info.liked_by || m.liked_by,
+                    }
+                  : m
+              )
+            );
+          } else {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === info.post_id
+                  ? {
+                      ...m,
+                      reactions: info.reactions || m.reactions,
+                      liked_by: info.liked_by || m.liked_by,
+                    }
+                  : m
+              )
+            );
+          }
+          // Notify post author in real time when someone likes their post!
+          const isMyPost =
+            (currentUserId && info.author_id === currentUserId) ||
+            namesMatch(info.author_name, playerName);
+          if (!isFromMe && isMyPost && info.action === "liked") {
+            playTurnNotificationSound(false);
+            window.setTimeout(() => {
+              toast(`❤️ ${info.liker_name || "A Gamer"} liked your post!`, {
+                description: info.post_snippet || "Tap SwiftGram Feed to view.",
+              });
+            }, 0);
+          }
+        })
+        .on("broadcast", { event: "post_commented" }, (payload: any) => {
+          const info = payload?.payload;
+          if (!info || !info.comment) return;
+          const isFromMe =
+            (currentUserId && info.comment.user_id === currentUserId) ||
+            namesMatch(info.comment.author_name, playerName);
+          if (info.is_story_post) {
+            setStoryPosts((prev) =>
+              prev.map((m) => {
+                if (m.id !== info.post_id) return m;
+                const existing = Array.isArray(m.comments) ? m.comments : [];
+                if (existing.some((c) => c.id === info.comment.id)) return m;
+                return { ...m, comments: [...existing, info.comment] };
+              })
+            );
+          } else {
+            setMessages((prev) =>
+              prev.map((m) => {
+                if (m.id !== info.post_id) return m;
+                const existing = Array.isArray(m.comments) ? m.comments : [];
+                if (existing.some((c) => c.id === info.comment.id)) return m;
+                return { ...m, comments: [...existing, info.comment] };
+              })
+            );
+          }
+          const isMyPost =
+            (currentUserId && info.author_id === currentUserId) ||
+            namesMatch(info.author_name, playerName);
+          if (!isFromMe && isMyPost) {
+            playTurnNotificationSound(false);
+            window.setTimeout(() => {
+              toast(
+                `💬 ${info.comment.author_name || "A Gamer"} commented on your post!`,
+                {
+                  description: `"${String(info.comment.text || "").slice(0, 70)}"`,
+                }
+              );
+            }, 0);
           }
         })
         .subscribe();
@@ -1031,25 +1140,95 @@ export function GamerCommunityHub({
     }
   };
 
+  const myLikerKey = useMemo(
+    () =>
+      String(
+        currentUserId || `name_${normalizeKey(playerName || "Ghana Champion")}`
+      ),
+    [currentUserId, playerName]
+  );
+
+  const isPostLikedByMe = useCallback(
+    (post: CommunityChatMessage): boolean => {
+      if (likedPostIds.has(post.id)) return true;
+      const likedBy = Array.isArray(post.liked_by) ? post.liked_by : [];
+      return likedBy.some(
+        (l) =>
+          (currentUserId && l.user_id === currentUserId) ||
+          l.key === myLikerKey ||
+          namesMatch(l.name, playerName)
+      );
+    },
+    [likedPostIds, currentUserId, myLikerKey, playerName]
+  );
+
   const handleReactMessage = async (post: CommunityChatMessage, emoji: string) => {
     triggerHapticSensor("aim_tick");
+
+    const alreadyLiked = emoji === "❤️" ? isPostLikedByMe(post) : false;
+    const isUnlikeAction = emoji === "❤️" && alreadyLiked;
 
     if (emoji === "❤️") {
       setLikedPostIds((prev) => {
         const next = new Set(prev);
-        next.add(post.id);
+        if (isUnlikeAction) next.delete(post.id);
+        else next.add(post.id);
         return next;
       });
     }
 
+    const applyReactionUpdate = (m: CommunityChatMessage): CommunityChatMessage => {
+      const nextReactions = { ...(m.reactions || {}) };
+      let nextLikedBy = Array.isArray(m.liked_by) ? [...m.liked_by] : [];
+
+      if (emoji === "❤️") {
+        if (isUnlikeAction) {
+          nextLikedBy = nextLikedBy.filter(
+            (l) =>
+              !(
+                (currentUserId && l.user_id === currentUserId) ||
+                l.key === myLikerKey ||
+                namesMatch(l.name, playerName)
+              )
+          );
+          nextReactions["❤️"] = Math.max(
+            nextLikedBy.length,
+            Math.max(0, Number(nextReactions["❤️"] || 1) - 1)
+          );
+        } else {
+          if (
+            !nextLikedBy.some(
+              (l) =>
+                (currentUserId && l.user_id === currentUserId) ||
+                l.key === myLikerKey ||
+                namesMatch(l.name, playerName)
+            )
+          ) {
+            nextLikedBy.push({
+              user_id: currentUserId || null,
+              key: myLikerKey,
+              name: playerName || "Ghana Champion",
+              avatar_id: playerAvatarId || "royal_headband",
+              liked_at: new Date().toISOString(),
+            });
+          }
+          nextReactions["❤️"] = Math.max(
+            nextLikedBy.length,
+            Number(nextReactions["❤️"] || 0) + 1
+          );
+        }
+      } else {
+        nextReactions[emoji] = Number(nextReactions[emoji] || 0) + 1;
+      }
+
+      return { ...m, reactions: nextReactions, liked_by: nextLikedBy };
+    };
+
+    const updatedPreview = applyReactionUpdate(post);
+
     if (post.is_story_post) {
       setStoryPosts((prev) =>
-        prev.map((m) => {
-          if (m.id !== post.id) return m;
-          const nextReactions = { ...(m.reactions || {}) };
-          nextReactions[emoji] = Number(nextReactions[emoji] || 0) + 1;
-          return { ...m, reactions: nextReactions };
-        })
+        prev.map((m) => (m.id === post.id ? applyReactionUpdate(m) : m))
       );
       const rawStoryId = post.id.replace(/^story-feed-/, "");
       if (!rawStoryId.startsWith("local-")) {
@@ -1059,32 +1238,133 @@ export function GamerCommunityHub({
               action: "react_story",
               story_id: rawStoryId,
               emoji,
+              liker_name: playerName || "Ghana Champion",
+              liker_avatar: playerAvatarId || "royal_headband",
             },
           });
         } catch {
           // ignore
         }
       }
-      return;
+    } else {
+      setMessages((prev) =>
+        prev.map((m) => (m.id === post.id ? applyReactionUpdate(m) : m))
+      );
+      if (!post.id.startsWith("temp-")) {
+        try {
+          await supabase.functions.invoke("challenge-arena", {
+            body: {
+              action: "react_community_message",
+              message_id: post.id,
+              emoji,
+              liker_name: playerName || "Ghana Champion",
+              liker_avatar: playerAvatarId || "royal_headband",
+            },
+          });
+        } catch {
+          // ignore
+        }
+      }
     }
 
-    setMessages((prev) =>
-      prev.map((m) => {
-        if (m.id !== post.id) return m;
-        const nextReactions = { ...(m.reactions || {}) };
-        nextReactions[emoji] = Number(nextReactions[emoji] || 0) + 1;
-        return { ...m, reactions: nextReactions };
-      })
-    );
+    if (emoji === "❤️") {
+      try {
+        broadcastChannelRef.current?.send({
+          type: "broadcast",
+          event: "post_liked",
+          payload: {
+            post_id: post.id,
+            is_story_post: Boolean(post.is_story_post),
+            action: isUnlikeAction ? "unliked" : "liked",
+            liker_id: currentUserId || null,
+            liker_name: playerName || "Ghana Champion",
+            author_id: post.sender_id || null,
+            author_name: post.sender_name,
+            post_snippet: post.message
+              ? `"${post.message.slice(0, 50)}"`
+              : "Liked your SwiftGram post!",
+            reactions: updatedPreview.reactions,
+            liked_by: updatedPreview.liked_by,
+          },
+        });
+      } catch {
+        // ignore broadcast error
+      }
+    }
+  };
 
-    if (post.id.startsWith("temp-")) return;
+  const handleAddPostComment = async (
+    post: CommunityChatMessage,
+    rawCommentText?: string
+  ) => {
+    const text = String(
+      rawCommentText !== undefined
+        ? rawCommentText
+        : commentDrafts[post.id] || ""
+    ).trim();
+    if (!text) return;
+
+    triggerHapticSensor("aim_tick");
+    setCommentDrafts((prev) => ({ ...prev, [post.id]: "" }));
+
+    const newComment: PostCommentEntry = {
+      id: `cmt_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      user_id: currentUserId || null,
+      author_name: playerName || "Ghana Champion",
+      avatar_id: playerAvatarId || "royal_headband",
+      author_level: playerLevel || 1,
+      text: text.slice(0, 280),
+      created_at: new Date().toISOString(),
+    };
+
+    if (post.is_story_post) {
+      setStoryPosts((prev) =>
+        prev.map((m) =>
+          m.id === post.id
+            ? { ...m, comments: [...(m.comments || []), newComment] }
+            : m
+        )
+      );
+    } else {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === post.id
+            ? { ...m, comments: [...(m.comments || []), newComment] }
+            : m
+        )
+      );
+    }
+
+    try {
+      broadcastChannelRef.current?.send({
+        type: "broadcast",
+        event: "post_commented",
+        payload: {
+          post_id: post.id,
+          is_story_post: Boolean(post.is_story_post),
+          author_id: post.sender_id || null,
+          author_name: post.sender_name,
+          comment: newComment,
+        },
+      });
+    } catch {
+      // ignore broadcast error
+    }
+
+    if (post.id.startsWith("temp-") || post.id.startsWith("story-feed-local-")) {
+      return;
+    }
 
     try {
       await supabase.functions.invoke("challenge-arena", {
         body: {
-          action: "react_community_message",
-          message_id: post.id,
-          emoji,
+          action: "add_post_comment",
+          post_id: post.id,
+          is_story_post: Boolean(post.is_story_post),
+          author_name: playerName || "Ghana Champion",
+          avatar_id: playerAvatarId || "royal_headband",
+          author_level: playerLevel || 1,
+          comment_text: text,
         },
       });
     } catch {
@@ -1620,8 +1900,14 @@ export function GamerCommunityHub({
                   last_seen_at: msg.created_at,
                 };
 
-                const likeCount = Number(msg.reactions?.["❤️"] || 0);
-                const isLiked = likedPostIds.has(msg.id) || likeCount > 0;
+                const likedByList = Array.isArray(msg.liked_by) ? msg.liked_by : [];
+                const likeCount = Math.max(
+                  likedByList.length,
+                  Number(msg.reactions?.["❤️"] || 0)
+                );
+                const isLiked = isPostLikedByMe(msg);
+                const postComments = Array.isArray(msg.comments) ? msg.comments : [];
+                const draftCommentText = commentDrafts[msg.id] || "";
 
                 if (isVictory) {
                   return (
@@ -1825,13 +2111,14 @@ export function GamerCommunityHub({
                       </div>
                     )}
 
-                    {/* ── Instagram Action Bar (Like, Comment, DM, Reactions) ── */}
-                    <div className="px-4 py-2.5 border-t border-white/5 space-y-2">
+                    {/* ── Instagram Action Bar (Like/Unlike, Comment, DM, Reactions) ── */}
+                    <div className="px-4 py-2.5 border-t border-white/5 space-y-2.5">
                       <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-3.5">
                           <button
                             type="button"
                             onClick={() => handleReactMessage(msg, "❤️")}
+                            title={isLiked ? "Tap to Unlike" : "Tap to Like"}
                             className={`flex items-center gap-1.5 text-xs font-black transition-all cursor-pointer ${
                               isLiked
                                 ? "text-rose-400 scale-105"
@@ -1839,11 +2126,17 @@ export function GamerCommunityHub({
                             }`}
                           >
                             <Heart
-                              className={`w-4 h-4 ${
-                                isLiked ? "fill-rose-500 text-rose-500" : ""
+                              className={`w-4 h-4 transition-transform ${
+                                isLiked ? "fill-rose-500 text-rose-500 scale-110" : ""
                               }`}
                             />
-                            <span>{likeCount > 0 ? likeCount : "Like"}</span>
+                            <span>
+                              {isLiked
+                                ? `Liked${likeCount > 0 ? ` (${likeCount})` : ""}`
+                                : likeCount > 0
+                                ? `${likeCount} ${likeCount === 1 ? "Like" : "Likes"}`
+                                : "Like"}
+                            </span>
                           </button>
 
                           <button
@@ -1852,12 +2145,15 @@ export function GamerCommunityHub({
                               setReplyingToPostId((prev) =>
                                 prev === msg.id ? null : msg.id
                               );
-                              setInlineReplyText(`@${msg.sender_name} `);
                             }}
                             className="flex items-center gap-1.5 text-xs font-bold text-slate-300 hover:text-amber-300 cursor-pointer"
                           >
                             <MessageCircle className="w-4 h-4" />
-                            <span>Comment</span>
+                            <span>
+                              {postComments.length > 0
+                                ? `Comments (${postComments.length})`
+                                : "Comment"}
+                            </span>
                           </button>
 
                           {!isMe && (
@@ -1900,6 +2196,69 @@ export function GamerCommunityHub({
                         </div>
                       </div>
 
+                      {/* ── Visible Likers Row ("Liked by X and Y others") ── */}
+                      {likeCount > 0 && (
+                        <div className="flex items-center gap-2 text-[11px] text-slate-300">
+                          {likedByList.length > 0 && (
+                            <div className="flex items-center -space-x-1.5 shrink-0">
+                              {likedByList.slice(-3).map((liker, lIdx) => (
+                                <div
+                                  key={`${liker.key || liker.name}-${lIdx}`}
+                                  className="rounded-full ring-2 ring-[#0e1424]"
+                                >
+                                  <VerifiedGamerAvatar
+                                    avatarId={liker.avatar_id || "royal_headband"}
+                                    seedName={liker.name}
+                                    size={18}
+                                    showVerifiedBadge={false}
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          <span>
+                            {likedByList.length === 1 ? (
+                              <>
+                                Liked by{" "}
+                                <strong className="text-white font-black">
+                                  {likedByList[0].name}
+                                </strong>
+                              </>
+                            ) : likedByList.length === 2 ? (
+                              <>
+                                Liked by{" "}
+                                <strong className="text-white font-black">
+                                  {likedByList[1].name}
+                                </strong>{" "}
+                                and{" "}
+                                <strong className="text-white font-black">
+                                  {likedByList[0].name}
+                                </strong>
+                              </>
+                            ) : likedByList.length > 2 ? (
+                              <>
+                                Liked by{" "}
+                                <strong className="text-white font-black">
+                                  {likedByList[likedByList.length - 1].name}
+                                </strong>
+                                ,{" "}
+                                <strong className="text-white font-black">
+                                  {likedByList[likedByList.length - 2].name}
+                                </strong>{" "}
+                                and{" "}
+                                <strong className="text-rose-300 font-black">
+                                  {Math.max(1, likeCount - 2)} others
+                                </strong>
+                              </>
+                            ) : (
+                              <strong className="text-rose-300 font-black">
+                                ❤️ {likeCount} {likeCount === 1 ? "like" : "likes"}
+                              </strong>
+                            )}
+                          </span>
+                        </div>
+                      )}
+
                       {/* Caption under Media Posts */}
                       {(msg.media_type === "image" ||
                         msg.media_type === "video") &&
@@ -1912,41 +2271,82 @@ export function GamerCommunityHub({
                           </p>
                         )}
 
-                      {/* Inline Comment / Reply Input Box for this Post */}
-                      {replyingToPostId === msg.id && (
-                        <form
-                          onSubmit={(e) => {
-                            e.preventDefault();
-                            if (!inlineReplyText.trim()) return;
-                            handleSendMessage(inlineReplyText, {
-                              targetUser: {
-                                user_id: msg.sender_id,
-                                name: msg.sender_name,
-                              },
-                            });
-                            setInlineReplyText("");
-                            setReplyingToPostId(null);
-                          }}
-                          className="pt-1.5 flex items-center gap-2 animate-in fade-in duration-150"
-                        >
-                          <Input
-                            value={inlineReplyText}
-                            onChange={(e) =>
-                              setInlineReplyText(e.target.value)
-                            }
-                            placeholder={`Reply to ${msg.sender_name}…`}
-                            className="h-8 flex-1 rounded-full bg-slate-950 border-white/15 px-3 text-xs text-white"
-                            autoFocus
-                          />
-                          <Button
-                            type="submit"
-                            size="sm"
-                            className="h-8 px-3 rounded-full bg-amber-400 text-slate-950 font-black text-[11px]"
-                          >
-                            Reply
-                          </Button>
-                        </form>
+                      {/* ── Visible Threaded Comments Section ── */}
+                      {postComments.length > 0 && (
+                        <div className="pt-1.5 border-t border-white/5 space-y-1.5">
+                          <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                            💬 {postComments.length}{" "}
+                            {postComments.length === 1 ? "Comment" : "Comments"}
+                          </div>
+                          <div className="space-y-1.5 max-h-44 overflow-y-auto pr-1">
+                            {postComments.map((cmt) => (
+                              <div
+                                key={cmt.id}
+                                className="flex items-start justify-between gap-2 text-xs bg-slate-950/60 border border-white/5 rounded-xl px-2.5 py-1.5"
+                              >
+                                <div className="flex items-start gap-2 min-w-0">
+                                  <div className="shrink-0 mt-0.5">
+                                    <VerifiedGamerAvatar
+                                      avatarId={cmt.avatar_id || "royal_headband"}
+                                      seedName={cmt.author_name}
+                                      size={20}
+                                      showVerifiedBadge={false}
+                                    />
+                                  </div>
+                                  <div className="min-w-0 leading-snug">
+                                    <span className="font-black text-amber-300 mr-1.5">
+                                      {cmt.author_name}
+                                    </span>
+                                    <span className="text-slate-100 break-words">
+                                      {cmt.text}
+                                    </span>
+                                  </div>
+                                </div>
+                                <span className="text-[9px] text-slate-500 shrink-0 mt-0.5">
+                                  {formatRelativeTime(cmt.created_at)}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
                       )}
+
+                      {/* ── Always-Available Add a Comment Input Bar on Every Post ── */}
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          if (!draftCommentText.trim()) return;
+                          handleAddPostComment(msg, draftCommentText);
+                        }}
+                        className="pt-1 flex items-center gap-2"
+                      >
+                        <VerifiedGamerAvatar
+                          avatarId={playerAvatarId}
+                          seedName={playerName}
+                          size={24}
+                          showVerifiedBadge={false}
+                        />
+                        <Input
+                          value={draftCommentText}
+                          onChange={(e) =>
+                            setCommentDrafts((prev) => ({
+                              ...prev,
+                              [msg.id]: e.target.value,
+                            }))
+                          }
+                          placeholder={`Add a comment for ${msg.sender_name}…`}
+                          className="h-8 flex-1 rounded-full bg-slate-950/90 border-white/10 focus:border-amber-400/50 px-3 text-xs text-white"
+                          autoFocus={replyingToPostId === msg.id}
+                        />
+                        <Button
+                          type="submit"
+                          size="sm"
+                          disabled={!draftCommentText.trim()}
+                          className="h-8 px-3 rounded-full bg-amber-400 hover:bg-amber-300 disabled:opacity-40 text-slate-950 font-black text-[11px]"
+                        >
+                          Post
+                        </Button>
+                      </form>
                     </div>
                   </article>
                 );
