@@ -1409,7 +1409,7 @@ serve(async (req: Request) => {
           }
 
           // 2. Web Push Notification (`send-push-notification`)
-          await triggerWebPush(supabaseUrl, serviceRoleKey, {
+          await triggerWebPush(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
             user_id: nextUserId,
             title: `🟢 Your Turn in ${gameLabel} (#${roomCode})!`,
             body: `${prevPlayerName} just played — step up and make your move now!`,

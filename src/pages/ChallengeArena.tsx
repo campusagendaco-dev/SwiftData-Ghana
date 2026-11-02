@@ -504,12 +504,14 @@ export default function ChallengeArena() {
           // ignore
         }
         if (nextLevelInfo.level > prevLevel) {
-          playLevelUpFanfare();
-          triggerHapticSensor("level_up");
-          toast({
-            title: `🎖️ LEVEL UP! Level ${nextLevelInfo.level} • ${nextLevelInfo.title}`,
-            description: `You reached ${nextTotal.toLocaleString()} Arena Points! Keep playing toward your ${targetDataSize} Free Data Bundle!`,
-          });
+          window.setTimeout(() => {
+            playLevelUpFanfare();
+            triggerHapticSensor("level_up");
+            toast({
+              title: `🎖️ LEVEL UP! Level ${nextLevelInfo.level} • ${nextLevelInfo.title}`,
+              description: `You reached ${nextTotal.toLocaleString()} Arena Points! Keep playing toward your ${targetDataSize} Free Data Bundle!`,
+            });
+          }, 0);
         }
         return nextTotal;
       });
@@ -776,11 +778,13 @@ export default function ChallengeArena() {
           setActiveChallenge((curr: any) => {
             if (curr && curr.id === updated.id) {
               if (curr.status === "open" && updated.status === "in_progress" && updated.opponent_name) {
-                playSuccessSound();
-                toast({
-                  title: `🔥 ${updated.opponent_name} Accepted Your Challenge!`,
-                  description: `Room #${updated.room_code} is now LIVE! Make your opening move!`,
-                });
+                window.setTimeout(() => {
+                  playSuccessSound();
+                  toast({
+                    title: `🔥 ${updated.opponent_name} Accepted Your Challenge!`,
+                    description: `Room #${updated.room_code} is now LIVE! Make your opening move!`,
+                  });
+                }, 0);
               }
 
               const prevTurn = curr.current_turn || curr.board_state?.turn || "creator";
@@ -792,7 +796,9 @@ export default function ChallengeArena() {
                 !updated.board_state?.winner &&
                 (prevTurn !== nextTurn || (prevColor && nextColor && prevColor !== nextColor))
               ) {
-                triggerOverallTurnNotification(updated, nextTurn, updated.board_state);
+                window.setTimeout(() => {
+                  triggerOverallTurnNotification(updated, nextTurn, updated.board_state);
+                }, 0);
               }
               return updated;
             }
@@ -1622,7 +1628,7 @@ export default function ChallengeArena() {
                       />
                       <Button
                         type="button"
-                        onClick={handleJoinByRoomCode}
+                        onClick={() => handleJoinByRoomCode()}
                         className="h-10 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs px-4 shrink-0"
                       >
                         Join Room
@@ -2818,7 +2824,9 @@ export default function ChallengeArena() {
                     }
                     initialState={activeChallenge.board_state}
                     onStateChange={handleBoardStateChange}
-                    onMatchComplete={handleMatchComplete}
+                    onMatchComplete={(winnerSide: "creator" | "opponent" | "draw", finalState?: any) =>
+                      handleMatchComplete(winnerSide, finalState || activeChallenge.board_state)
+                    }
                     onPointsEarned={handlePointsEarned}
                     playerLevel={levelInfo.level}
                     onBackToLobby={() => setActiveChallenge(null)}
