@@ -437,28 +437,19 @@ async function notifyOpenChallengeOrInvite(
     }
   }
 
-  // 1. Insert In-App Notifications (`public.notifications`)
+  // 1. Insert In-App Notifications (`public.notifications` ONLY for direct invited opponent, never global `all` spam)
   try {
-    const rowsToInsert: any[] = [];
-    if (broadcastAll) {
-      rowsToInsert.push({
-        title: `⚔️ Open ${gameLabel} Challenge — Win GH₵ ${prizePool.toFixed(2)}!`,
-        message: `${creatorName} just posted an Open ${gameLabel} Challenge (Stake: GH₵ ${stake.toFixed(2)}, Winner Takes: GH₵ ${prizePool.toFixed(2)}, Room #${roomCode}). Tap to accept now!`,
-        target_type: "all",
-        created_by: opts.createdByUserId || challenge.creator_id || null,
-      });
-    }
-    if (resolvedInvitedUserId) {
-      rowsToInsert.push({
-        title: `🎯 ${creatorName} Invited You to a ${gameLabel} Duel!`,
-        message: `${creatorName} challenged you to play ${gameLabel} in Room #${roomCode} (Stake: GH₵ ${stake.toFixed(2)}, Winner Pot: GH₵ ${prizePool.toFixed(2)}). Accept the challenge now!`,
-        target_type: "specific",
-        target_user_id: resolvedInvitedUserId,
-        created_by: opts.createdByUserId || challenge.creator_id || null,
-      });
-    }
-    if (rowsToInsert.length > 0) {
-      await supabaseAdmin.from("notifications").insert(rowsToInsert);
+    const creatorId = opts.createdByUserId || challenge.creator_id || null;
+    if (resolvedInvitedUserId && resolvedInvitedUserId !== creatorId) {
+      await supabaseAdmin.from("notifications").insert([
+        {
+          title: `🎯 ${creatorName} Invited You to a ${gameLabel} Duel!`,
+          message: `${creatorName} challenged you to play ${gameLabel} in Room #${roomCode} (Stake: GH₵ ${stake.toFixed(2)}, Winner Pot: GH₵ ${prizePool.toFixed(2)}). Accept the challenge now!`,
+          target_type: "specific",
+          target_user_id: resolvedInvitedUserId,
+          created_by: creatorId,
+        },
+      ]);
       inAppSent = true;
     }
   } catch (err) {
@@ -559,26 +550,19 @@ async function notifyChallengeAccepted(
   const creatorName = String(challenge.creator_name || "Challenger 1");
   const opponentName = String(challenge.opponent_name || "Challenger 2");
 
-  // 1. Insert In-App Notifications (`public.notifications` for everyone + specific creator alert)
+  // 1. Insert In-App Notification ONLY for the challenge creator (never global `all` spam)
   try {
-    const notifRows: any[] = [
-      {
-        title: `🔥 Challenge Accepted! ${creatorName} vs ${opponentName}`,
-        message: `${opponentName} just accepted ${creatorName}'s ${gameLabel} Challenge (Room #${roomCode}, Winner Pot: GH₵ ${prizePool.toFixed(2)})! Match is LIVE in the Challenge Arena!`,
-        target_type: "all",
-        created_by: challenge.opponent_id || challenge.creator_id || null,
-      },
-    ];
-    if (challenge.creator_id) {
-      notifRows.push({
-        title: `🚨 Your ${gameLabel} Challenge (#${roomCode}) Was Accepted!`,
-        message: `${opponentName} accepted your GH₵ ${stake.toFixed(2)} ${gameLabel} Challenge! Open Room #${roomCode} now — it's your turn to play for GH₵ ${prizePool.toFixed(2)}!`,
-        target_type: "specific",
-        target_user_id: challenge.creator_id,
-        created_by: challenge.opponent_id || null,
-      });
+    if (challenge.creator_id && challenge.creator_id !== challenge.opponent_id) {
+      await supabaseAdmin.from("notifications").insert([
+        {
+          title: `🚨 Your ${gameLabel} Challenge (#${roomCode}) Was Accepted!`,
+          message: `${opponentName} accepted your GH₵ ${stake.toFixed(2)} ${gameLabel} Challenge! Open Room #${roomCode} now — it's your turn to play for GH₵ ${prizePool.toFixed(2)}!`,
+          target_type: "specific",
+          target_user_id: challenge.creator_id,
+          created_by: challenge.opponent_id || null,
+        },
+      ]);
     }
-    await supabaseAdmin.from("notifications").insert(notifRows);
   } catch (err) {
     console.warn("[challenge-arena] Accepted in-app notification warning:", err);
   }

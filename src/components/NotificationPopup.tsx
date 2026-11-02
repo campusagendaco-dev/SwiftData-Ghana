@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { playSound, safeVibrate } from "@/lib/sound";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { 
   Dialog, 
   DialogContent, 
@@ -21,7 +21,55 @@ interface Notification {
   message: string;
   target_type: string;
   target_user_id?: string | null;
+  created_by?: string | null;
   created_at: string;
+}
+
+const LOCAL_DISMISSED_STORAGE_KEY = "swiftdata_dismissed_notifs_v1";
+
+function readLocalDismissedIds(): string[] {
+  try {
+    const raw = localStorage.getItem(LOCAL_DISMISSED_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveLocalDismissedIds(ids: string[]) {
+  try {
+    const existing = new Set(readLocalDismissedIds());
+    ids.forEach((id) => {
+      if (id) existing.add(id);
+    });
+    const merged = Array.from(existing).slice(-250);
+    localStorage.setItem(LOCAL_DISMISSED_STORAGE_KEY, JSON.stringify(merged));
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function isAutomatedChallengeRoomSpam(n: {
+  title?: string;
+  message?: string;
+  target_type?: string;
+}): boolean {
+  const combined = `${n.title || ""} ${n.message || ""}`.toLowerCase();
+  // Global broadcast rows created every time someone opens or accepts a game room should never spam modal popups
+  if (
+    n.target_type === "all" &&
+    (combined.includes("just posted an open") ||
+      combined.includes("open ghana oware challenge") ||
+      combined.includes("open ghana ludo challenge") ||
+      combined.includes("open ghana dame challenge") ||
+      combined.includes("challenge accepted!") ||
+      combined.includes("room #"))
+  ) {
+    return true;
+  }
+  return false;
 }
 
 interface NotificationMeta {
@@ -192,6 +240,7 @@ function getNotificationMeta(title: string, message: string, targetType: string)
 const NotificationPopup = () => {
   const { user, profile } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isVisible, setIsVisible] = useState(false);
   const settingsRef = useRef({
@@ -201,6 +250,9 @@ const NotificationPopup = () => {
   });
   const dismissingRef = useRef<string | null>(null);
   const fetchedRef = useRef(false);
+
+  // Never interrupt active gameplay inside the Challenge Arena
+  const isInsideGameArena = location.pathname.startsWith("/challenges");
 
   useEffect(() => {
     if (!user) {
@@ -238,29 +290,37 @@ const NotificationPopup = () => {
         };
       }
 
-      // 2. Fetch notifications
+      // 2. Fetch dismissals (DB + localStorage fallback)
       const { data: dismissals } = await supabase
         .from("notification_dismissals")
         .select("notification_id")
         .eq("user_id", user.id);
 
-      const dismissedIds = (dismissals || []).map((d: any) => d.notification_id);
+      const dismissedIds = new Set<string>([
+        ...(dismissals || []).map((d: any) => d.notification_id),
+        ...readLocalDismissedIds(),
+      ]);
 
       const { data: notifs } = await supabase
         .from("notifications")
         .select("*")
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: false })
+        .limit(15);
 
       if (!notifs || !active) return;
 
       const p = profile as Profile | null;
       const isAgent = Boolean(p?.agent_approved || p?.sub_agent_approved || p?.is_agent || p?.is_sub_agent);
       const userJoinedAt = new Date((p as any)?.created_at || user.created_at || 0).getTime();
-      
+      const maxAgeCutoff = Date.now() - 48 * 3600 * 1000; // Ignore notifications older than 48h
+
       const filtered = notifs.filter((n: any) => {
-        if (dismissedIds.includes(n.id)) return false;
+        if (dismissedIds.has(n.id)) return false;
+        if (n.created_by && n.created_by === user.id) return false;
+        if (isAutomatedChallengeRoomSpam(n)) return false;
+
         const notifTime = new Date(n.created_at).getTime();
-        if (notifTime < userJoinedAt) return false;
+        if (notifTime < userJoinedAt || notifTime < maxAgeCutoff) return false;
 
         if (n.target_type === "all") return true;
         if (n.target_type === "agents" && isAgent) return true;
@@ -269,8 +329,13 @@ const NotificationPopup = () => {
         return false;
       });
 
+      // Only show at most the single latest unread announcement (never stack 20+ popups!)
       if (filtered.length > 0) {
-        setNotifications(filtered);
+        const olderIdsToAutoDismiss = filtered.slice(1).map((n: any) => n.id);
+        if (olderIdsToAutoDismiss.length > 0) {
+          saveLocalDismissedIds(olderIdsToAutoDismiss);
+        }
+        setNotifications(filtered.slice(0, 1));
         setTimeout(() => {
           if (!active) return;
           setIsVisible(true);
@@ -290,6 +355,10 @@ const NotificationPopup = () => {
         { event: "INSERT", schema: "public", table: "notifications" },
         (payload) => {
           const newNotif = payload.new as Notification;
+          if (!newNotif) return;
+          if (newNotif.created_by && newNotif.created_by === user.id) return;
+          if (isAutomatedChallengeRoomSpam(newNotif)) return;
+
           const p = profile as Profile | null;
           const isAgent = Boolean(p?.agent_approved || p?.sub_agent_approved || p?.is_agent || p?.is_sub_agent);
           
@@ -300,7 +369,7 @@ const NotificationPopup = () => {
           else if (newNotif.target_type === "specific" && newNotif.target_user_id === user.id) matches = true;
 
           if (matches && active) {
-            setNotifications(prev => [newNotif, ...prev]);
+            setNotifications([newNotif]);
             setIsVisible(true);
             playPing(settingsRef.current.tone, settingsRef.current.vibeEnabled, settingsRef.current.vibePattern);
           }
@@ -334,28 +403,28 @@ const NotificationPopup = () => {
     if (!current || !user || dismissingRef.current === current.id) return;
 
     dismissingRef.current = current.id;
+    const allQueuedIds = notifications.map((n) => n.id);
+    saveLocalDismissedIds(allQueuedIds);
     setIsVisible(false);
 
     setTimeout(async () => {
-      await supabase.from("notification_dismissals").insert({
-        notification_id: current.id,
-        user_id: user.id,
-      });
-
-      const remaining = notifications.slice(1);
-      setNotifications(remaining);
-      dismissingRef.current = null;
-      
-      if (remaining.length > 0) {
-        setTimeout(() => {
-          setIsVisible(true);
-          playPing(settingsRef.current.tone, settingsRef.current.vibeEnabled, settingsRef.current.vibePattern);
-        }, 800);
+      try {
+        await supabase.from("notification_dismissals").insert(
+          allQueuedIds.map((nid) => ({
+            notification_id: nid,
+            user_id: user.id,
+          }))
+        );
+      } catch {
+        // ignore duplicate dismissal errors
       }
-    }, 300);
+
+      setNotifications([]);
+      dismissingRef.current = null;
+    }, 250);
   };
 
-  if (notifications.length === 0) return null;
+  if (notifications.length === 0 || isInsideGameArena) return null;
 
   const current = notifications[0];
   const meta = getNotificationMeta(current.title, current.message, current.target_type);
