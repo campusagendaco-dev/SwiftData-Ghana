@@ -31,6 +31,7 @@ import {
   getPlayerLevelStatus,
   sampleGaussianError,
 } from "@/lib/game-sensory-engine";
+import { useDeviceScreenFit } from "@/hooks/use-device-screen-fit";
 
 export interface PoolBall {
   id: number; // 0 = cue ball, 1..7 = solids, 8 = black 8-ball, 9..15 = stripes
@@ -276,6 +277,7 @@ export interface EightBallPoolBoardProps {
   opponentName: string;
   playerTotalPoints?: number;
   playerLevel?: number;
+  reservedTopPx?: number;
   initialState?: Partial<EightBallPoolState>;
   onStateChange?: (state: EightBallPoolState) => void;
   onPointsEarned?: (points: number, reason: string) => void;
@@ -288,11 +290,13 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
   creatorName,
   opponentName,
   playerTotalPoints = 0,
+  reservedTopPx = 28,
   initialState,
   onStateChange,
   onPointsEarned,
   onMatchComplete,
 }) => {
+  const screenFit = useDeviceScreenFit();
   const levelInfo = getPlayerLevelStatus(playerTotalPoints);
   const displayOpponentName =
     mode === "p2p"
@@ -1326,9 +1330,13 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
 
   const pottedBallsList = state.balls.filter((b) => b.potted && b.id !== 0);
   const angleDegreesDisplay = (((aimAngle * 180) / Math.PI + 360) % 360).toFixed(1);
+  const poolMetrics = screenFit.computePoolStageMetrics({
+    forcedLandscape,
+    reservedTopPx,
+  });
 
   return (
-    <div className="h-full w-full flex flex-col justify-center overflow-hidden select-none">
+    <div className="h-full w-full flex flex-col items-center justify-center overflow-hidden select-none">
       {/* ── STRICT PORTRAIT MODE LOCK OVERLAY (Requires Landscape View to Play!) ── */}
       {isPortraitViewport && !forcedLandscape ? (
         <div className="rounded-3xl bg-gradient-to-b from-[#0f172a] via-[#111c38] to-[#090d1a] border-2 border-amber-400/70 p-5 sm:p-8 text-center space-y-4 shadow-[0_25px_70px_rgba(0,0,0,0.9)] max-w-lg mx-auto my-auto">
@@ -1338,15 +1346,16 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
 
           <div className="space-y-1.5 max-w-md mx-auto">
             <Badge className="bg-rose-500/20 text-rose-300 border border-rose-400/50 font-black text-xs px-3 py-0.5">
-              🔒 PORTRAIT MODE RESTRICTED
+              🔒 PORTRAIT MODE RESTRICTED • {screenFit.deviceBrand.toUpperCase()} DETECTED
             </Badge>
             <h3 className="text-lg sm:text-2xl font-black text-white">
-              Turn Your Phone Sideways to Play 8-Ball Pool Pro!
+              Turn Your {screenFit.deviceBrand} Sideways to Play 8-Ball Pool Pro!
             </h3>
             <p className="text-xs text-slate-300 leading-relaxed">
-              To fit the full <strong>Championship Blue Felt Table</strong>,{" "}
-              <strong>Left Fine-Aim Tray</strong>, and <strong>Right Cue Stick Sleeve</strong> on
-              your screen, 8-Ball Pool plays in <strong className="text-amber-300">Landscape Mode</strong>.
+              Screen detected: <strong className="text-sky-300">{screenFit.availWidth}×{screenFit.availHeight}px</strong>. To lock the full{" "}
+              <strong>Championship Blue Felt Table</strong>, <strong>Left Fine-Aim Tray</strong>, and{" "}
+              <strong>Right Cue Stick Sleeve</strong> onto 100% of your display, switch to{" "}
+              <strong className="text-amber-300">Landscape Mode</strong>.
             </p>
           </div>
 
@@ -1357,29 +1366,37 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
               className="w-full sm:w-auto h-11 px-6 rounded-2xl bg-gradient-to-r from-amber-400 via-orange-500 to-amber-500 hover:from-amber-300 hover:to-orange-400 text-slate-950 font-black text-xs sm:text-sm gap-2 shadow-xl"
             >
               <Maximize2 className="w-4 h-4" />
-              Lock Fullscreen Landscape Board
+              Auto-Fit Fullscreen Landscape ({screenFit.availHeight}×{screenFit.availWidth}px)
             </Button>
           </div>
 
           <p className="text-[10px] text-slate-400">
-            💡 Rotate your phone horizontally or tap the button above to lock the full board to your screen.
+            💡 Physically rotate your phone horizontally or tap the button above to lock the full board to your screen.
           </p>
         </div>
       ) : (
-        /* ── Main 8-Ball Pool Landscape Studio Stage (Fitted 100% to Device Screen) ── */
+        /* ── Main 8-Ball Pool Landscape Studio Stage (Mathematically Fitted 100% to Device Screen) ── */
         <div
+          style={
+            forcedLandscape && isPortraitViewport
+              ? undefined
+              : {
+                  width: `${poolMetrics.stageWidthPx}px`,
+                  height: `${poolMetrics.stageHeightPx}px`,
+                }
+          }
           className={
             forcedLandscape && isPortraitViewport
               ? "fixed inset-0 z-[90] bg-[#0b1324] flex items-center justify-center overflow-hidden touch-none overscroll-none select-none"
-              : "relative w-full h-full max-h-[calc(100dvh-38px)] rounded-2xl bg-gradient-to-b from-[#131e36] via-[#0d1629] to-[#090f1d] border border-sky-500/30 p-1.5 sm:p-2.5 shadow-[0_15px_50px_rgba(0,0,0,0.85)] flex flex-col justify-between overflow-hidden touch-none overscroll-none select-none"
+              : "relative rounded-xl sm:rounded-2xl bg-gradient-to-b from-[#131e36] via-[#0d1629] to-[#090f1d] border border-sky-500/30 px-1.5 py-1 shadow-[0_15px_50px_rgba(0,0,0,0.85)] flex flex-col justify-between overflow-hidden touch-none overscroll-none select-none mx-auto"
           }
         >
           <div
             style={
               forcedLandscape && isPortraitViewport
                 ? {
-                    width: "100vh",
-                    height: "100vw",
+                    width: `${screenFit.availHeight}px`,
+                    height: `${screenFit.availWidth}px`,
                     transform: "rotate(90deg)",
                     transformOrigin: "center center",
                   }
@@ -1387,29 +1404,32 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
             }
             className={
               forcedLandscape && isPortraitViewport
-                ? "p-1.5 flex flex-col justify-between gap-1 bg-gradient-to-b from-[#131e36] to-[#090f1d] overflow-hidden"
-                : "w-full h-full flex flex-col justify-between gap-1 sm:gap-1.5 overflow-hidden"
+                ? "px-1.5 py-1 flex flex-col justify-between bg-gradient-to-b from-[#131e36] to-[#090f1d] overflow-hidden"
+                : "w-full h-full flex flex-col justify-between overflow-hidden"
             }
           >
-            {/* ── Ultra-Compact Single-Line Top Tournament HUD Bar (30px tall) ── */}
-            <div className="shrink-0 flex items-center justify-between gap-1.5 px-1 h-8">
+            {/* ── Ultra-Compact Single-Line Top Tournament HUD Bar ── */}
+            <div
+              style={{ height: `${poolMetrics.hudHeightPx}px` }}
+              className="shrink-0 flex items-center justify-between gap-1 px-1"
+            >
               {/* Left Player (Creator) + Remaining Ball Dots */}
-              <div className="flex items-center gap-1.5 min-w-0 shrink-0">
+              <div className="flex items-center gap-1 min-w-0 shrink-0">
                 <div
-                  className={`px-2 py-0.5 rounded-lg border flex items-center gap-1.5 transition-all ${
+                  className={`px-1.5 py-0.5 rounded-lg border flex items-center gap-1 transition-all ${
                     state.turn === "creator"
-                      ? "bg-emerald-950/90 border-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.35)]"
+                      ? "bg-emerald-950/90 border-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.35)]"
                       : "bg-slate-900/80 border-white/15 opacity-75"
                   }`}
                 >
-                  <div className="w-5 h-5 rounded-md bg-gradient-to-br from-emerald-400 to-teal-600 flex items-center justify-center text-slate-950 font-black text-[9px] shrink-0">
+                  <div className="w-4 h-4 sm:w-5 sm:h-5 rounded bg-gradient-to-br from-emerald-400 to-teal-600 flex items-center justify-center text-slate-950 font-black text-[8px] sm:text-[9px] shrink-0">
                     {creatorName.slice(0, 2).toUpperCase()}
                   </div>
                   <div className="leading-none">
-                    <p className="text-[10px] font-black text-white truncate max-w-[72px] sm:max-w-[110px]">
+                    <p className="text-[9px] sm:text-[10px] font-black text-white truncate max-w-[64px] sm:max-w-[105px]">
                       {creatorName}
                     </p>
-                    <p className="text-[8px] font-extrabold uppercase text-emerald-300 mt-0.5">
+                    <p className="text-[7px] sm:text-[8px] font-extrabold uppercase text-emerald-300">
                       {state.creatorGroup ? state.creatorGroup.toUpperCase() : "OPEN"}
                     </p>
                   </div>
@@ -1423,7 +1443,7 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
                     return (
                       <div
                         key={ballId}
-                        className={`w-4 h-4 rounded-full border flex items-center justify-center text-[7px] font-black ${
+                        className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center text-[6px] font-black ${
                           state.creatorGroup && isRemaining
                             ? "border-white/40"
                             : "border-white/10 bg-slate-900/50 text-slate-600"
@@ -1446,13 +1466,13 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
                 </div>
               </div>
 
-              {/* Center Single-Line Turn & Sensory Controls */}
+              {/* Center Single-Line Turn, Auto-Fit Indicator & Sensory Controls */}
               <div className="flex items-center gap-1 min-w-0 justify-center">
                 <Badge
                   className={
                     isMyTurn
-                      ? "bg-emerald-500 text-slate-950 font-black text-[9px] sm:text-[10px] px-2 py-0.5 truncate max-w-[165px] sm:max-w-[280px]"
-                      : "bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold text-[9px] sm:text-[10px] px-2 py-0.5 truncate max-w-[165px] sm:max-w-[280px]"
+                      ? "bg-emerald-500 text-slate-950 font-black text-[8px] sm:text-[10px] px-1.5 sm:px-2 py-0.5 truncate max-w-[145px] sm:max-w-[260px]"
+                      : "bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold text-[8px] sm:text-[10px] px-1.5 sm:px-2 py-0.5 truncate max-w-[145px] sm:max-w-[260px]"
                   }
                 >
                   {state.winner
@@ -1461,24 +1481,31 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
                     ? "🎱 BALLS IN MOTION..."
                     : isMyTurn
                     ? state.ballInHand
-                      ? "✋ BALL IN HAND — DRAG CUE BALL"
+                      ? "✋ BALL IN HAND — DRAG CUE"
                       : "⚡ YOUR TURN — AIM & PULL CUE"
                     : isOpponentAiming && humanThoughtText
                     ? `💭 ${humanThoughtText}`
                     : `⏳ ${displayOpponentName.split(" ")[0]}'S TURN`}
                 </Badge>
 
+                <span
+                  title={`Auto-fitted for ${screenFit.deviceModelHint} (${poolMetrics.tableWidthPx}×${poolMetrics.tableHeightPx}px table)`}
+                  className="hidden sm:inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-sky-500/10 border border-sky-400/30 text-[8px] font-mono font-bold text-sky-300 shrink-0"
+                >
+                  📱 {poolMetrics.fitSummaryLabel}
+                </span>
+
                 <button
                   type="button"
                   onClick={toggleMotionSensor}
                   title="Toggle Phone Gyroscope / Motion Sensor Fine-Aim"
-                  className={`h-6 px-1.5 rounded-md border text-[9px] font-black flex items-center gap-1 transition-all cursor-pointer shrink-0 ${
+                  className={`h-5 sm:h-6 px-1.5 rounded-md border text-[8px] sm:text-[9px] font-black flex items-center gap-0.5 transition-all cursor-pointer shrink-0 ${
                     motionSensorActive
                       ? "bg-cyan-500/20 border-cyan-400 text-cyan-300"
                       : "bg-white/5 border-white/10 text-slate-400 hover:text-white"
                   }`}
                 >
-                  <Compass className={`w-3 h-3 ${motionSensorActive ? "animate-spin" : ""}`} />
+                  <Compass className={`w-2.5 h-2.5 sm:w-3 sm:h-3 ${motionSensorActive ? "animate-spin" : ""}`} />
                   <span className="hidden md:inline">
                     {motionSensorActive
                       ? `${tiltDegrees > 0 ? `+${tiltDegrees}°` : `${tiltDegrees}°`}`
@@ -1490,26 +1517,26 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
                   type="button"
                   onClick={handleToggleSound}
                   title={soundOn ? "Mute Audio" : "Unmute Audio"}
-                  className={`w-6 h-6 rounded-md border flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
+                  className={`w-5 h-5 sm:w-6 sm:h-6 rounded-md border flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
                     soundOn
                       ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300"
                       : "bg-white/5 border-white/10 text-slate-500"
                   }`}
                 >
-                  {soundOn ? <Volume2 className="w-3 h-3" /> : <VolumeX className="w-3 h-3" />}
+                  {soundOn ? <Volume2 className="w-2.5 h-2.5 sm:w-3 sm:h-3" /> : <VolumeX className="w-2.5 h-2.5 sm:w-3 sm:h-3" />}
                 </button>
 
                 <button
                   type="button"
                   onClick={handleToggleVibe}
                   title={vibeOn ? "Vibration Active" : "Vibration Off"}
-                  className={`w-6 h-6 rounded-md border flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
+                  className={`w-5 h-5 sm:w-6 sm:h-6 rounded-md border flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
                     vibeOn
                       ? "bg-amber-500/15 border-amber-500/40 text-amber-300"
                       : "bg-white/5 border-white/10 text-slate-500"
                   }`}
                 >
-                  <Vibrate className="w-3 h-3" />
+                  <Vibrate className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
                 </button>
 
                 <button
@@ -1518,18 +1545,18 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
                     forcedLandscape ? setForcedLandscape(false) : handleEnterLandscapeMode()
                   }
                   title="Lock / Unlock Fullscreen Landscape Board"
-                  className="w-6 h-6 rounded-md bg-white/5 hover:bg-white/15 border border-white/10 text-sky-300 hover:text-white flex items-center justify-center transition-colors cursor-pointer shrink-0"
+                  className="w-5 h-5 sm:w-6 sm:h-6 rounded-md bg-white/5 hover:bg-white/15 border border-white/10 text-sky-300 hover:text-white flex items-center justify-center transition-colors cursor-pointer shrink-0"
                 >
                   {forcedLandscape ? (
-                    <Minimize2 className="w-3 h-3" />
+                    <Minimize2 className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
                   ) : (
-                    <Maximize2 className="w-3 h-3" />
+                    <Maximize2 className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
                   )}
                 </button>
               </div>
 
               {/* Right Player (Opponent) + Remaining Ball Dots */}
-              <div className="flex items-center gap-1.5 min-w-0 shrink-0">
+              <div className="flex items-center gap-1 min-w-0 shrink-0">
                 <div className="hidden lg:flex items-center gap-0.5">
                   {opponentTargetIds.map((ballId) => {
                     const ballObj = state.balls.find((b) => b.id === ballId);
@@ -1538,7 +1565,7 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
                     return (
                       <div
                         key={ballId}
-                        className={`w-4 h-4 rounded-full border flex items-center justify-center text-[7px] font-black ${
+                        className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center text-[6px] font-black ${
                           state.opponentGroup && isRemaining
                             ? "border-white/40"
                             : "border-white/10 bg-slate-900/50 text-slate-600"
@@ -1561,17 +1588,17 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
                 </div>
 
                 <div
-                  className={`px-2 py-0.5 rounded-lg border flex items-center gap-1.5 transition-all ${
+                  className={`px-1.5 py-0.5 rounded-lg border flex items-center gap-1 transition-all ${
                     state.turn === "opponent"
-                      ? "bg-amber-950/90 border-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.35)]"
+                      ? "bg-amber-950/90 border-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.35)]"
                       : "bg-slate-900/80 border-white/15 opacity-75"
                   }`}
                 >
                   <div className="leading-none text-right">
-                    <p className="text-[10px] font-black text-white truncate max-w-[72px] sm:max-w-[110px]">
+                    <p className="text-[9px] sm:text-[10px] font-black text-white truncate max-w-[64px] sm:max-w-[105px]">
                       {displayOpponentName}
                     </p>
-                    <p className="text-[8px] font-extrabold uppercase text-amber-300 mt-0.5">
+                    <p className="text-[7px] sm:text-[8px] font-extrabold uppercase text-amber-300">
                       {state.opponentGroup
                         ? state.opponentGroup.toUpperCase()
                         : mode !== "p2p"
@@ -1579,7 +1606,7 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
                         : "OPEN"}
                     </p>
                   </div>
-                  <div className="w-5 h-5 rounded-md bg-gradient-to-br from-amber-400 to-orange-600 flex items-center justify-center text-slate-950 font-black text-[9px] shrink-0">
+                  <div className="w-4 h-4 sm:w-5 sm:h-5 rounded bg-gradient-to-br from-amber-400 to-orange-600 flex items-center justify-center text-slate-950 font-black text-[8px] sm:text-[9px] shrink-0">
                     {mode !== "p2p"
                       ? levelInfo.persona.avatarInitials
                       : displayOpponentName.slice(0, 2).toUpperCase()}
@@ -1588,10 +1615,16 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
               </div>
             </div>
 
-            {/* ── Main Horizontal Arena Row: Left Aim Tray | Center Fitted Pool Table | Right Cue-Stick Tray ── */}
-            <div className="flex-1 min-h-0 flex items-stretch justify-center gap-1.5 sm:gap-2.5 overflow-hidden">
+            {/* ── Main Horizontal Arena Row: Left Aim Tray | Center Pixel-Fitted Pool Table | Right Cue-Stick Tray ── */}
+            <div className="flex-1 min-h-0 flex items-center justify-center gap-1.5 sm:gap-2.5 overflow-hidden">
               {/* LEFT SIDE DOCK: Cue Spin Globe + Interactive Fine-Aiming Stick Tray + Potted Rack */}
-              <div className="flex flex-col items-center justify-between w-11 sm:w-14 py-0.5 shrink-0 gap-1 select-none">
+              <div
+                style={{
+                  width: `${poolMetrics.leftDockWidthPx}px`,
+                  height: `${poolMetrics.dockHeightPx}px`,
+                }}
+                className="flex flex-col items-center justify-between py-0.5 shrink-0 gap-1 select-none"
+              >
                 {/* 1. Cue Ball Spin (English) Selector */}
                 <button
                   type="button"
@@ -1603,7 +1636,7 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
                     }))
                   }
                   title="Cue Ball Spin (Tap to cycle Top/Back/Side English)"
-                  className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-gradient-to-br from-white via-slate-100 to-slate-300 border-2 border-slate-400 shadow flex items-center justify-center relative cursor-pointer disabled:opacity-50 shrink-0"
+                  className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-br from-white via-slate-100 to-slate-300 border-2 border-slate-400 shadow flex items-center justify-center relative cursor-pointer disabled:opacity-50 shrink-0"
                 >
                   <span className="absolute inset-1 rounded-full border border-dashed border-slate-400/60" />
                   <span
@@ -1621,18 +1654,18 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
                       type="button"
                       disabled={!isMyTurn}
                       onClick={() => adjustStickAngleByDelta(-0.006, -4)}
-                      className="px-1 py-0.2 rounded bg-slate-800 hover:bg-slate-700 text-[8px] font-black text-amber-300 border border-white/10 cursor-pointer disabled:opacity-40"
+                      className="px-1 py-0 rounded bg-slate-800 hover:bg-slate-700 text-[7px] font-black text-amber-300 border border-white/10 cursor-pointer disabled:opacity-40"
                     >
                       ▲
                     </button>
-                    <span className="text-[7px] font-mono font-black text-sky-300">
+                    <span className="text-[6.5px] font-mono font-black text-sky-300">
                       {angleDegreesDisplay}°
                     </span>
                     <button
                       type="button"
                       disabled={!isMyTurn}
                       onClick={() => adjustStickAngleByDelta(0.006, 4)}
-                      className="px-1 py-0.2 rounded bg-slate-800 hover:bg-slate-700 text-[8px] font-black text-amber-300 border border-white/10 cursor-pointer disabled:opacity-40"
+                      className="px-1 py-0 rounded bg-slate-800 hover:bg-slate-700 text-[7px] font-black text-amber-300 border border-white/10 cursor-pointer disabled:opacity-40"
                     >
                       ▼
                     </button>
@@ -1649,7 +1682,7 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
                       adjustStickAngleByDelta(e.deltaY * 0.0005, e.deltaY * 0.15);
                     }}
                     title="Drag Up/Down to Fine-Tune Pool Stick Aim!"
-                    className={`relative flex-1 min-h-0 w-10 sm:w-12 rounded-xl bg-gradient-to-r from-slate-300 via-white to-slate-300 border-2 ${
+                    className={`relative flex-1 min-h-0 w-full rounded-xl bg-gradient-to-r from-slate-300 via-white to-slate-300 border-2 ${
                       isMyTurn
                         ? "border-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.3)] cursor-ns-resize"
                         : "border-slate-600 opacity-60 cursor-default"
@@ -1668,7 +1701,7 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
                         <div
                           key={i}
                           className={`h-[2px] rounded-full ${
-                            i % 3 === 0 ? "w-6 bg-slate-800" : "w-4 bg-slate-500/80"
+                            i % 3 === 0 ? "w-5 bg-slate-800" : "w-3.5 bg-slate-500/80"
                           }`}
                         />
                       ))}
@@ -1684,9 +1717,9 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
                 </div>
 
                 {/* 3. Compact Potted Ball Return Window */}
-                <div className="w-10 sm:w-12 h-10 sm:h-12 rounded-lg bg-slate-950/90 border border-slate-600/70 p-0.5 flex flex-wrap items-center justify-center gap-0.5 overflow-hidden shadow-inner shrink-0">
+                <div className="w-full h-8 sm:h-10 rounded-lg bg-slate-950/90 border border-slate-600/70 p-0.5 flex flex-wrap items-center justify-center gap-0.5 overflow-hidden shadow-inner shrink-0">
                   {pottedBallsList.length === 0 ? (
-                    <span className="text-[6px] font-bold text-slate-500 text-center leading-tight">
+                    <span className="text-[5.5px] font-bold text-slate-500 text-center leading-tight">
                       POTTED
                     </span>
                   ) : (
@@ -1695,7 +1728,7 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
                       return (
                         <div
                           key={b.id}
-                          className="w-3.5 h-3.5 rounded-full border border-white/30 flex items-center justify-center text-[5px] font-black text-white"
+                          className="w-3 h-3 rounded-full border border-white/30 flex items-center justify-center text-[5px] font-black text-white"
                           style={{
                             background: meta.stripe
                               ? `linear-gradient(180deg, #fff 22%, ${meta.main} 22%, ${meta.main} 78%, #fff 78%)`
@@ -1710,18 +1743,21 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
                 </div>
               </div>
 
-              {/* CENTER 8-BALL POOL TABLE (Auto-scales to fit 100% of device viewport height & width!) */}
-              <div className="flex-1 min-w-0 min-h-0 flex items-center justify-center overflow-hidden">
+              {/* CENTER 8-BALL POOL TABLE (Explicitly Sized in Pixels by Device Detector!) */}
+              <div className="shrink-0 flex items-center justify-center overflow-hidden">
                 <div
-                  style={
-                    motionSensorActive
+                  style={{
+                    width: `${poolMetrics.tableWidthPx}px`,
+                    height: `${poolMetrics.tableHeightPx}px`,
+                    padding: `${poolMetrics.railPaddingPx}px`,
+                    ...(motionSensorActive
                       ? {
                           transform: `perspective(900px) rotateY(${parallaxOffset.x * 0.35}deg) rotateX(${-parallaxOffset.y * 0.35}deg)`,
                           transition: "transform 120ms ease-out",
                         }
-                      : undefined
-                  }
-                  className="relative w-full max-h-[calc(100dvh-82px)] max-w-[calc((100dvh-82px)*1.96)] aspect-[2/1] rounded-[18px] sm:rounded-[24px] p-2 sm:p-3.5 bg-gradient-to-b from-[#9c421a] via-[#6e2a0c] to-[#4a1a06] border-2 sm:border-4 border-[#381204] shadow-[0_14px_40px_rgba(0,0,0,0.9),inset_0_2px_6px_rgba(255,255,255,0.25)] flex items-center justify-center select-none"
+                      : {}),
+                  }}
+                  className="relative rounded-[16px] sm:rounded-[22px] bg-gradient-to-b from-[#9c421a] via-[#6e2a0c] to-[#4a1a06] border-2 sm:border-4 border-[#381204] shadow-[0_14px_40px_rgba(0,0,0,0.9),inset_0_2px_6px_rgba(255,255,255,0.25)] flex items-center justify-center select-none"
                 >
                   {/* Floating Turn Spotlight Overlay (Zero Layout Shift!) */}
                   {turnBanner && (
@@ -2017,12 +2053,18 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
               </div>
 
               {/* RIGHT SIDE DOCK: Tapered Cue-Stick Pull-Back Sleeve Tray & Shoot Trigger */}
-              <div className="flex flex-col items-center justify-between w-12 sm:w-16 py-0.5 shrink-0 gap-1 select-none">
+              <div
+                style={{
+                  width: `${poolMetrics.rightDockWidthPx}px`,
+                  height: `${poolMetrics.dockHeightPx}px`,
+                }}
+                className="flex flex-col items-center justify-between py-0.5 shrink-0 gap-1 select-none"
+              >
                 <div className="text-center leading-none">
-                  <p className="text-[7px] font-black uppercase tracking-wider text-sky-300">
+                  <p className="text-[6.5px] font-black uppercase tracking-wider text-sky-300">
                     POWER
                   </p>
-                  <p className="text-[10px] font-black font-mono text-amber-400">{shotPower}%</p>
+                  <p className="text-[9px] sm:text-[10px] font-black font-mono text-amber-400">{shotPower}%</p>
                 </div>
 
                 {/* Interactive Pull-Back Cue Stick Sleeve (Drag Down & Release to Strike!) */}
@@ -2033,13 +2075,13 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
                   onPointerUp={handlePowerTrayPointerUp}
                   onPointerCancel={handlePowerTrayPointerUp}
                   title="Drag down to pull back Pool Stick & release to shoot!"
-                  className={`relative flex-1 min-h-0 w-10 sm:w-12 rounded-2xl bg-gradient-to-b from-slate-900 via-slate-950 to-black border-2 ${
+                  className={`relative flex-1 min-h-0 w-full rounded-2xl bg-gradient-to-b from-slate-900 via-slate-950 to-black border-2 ${
                     isMyTurn
                       ? "border-sky-400/80 shadow-[0_0_12px_rgba(56,189,248,0.28)] cursor-ns-resize"
                       : "border-slate-700 opacity-60 cursor-default"
                   } p-1 flex flex-col justify-between overflow-hidden touch-none`}
                 >
-                  <div className="w-full h-2.5 rounded-sm bg-gradient-to-r from-slate-300 via-white to-slate-400 border border-slate-800 shadow z-10 pointer-events-none" />
+                  <div className="w-full h-2 rounded-sm bg-gradient-to-r from-slate-300 via-white to-slate-400 border border-slate-800 shadow z-10 pointer-events-none" />
 
                   <div
                     className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-emerald-500/35 via-amber-400/45 to-rose-500/55 transition-all pointer-events-none"
@@ -2047,18 +2089,18 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
                   />
 
                   <div
-                    className="relative z-10 mx-auto w-3 h-full flex flex-col items-center pointer-events-none transition-transform duration-75"
+                    className="relative z-10 mx-auto w-2.5 h-full flex flex-col items-center pointer-events-none transition-transform duration-75"
                     style={{
-                      transform: `translateY(${Math.round((shotPower / 100) * 38)}px)`,
+                      transform: `translateY(${Math.round((shotPower / 100) * 32)}px)`,
                     }}
                   >
                     <div className="w-2 h-1.5 rounded-t-sm bg-sky-400 border-b border-white" />
-                    <div className="w-2 h-12 bg-gradient-to-r from-amber-100 via-white to-amber-200" />
-                    <div className="w-3 flex-1 rounded-b-md bg-gradient-to-b from-amber-600 via-stone-900 to-black border border-amber-500/40" />
+                    <div className="w-2 h-10 bg-gradient-to-r from-amber-100 via-white to-amber-200" />
+                    <div className="w-2.5 flex-1 rounded-b-md bg-gradient-to-b from-amber-600 via-stone-900 to-black border border-amber-500/40" />
                   </div>
 
                   <div className="relative z-20 text-center pointer-events-none">
-                    <span className="px-1 py-0.2 rounded bg-black/80 text-[6px] font-black text-amber-300 uppercase">
+                    <span className="px-1 py-0.2 rounded bg-black/80 text-[5.5px] font-black text-amber-300 uppercase">
                       {isPullingPowerTray ? "FIRE!" : "PULL"}
                     </span>
                   </div>
@@ -2069,9 +2111,9 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
                   type="button"
                   disabled={!isMyTurn}
                   onClick={() => executeShot(aimAngle, shotPower, mode === "p2p" ? mySide : "creator")}
-                  className="w-full h-7 sm:h-8 rounded-lg bg-gradient-to-b from-amber-400 via-orange-500 to-amber-600 hover:from-amber-300 hover:to-orange-500 text-slate-950 font-black text-[9px] sm:text-[10px] shadow px-1 shrink-0"
+                  className="w-full h-6 sm:h-7 rounded-lg bg-gradient-to-b from-amber-400 via-orange-500 to-amber-600 hover:from-amber-300 hover:to-orange-500 text-slate-950 font-black text-[8px] sm:text-[9px] shadow px-0.5 shrink-0"
                 >
-                  <Zap className="w-3 h-3 mr-0.5 shrink-0" />
+                  <Zap className="w-2.5 h-2.5 mr-0.5 shrink-0" />
                   SHOOT
                 </Button>
               </div>

@@ -43,7 +43,10 @@ import {
   BookOpen,
   ChevronLeft,
   Hash,
+  Maximize2,
+  Minimize2,
 } from "lucide-react";
+import { useDeviceScreenFit } from "@/hooks/use-device-screen-fit";
 import { OwareGameBoard, INITIAL_OWARE_STATE } from "@/components/games/OwareGameBoard";
 import { GhanaLudoBoard, INITIAL_LUDO_STATE } from "@/components/games/GhanaLudoBoard";
 import { DameCheckersBoard, INITIAL_DAME_STATE } from "@/components/games/DameCheckersBoard";
@@ -236,6 +239,8 @@ export default function ChallengeArena() {
   const [rewardNetwork] = useState<string>("MTN");
 
   // Modals & Left-Corner Profile / Settings / Help Drawer state
+  const screenFit = useDeviceScreenFit();
+  const [topHudCollapsed, setTopHudCollapsed] = useState<boolean>(false);
   const [profileDrawerOpen, setProfileDrawerOpen] = useState<boolean>(false);
   const [profileDrawerTab, setProfileDrawerTab] = useState<ProfileDrawerTab>("profile");
   const [launchModalOpen, setLaunchModalOpen] = useState<boolean>(false);
@@ -1203,9 +1208,17 @@ export default function ChallengeArena() {
 
   return (
     <div
+      style={
+        activeChallenge
+          ? {
+              width: `${screenFit.availWidth}px`,
+              height: `${screenFit.availHeight}px`,
+            }
+          : undefined
+      }
       className={
         activeChallenge
-          ? "fixed inset-0 z-[85] w-screen h-[100dvh] bg-[#070b14] flex flex-col overflow-hidden overscroll-none select-none"
+          ? "fixed top-0 left-0 z-[85] bg-[#070b14] flex flex-col overflow-hidden overscroll-none select-none"
           : "min-h-[100dvh] w-full bg-gradient-to-b from-[#0b111e] via-[#090e1a] to-[#050811] text-white overscroll-none"
       }
     >
@@ -2046,112 +2059,159 @@ export default function ChallengeArena() {
 
       {/* ── ACTIVE GAME STAGE (ULTRA-COMPACT TOP BAR + FULL-SCREEN FITTED BOARD) ── */}
       {activeChallenge ? (
-        <Card className="flex-1 min-h-0 w-full flex flex-col border-0 rounded-none bg-[#070b14] shadow-none overflow-hidden">
-          <CardHeader className="shrink-0 h-8 py-0.5 px-2 sm:px-3 border-b border-white/10 bg-[#0c1322] flex flex-row flex-nowrap items-center justify-between gap-1.5 space-y-0 overflow-x-auto no-scrollbar">
-            <div className="flex items-center gap-1.5 min-w-0 shrink-0">
-              {/* Left-Corner Profile / Settings / Help Micro Button */}
+        <Card className="relative flex-1 min-h-0 w-full flex flex-col border-0 rounded-none bg-[#070b14] shadow-none overflow-hidden">
+          {topHudCollapsed ? (
+            /* Floating Corner Pill when Board is 100% Locked to Screen */
+            <div className="fixed top-1.5 left-1.5 z-[95] flex items-center gap-1 px-2 py-1 rounded-full bg-slate-950/90 border border-white/15 shadow-xl backdrop-blur-md">
+              <button
+                type="button"
+                onClick={() => setActiveChallenge(null)}
+                className="px-2 py-0.5 rounded-full bg-white/10 hover:bg-white/20 text-[10px] font-black text-white flex items-center gap-1 cursor-pointer"
+              >
+                <ArrowLeft className="w-3 h-3" /> Lobby
+              </button>
               <button
                 type="button"
                 onClick={() => {
                   setProfileDrawerTab("settings");
                   setProfileDrawerOpen(true);
                 }}
-                className="h-6 px-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/15 flex items-center gap-1 text-[10px] font-bold text-white cursor-pointer shrink-0"
-                title="Player Profile, Sound Settings & Game Rules"
+                className="p-1 rounded-full bg-white/5 hover:bg-white/15 text-amber-400 cursor-pointer"
+                title="Settings & Rules"
               >
-                <span className="w-4 h-4 rounded bg-amber-500 text-slate-950 font-black text-[9px] flex items-center justify-center">
-                  {displayFirstName.slice(0, 1).toUpperCase()}
-                </span>
-                <Settings className="w-3 h-3 text-amber-400" />
+                <Settings className="w-3 h-3" />
               </button>
-
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setActiveChallenge(null)}
-                className="h-6 px-2 rounded-lg border-white/15 bg-white/5 text-[10px] text-slate-200 hover:text-white gap-1 font-bold shrink-0"
+              <button
+                type="button"
+                onClick={() => setTopHudCollapsed(false)}
+                className="px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-400/40 text-[9px] font-black text-amber-300 flex items-center gap-1 cursor-pointer"
+                title="Show Top Bar"
               >
-                <ArrowLeft className="w-3 h-3" /> Lobby
-              </Button>
-
-              <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/40 font-mono text-[9px] px-1.5 py-0 shrink-0">
-                #{activeChallenge.room_code}
-              </Badge>
-
-              <Badge
-                className={
-                  activeChallenge.status === "in_progress"
-                    ? "bg-emerald-500 text-slate-950 font-black text-[9px] px-1.5 py-0 shrink-0"
-                    : activeChallenge.status === "open"
-                    ? "bg-amber-500 text-slate-950 font-black animate-pulse text-[9px] px-1.5 py-0 shrink-0"
-                    : "bg-purple-500 text-white font-black text-[9px] px-1.5 py-0 shrink-0"
-                }
-              >
-                {activeChallenge.status === "open"
-                  ? "⏳ WAIT"
-                  : activeChallenge.status === "in_progress"
-                  ? "🟢 LIVE"
-                  : "🏁 DONE"}
-              </Badge>
-
-              <span className="text-[10px] sm:text-xs font-black text-white truncate max-w-[135px] sm:max-w-[260px]">
-                {activeChallenge.creator_name} <span className="text-amber-400">vs.</span>{" "}
-                {activeChallenge.opponent_name || "Waiting..."}
-              </span>
+                <Minimize2 className="w-2.5 h-2.5" /> Bar
+              </button>
             </div>
+          ) : (
+            <CardHeader className="shrink-0 h-7 py-0.5 px-2 sm:px-3 border-b border-white/10 bg-[#0c1322] flex flex-row flex-nowrap items-center justify-between gap-1.5 space-y-0 overflow-x-auto no-scrollbar">
+              <div className="flex items-center gap-1.5 min-w-0 shrink-0">
+                {/* Left-Corner Profile / Settings / Help Micro Button */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setProfileDrawerTab("settings");
+                    setProfileDrawerOpen(true);
+                  }}
+                  className="h-5 px-1.5 rounded-md bg-white/5 hover:bg-white/10 border border-white/15 flex items-center gap-1 text-[9px] font-bold text-white cursor-pointer shrink-0"
+                  title="Player Profile, Sound Settings & Game Rules"
+                >
+                  <span className="w-3.5 h-3.5 rounded bg-amber-500 text-slate-950 font-black text-[8px] flex items-center justify-center">
+                    {displayFirstName.slice(0, 1).toUpperCase()}
+                  </span>
+                  <Settings className="w-2.5 h-2.5 text-amber-400" />
+                </button>
 
-            <div className="flex items-center gap-1.5 shrink-0">
-              {lastPointsPopup && (
-                <Badge className="bg-amber-400 text-slate-950 font-black text-[9px] animate-bounce px-1.5 py-0">
-                  +{lastPointsPopup.pts} PTS
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setActiveChallenge(null)}
+                  className="h-5 px-1.5 rounded-md border-white/15 bg-white/5 text-[9px] text-slate-200 hover:text-white gap-1 font-bold shrink-0"
+                >
+                  <ArrowLeft className="w-2.5 h-2.5" /> Lobby
+                </Button>
+
+                <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/40 font-mono text-[8px] px-1 py-0 shrink-0">
+                  #{activeChallenge.room_code}
                 </Badge>
-              )}
 
-              <div className="px-2 py-0.5 rounded-lg bg-emerald-500/15 border border-emerald-500/35 flex items-center gap-1 shrink-0">
-                <span className="text-[10px] font-black text-emerald-400 font-mono whitespace-nowrap">
-                  {activeChallenge.mode === "free_data"
-                    ? `🎁 Free ${activeChallenge.reward_data_size || "1GB"}`
-                    : `GH₵ ${Number(activeChallenge.prize_pool || 0).toFixed(2)}`}
+                <Badge
+                  className={
+                    activeChallenge.status === "in_progress"
+                      ? "bg-emerald-500 text-slate-950 font-black text-[8px] px-1 py-0 shrink-0"
+                      : activeChallenge.status === "open"
+                      ? "bg-amber-500 text-slate-950 font-black animate-pulse text-[8px] px-1 py-0 shrink-0"
+                      : "bg-purple-500 text-white font-black text-[8px] px-1 py-0 shrink-0"
+                  }
+                >
+                  {activeChallenge.status === "open"
+                    ? "⏳ WAIT"
+                    : activeChallenge.status === "in_progress"
+                    ? "🟢 LIVE"
+                    : "🏁 DONE"}
+                </Badge>
+
+                <span className="text-[9px] sm:text-[11px] font-black text-white truncate max-w-[120px] sm:max-w-[240px]">
+                  {activeChallenge.creator_name} <span className="text-amber-400">vs.</span>{" "}
+                  {activeChallenge.opponent_name || "Waiting..."}
                 </span>
               </div>
 
-              {activeChallenge.status === "open" && (
-                <>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      const shareUrl = `${window.location.origin}/challenges?room=${activeChallenge.room_code}`;
-                      navigator.clipboard.writeText(shareUrl);
-                      setCopiedCode(true);
-                      toast({
-                        title: "Challenge Link Copied! 📋",
-                        description: `Room #${activeChallenge.room_code} link copied. Send to a friend on WhatsApp or SMS!`,
-                      });
-                      setTimeout(() => setCopiedCode(false), 2000);
-                    }}
-                    className="h-6 px-2 rounded-lg border-amber-500/40 bg-amber-500/10 text-amber-300 font-bold text-[10px] gap-1"
-                  >
-                    {copiedCode ? <Check className="w-3 h-3" /> : <Share2 className="w-3 h-3" />}
-                    Copy
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="destructive"
-                    onClick={() => handleCancelOpenChallenge(activeChallenge.id)}
-                    className="h-6 px-2 rounded-lg text-[10px] font-bold gap-1"
-                  >
-                    <XCircle className="w-3 h-3" /> Cancel
-                  </Button>
-                </>
-              )}
-            </div>
-          </CardHeader>
+              <div className="flex items-center gap-1 shrink-0">
+                <span className="hidden md:inline-flex items-center gap-1 px-1.5 py-0.2 rounded bg-sky-500/10 border border-sky-400/30 text-[8px] font-mono text-sky-300">
+                  📱 {screenFit.deviceBrand} {screenFit.availWidth}×{screenFit.availHeight}
+                </span>
+
+                {lastPointsPopup && (
+                  <Badge className="bg-amber-400 text-slate-950 font-black text-[8px] animate-bounce px-1 py-0">
+                    +{lastPointsPopup.pts} PTS
+                  </Badge>
+                )}
+
+                <div className="px-1.5 py-0.2 rounded-md bg-emerald-500/15 border border-emerald-500/35 flex items-center gap-1 shrink-0">
+                  <span className="text-[9px] font-black text-emerald-400 font-mono whitespace-nowrap">
+                    {activeChallenge.mode === "free_data"
+                      ? `🎁 Free ${activeChallenge.reward_data_size || "1GB"}`
+                      : `GH₵ ${Number(activeChallenge.prize_pool || 0).toFixed(2)}`}
+                  </span>
+                </div>
+
+                {/* 1-Tap Full Board Lock Toggle (Collapses Top Bar for 100% Screen Fit) */}
+                <button
+                  type="button"
+                  onClick={() => setTopHudCollapsed(true)}
+                  className="h-5 px-1.5 rounded-md bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/40 text-[9px] font-black text-amber-300 flex items-center gap-1 cursor-pointer shrink-0"
+                  title="Hide top bar and lock board to 100% of screen"
+                >
+                  <Maximize2 className="w-2.5 h-2.5" />
+                  <span className="hidden sm:inline">Lock Board</span>
+                </button>
+
+                {activeChallenge.status === "open" && (
+                  <>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        const shareUrl = `${window.location.origin}/challenges?room=${activeChallenge.room_code}`;
+                        navigator.clipboard.writeText(shareUrl);
+                        setCopiedCode(true);
+                        toast({
+                          title: "Challenge Link Copied! 📋",
+                          description: `Room #${activeChallenge.room_code} link copied. Send to a friend on WhatsApp or SMS!`,
+                        });
+                        setTimeout(() => setCopiedCode(false), 2000);
+                      }}
+                      className="h-5 px-1.5 rounded-md border-amber-500/40 bg-amber-500/10 text-amber-300 font-bold text-[9px] gap-1"
+                    >
+                      {copiedCode ? <Check className="w-2.5 h-2.5" /> : <Share2 className="w-2.5 h-2.5" />}
+                      Copy
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => handleCancelOpenChallenge(activeChallenge.id)}
+                      className="h-5 px-1.5 rounded-md text-[9px] font-bold gap-1"
+                    >
+                      <XCircle className="w-2.5 h-2.5" /> Cancel
+                    </Button>
+                  </>
+                )}
+              </div>
+            </CardHeader>
+          )}
 
           <CardContent
             className={
               activeChallenge.game_type === "pool" && activeChallenge.status === "in_progress"
-                ? "flex-1 min-h-0 w-full overflow-hidden overscroll-none p-1 sm:p-1.5 flex flex-col justify-center max-w-6xl mx-auto"
+                ? "flex-1 min-h-0 w-full overflow-hidden overscroll-none p-0 flex flex-col items-center justify-center"
                 : "flex-1 min-h-0 w-full overflow-y-auto overflow-x-hidden overscroll-none p-1.5 sm:p-3 space-y-1.5 max-w-6xl mx-auto"
             }
           >
@@ -2471,6 +2531,7 @@ export default function ChallengeArena() {
                     opponentName={
                       activeChallenge.opponent_name || HUMAN_CHALLENGER_PERSONAS.pool.name
                     }
+                    reservedTopPx={topHudCollapsed ? 0 : 28}
                     initialState={activeChallenge.board_state}
                     onStateChange={handleBoardStateChange}
                     onMatchComplete={handleMatchComplete}
