@@ -10,6 +10,7 @@ import {
   CreditCard, ArrowRightLeft, FileText, CheckCircle2, History, MapPin
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { KycFileAnchor } from "@/components/KycFileAnchor";
 import { toast } from "sonner";
 import { cn, sanitizeSearchTerm } from "@/lib/utils";
 import { 
@@ -529,19 +530,19 @@ const AdminSwiftVendorPro = () => {
                               <td className="p-4">
                                 <div className="flex flex-col gap-2">
                                   {v.kyc_details.national_id && (
-                                    <a href={v.kyc_details.national_id} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-[10px] font-bold bg-white/5 border border-white/10 px-3 py-1.5 rounded-full hover:bg-white/10 text-white transition-colors w-max">
+                                    <KycFileAnchor url={v.kyc_details.national_id} className="flex items-center gap-1.5 text-[10px] font-bold bg-white/5 border border-white/10 px-3 py-1.5 rounded-full hover:bg-white/10 text-white transition-colors w-max">
                                       <ArrowUpRight className="w-3 h-3 text-amber-500" /> ID (Front)
-                                    </a>
+                                    </KycFileAnchor>
                                   )}
                                   {v.kyc_details.national_id_back && (
-                                    <a href={v.kyc_details.national_id_back} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-[10px] font-bold bg-white/5 border border-white/10 px-3 py-1.5 rounded-full hover:bg-white/10 text-white transition-colors w-max">
+                                    <KycFileAnchor url={v.kyc_details.national_id_back} className="flex items-center gap-1.5 text-[10px] font-bold bg-white/5 border border-white/10 px-3 py-1.5 rounded-full hover:bg-white/10 text-white transition-colors w-max">
                                       <ArrowUpRight className="w-3 h-3 text-amber-500" /> ID (Back)
-                                    </a>
+                                    </KycFileAnchor>
                                   )}
                                   {v.kyc_details.business_cert && (
-                                    <a href={v.kyc_details.business_cert} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-[10px] font-bold bg-white/5 border border-white/10 px-3 py-1.5 rounded-full hover:bg-white/10 text-white transition-colors w-max">
+                                    <KycFileAnchor url={v.kyc_details.business_cert} className="flex items-center gap-1.5 text-[10px] font-bold bg-white/5 border border-white/10 px-3 py-1.5 rounded-full hover:bg-white/10 text-white transition-colors w-max">
                                       <ArrowUpRight className="w-3 h-3 text-amber-500" /> Business Cert
-                                    </a>
+                                    </KycFileAnchor>
                                   )}
                                 </div>
                               </td>
@@ -970,17 +971,29 @@ const AdminSwiftVendorPro = () => {
                     {selectedVendor.kyc_details.national_id && (
                       <div className="col-span-1">
                         <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground mb-1">ID (Front)</p>
-                        <a href={selectedVendor.kyc_details.national_id} target="_blank" rel="noreferrer">
-                           <img src={selectedVendor.kyc_details.national_id} alt="ID Front" className="w-full h-24 object-cover rounded-xl border border-white/10 hover:border-primary transition-colors" />
-                        </a>
+                        <KycFileAnchor url={selectedVendor.kyc_details.national_id}>
+                          {(src) =>
+                            src ? (
+                              <img src={src} alt="ID Front" className="w-full h-24 object-cover rounded-xl border border-white/10 hover:border-primary transition-colors" />
+                            ) : (
+                              <div className="w-full h-24 rounded-xl border border-white/10 bg-white/5 animate-pulse" />
+                            )
+                          }
+                        </KycFileAnchor>
                       </div>
                     )}
                     {selectedVendor.kyc_details.national_id_back && (
                       <div className="col-span-1">
                         <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground mb-1">ID (Back)</p>
-                        <a href={selectedVendor.kyc_details.national_id_back} target="_blank" rel="noreferrer">
-                           <img src={selectedVendor.kyc_details.national_id_back} alt="ID Back" className="w-full h-24 object-cover rounded-xl border border-white/10 hover:border-primary transition-colors" />
-                        </a>
+                        <KycFileAnchor url={selectedVendor.kyc_details.national_id_back}>
+                          {(src) =>
+                            src ? (
+                              <img src={src} alt="ID Back" className="w-full h-24 object-cover rounded-xl border border-white/10 hover:border-primary transition-colors" />
+                            ) : (
+                              <div className="w-full h-24 rounded-xl border border-white/10 bg-white/5 animate-pulse" />
+                            )
+                          }
+                        </KycFileAnchor>
                       </div>
                     )}
                   </div>

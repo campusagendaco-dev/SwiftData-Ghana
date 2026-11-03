@@ -230,10 +230,18 @@ async function ensureChallengeSchema(supabaseAdmin: any) {
       ALTER TABLE public.game_community_messages ENABLE ROW LEVEL SECURITY;
       ALTER TABLE public.game_community_presence ENABLE ROW LEVEL SECURITY;
 
+      -- Public channels are readable by all; DMs only by their two participants.
+      -- (Must match migration 20261103140000; re-applied on every cold start.)
       DROP POLICY IF EXISTS "Anyone can view game community messages" ON public.game_community_messages;
-      CREATE POLICY "Anyone can view game community messages"
+      DROP POLICY IF EXISTS "Public channels are readable" ON public.game_community_messages;
+      CREATE POLICY "Public channels are readable"
         ON public.game_community_messages FOR SELECT
-        USING (true);
+        USING (channel NOT LIKE 'dm:%');
+      DROP POLICY IF EXISTS "DM participants can read their messages" ON public.game_community_messages;
+      CREATE POLICY "DM participants can read their messages"
+        ON public.game_community_messages FOR SELECT
+        TO authenticated
+        USING (channel LIKE 'dm:%' AND position(replace(auth.uid()::text, '-', '') IN channel) > 0);
 
       DROP POLICY IF EXISTS "Anyone can view game community presence" ON public.game_community_presence;
       CREATE POLICY "Anyone can view game community presence"
@@ -856,6 +864,20 @@ serve(async (req: Request) => {
     const body = req.method === "POST" ? await req.json().catch(() => ({})) : {};
     const action = String(body.action || "get_lobby");
 
+    // ── SwiftGram identity helpers ──────────────────────────────────────────
+    // Names come from the caller's account, never from the request body.
+    const uidKey = (id: string) => String(id || "").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 36);
+    let cachedCallerName: string | null = null;
+    const callerDisplayName = async (): Promise<string> => {
+      if (!authUser) return "Guest";
+      if (cachedCallerName) return cachedCallerName;
+      const { data: prof } = await supabaseAdmin.from("profiles").select("full_name").eq("user_id", authUser.id).maybeSingle();
+      cachedCallerName = String(prof?.full_name || authUser.user_metadata?.full_name || "SwiftData Gamer").trim().slice(0, 40);
+      return cachedCallerName;
+    };
+    const signInRequired = (what: string) =>
+      jsonResponse({ success: false, error: `Please sign in to ${what}.`, sign_in_required: true }, 401);
+
     if (action.startsWith("admin_")) {
       const adminCheck = await verifyAdmin(req, supabaseAdmin);
       if (!adminCheck.success) {
@@ -924,7 +946,9 @@ serve(async (req: Request) => {
 
     // ── 1B. SEARCH REGISTERED PLAYERS TO INVITE ─────────────────────────────────
     if (action === "search_players") {
-      const q = String(body.query || "").trim();
+      if (!authUser) return signInRequired("search for players");
+      // Strip PostgREST filter syntax so the query can't add its own conditions.
+      const q = String(body.query || "").replace(/[^\p{L}\p{N}\s+]/gu, "").trim().slice(0, 40);
       let queryBuilder = supabaseAdmin
         .from("profiles")
         .select("user_id, full_name, phone, is_agent")
@@ -932,8 +956,13 @@ serve(async (req: Request) => {
         .order("updated_at", { ascending: false })
         .limit(10);
 
-      if (q.length >= 2) {
-        queryBuilder = queryBuilder.or(`full_name.ilike.%${q}%,phone.ilike.%${q}%`);
+      const digits = q.replace(/\D/g, "");
+      if (digits.length >= 9 && digits.length === q.replace(/\s|\+/g, "").length) {
+        // A full phone number may be used to FIND someone, but is never returned.
+        const local = digits.startsWith("233") ? `0${digits.slice(3)}` : digits;
+        queryBuilder = queryBuilder.in("phone", [local, `233${local.slice(1)}`, `+233${local.slice(1)}`]);
+      } else if (q.length >= 2) {
+        queryBuilder = queryBuilder.ilike("full_name", `%${q}%`);
       }
 
       const { data: rows } = await queryBuilder;
@@ -949,7 +978,7 @@ serve(async (req: Request) => {
             user_id: r.user_id,
             full_name: r.full_name || "SwiftData Player",
             masked_phone: maskedPhone,
-            phone: rawPhone,
+            phone: "",
             is_agent: Boolean(r.is_agent),
           };
         });
@@ -979,7 +1008,11 @@ serve(async (req: Request) => {
           : String(body.payment_source || "wallet").toLowerCase();
       const creatorName = String(body.creator_name || authUser?.user_metadata?.full_name || "Ghana Champion").trim().slice(0, 40);
       const creatorPhone = String(body.creator_phone || "").trim().slice(0, 15);
-      const invitedPhone = String(body.invited_phone || "").trim().slice(0, 15);
+      let invitedPhone = String(body.invited_phone || "").trim().slice(0, 15);
+      if (!invitedPhone && body.invited_user_id) {
+        const { data: invitee } = await supabaseAdmin.from("profiles").select("phone").eq("user_id", String(body.invited_user_id)).maybeSingle();
+        invitedPhone = String(invitee?.phone || "").trim().slice(0, 15);
+      }
       const invitedUserId = body.invited_user_id ? String(body.invited_user_id).trim() : null;
       const invitedName = body.invited_name ? String(body.invited_name).trim() : null;
 
@@ -1333,7 +1366,11 @@ serve(async (req: Request) => {
     // ── 2B. INVITE SPECIFIC PLAYER OR RE-BROADCAST OPEN CHALLENGE ───────────────
     if (action === "invite_player") {
       const challengeId = String(body.challenge_id || "").trim();
-      const invitedPhone = String(body.invited_phone || "").trim();
+      let invitedPhone = String(body.invited_phone || "").trim();
+      if (!invitedPhone && body.invited_user_id) {
+        const { data: invitee } = await supabaseAdmin.from("profiles").select("phone").eq("user_id", String(body.invited_user_id)).maybeSingle();
+        invitedPhone = String(invitee?.phone || "").trim();
+      }
       const invitedUserId = body.invited_user_id ? String(body.invited_user_id).trim() : null;
       const invitedName = body.invited_name ? String(body.invited_name).trim() : null;
       const broadcastAll = Boolean(body.broadcast_all);
@@ -2432,12 +2469,15 @@ serve(async (req: Request) => {
           .in("channel", channels)
           .order("created_at", { ascending: false })
           .limit(70),
-        supabaseAdmin
-          .from("game_community_messages")
-          .select("*")
-          .like("channel", "dm:%")
-          .order("created_at", { ascending: false })
-          .limit(100),
+        // Only the caller's own conversations (their id is part of the channel).
+        authUser
+          ? supabaseAdmin
+              .from("game_community_messages")
+              .select("*")
+              .like("channel", `dm:%${uidKey(authUser.id)}%`)
+              .order("created_at", { ascending: false })
+              .limit(100)
+          : Promise.resolve({ data: [] as any[] }),
         supabaseAdmin
           .from("game_community_presence")
           .select("*")
@@ -2506,7 +2546,7 @@ serve(async (req: Request) => {
           user_id: p.user_id || null,
           display_name: p.display_name || "Ghana Gamer",
           masked_phone: p.masked_phone || "Arena Player",
-          raw_phone: p.raw_phone || "",
+          raw_phone: "",
           avatar_id: p.avatar_id || avatarCatalogIds[i % avatarCatalogIds.length],
           player_level: Number(p.player_level || 1),
           player_title: p.player_title || "Arena Challenger",
@@ -2537,7 +2577,7 @@ serve(async (req: Request) => {
           user_id: prof.user_id,
           display_name: prof.full_name || "SwiftData User",
           masked_phone: maskedPhone,
-          raw_phone: rawPhone,
+          raw_phone: "",
           avatar_id: avatarCatalogIds[idx % avatarCatalogIds.length],
           player_level: 1,
           player_title: prof.is_agent ? "Verified Agent" : "Registered Member",
@@ -2585,7 +2625,7 @@ serve(async (req: Request) => {
         user_id: authUser?.id || null,
         display_name: displayName,
         masked_phone: maskedPhone,
-        raw_phone: rawPhone || null,
+        raw_phone: null,
         avatar_id: avatarId,
         player_level: Math.max(1, Number(body.player_level || 1)),
         player_title: String(body.player_title || "Arena Challenger").slice(0, 40),
@@ -2611,17 +2651,39 @@ serve(async (req: Request) => {
     }
 
     if (action === "send_community_message") {
+      if (!authUser) return signInRequired("post or send messages");
       const text = String(body.message || "").trim().slice(0, 360);
       if (!text) {
         return jsonResponse({ success: false, error: "Message cannot be empty" }, 400);
       }
 
       const channel = String(body.channel || "global").trim().slice(0, 120);
-      const senderName = String(
-        body.sender_name || authUser?.user_metadata?.full_name || "Ghana Gamer"
-      )
-        .trim()
-        .slice(0, 40);
+      const isDm = channel.startsWith("dm:");
+      if (isDm) {
+        // DMs only between two accounts, and only into the sender's own conversations.
+        const m = /^dm:([a-z0-9]{32})__([a-z0-9]{32})$/.exec(channel);
+        const me = uidKey(authUser.id);
+        if (!m || (m[1] !== me && m[2] !== me) || m[1] === m[2]) {
+          return jsonResponse({ success: false, error: "You can only message signed-in players directly." }, 403);
+        }
+      } else if (channel !== "global" && !/^room:[A-Z0-9]{4,12}$/.test(channel)) {
+        return jsonResponse({ success: false, error: "Unknown channel" }, 400);
+      }
+
+      // Rate limit: 10 posts or 30 DMs per minute per account.
+      const sinceIso = new Date(Date.now() - 60_000).toISOString();
+      let rateQuery = supabaseAdmin
+        .from("game_community_messages")
+        .select("id", { count: "exact", head: true })
+        .eq("sender_id", authUser.id)
+        .gte("created_at", sinceIso);
+      rateQuery = isDm ? rateQuery.like("channel", "dm:%") : rateQuery.not("channel", "like", "dm:%");
+      const { count: recentCount } = await rateQuery;
+      if ((recentCount || 0) >= (isDm ? 30 : 10)) {
+        return jsonResponse({ success: false, error: "You're sending messages too fast. Wait a moment and try again." }, 429);
+      }
+
+      const senderName = await callerDisplayName();
       const rawPhone = String(body.sender_phone || "").trim();
       const maskedPhone =
         rawPhone.length >= 7
@@ -2632,14 +2694,13 @@ serve(async (req: Request) => {
         "chat",
         "challenge_card",
         "direct_invite",
-        "victory_shoutout",
       ].includes(String(body.message_type || ""))
         ? String(body.message_type)
         : "chat";
 
       const insertPayload = {
         channel,
-        sender_id: authUser?.id || null,
+        sender_id: authUser.id,
         sender_name: senderName,
         sender_phone_masked: maskedPhone,
         avatar_id: avatarId,
@@ -2676,7 +2737,7 @@ serve(async (req: Request) => {
         user_id: authUser?.id || null,
         display_name: senderName,
         masked_phone: maskedPhone || "Arena Gamer",
-        raw_phone: rawPhone || null,
+        raw_phone: null,
         avatar_id: avatarId,
         player_level: insertPayload.sender_level,
         player_title: insertPayload.sender_title,
@@ -2728,15 +2789,12 @@ serve(async (req: Request) => {
     }
 
     if (action === "react_community_message") {
+      if (!authUser) return signInRequired("like posts");
       const messageId = String(body.message_id || "").trim();
       const emoji = String(body.emoji || "❤️").trim().slice(0, 8);
-      const likerName = String(
-        body.liker_name || authUser?.user_metadata?.full_name || "Ghana Gamer"
-      )
-        .trim()
-        .slice(0, 40);
+      const likerName = await callerDisplayName();
       const likerAvatar = String(body.liker_avatar || "royal_headband").trim().slice(0, 120);
-      const likerKey = String(authUser?.id || body.liker_key || likerName.toLowerCase()).trim();
+      const likerKey = authUser.id;
 
       if (!messageId) {
         return jsonResponse({ success: false, error: "Missing message_id" }, 400);
@@ -2838,14 +2896,11 @@ serve(async (req: Request) => {
     }
 
     if (action === "add_post_comment") {
+      if (!authUser) return signInRequired("comment");
       const postId = String(body.post_id || "").trim();
       const isStoryPost = Boolean(body.is_story_post);
       const commentText = String(body.comment || "").trim().slice(0, 280);
-      const authorName = String(
-        body.author_name || authUser?.user_metadata?.full_name || "Ghana Gamer"
-      )
-        .trim()
-        .slice(0, 40);
+      const authorName = await callerDisplayName();
       const avatarId = String(body.avatar_id || "royal_headband").trim().slice(0, 120);
       const authorLevel = Math.max(1, Number(body.author_level || 1));
 
@@ -2984,6 +3039,7 @@ serve(async (req: Request) => {
     }
 
     if (action === "create_story" || action === "post_story") {
+      if (!authUser) return signInRequired("post a story");
       const authorName = String(
         body.author_name || authUser?.user_metadata?.full_name || "Ghana Gamer"
       )
