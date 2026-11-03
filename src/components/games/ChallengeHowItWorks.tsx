@@ -95,7 +95,7 @@ export const GAME_STEP_GUIDES: Record<ArenaGameType, GameStepGuide> = {
         heading: "Capture 25+ Seeds Into Your Kulo to Win",
         detail:
           "Outscore your opponent (or Nana Kwame Asante • 93% Human Sense) by capturing 25 or more seeds into your Kulo storehouse!",
-        tip: "Count your opponent's seeds before sowing so you don't feed them a 4-seed bowl.",
+        tip: "Pick Easy, Medium, Hard or Grandmaster. Cash matches vs the AI are verified move by move on the server.",
       },
     ],
   },
@@ -293,7 +293,7 @@ export const GAME_STEP_GUIDES: Record<ArenaGameType, GameStepGuide> = {
     title: "Labadi Buggy GP (Landscape)",
     shortName: "Labadi Buggy GP",
     tagline:
-      "Strict Landscape 3D Rally! Steer with the Wheel (🛞), Motion Tilt (📱) or Arrows (◀ ▶) across 3 laps in 95s!",
+      "Landscape 3D rally in the all-electric Volt Roadster! Steer with the Wheel (🛞), Motion Tilt (📱) or Arrows (◀ ▶) across 3 laps in 95s!",
     emoji: "🏎️",
     badge: "🏎️ 3D Landscape GP",
     accentGradient: "from-red-500 via-amber-500 to-emerald-500",
@@ -307,9 +307,9 @@ export const GAME_STEP_GUIDES: Record<ArenaGameType, GameStepGuide> = {
       },
       {
         stepNum: "02",
-        heading: "Hit Kente Boost Pads & Fire Shito Nitro (N₂)",
+        heading: "Hit Kente Boost Pads & Fire the Electric Boost (N₂)",
         detail:
-          "Drive over glowing Red-Gold-Green Kente Boost Pads and tap the right-side N₂ Shito Nitro button to surge past Kwame Turbo!",
+          "Drive over glowing Red-Gold-Green Kente Boost Pads and tap the right-side N₂ boost button for an instant electric surge past Kwame Turbo!",
         tip: "Auto-Gas is ON by default so you can focus 100% on steering and Nitro timing.",
       },
       {
@@ -323,7 +323,7 @@ export const GAME_STEP_GUIDES: Record<ArenaGameType, GameStepGuide> = {
         stepNum: "04",
         heading: "Collect Gold Cedi Coins (GH₵) & Upgrade at Suame Garage",
         detail:
-          "Scoop spinning Gold Ghana Cedi Coins on the track to upgrade your V8 Engine, Shito Nitro, and Kantanka Armor at Suame Magazine!",
+          "Scoop spinning Gold Cedi Coins to upgrade your Motor, Boost and Armor at Suame Magazine, or switch cars: Volt Roadster, Sand Buggy, Pragya, Trotro or Kantanka 4×4.",
         tip: "Finish 1st across 3 laps to claim victory and +35 verified Arena Points!",
       },
     ],
@@ -638,6 +638,12 @@ export function GameplayVideoPlayer({
       if (activePit < 6) {
         drawPointerHand(fromPt.x, fromPt.y + 18, frac < 0.35);
       }
+      // Verified-match badge (server checks every move; 4 AI levels)
+      drawRoundedRect(W - 236, 16, 220, 28, 14, "rgba(16,185,129,0.18)", "#34d399", 1.5);
+      ctx.fillStyle = "#6ee7b7";
+      ctx.font = "bold 12px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("✓ Verified match · Easy → Grandmaster", W - 126, 35);
     };
 
     /* ── 2. GHANA LUDO GAMEPLAY RENDERER ── */
@@ -1089,20 +1095,89 @@ export function GameplayVideoPlayer({
       const padW = 36 + padProgress * 110;
       drawRoundedRect(W / 2 - padW / 2 + curve * (1 - padProgress), padY, padW, 14, 4, "#facc15", "#ef4444", 2);
 
-      // Player Buggy with Shito Nitro Flame
+      // Player car: Volt Roadster (rear view) with electric boost glow
       const carX = W / 2 + Math.sin(t * 2.1) * 48;
-      const carY = H - 108;
-      drawRoundedRect(carX - 38, carY - 24, 76, 42, 12, "#ef4444", "#fde047", 2.5);
-      ctx.font = "34px sans-serif";
-      ctx.textAlign = "center";
-      ctx.fillText("🏎️", carX, carY + 4);
-
-      // Nitro twin flames
+      const carGround = H - 70;
+      const steerNow = Math.cos(t * 2.1) * 0.6;
+      const boosting = Math.sin(t * 1.3) > 0.35;
+      const u = 1.25;
+      ctx.save();
+      ctx.translate(carX, carGround);
+      ctx.fillStyle = boosting ? "rgba(56,189,248,0.35)" : "rgba(0,0,0,0.38)";
       ctx.beginPath();
-      ctx.arc(carX - 14, carY + 22, 8 + Math.sin(t * 20) * 3, 0, Math.PI * 2);
-      ctx.arc(carX + 14, carY + 22, 8 + Math.cos(t * 20) * 3, 0, Math.PI * 2);
-      ctx.fillStyle = "#38bdf8";
+      ctx.ellipse(0, 2 * u, 56 * u, 8 * u, 0, 0, Math.PI * 2);
       ctx.fill();
+      for (const side of [-1, 1]) {
+        ctx.fillStyle = "#0b0b0e";
+        ctx.beginPath();
+        ctx.roundRect(side * 40 * u - 9 * u, -24 * u, 18 * u, 24 * u, 5 * u);
+        ctx.fill();
+      }
+      ctx.translate(steerNow * 2.2 * u, 0);
+      const body = ctx.createLinearGradient(0, -44 * u, 0, -6 * u);
+      body.addColorStop(0, "#ffffff");
+      body.addColorStop(0.14, "#b3121f");
+      body.addColorStop(0.72, "#b3121f");
+      body.addColorStop(1, "#1a0508");
+      ctx.fillStyle = body;
+      ctx.beginPath();
+      ctx.moveTo(-50 * u, -10 * u);
+      ctx.lineTo(-50 * u, -24 * u);
+      ctx.bezierCurveTo(-50 * u, -34 * u, -44 * u, -38 * u, -32 * u, -39 * u);
+      ctx.lineTo(32 * u, -39 * u);
+      ctx.bezierCurveTo(44 * u, -38 * u, 50 * u, -34 * u, 50 * u, -24 * u);
+      ctx.lineTo(50 * u, -10 * u);
+      ctx.quadraticCurveTo(0, -5 * u, -50 * u, -10 * u);
+      ctx.closePath();
+      ctx.fill();
+      const glass = ctx.createLinearGradient(0, -62 * u, 0, -38 * u);
+      glass.addColorStop(0, "#1e293b");
+      glass.addColorStop(1, "#020617");
+      ctx.fillStyle = glass;
+      ctx.beginPath();
+      ctx.moveTo(-27 * u, -39 * u);
+      ctx.bezierCurveTo(-24 * u, -54 * u, -16 * u, -61 * u, 0, -61 * u);
+      ctx.bezierCurveTo(16 * u, -61 * u, 24 * u, -54 * u, 27 * u, -39 * u);
+      ctx.closePath();
+      ctx.fill();
+      ctx.save();
+      ctx.shadowColor = "#ff1f3d";
+      ctx.shadowBlur = 10;
+      ctx.fillStyle = "#ff2d4a";
+      ctx.beginPath();
+      ctx.roundRect(-44 * u, -31 * u, 88 * u, 3.2 * u, 1.6 * u);
+      ctx.fill();
+      ctx.restore();
+      ctx.fillStyle = "#0a0a0c";
+      ctx.beginPath();
+      ctx.moveTo(-34 * u, -15 * u);
+      ctx.lineTo(34 * u, -15 * u);
+      ctx.lineTo(28 * u, -7 * u);
+      ctx.lineTo(-28 * u, -7 * u);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = "#f8fafc";
+      ctx.fillRect(-9 * u, -25 * u, 18 * u, 6 * u);
+      if (boosting) {
+        const glow = ctx.createRadialGradient(0, -6 * u, 2 * u, 0, -6 * u, 46 * u);
+        glow.addColorStop(0, "rgba(125,211,252,0.85)");
+        glow.addColorStop(1, "rgba(56,189,248,0)");
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.ellipse(0, -4 * u, 52 * u, 14 * u, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "rgba(224,242,254,0.95)";
+        ctx.lineWidth = 1.6;
+        for (let k = 0; k < 3; k++) {
+          const ax0 = Math.sin(t * 17 + k * 2.1) * 30 * u;
+          ctx.beginPath();
+          ctx.moveTo(ax0, -8 * u);
+          ctx.lineTo(ax0 + Math.sin(t * 31 + k) * 6 * u, 2 * u);
+          ctx.lineTo(ax0 - Math.sin(t * 23 + k) * 5 * u, 10 * u);
+          ctx.stroke();
+        }
+      }
+      ctx.restore();
 
       // Left Interactive Steering Wheel HUD preview
       const wx = 108;
@@ -1135,7 +1210,7 @@ export function GameplayVideoPlayer({
       drawRoundedRect(W - 148, H - 145, 86, 56, 16, "#ea580c", "#fde047", 2);
       ctx.fillStyle = "#ffffff";
       ctx.font = "bold 13px sans-serif";
-      ctx.fillText("🔥 NITRO", W - 105, H - 112);
+      ctx.fillText("⚡ BOOST", W - 105, H - 112);
     };
 
     const renderFrame = (now: number) => {
@@ -1671,11 +1746,11 @@ const PRO_STEPS = [
     shortTitle: "Pick Mode",
     title: "Select How You Want to Compete",
     description:
-      "Compete live against another user, play immediately against our 91%–95% Human-Sense Champions, or accumulate points in the Free Data Arena.",
+      "Compete live against another player, or take on our Ghanaian AI champions right away.",
     bullets: [
-      "Open 1v1 Lobby: Post a challenge room (auto-notifies all users) or invite a friend directly.",
-      "Human-Sense Mode (1.8×): Play vs Medium-Difficulty Ghanaian Champions for a 1.8× cash payout.",
-      "Free Data Mode: Win timed matches (+35 Pts) toward your 1GB, 2GB, or 5GB Free Data target!",
+      "Open 1v1 Lobby: Post a challenge room (auto-notifies all users) or invite a friend. Both players' games must agree on the winner before any payout.",
+      "Cash vs AI (1.8×): available on Ghana Oware, where the server checks every move and plays the AI itself.",
+      "Free play vs AI: every other game earns Arena Points while its cash and free-data rewards are being upgraded.",
     ],
     icon: Users,
     accent: "emerald",
@@ -1707,9 +1782,9 @@ const PRO_STEPS = [
     description:
       "As soon as your match ends or your target points bar hits 100%, claim your reward with zero manual delay.",
     bullets: [
-      "1.8× Cash Payout: Credited directly into your SwiftData Wallet balance upon victory.",
-      "Target Data Bundles: Unlock 1GB (5,000 Pts), 2GB (9,500 Pts), or 5GB (20,000 Pts) Free Data!",
-      "Instant Delivery: Dispatch your won Free Data reward directly to any Ghanaian phone number.",
+      "Cash Payout: credited to your SwiftData Wallet when you win a verified Oware match or a 1v1 both players confirm.",
+      "Free Data: win a verified Oware match in Free Data mode and send the bundle to any Ghanaian number.",
+      "Arena Points: keep stacking them. Redeeming points for data returns once every game is verified.",
     ],
     icon: Trophy,
     accent: "purple",
@@ -1784,7 +1859,7 @@ export function ChallengeHowItWorks({ onQuickStart }: ChallengeHowItWorksProps) 
               </span>
             </div>
             <h2 className="text-sm sm:text-base font-black text-white tracking-tight">
-              Watch How Every Game Is Played (Oware, Ludo, Dame, Pool, Slash, Candy &amp; Buggy GP)
+              Watch How Every Game Is Played (Oware, Ludo, Dame, Pool, Market Slash, Alewa Match &amp; Labadi Buggy GP)
             </h2>
           </div>
         </div>
