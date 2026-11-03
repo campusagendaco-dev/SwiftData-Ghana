@@ -545,3 +545,17 @@ body.shield-active .secure-area {
 }
 
 
+
+/* ── SwiftArena lobby ─────────────────────────────────────────────────────── */
+.no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
+@keyframes arena-ticker {
+  from { transform: translate3d(0, 0, 0); }
+  to   { transform: translate3d(-50%, 0, 0); }
+}
+.arena-ticker { animation: arena-ticker 40s linear infinite; will-change: transform; }
+.arena-ticker:hover { animation-play-state: paused; }
+@media (prefers-reduced-motion: reduce) {
+  .arena-ticker { animation: none; }
+}

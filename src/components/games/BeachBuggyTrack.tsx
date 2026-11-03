@@ -2719,7 +2719,7 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
               🇬🇭 Fullscreen Pro Landscape Rally • 📱 {racingMetrics.fitSummaryLabel}
             </div>
             <h1 className="text-xl sm:text-3xl font-black uppercase tracking-tight bg-gradient-to-b from-amber-200 via-amber-400 to-orange-600 bg-clip-text text-transparent drop-shadow">
-              Labadi Beach &amp; Aburi Buggy GP
+              Labadi Buggy GP
             </h1>
             <p className="text-[11px] text-slate-300 max-w-xl mx-auto">
               3 Laps • 6 Racers ({creatorName} vs {opponentName} &amp; Pack) • Power-Slide Drift + Slipstream + 95s Cutoff!

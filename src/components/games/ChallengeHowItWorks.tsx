@@ -252,8 +252,8 @@ export const GAME_STEP_GUIDES: Record<ArenaGameType, GameStepGuide> = {
     ],
   },
   candy: {
-    title: "Candy Crash (Alewa & Kube • 75s Rush)",
-    shortName: "Candy Crash",
+    title: "Alewa Match (75s Rush)",
+    shortName: "Alewa Match",
     tagline: "Swap Ghanaian Alewa, Kube & Golden Cocoa Pods — forge Kente Boosters & Calabash Bombs!",
     emoji: "🍬",
     badge: "🍬 75s Sweet Rush",
@@ -290,7 +290,7 @@ export const GAME_STEP_GUIDES: Record<ArenaGameType, GameStepGuide> = {
     ],
   },
   buggy: {
-    title: "Labadi Beach & Aburi Buggy GP (Landscape)",
+    title: "Labadi Buggy GP (Landscape)",
     shortName: "Labadi Buggy GP",
     tagline:
       "Strict Landscape 3D Rally! Steer with the Wheel (🛞), Motion Tilt (📱) or Arrows (◀ ▶) across 3 laps in 95s!",
@@ -987,7 +987,7 @@ export function GameplayVideoPlayer({
       }
     };
 
-    /* ── 6. CANDY CRASH (ALEWA & KUBE MATCH-3) RENDERER ── */
+    /* ── 6. ALEWA MATCH (MATCH-3) RENDERER ── */
     const renderCandyGameplay = (t: number, W: number, H: number) => {
       const bg = ctx.createLinearGradient(0, 0, 0, H);
       bg.addColorStop(0, "#2e1018");
@@ -1654,11 +1654,11 @@ const PRO_STEPS = [
     shortTitle: "Select Game",
     title: "Choose Your Arena Game (Starting with Ghana Oware)",
     description:
-      "Watch live gameplay videos starting from Ghana Oware, Ludo, Dame, 8-Ball Pool, Market Slash, Candy Crash & Labadi Buggy GP!",
+      "Watch live gameplay videos starting from Ghana Oware, Ludo, Dame, 8-Ball Pool, Market Slash, Alewa Match & Labadi Buggy GP!",
     bullets: [
       "Ghana Oware (#1 Popular): Authentic Nam-Nam continuous relay sowing & 4-seed harvest.",
       "Ghana Ludo, Dame & 8-Ball Pool: 3D Dice Ludo, mandatory jump Draughts & Landscape Billiards.",
-      "Market Slash, Candy Crash & Buggy GP: 60s Blitz slicing, 75s Alewa Match-3 & 3D Landscape Racing.",
+      "Market Slash, Alewa Match & Labadi Buggy GP: 60s Blitz slicing, 75s Alewa Match-3 & 3D Landscape Racing.",
     ],
     icon: Gamepad2,
     accent: "amber",

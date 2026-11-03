@@ -657,7 +657,7 @@ const DEFAULT_COMMUNITY_STORIES: GamerStoryItem[] = [
       subtitle: "Scored 2,840 pts with 6 moves to spare",
       emoji: "🍬",
     }),
-    caption: "This new Ghanaian Alewa & Kube Candy Crash is too addictive! Beat my 2,840 score 🍬✨",
+    caption: "This new Ghanaian Alewa Match is too addictive! Beat my 2,840 score 🍬✨",
     views_count: 63,
     reactions: { "❤️": 24, "🔥": 15, "😂": 5 },
     game_type: "candy",
