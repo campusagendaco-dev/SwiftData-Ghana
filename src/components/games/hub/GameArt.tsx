@@ -194,8 +194,36 @@ function BuggyArt() {
       <div className="absolute left-1/2 -translate-x-1/2 bottom-[30%] w-16 h-2 rounded" style={{ background: "repeating-linear-gradient(90deg, #ef4444 0 6px, #facc15 6px 12px, #22c55e 12px 18px)" }} />
       <span className="absolute left-[6%] bottom-[18%] text-3xl">🌴</span>
       <span className="absolute right-[6%] bottom-[24%] text-2xl">🌴</span>
-      <span className="absolute left-1/2 -translate-x-1/2 bottom-[6%] text-4xl drop-shadow-[0_8px_10px_rgba(0,0,0,0.6)]">🏎️</span>
+      <RoadsterRear className="absolute left-1/2 -translate-x-1/2 bottom-[5%] w-[72px] drop-shadow-[0_8px_10px_rgba(0,0,0,0.6)]" />
     </div>
+  );
+}
+
+/** Rear view of the Volt Roadster (the racer's electric hypercar). */
+function RoadsterRear({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 100 62" className={className} aria-hidden>
+      <defs>
+        <linearGradient id="vr-body" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#ffffff" />
+          <stop offset="0.16" stopColor="#c8102e" />
+          <stop offset="0.75" stopColor="#9b0d1e" />
+          <stop offset="1" stopColor="#2a0509" />
+        </linearGradient>
+        <linearGradient id="vr-glass" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#334155" />
+          <stop offset="1" stopColor="#020617" />
+        </linearGradient>
+      </defs>
+      <rect x="4" y="38" width="16" height="22" rx="4" fill="#0b0b0e" />
+      <rect x="80" y="38" width="16" height="22" rx="4" fill="#0b0b0e" />
+      <path d="M23 23 C26 9 36 3 50 3 C64 3 74 9 77 23 Z" fill="url(#vr-glass)" />
+      <path d="M33 21 L42 6 L47 6 L38 21 Z" fill="rgba(186,230,253,0.25)" />
+      <path d="M0 52 L0 38 C0 28 6 24 18 23 L82 23 C94 24 100 28 100 38 L100 52 Q50 58 0 52 Z" fill="url(#vr-body)" />
+      <rect x="6" y="31" width="88" height="3.5" rx="1.75" fill="#ff2d4a" />
+      <rect x="41" y="38" width="18" height="6" rx="1" fill="#f8fafc" />
+      <path d="M16 47 L84 47 L78 55 L22 55 Z" fill="#0a0a0c" />
+    </svg>
   );
 }
 

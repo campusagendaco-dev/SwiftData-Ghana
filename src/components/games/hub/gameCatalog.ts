@@ -183,9 +183,9 @@ export const GAME_CATALOG: GameCatalogEntry[] = [
     statusColor: "gold",
     subtitle:
       "Race 3 laps across Labadi Beach, Aburi Hills & Tema Motorway — hit Kente Boost Pads & upgrade at Suame Garage.",
-    tagline: "3 laps from Labadi to Aburi. Boost, dodge, upgrade.",
+    tagline: "Race the electric Volt Roadster from Labadi to Aburi.",
     rulesSummary: [
-      "Choose from 4 Ghanaian rides (Labadi Sand Buggy, Yellow-Yellow Pragya, VIP Sprinter Trotro, or Kantanka 4×4) and 3 circuits.",
+      "Choose from 5 rides (the all-electric Volt Roadster, Labadi Sand Buggy, Yellow-Yellow Pragya, VIP Sprinter Trotro, or Kantanka 4×4) and 3 circuits.",
       "Hit glowing yellow Kente Boost Pads and tap Shito Nitro (N₂) to blast past Kwame Turbo and the 6-racer pack.",
       "Dodge volcanic rocks, coconut palms, and beach huts so your Armor HP never hits 0 before finishing 3 laps.",
       "Collect spinning Gold Ghana Cedi Coins (GH₵) to upgrade your Engine, Nitro & Armor at the Suame Magazine Workshop!",

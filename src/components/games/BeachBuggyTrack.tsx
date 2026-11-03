@@ -24,7 +24,7 @@ import {
 import { InGameVoiceChat } from "./InGameVoiceChat";
 
 export type GhanaTrackId = "labadi" | "aburi" | "motorway";
-export type GhanaVehicleId = "buggy" | "pragya" | "trotro" | "kantanka";
+export type GhanaVehicleId = "roadster" | "buggy" | "pragya" | "trotro" | "kantanka";
 
 export interface BuggyRaceBoardState {
   trackId: GhanaTrackId;
@@ -64,6 +64,8 @@ interface SuameSaveData {
   bank: number;
   best: number;
   vehicle: GhanaVehicleId;
+  /** Set once the default buggy has been swapped for the Volt Roadster. */
+  roadsterMigrated?: boolean;
   track: GhanaTrackId;
   up: {
     eng: number;
@@ -166,6 +168,17 @@ const GHANA_VEHICLES: {
   steerBonus: number;
   armorBonus: number;
 }[] = [
+  {
+    // Electric hypercar (original design, no real-brand name or badge).
+    id: "roadster",
+    name: "Volt Roadster",
+    tagline: "All-Electric Hypercar • Instant Torque Boost",
+    color: "#b3121f",
+    accent: "#e5e7eb",
+    speedBonus: 1.06,
+    steerBonus: 1.04,
+    armorBonus: 0.96,
+  },
   {
     id: "buggy",
     name: "Labadi Sand Buggy",
@@ -286,7 +299,8 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
     const fallback: SuameSaveData = {
       bank: 300,
       best: 0,
-      vehicle: "buggy",
+      vehicle: "roadster",
+      roadsterMigrated: true,
       track: (initialState?.trackId as GhanaTrackId) || "labadi",
       up: { eng: 0, nit: 0, arm: 0 },
     };
@@ -294,9 +308,16 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
       const raw = localStorage.getItem(SUAME_SAVE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
+        // One-time swap: players still on the old default buggy get the roadster.
+        const migratedVehicle =
+          !parsed.roadsterMigrated && (!parsed.vehicle || parsed.vehicle === "buggy")
+            ? "roadster"
+            : parsed.vehicle;
         return {
           ...fallback,
           ...parsed,
+          vehicle: migratedVehicle,
+          roadsterMigrated: true,
           up: { ...fallback.up, ...(parsed.up || {}) },
         };
       }
@@ -1894,6 +1915,155 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
       sign: drawSign,
     };
 
+    /**
+     * Volt Roadster, seen from behind: low wide body, glass canopy, full-width
+     * light bar and diffuser. Boost is an electric glow with arcs (no exhaust).
+     * Expects the context already translated to the car's ground point.
+     */
+    function drawRoadsterBody(u: number, col: string, steer: number, boost: boolean, drifting: boolean) {
+      const c = ctx!;
+
+      // Rear tyres
+      for (const side of [-1, 1]) {
+        c.fillStyle = "#0b0b0e";
+        c.beginPath();
+        c.roundRect(side * 40 * u - 9 * u, -24 * u, 18 * u, 24 * u, 5 * u);
+        c.fill();
+        c.fillStyle = "#3f3f46";
+        const tread = ((gt * 30) % 6) * u;
+        for (let i = 0; i < 3; i++) {
+          c.fillRect(side * 40 * u - 8 * u, -21 * u + i * 7 * u + tread * 0.3, 16 * u, 1.6 * u);
+        }
+      }
+
+      c.translate(steer * 2.2 * u, 0);
+
+      // Body shell with metallic gradient
+      const body = c.createLinearGradient(0, -44 * u, 0, -6 * u);
+      body.addColorStop(0, "#ffffff");
+      body.addColorStop(0.14, col);
+      body.addColorStop(0.72, col);
+      body.addColorStop(1, "#1a0508");
+      c.fillStyle = body;
+      c.beginPath();
+      c.moveTo(-50 * u, -10 * u);
+      c.lineTo(-50 * u, -24 * u);
+      c.bezierCurveTo(-50 * u, -34 * u, -44 * u, -38 * u, -32 * u, -39 * u);
+      c.lineTo(32 * u, -39 * u);
+      c.bezierCurveTo(44 * u, -38 * u, 50 * u, -34 * u, 50 * u, -24 * u);
+      c.lineTo(50 * u, -10 * u);
+      c.quadraticCurveTo(0, -5 * u, -50 * u, -10 * u);
+      c.closePath();
+      c.fill();
+
+      // Shoulder highlight
+      c.strokeStyle = "rgba(255,255,255,0.35)";
+      c.lineWidth = 1.4 * u;
+      c.beginPath();
+      c.moveTo(-40 * u, -37 * u);
+      c.lineTo(40 * u, -37 * u);
+      c.stroke();
+
+      // Glass canopy + reflection
+      const glass = c.createLinearGradient(0, -62 * u, 0, -38 * u);
+      glass.addColorStop(0, "#1e293b");
+      glass.addColorStop(0.55, "#0b1220");
+      glass.addColorStop(1, "#020617");
+      c.fillStyle = glass;
+      c.beginPath();
+      c.moveTo(-27 * u, -39 * u);
+      c.bezierCurveTo(-24 * u, -54 * u, -16 * u, -61 * u, 0, -61 * u);
+      c.bezierCurveTo(16 * u, -61 * u, 24 * u, -54 * u, 27 * u, -39 * u);
+      c.closePath();
+      c.fill();
+      c.fillStyle = "rgba(186,230,253,0.18)";
+      c.beginPath();
+      c.moveTo(-18 * u, -42 * u);
+      c.lineTo(-8 * u, -58 * u);
+      c.lineTo(-2 * u, -58 * u);
+      c.lineTo(-12 * u, -42 * u);
+      c.fill();
+
+      // Driver silhouette leaning into corners
+      c.fillStyle = "rgba(15,23,42,0.92)";
+      c.beginPath();
+      c.arc(steer * 2.4 * u, -47 * u, 6 * u, 0, Math.PI * 2);
+      c.fill();
+
+      // Ducktail lip
+      c.fillStyle = "#0f0f12";
+      c.beginPath();
+      c.roundRect(-30 * u, -41 * u, 60 * u, 3 * u, 1.5 * u);
+      c.fill();
+
+      // Full-width LED light bar (brighter when braking)
+      const braking = keysRef.current.down;
+      c.save();
+      c.shadowColor = "#ff1f3d";
+      c.shadowBlur = (braking ? 18 : 9) * u;
+      c.fillStyle = braking ? "#ff2d4a" : "#e11d48";
+      c.beginPath();
+      c.roundRect(-44 * u, -31 * u, 88 * u, 3.2 * u, 1.6 * u);
+      c.fill();
+      c.restore();
+
+      // Rear diffuser fins
+      c.fillStyle = "#0a0a0c";
+      c.beginPath();
+      c.moveTo(-34 * u, -15 * u);
+      c.lineTo(34 * u, -15 * u);
+      c.lineTo(28 * u, -7 * u);
+      c.lineTo(-28 * u, -7 * u);
+      c.closePath();
+      c.fill();
+      c.strokeStyle = "#27272a";
+      c.lineWidth = 1.2 * u;
+      for (let i = -2; i <= 2; i++) {
+        c.beginPath();
+        c.moveTo(i * 11 * u, -15 * u);
+        c.lineTo(i * 9.5 * u, -7 * u);
+        c.stroke();
+      }
+
+      // Ghana EV plate
+      c.fillStyle = "#f8fafc";
+      c.fillRect(-9 * u, -25 * u, 18 * u, 6 * u);
+      c.fillStyle = "#0f172a";
+      c.font = `800 ${4.4 * u}px system-ui, sans-serif`;
+      c.textAlign = "center";
+      c.textBaseline = "middle";
+      c.fillText("GH-EV", 0, -21.8 * u);
+
+      // Electric boost / drift glow
+      if (boost || drifting) {
+        c.save();
+        const glow = c.createRadialGradient(0, -6 * u, 2 * u, 0, -6 * u, 46 * u);
+        glow.addColorStop(0, boost ? "rgba(125,211,252,0.85)" : "rgba(251,146,60,0.5)");
+        glow.addColorStop(1, "rgba(56,189,248,0)");
+        c.fillStyle = glow;
+        c.beginPath();
+        c.ellipse(0, -4 * u, 52 * u, 14 * u, 0, 0, Math.PI * 2);
+        c.fill();
+        if (boost) {
+          c.strokeStyle = "rgba(224,242,254,0.95)";
+          c.lineWidth = 1.3 * u;
+          for (let k = 0; k < 3; k++) {
+            let ax = (Math.random() * 60 - 30) * u;
+            let ay = -8 * u;
+            c.beginPath();
+            c.moveTo(ax, ay);
+            for (let j = 0; j < 4; j++) {
+              ax += (Math.random() * 10 - 5) * u;
+              ay += (4 + Math.random() * 4) * u;
+              c.lineTo(ax, ay);
+            }
+            c.stroke();
+          }
+        }
+        c.restore();
+      }
+    }
+
     function drawBuggy(
       x: number,
       y: number,
@@ -1921,6 +2091,12 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
       ctx!.beginPath();
       ctx!.ellipse(0, bounce + u * 2, u * 56, u * 8.5, 0, 0, 7);
       ctx!.fill();
+
+      if (vehicleStyle === "roadster") {
+        drawRoadsterBody(u, col, steer, flame, drifting);
+        ctx!.restore();
+        return;
+      }
 
       // Articulated Front Wheels (Turn Left/Right with Steering)
       for (const s of [-1, 1]) {
@@ -2802,7 +2978,7 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
           </div>
 
           {/* Vehicle Selector */}
-          <div className="w-full max-w-2xl grid grid-cols-4 gap-2">
+          <div className="w-full max-w-2xl grid grid-cols-3 sm:grid-cols-5 gap-2">
             {GHANA_VEHICLES.map((v) => {
               const selected = saveData.vehicle === v.id;
               return (
