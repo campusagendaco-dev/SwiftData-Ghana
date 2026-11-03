@@ -100,17 +100,17 @@ async function triggerPushNotification(supabaseAdmin: any, payload: { user_id: s
   }
 }
 
-type AdminUserAction = 
-  | "get_api_users" 
-  | "send_reset_link" 
-  | "reset_password" 
-  | "delete_user" 
-  | "toggle_api_access" 
-  | "revoke_api_key" 
+type AdminUserAction =
+  | "get_api_users"
+  | "send_reset_link"
+  | "reset_password"
+  | "delete_user"
+  | "toggle_api_access"
+  | "revoke_api_key"
   | "update_api_settings"
   | "approve_agent"
-  | "revoke_agent" 
-  | "approve_sub_agent" 
+  | "revoke_agent"
+  | "approve_sub_agent"
   | "manual_topup"
   | "manual_api_topup"
   | "update_system_settings"
@@ -168,7 +168,7 @@ async function queryKorbaApi(
     messageParts.push(`${key}=${payload[key]}`);
   }
   const message = messageParts.join("&");
-  
+
   const keyData = new TextEncoder().encode(KORBA_SECRET_KEY);
   const cryptoKey = await crypto.subtle.importKey(
     'raw',
@@ -203,7 +203,7 @@ async function queryKorbaApi(
 
     resText = await res.text();
     console.log(`[Korba API Proxy] Response status: ${res.status}`);
-    
+
     // Check if the proxy response itself returned Gateway Timeout or Statement Timeout
     if (res.ok && !resText.includes("Gateway Timeout") && !resText.includes("canceling statement")) {
       try {
@@ -234,7 +234,7 @@ async function queryKorbaApi(
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 12000); // 12s timeout
-      
+
       let client: any = undefined;
       const fetchOpts: RequestInit = {
         method: "POST",
@@ -247,7 +247,7 @@ async function queryKorbaApi(
       };
 
       if (url.includes("korba365.com")) {
-        const proxyUrl = Deno.env.get("KORBA_PROXY_URL")?.trim() || "https://WCaCqU:PL9knqRP@149-28-121-181.ip.private.ipb.cloud:9443";
+        const proxyUrl = Deno.env.get("KORBA_PROXY_URL")?.trim() || ""; // set as a Supabase secret; never hardcode
         if (proxyUrl) {
           console.log(`[system-payout-v1] Routing direct fetch through whitelisted proxy: ${proxyUrl.replace(/:[^:@]+@/, ":***@")}`);
           if (typeof (Deno as any).createHttpClient === "function") {
@@ -271,11 +271,11 @@ async function queryKorbaApi(
           }
         }
       }
-      
+
       clearTimeout(timeoutId);
       resText = await res.text();
       console.log(`[Korba API Direct] Response status: ${res.status}`);
-      
+
       try {
         responseData = JSON.parse(resText);
         success = responseData.success || (responseData.error_code === null) || false;
@@ -359,7 +359,7 @@ serve(async (req: Request) => {
             .select("user_id, full_name, email, api_key_prefix, api_key_hash, api_access_enabled, api_rate_limit, api_allowed_actions, api_ip_whitelist, api_webhook_url, api_requests_today, api_requests_total, api_last_used_at, agent_approved, sub_agent_approved, api_custom_prices, api_request_status, api_requested_at")
             .or("api_key_prefix.not.is.null,api_key_hash.not.is.null,api_access_enabled.eq.true,api_request_status.eq.pending")
             .order("full_name");
-          
+
           users = legacyData;
           userError = legacyError;
         } else {
@@ -375,13 +375,13 @@ serve(async (req: Request) => {
 
         const userIds = (users || []).map((u: any) => u.user_id);
         let statsMap: Record<string, any> = {};
-        
+
         if (userIds.length > 0) {
           const { data: stats } = await supabaseAdmin
             .from("user_sales_stats")
             .select("user_id, total_sales_volume")
             .in("user_id", userIds);
-          
+
           if (stats) {
             statsMap = Object.fromEntries(stats.map((s: any) => [s.user_id, s.total_sales_volume]));
           }
@@ -402,7 +402,7 @@ serve(async (req: Request) => {
       case "toggle_api_access": {
         if (!isValidUuid(user_id)) throw new Error("Invalid or missing user_id");
         const { enabled } = body;
-        const patch: Record<string, any> = { 
+        const patch: Record<string, any> = {
           api_access_enabled: !!enabled,
           api_request_status: enabled ? "approved" : "rejected"
         };
@@ -434,12 +434,12 @@ serve(async (req: Request) => {
 
       case "update_api_settings": {
         if (!isValidUuid(user_id)) throw new Error("Invalid or missing user_id");
-        const { 
-          api_rate_limit, 
-          api_allowed_actions, 
-          api_ip_whitelist, 
-          api_webhook_url, 
-          api_custom_prices 
+        const {
+          api_rate_limit,
+          api_allowed_actions,
+          api_ip_whitelist,
+          api_webhook_url,
+          api_custom_prices
         } = body;
 
         const { error: updateError } = await supabaseAdmin
@@ -462,12 +462,12 @@ serve(async (req: Request) => {
 
       case "generate_api_key": {
         if (!isValidUuid(user_id)) throw new Error("Invalid or missing user_id");
-        
+
         // 1. Generate a random 32-char hex string for the API Key
         const randomHex = Array.from(crypto.getRandomValues(new Uint8Array(16)))
           .map(b => b.toString(16).padStart(2, '0'))
           .join('');
-        
+
         const newKey = `swft_live_${randomHex}`;
         const keyHash = await sha256Hex(newKey);
         const prefix = newKey.slice(0, 12);
@@ -476,7 +476,7 @@ serve(async (req: Request) => {
         const secretHex = Array.from(crypto.getRandomValues(new Uint8Array(16)))
           .map(b => b.toString(16).padStart(2, '0'))
           .join('');
-        
+
         // We use the hex itself as the secret, and store its hash
         const secretHash = await sha256Hex(secretHex);
 
@@ -504,12 +504,12 @@ serve(async (req: Request) => {
               api_access_enabled: true
             })
             .eq("user_id", user_id);
-          
+
           if (fallbackError) throw fallbackError;
         }
 
-        return new Response(JSON.stringify({ 
-          success: true, 
+        return new Response(JSON.stringify({
+          success: true,
           api_key: newKey,
           prefix: prefix
         }), {
@@ -520,7 +520,7 @@ serve(async (req: Request) => {
 
       case "approve_agent": {
         if (!isValidUuid(user_id)) throw new Error("Invalid or missing user_id");
-        
+
         // Fetch current profile to see if they completed onboarding (have store_name and slug)
         const { data: currentProfile } = await supabaseAdmin
           .from("profiles")
@@ -602,7 +602,7 @@ serve(async (req: Request) => {
         try {
           console.log("APPROVE_BY_EMAIL_START", email);
           if (!email) throw new Error("Email is required");
-          
+
           const { data: profile, error: findError } = await supabaseAdmin
             .from("profiles")
             .select("user_id, store_name, slug")
@@ -611,10 +611,10 @@ serve(async (req: Request) => {
 
           if (findError) throw findError;
           if (!profile) {
-             return new Response(JSON.stringify({ error: `User ${email} not found in profiles. Please check the spelling.` }), {
-               status: 200,
-               headers: { ...corsHeaders, "Content-Type": "application/json" },
-             });
+            return new Response(JSON.stringify({ error: `User ${email} not found in profiles. Please check the spelling.` }), {
+              status: 200,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
           }
 
           const targetId = profile.user_id;
@@ -677,7 +677,7 @@ serve(async (req: Request) => {
 
       case "impersonate_user": {
         if (!isValidUuid(user_id)) throw new Error("Invalid or missing user_id");
-        
+
         // Get user email
         const { data: profile } = await supabaseAdmin.from("profiles").select("email").eq("user_id", user_id).single();
         if (!profile?.email) throw new Error("User email not found");
@@ -735,8 +735,8 @@ serve(async (req: Request) => {
 
         if (!data.status) throw new Error(data.message || "Failed to fetch Paystack transactions");
 
-        return new Response(JSON.stringify({ 
-          success: true, 
+        return new Response(JSON.stringify({
+          success: true,
           transactions: data.data,
           meta: data.meta
         }), {
@@ -980,26 +980,26 @@ serve(async (req: Request) => {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
-        
+
         // Handle Secret updates separately
         const SECRET_KEYS = new Set([
-          "paystack_secret_key", "hubtel_client_id", "hubtel_client_secret", 
-          "txtconnect_api_key", "txtconnect_sender_id", 
+          "paystack_secret_key", "hubtel_client_id", "hubtel_client_secret",
+          "txtconnect_api_key", "txtconnect_sender_id",
           "mnotify_api_key", "mnotify_sender_id",
           "arkesel_api_key", "arkesel_sender_id",
           "hubtel_sms_sender_id",
-          "data_provider_api_key", "data_provider_base_url", 
-          "secondary_data_provider_api_key", "secondary_data_provider_base_url", 
+          "data_provider_api_key", "data_provider_base_url",
+          "secondary_data_provider_api_key", "secondary_data_provider_base_url",
           "airtime_provider_api_key", "airtime_provider_base_url"
         ]);
-        
+
         const secretUpdates: Record<string, any> = {};
         for (const key of Object.keys(settings)) {
           if (SECRET_KEYS.has(key) && typeof settings[key] === "string") {
             secretUpdates[key] = settings[key];
           }
         }
-        
+
         if (Object.keys(secretUpdates).length > 0) {
           const { error: secretsError } = await supabaseAdmin.from("system_secrets").update(secretUpdates).eq("id", 1);
           if (secretsError) {
@@ -1114,24 +1114,24 @@ serve(async (req: Request) => {
           console.error("Failed to insert update_system_settings audit log:", auditErr);
         }
 
-        return new Response(JSON.stringify({ 
-          success: true, 
-          skipped: Object.keys(settings).filter(k => !validKeys.includes(k) && !SECRET_KEYS.has(k)) 
+        return new Response(JSON.stringify({
+          success: true,
+          skipped: Object.keys(settings).filter(k => !validKeys.includes(k) && !SECRET_KEYS.has(k))
         }), {
           status: 200,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      
+
       case "get_admin_secrets": {
         const { data: secrets, error: secretsErr } = await supabaseAdmin
           .from("system_secrets")
           .select("*")
           .eq("id", 1)
           .maybeSingle();
-          
+
         if (secretsErr) throw secretsErr;
-        
+
         return new Response(JSON.stringify({ success: true, secrets: secrets || {} }), {
           status: 200,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -1415,7 +1415,7 @@ serve(async (req: Request) => {
           // 2. Query Paystack verify transfer endpoint
           console.log(`Querying Paystack for transfer reference: ${reference}`);
           const verifyRes = await fetch(`https://api.paystack.co/transfer/verify/${reference}`, {
-            headers: { 
+            headers: {
               "Authorization": `Bearer ${PAYSTACK_SECRET}`,
               "Accept": "application/json"
             },
@@ -1424,25 +1424,25 @@ serve(async (req: Request) => {
           const verifyData = await verifyRes.json();
 
           if (!verifyRes.ok || !verifyData.status) {
-            const isNotFound = verifyRes.status === 404 || 
-                               (verifyData.message && verifyData.message.toLowerCase().includes("not found")) ||
-                               (verifyData.message && verifyData.message.toLowerCase().includes("reference"));
-            
+            const isNotFound = verifyRes.status === 404 ||
+              (verifyData.message && verifyData.message.toLowerCase().includes("not found")) ||
+              (verifyData.message && verifyData.message.toLowerCase().includes("reference"));
+
             if (isNotFound) {
               console.log(`Transfer not found on Paystack for withdrawal ${withdrawal_id}. Marking withdrawal as failed.`);
               const { error: updateError } = await supabaseAdmin
                 .from("withdrawals")
-                .update({ 
-                  status: "failed", 
-                  failure_reason: "Transfer not found on Paystack" 
+                .update({
+                  status: "failed",
+                  failure_reason: "Transfer not found on Paystack"
                 })
                 .eq("id", withdrawal_id);
-              
+
               if (updateError) {
                 console.error("Failed to update withdrawal status to failed:", updateError);
                 throw new Error(`Transfer not found on Paystack, and failed to update DB: ${updateError.message}`);
               }
-              
+
               return new Response(JSON.stringify({
                 success: true,
                 status: "failed",
@@ -1452,7 +1452,7 @@ serve(async (req: Request) => {
                 headers: { ...corsHeaders, "Content-Type": "application/json" },
               });
             }
-            
+
             throw new Error(verifyData.message || "Failed to verify transfer with Paystack");
           }
 
@@ -1492,19 +1492,19 @@ serve(async (req: Request) => {
                 console.error("Push notification error:", pushErr);
               }
 
-              return new Response(JSON.stringify({ 
-                success: true, 
-                status: "success", 
-                message: "Paystack transfer completed successfully. Withdrawal finalized." 
+              return new Response(JSON.stringify({
+                success: true,
+                status: "success",
+                message: "Paystack transfer completed successfully. Withdrawal finalized."
               }), {
                 status: 200,
                 headers: { ...corsHeaders, "Content-Type": "application/json" },
               });
             } else {
-              return new Response(JSON.stringify({ 
-                success: true, 
-                status: "success", 
-                message: `Paystack transfer is successful, but withdrawal is already in status '${withdrawal.status}'.` 
+              return new Response(JSON.stringify({
+                success: true,
+                status: "success",
+                message: `Paystack transfer is successful, but withdrawal is already in status '${withdrawal.status}'.`
               }), {
                 status: 200,
                 headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -1514,27 +1514,27 @@ serve(async (req: Request) => {
             if (withdrawal.status === "processing") {
               const { error: updateError } = await supabaseAdmin
                 .from("withdrawals")
-                .update({ 
-                  status: "failed", 
-                  failure_reason: `Paystack Transfer ${transferStatus}: ${gatewayResponse}` 
+                .update({
+                  status: "failed",
+                  failure_reason: `Paystack Transfer ${transferStatus}: ${gatewayResponse}`
                 })
                 .eq("id", withdrawal_id);
 
               if (updateError) throw updateError;
 
-              return new Response(JSON.stringify({ 
-                success: true, 
-                status: "failed", 
-                message: `Paystack transfer failed with status '${transferStatus}'. Withdrawal marked as failed.` 
+              return new Response(JSON.stringify({
+                success: true,
+                status: "failed",
+                message: `Paystack transfer failed with status '${transferStatus}'. Withdrawal marked as failed.`
               }), {
                 status: 200,
                 headers: { ...corsHeaders, "Content-Type": "application/json" },
               });
             } else {
-              return new Response(JSON.stringify({ 
-                success: true, 
-                status: "failed", 
-                message: `Paystack transfer failed/reversed, but withdrawal is already in status '${withdrawal.status}'.` 
+              return new Response(JSON.stringify({
+                success: true,
+                status: "failed",
+                message: `Paystack transfer failed/reversed, but withdrawal is already in status '${withdrawal.status}'.`
               }), {
                 status: 200,
                 headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -1549,10 +1549,10 @@ serve(async (req: Request) => {
               statusMessage += " It is awaiting processing by Paystack.";
             }
 
-            return new Response(JSON.stringify({ 
-              success: true, 
-              status: transferStatus, 
-              message: statusMessage 
+            return new Response(JSON.stringify({
+              success: true,
+              status: transferStatus,
+              message: statusMessage
             }), {
               status: 200,
               headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -1571,7 +1571,7 @@ serve(async (req: Request) => {
       case "confirm_withdrawal": {
         const { withdrawal_id } = body;
         console.log("CONFIRMING_WITHDRAWAL_START", { withdrawal_id });
-        
+
         if (!withdrawal_id || !isValidUuid(withdrawal_id)) {
           console.warn("CONFIRM_WITHDRAWAL_INVALID_ID", { withdrawal_id });
           return new Response(JSON.stringify({ error: "Invalid or missing withdrawal_id" }), {
@@ -1621,7 +1621,7 @@ serve(async (req: Request) => {
           .select("agent_id, amount")
           .eq("id", withdrawal_id)
           .maybeSingle();
-        
+
         if (withdrawal) {
           try {
             await sendWithdrawalCompletedSms(withdrawal.agent_id, withdrawal.amount);
@@ -1636,7 +1636,7 @@ serve(async (req: Request) => {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      
+
       case "update_credit_limit": {
         if (!isValidUuid(user_id)) throw new Error("Invalid or missing user_id");
         const { credit_limit } = body;
@@ -1775,15 +1775,15 @@ serve(async (req: Request) => {
             // Always prioritize Environment Secrets per AGENTS.md rules
             const envApiKey =
               (handlerType === "hyspeeddata" || handlerType === "swiftreseller" || handlerType === "hyspeed") ? (Deno.env.get("HYSPEEDDATA_API_KEY") || Deno.env.get("SWIFTRESELLER_API_KEY")) :
-              handlerType === "skdataplug" ? Deno.env.get("SKDATAPLUG_API_KEY") :
-              handlerType === "datahub" ? Deno.env.get("DATAHUB_API_KEY") :
-              handlerType === "datamart" ? Deno.env.get("DATAMART_API_KEY") :
-              handlerType === "spendless" ? Deno.env.get("SPENDLESS_API_KEY") :
-              handlerType === "bundlezone" ? Deno.env.get("BUNDLEZONE_API_KEY") :
-              handlerType === "mnotify" ? Deno.env.get("MNOTIFY_API_KEY") :
-              handlerType === "afaregistration" ? Deno.env.get("AFA_API_KEY") :
-              handlerType === "qhowmenzconsult" ? Deno.env.get("QHOWMENZ_API_KEY") :
-              Deno.env.get("DATA_PROVIDER_API_KEY");
+                handlerType === "skdataplug" ? Deno.env.get("SKDATAPLUG_API_KEY") :
+                  handlerType === "datahub" ? Deno.env.get("DATAHUB_API_KEY") :
+                    handlerType === "datamart" ? Deno.env.get("DATAMART_API_KEY") :
+                      handlerType === "spendless" ? Deno.env.get("SPENDLESS_API_KEY") :
+                        handlerType === "bundlezone" ? Deno.env.get("BUNDLEZONE_API_KEY") :
+                          handlerType === "mnotify" ? Deno.env.get("MNOTIFY_API_KEY") :
+                            handlerType === "afaregistration" ? Deno.env.get("AFA_API_KEY") :
+                              handlerType === "qhowmenzconsult" ? Deno.env.get("QHOWMENZ_API_KEY") :
+                                Deno.env.get("DATA_PROVIDER_API_KEY");
 
             const apiKey = String(envApiKey || p.api_key || "").trim();
             if (!apiKey || (!baseUrl && handlerType !== "mnotify")) {
@@ -1974,7 +1974,7 @@ serve(async (req: Request) => {
           messageParts.push(`${key}=${(payload as any)[key]}`);
         }
         const message = messageParts.join("&");
-        
+
         const keyData = new TextEncoder().encode(KORBA_SECRET_KEY);
         const cryptoKey = await crypto.subtle.importKey(
           'raw',
@@ -1991,8 +1991,8 @@ serve(async (req: Request) => {
 
         try {
           const bridgeUrl = Deno.env.get("KORBA_BRIDGE_URL") || "https://swiftdatagh.shop/api/korba";
-          const bridgeSecret = Deno.env.get("KORBA_BRIDGE_SECRET") || "swiftdata-korba-bridge-token-2026";
-          
+          const bridgeSecret = Deno.env.get("KORBA_BRIDGE_SECRET")?.trim() || ""; // must match Vercel env; no public fallback
+
           console.log(`[system-payout-v1] Testing Korba request via Vercel bridge: ${bridgeUrl}`);
           const res = await fetch(bridgeUrl, {
             method: "POST",
@@ -2198,7 +2198,7 @@ serve(async (req: Request) => {
           );
           const resText = await res.text();
           console.log(`[Proxy Health Check] Response status: ${res.status}`);
-          
+
           if (res.ok && !resText.includes("Gateway Timeout") && !resText.includes("canceling statement")) {
             return new Response(JSON.stringify({
               success: true,
@@ -2285,7 +2285,7 @@ serve(async (req: Request) => {
         if (rpcError) throw rpcError;
 
         // Also sync Supabase Auth GoTrue banned_until status so active session tokens are revoked immediately
-        Promise.all(user_ids.map((uid: string) => 
+        Promise.all(user_ids.map((uid: string) =>
           supabaseAdmin.auth.admin.updateUserById(uid, { ban_duration: isSuspend ? "876000h" : "none" }).catch(() => null)
         )).catch(() => null);
 
@@ -2356,11 +2356,11 @@ serve(async (req: Request) => {
           .eq("order_type", "api")
           .in("status", ["paid", "processing", "fulfillment_failed"])
           .select("id");
-        
+
         if (updateError) throw updateError;
-        
+
         const count = updatedOrders?.length || 0;
-        
+
         // Credit profits for all updated orders â€” run in parallel
         let profitsFailed = 0;
         if (count > 0) {
@@ -2377,9 +2377,9 @@ serve(async (req: Request) => {
           }
         }
 
-        return new Response(JSON.stringify({ 
-          success: true, 
-          message: `Successfully fulfilled ${count} API orders.${profitsFailed > 0 ? ` Note: ${profitsFailed} profit calculations skipped/failed.` : ""}`, 
+        return new Response(JSON.stringify({
+          success: true,
+          message: `Successfully fulfilled ${count} API orders.${profitsFailed > 0 ? ` Note: ${profitsFailed} profit calculations skipped/failed.` : ""}`,
           fulfilled: count,
           profits_failed: profitsFailed
         }), {
@@ -2428,8 +2428,8 @@ serve(async (req: Request) => {
 
       case "reset_user_mfa": {
         if (!isValidUuid(user_id)) throw new Error("Invalid or missing user_id");
-        
-         // 1. List factors for this user via service-role admin api (using modern v2 API)
+
+        // 1. List factors for this user via service-role admin api (using modern v2 API)
         const { data: factorData, error: listError } = await supabaseAdmin.auth.admin.mfa.listFactors({
           userId: user_id
         });
@@ -2442,7 +2442,7 @@ serve(async (req: Request) => {
         // 2. Loop through and delete all factors safely
         const factors = factorData?.factors || [];
         let deletedCount = 0;
-        
+
         for (const factor of factors) {
           const { error: deleteError } = await supabaseAdmin.auth.admin.mfa.deleteFactor({
             id: factor.id,
@@ -2455,10 +2455,10 @@ serve(async (req: Request) => {
           }
         }
 
-        return new Response(JSON.stringify({ 
-          success: true, 
-          reset_count: deletedCount, 
-          message: `Successfully cleared ${deletedCount} MFA factor(s) for user.` 
+        return new Response(JSON.stringify({
+          success: true,
+          reset_count: deletedCount,
+          message: `Successfully cleared ${deletedCount} MFA factor(s) for user.`
         }), {
           status: 200,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -2523,29 +2523,44 @@ serve(async (req: Request) => {
         console.log(`[Grant Admin] Resolving identity for: ${targetEmail}`);
 
         // 1. Query direct Master Auth Directory (auth.users) as the SOURCE OF TRUTH
-        const { data: authData, error: authErr } = await supabaseAdmin.auth.admin.listUsers({
-          filter: `email = '${targetEmail}'`
-        });
-
-        if (authErr) {
-          console.error("[Grant Admin] Master Auth fetch failed:", authErr);
-          throw authErr;
+        // listUsers() ignores a `filter` option and returns the first page of
+        // ALL users, so users[0] was an arbitrary account. Resolve by exact,
+        // case-insensitive email match instead.
+        const wantedEmail = targetEmail.toLowerCase();
+        let authUser: any = null;
+        const { data: profileHit } = await supabaseAdmin
+          .from("profiles")
+          .select("user_id")
+          .ilike("email", wantedEmail)
+          .limit(1)
+          .maybeSingle();
+        if (profileHit?.user_id) {
+          const { data: byId } = await supabaseAdmin.auth.admin.getUserById(profileHit.user_id);
+          if (byId?.user && String(byId.user.email || "").toLowerCase() === wantedEmail) authUser = byId.user;
         }
-
-        const authUser = authData?.users?.[0] || null;
+        for (let page = 1; !authUser && page <= 50; page++) {
+          const { data: authData, error: authErr } = await supabaseAdmin.auth.admin.listUsers({ page, perPage: 1000 });
+          if (authErr) {
+            console.error("[Grant Admin] Master Auth fetch failed:", authErr);
+            throw authErr;
+          }
+          const users = authData?.users || [];
+          authUser = users.find((u: any) => String(u.email || "").toLowerCase() === wantedEmail) || null;
+          if (users.length < 1000) break;
+        }
 
         // If they aren't in global Auth, they definitely haven't registered yet!
         if (!authUser) {
           console.warn(`[Grant Admin] User not found in Master Auth. Fetching suggestions...`);
-          
+
           // Fuzzy query suggestion engine
           const prefix = targetEmail.split("@")[0]?.toLowerCase() || "";
           const { data: matches } = prefix.length > 2
             ? await supabaseAdmin
-                .from("profiles")
-                .select("email")
-                .ilike("email", `%${prefix}%`)
-                .limit(5)
+              .from("profiles")
+              .select("email")
+              .ilike("email", `%${prefix}%`)
+              .limit(5)
             : { data: [] };
 
           const suggestions = (matches || [])
@@ -2598,7 +2613,7 @@ serve(async (req: Request) => {
         // 4. INJECT OR ALIGN PROFILE ROW
         if (!activeProfile) {
           console.log(`[Identity Restore] Injecting synchronized profile record for user: ${realUserId}`);
-          
+
           const { data: newProfile, error: createErr } = await supabaseAdmin
             .from("profiles")
             .insert({
@@ -2655,7 +2670,7 @@ serve(async (req: Request) => {
             });
           grantErr = error;
         }
-        
+
         if (grantErr) throw grantErr;
 
         await supabaseAdmin.from("admin_action_log").insert({
@@ -2673,7 +2688,7 @@ serve(async (req: Request) => {
 
       case "revoke_admin_role": {
         if (!isValidUuid(user_id)) throw new Error("Invalid target user_id");
-        
+
         if (user_id === actor.id) {
           return new Response(JSON.stringify({ error: "You cannot revoke your own admin access!" }), {
             status: 400,
@@ -2688,7 +2703,7 @@ serve(async (req: Request) => {
           .delete()
           .eq("user_id", user_id)
           .eq("role", "admin");
-        
+
         if (revokeErr) throw revokeErr;
 
         await supabaseAdmin.from("admin_action_log").insert({

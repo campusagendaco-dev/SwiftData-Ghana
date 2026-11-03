@@ -520,8 +520,35 @@ serve(async (req: Request) => {
       const failReason = payload?.message || payload?.error || payload?.data?.reason || `Provider reported status: ${rawStatus}`;
       const isTerminal = isNonRetryableTerminalError(failReason);
 
-      if (isPaid && isTelecomOrder && !isTerminal && (order.retry_count || 0) < 5) {
-        console.log(`[provider-webhook] Order ${order.id} failed at provider ${order.provider_id}. Attempting automatic failover to next provider (SKPlug)...`);
+      const isRefunded = order.status === "refunded" || order.auto_refunded === true;
+      const currentRetries = Number(order.retry_count || 0);
+
+      // Claim this failover atomically: bump retry_count only if no other
+      // callback/cron already did. Duplicate webhooks then can't each dispatch,
+      // and the cap of 5 actually holds (retry_count was never incremented).
+      let failoverClaimed = false;
+      if (isPaid && isTelecomOrder && !isTerminal && !isRefunded && currentRetries < 5) {
+        let claimQuery = supabaseAdmin
+          .from("orders")
+          .update({ retry_count: currentRetries + 1, updated_at: new Date().toISOString() })
+          .eq("id", order.id)
+          .not("status", "in", "(refunded,fulfilled,completed)");
+        claimQuery = order.retry_count === null || order.retry_count === undefined
+          ? claimQuery.is("retry_count", null)
+          : claimQuery.eq("retry_count", order.retry_count);
+        const { data: claimed } = await claimQuery.select("id");
+        failoverClaimed = !!(claimed && claimed.length > 0);
+        if (!failoverClaimed) {
+          // Another callback/cron owns this retry; don't overwrite its status.
+          console.warn(`[provider-webhook] Failover for order ${order.id} already claimed elsewhere; skipping duplicate dispatch.`);
+          return new Response(JSON.stringify({ received: true, ignored: true, reason: "Failover already in progress" }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" }
+          });
+        }
+      }
+
+      if (failoverClaimed) {
+        console.log(`[provider-webhook] Order ${order.id} failed at provider ${order.provider_id}. Attempting automatic failover (${currentRetries + 1}/5)...`);
         
         // Record failure in provider_errors
         await Promise.resolve(supabaseAdmin.from("provider_errors").insert({

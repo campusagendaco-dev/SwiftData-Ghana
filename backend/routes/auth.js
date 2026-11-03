@@ -1,4 +1,5 @@
 const express = require("express");
+const crypto = require("crypto");
 const bcrypt = require("bcrypt");
 const rateLimit = require("express-rate-limit");
 const User = require("../models/User");
@@ -43,21 +44,34 @@ const validateOtpForUser = async (user, otp) => {
     return { ok: false, status: 400, message: "No active OTP request found. Request a new code." };
   }
 
-  if ((resetState.otpAttempts || 0) >= maxAttempts) {
-    return { ok: false, status: 429, message: "Maximum OTP attempts reached. Request a new code." };
-  }
-
   if (new Date(resetState.otpExpiresAt).getTime() <= now().getTime()) {
-    user.passwordReset = { ...resetState, otpHash: null, otpExpiresAt: null, otpAttempts: 0 };
-    await user.save();
+    await User.updateOne(
+      { _id: user._id },
+      { $set: { "passwordReset.otpHash": null, "passwordReset.otpExpiresAt": null, "passwordReset.otpAttempts": 0 } },
+    );
     return { ok: false, status: 400, message: "OTP expired. Request a new code." };
   }
 
-  if (sha256(otp) !== resetState.otpHash) {
-    const nextAttempts = (resetState.otpAttempts || 0) + 1;
-    user.passwordReset = { ...resetState, otpAttempts: nextAttempts };
-    await user.save();
-    const attemptsLeft = Math.max(0, maxAttempts - nextAttempts);
+  // Count the attempt atomically BEFORE comparing. A read-check-save let many
+  // concurrent guesses all pass the "attempts < max" check at once.
+  const counted = await User.findOneAndUpdate(
+    {
+      _id: user._id,
+      "passwordReset.otpHash": resetState.otpHash,
+      "passwordReset.otpAttempts": { $lt: maxAttempts },
+    },
+    { $inc: { "passwordReset.otpAttempts": 1 } },
+    { new: true },
+  );
+  if (!counted) {
+    return { ok: false, status: 429, message: "Maximum OTP attempts reached. Request a new code." };
+  }
+
+  const provided = Buffer.from(sha256(String(otp)));
+  const expected = Buffer.from(String(counted.passwordReset.otpHash || ""));
+  const matches = provided.length === expected.length && crypto.timingSafeEqual(provided, expected);
+  if (!matches) {
+    const attemptsLeft = Math.max(0, maxAttempts - counted.passwordReset.otpAttempts);
     return {
       ok: false,
       status: 400,
@@ -67,7 +81,17 @@ const validateOtpForUser = async (user, otp) => {
     };
   }
 
-  return { ok: true, resetState };
+  // Consume the code atomically so it can be redeemed only once.
+  const consumed = await User.findOneAndUpdate(
+    { _id: user._id, "passwordReset.otpHash": counted.passwordReset.otpHash },
+    { $set: { "passwordReset.otpHash": null } },
+    { new: false },
+  );
+  if (!consumed) {
+    return { ok: false, status: 400, message: "This code was already used. Request a new code." };
+  }
+
+  return { ok: true, resetState: { ...counted.toObject().passwordReset, otpHash: null } };
 };
 
 router.post("/forgot-password", otpRateLimit, async (req, res) => {

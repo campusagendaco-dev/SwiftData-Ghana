@@ -119,6 +119,14 @@ serve(async (req) => {
     // 3. Process orders to the selected provider
     for (const ord of orders) {
       try {
+        // Refunded orders (money back with the customer) or already-delivered
+        // ones must never be dispatched again: that delivers free data and lets
+        // a later failure refund the same order twice.
+        if (ord.auto_refunded === true || Number(ord.refund_amount || 0) > 0 || ["fulfilled", "completed"].includes(String(ord.status))) {
+          skippedCount++;
+          results.push({ id: ord.id, status: "skipped", reason: "Already refunded or fulfilled" });
+          continue;
+        }
         if (!resume_api && isOrderPausedFromApi(ord)) {
           skippedCount++;
           results.push({ id: ord.id, status: "skipped", reason: "Paused by admin — held from entering API provider" });
@@ -140,7 +148,6 @@ serve(async (req) => {
               provider_order_id: purchaseId,
               status: dispatch.status === "fulfilled" ? "fulfilled" : "processing",
               failure_reason: null,
-              auto_refunded: false,
               updated_at: new Date().toISOString()
             }).eq("id", ord.id);
 
@@ -177,7 +184,6 @@ serve(async (req) => {
               provider_order_id: purchaseId,
               status: "processing",
               failure_reason: null,
-              auto_refunded: false,
               updated_at: new Date().toISOString()
             }).eq("id", ord.id);
 

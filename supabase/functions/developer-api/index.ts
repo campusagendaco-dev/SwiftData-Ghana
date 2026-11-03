@@ -766,6 +766,12 @@ serve(async (req: Request) => {
     else if (p.endsWith("/service-status")) finalAction = "service_status";
     else if (p === "" || p === "/" || p.endsWith("/developer-api")) finalAction = action || "index";
 
+    // The anonymous web profile (no API key) may only submit numbers; the
+    // generic allow-list below would otherwise let it call any action.
+    if (currentUserId === "public-web-user" && !["submit_numbers", "index", "service_status"].includes(finalAction)) {
+      return json({ success: false, error: `Action '${finalAction}' requires an API key.` }, 401);
+    }
+
     const allowedActions: string[] = profile.allowed_actions || ["balance", "plans", "account", "buy", "orders", "orders_summary", "status", "order_refund", "callback", "wallets", "wallet_transfer", "afa_registration", "results_checker", "validate_bill", "pay_bill", "ecg_lookup", "ecg_pay", "service_status", "submit_numbers"];
     if (!allowedActions.includes(finalAction) && !["index", "account", "balance", "plans", "buy", "orders", "orders_summary", "status", "order_refund", "callback", "wallets", "wallet_transfer", "afa_registration", "results_checker", "validate_bill", "pay_bill", "ecg_lookup", "ecg_pay", "service_status", "submit_numbers"].includes(finalAction)) {
       return json({ success: false, error: `Action '${finalAction}' not permitted.` }, 403);

@@ -3,6 +3,9 @@ const express = require("express");
 const mongoose = require("mongoose");
 const path = require("path");
 const cors = require("cors");
+const crypto = require("crypto");
+const dns = require("dns").promises;
+const net = require("net");
 const authRoutes = require("./routes/auth");
 
 const app = express();
@@ -28,12 +31,36 @@ app.use("/api", authRoutes);
 app.use("/auth", authRoutes);
 app.use("/api/v1/auth", authRoutes);
 
+// Private, loopback, link-local (cloud metadata) and CGNAT ranges are never
+// valid proxy destinations.
+const isPrivateAddress = (ip) => {
+  if (net.isIPv4(ip)) {
+    const [a, b] = ip.split(".").map(Number);
+    return a === 0 || a === 10 || a === 127 || (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) ||
+      (a === 100 && b >= 64 && b <= 127) || a >= 224;
+  }
+  const v6 = ip.toLowerCase();
+  if (v6.startsWith("::ffff:")) return isPrivateAddress(v6.slice(7));
+  return v6 === "::1" || v6 === "::" || v6.startsWith("fc") || v6.startsWith("fd") || v6.startsWith("fe80");
+};
+
+const PROXY_ALLOWED_HOSTS = (process.env.PROXY_ALLOWED_HOSTS || "")
+  .split(",")
+  .map((value) => value.trim().toLowerCase())
+  .filter(Boolean);
+
 app.post("/api/proxy-pass", async (req, res) => {
   try {
-    const expectedSecret = process.env.PROXY_SECRET || "swiftdata-proxy-secret-2026";
+    // No default: without a strong PROXY_SECRET in the environment the proxy is off.
+    const expectedSecret = (process.env.PROXY_SECRET || "").trim();
+    if (expectedSecret.length < 32) {
+      return res.status(503).json({ error: "Proxy disabled: PROXY_SECRET not configured" });
+    }
     const providedSecret = req.headers["x-proxy-secret"];
-
-    if (!providedSecret || providedSecret !== expectedSecret) {
+    const a = Buffer.from(typeof providedSecret === "string" ? providedSecret : "");
+    const b = Buffer.from(expectedSecret);
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
       console.warn("[Render/ProxyPass] Unauthorized proxy attempt");
       return res.status(401).json({ error: "Unauthorized proxy access" });
     }
@@ -41,19 +68,42 @@ app.post("/api/proxy-pass", async (req, res) => {
     const { url, method = "GET", headers = {}, body } = req.body || {};
     if (!url) return res.status(400).json({ error: "Missing target url parameter" });
 
-    console.log(`[Render/ProxyPass] Forwarding ${method} -> ${url}`);
+    let target;
+    try {
+      target = new URL(url);
+    } catch {
+      return res.status(400).json({ error: "Invalid target url" });
+    }
+    const upperMethod = String(method).toUpperCase();
+    if (target.protocol !== "https:" || !["GET", "POST", "PUT", "PATCH"].includes(upperMethod)) {
+      return res.status(403).json({ error: "Destination not allowed" });
+    }
+    const hostname = target.hostname.toLowerCase();
+    if (PROXY_ALLOWED_HOSTS.length > 0 &&
+      !PROXY_ALLOWED_HOSTS.some((h) => hostname === h || hostname.endsWith(`.${h}`))) {
+      return res.status(403).json({ error: "Destination host not allowed" });
+    }
+    const resolved = await dns.lookup(hostname, { all: true }).catch(() => []);
+    if (resolved.length === 0 || resolved.some((r) => isPrivateAddress(r.address))) {
+      return res.status(403).json({ error: "Destination resolves to a private address" });
+    }
+
+    console.log(`[Render/ProxyPass] Forwarding ${upperMethod} -> ${target.origin}${target.pathname}`);
     const cleanHeaders = { ...headers };
     delete cleanHeaders.host;
+    delete cleanHeaders.Host;
 
     const fetchOptions = {
-      method,
+      method: upperMethod,
       headers: cleanHeaders,
+      redirect: "manual",
+      signal: AbortSignal.timeout(20000),
     };
-    if (body && ["POST", "PUT", "PATCH"].includes(method.toUpperCase())) {
+    if (body && ["POST", "PUT", "PATCH"].includes(upperMethod)) {
       fetchOptions.body = typeof body === "string" ? body : JSON.stringify(body);
     }
 
-    const response = await fetch(url, fetchOptions);
+    const response = await fetch(target, fetchOptions);
     const text = await response.text();
     res.status(response.status).send(text);
   } catch (err) {

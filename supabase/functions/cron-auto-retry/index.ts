@@ -367,6 +367,15 @@ serve(async (req) => {
         continue;
       }
 
+      // Never re-dispatch an order whose money was already returned to the
+      // customer: there is no re-debit here, so a retry would deliver the
+      // bundle for free (and a later failure could refund it a second time).
+      // A provider-side "refunded" status with no customer refund is still retried.
+      if (order.auto_refunded === true || Number(order.refund_amount || 0) > 0) {
+        console.log(`[cron-auto-retry] Order ${order.id} was already refunded. Skipping re-dispatch.`);
+        continue;
+      }
+
       const currentRetry = Number(order.retry_count || 0);
       if (currentRetry >= 3) {
         console.log(`[cron-auto-retry] Order ${order.id} has reached max retries (${currentRetry}/3). Skipping.`);
@@ -463,6 +472,7 @@ serve(async (req) => {
         })
         .eq("id", order.id)
         .in("status", ["paid", "processing", "fulfillment_failed", "failed", "pending"])
+        .or("auto_refunded.is.null,auto_refunded.eq.false")
         .select("id")
         .maybeSingle();
 
