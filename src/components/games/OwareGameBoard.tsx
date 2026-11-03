@@ -1006,41 +1006,6 @@ export function OwareGameBoard({
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5">
-          {/* 🎙️ LIVE IN-GAME OPEN MIC VOICE CHAT */}
-          <InGameVoiceChat
-            roomCode={roomCode || "OWARE"}
-            challengeId={challengeId}
-            mySide={mySide}
-            myName={mySide === "creator" ? creatorName : effectiveOpponentName}
-            opponentName={mySide === "creator" ? effectiveOpponentName : creatorName}
-            mode={mode}
-          />
-
-          {/* 🔄 1-Tap Rematch Button Directly on Oware Board */}
-          <Button
-            type="button"
-            size="sm"
-            onClick={handleInBoardRematch}
-            className="h-7 px-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[10px] gap-1 cursor-pointer shadow"
-          >
-            <RotateCcw className="w-3 h-3" />
-            <span>Rematch</span>
-          </Button>
-
-          {/* 🎮 1-Tap Play Another Game Button Directly on Oware Board */}
-          {onPlayAnotherGame && (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={onPlayAnotherGame}
-              className="h-7 px-2.5 rounded-xl border-emerald-400/50 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-200 font-black text-[10px] gap-1 cursor-pointer"
-            >
-              <Gamepad2 className="w-3 h-3" />
-              <span>Play Another</span>
-            </Button>
-          )}
-
           <Button
             size="sm"
             variant="ghost"
@@ -1179,57 +1144,6 @@ export function OwareGameBoard({
 
       {/* AUTHENTIC HINGED MATTE-BLACK EBONY & CARVED TERRACOTTA OWARE BOARD */}
       <div className="relative p-2 sm:p-4 rounded-[28px] sm:rounded-[36px] bg-slate-950/90 border border-white/10 shadow-2xl space-y-2">
-        {/* DIRECT ON-BOARD VOICE, SPEED & REMATCH CONTROL DOCK (Always visible right on the Oware board) */}
-        <div className="flex flex-wrap items-center justify-between gap-1.5 px-2.5 py-1.5 rounded-2xl bg-slate-900/95 border border-amber-500/35 shadow-md">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <InGameVoiceChat
-              roomCode={roomCode || "OWARE"}
-              challengeId={challengeId}
-              mySide={mySide}
-              myName={mySide === "creator" ? creatorName : effectiveOpponentName}
-              opponentName={mySide === "creator" ? effectiveOpponentName : creatorName}
-              mode={mode}
-            />
-            <div className="inline-flex items-center rounded-xl bg-slate-950 p-0.5 border border-emerald-500/40">
-              {(["slow", "normal", "fast"] as const).map((spKey) => (
-                <button
-                  key={`board-speed-${spKey}`}
-                  type="button"
-                  onClick={() => handleSelectSowingSpeed(spKey)}
-                  className={`px-2 py-0.5 rounded-lg text-[10px] font-black transition-all cursor-pointer ${
-                    sowingSpeed === spKey
-                      ? "bg-emerald-500 text-slate-950 shadow"
-                      : "text-slate-300 hover:text-white"
-                  }`}
-                >
-                  {OWARE_SPEED_PROFILES[spKey].label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={handleInBoardRematch}
-              className="h-7 px-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[10px] flex items-center gap-1 cursor-pointer shadow"
-            >
-              <RotateCcw className="w-3 h-3" />
-              <span>Rematch</span>
-            </button>
-            {onPlayAnotherGame && (
-              <button
-                type="button"
-                onClick={onPlayAnotherGame}
-                className="h-7 px-2.5 rounded-xl border border-emerald-400/50 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 font-black text-[10px] flex items-center gap-1 cursor-pointer"
-              >
-                <Gamepad2 className="w-3 h-3" />
-                <span>Play Another</span>
-              </button>
-            )}
-          </div>
-        </div>
-
         <div className="grid grid-cols-1 lg:grid-cols-8 gap-2 sm:gap-3.5 items-center">
           {/* Opponent Kulo Storehouse (Left Ebony Bowl) */}
           <div
