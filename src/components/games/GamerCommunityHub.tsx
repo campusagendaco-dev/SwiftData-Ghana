@@ -211,6 +211,23 @@ function namesMatch(nameA?: string | null, nameB?: string | null): boolean {
   return firstA.length >= 3 && firstA === firstB;
 }
 
+/** supabase.functions.invoke returns `data: null` on non-2xx; the JSON body is on error.context. */
+async function readInvokeFailure(data: any, error: any): Promise<{ message: string; signIn: boolean } | null> {
+  if (data?.success) return null;
+  let payload: any = data;
+  if (!payload && error?.context && typeof error.context.json === "function") {
+    try {
+      payload = await error.context.json();
+    } catch {
+      payload = null;
+    }
+  }
+  return {
+    message: payload?.error || error?.message || "Message could not be sent. Check your connection and try again.",
+    signIn: Boolean(payload?.sign_in_required),
+  };
+}
+
 function formatRelativeTime(iso: string): string {
   if (!iso) return "just now";
   const diffSec = Math.max(
@@ -527,10 +544,13 @@ export function GamerCommunityHub({
 
     try {
       liveBus = supabase
-        .channel("swiftgram-realtime-live-bus")
+        // Public posts only. DMs reach their two participants through
+        // postgres_changes, which respects the database's privacy rules.
+        .channel("swiftgram-public-bus-v2")
         .on("broadcast", { event: "instant_msg" }, (payload: any) => {
           const incoming = payload?.payload as CommunityChatMessage | undefined;
           if (!incoming || !incoming.id) return;
+          if (String(incoming.channel || "").startsWith("dm:")) return;
           setMessages((prev) => {
             if (prev.some((m) => m.id === incoming.id)) return prev;
             return [...prev, incoming];
@@ -756,6 +776,18 @@ export function GamerCommunityHub({
   );
 
   const openDirectMessageWith = (gamer: CommunityGamerProfile) => {
+    if (!currentUserId) {
+      toast.error("Sign in to send direct messages", {
+        description: "Create a free account or log in to chat privately with players.",
+      });
+      return;
+    }
+    if (!gamer.user_id) {
+      toast("This player is browsing as a guest", {
+        description: "They need to sign in before they can receive direct messages. Challenge them with a room code instead.",
+      });
+      return;
+    }
     triggerHapticSensor("aim_tick");
     setActiveDmPartner(gamer);
     setActiveTab("dms");
@@ -1091,7 +1123,7 @@ export function GamerCommunityHub({
     triggerHapticSensor("aim_tick");
 
     try {
-      const { data } = await supabase.functions.invoke("challenge-arena", {
+      const { data, error } = await supabase.functions.invoke("challenge-arena", {
         body: {
           action: "send_community_message",
           channel: targetChannel,
@@ -1113,6 +1145,15 @@ export function GamerCommunityHub({
         },
       });
 
+      const failure = await readInvokeFailure(data, error);
+      if (failure) {
+        setMessages((prev) => prev.filter((m) => m.id !== tempId));
+        toast.error(failure.signIn ? "Sign in to send messages" : "Message not sent", {
+          description: failure.signIn ? "Create a free account or log in to post and chat." : failure.message,
+        });
+        return;
+      }
+
       if (data?.success && data?.message_row) {
         const persistedRow: CommunityChatMessage = data.message_row;
         setMessages((prev) => {
@@ -1123,18 +1164,22 @@ export function GamerCommunityHub({
           return prev.map((m) => (m.id === tempId ? persistedRow : m));
         });
 
-        try {
-          broadcastChannelRef.current?.send({
-            type: "broadcast",
-            event: "instant_msg",
-            payload: persistedRow,
-          });
-        } catch {
-          // ignore broadcast error
+        if (!String(persistedRow.channel || "").startsWith("dm:")) {
+          try {
+            broadcastChannelRef.current?.send({
+              type: "broadcast",
+              event: "instant_msg",
+              payload: persistedRow,
+            });
+          } catch {
+            // ignore broadcast error
+          }
         }
       }
     } catch (err) {
       console.warn("[GamerCommunityHub] Send message error:", err);
+      setMessages((prev) => prev.filter((m) => m.id !== tempId));
+      toast.error("Message not sent", { description: "Check your connection and try again." });
     } finally {
       setSending(false);
     }
@@ -3013,7 +3058,7 @@ export function GamerCommunityPreviewCard({
     setRecentMessages((prev) => [...prev.slice(-2), optimistic]);
 
     try {
-      await supabase.functions.invoke("challenge-arena", {
+      const { data, error } = await supabase.functions.invoke("challenge-arena", {
         body: {
           action: "send_community_message",
           channel: "global",
@@ -3027,8 +3072,18 @@ export function GamerCommunityPreviewCard({
           message: text,
         },
       });
+      const failure = await readInvokeFailure(data, error);
+      if (failure) {
+        setRecentMessages((prev) => prev.filter((m) => m.id !== optimistic.id));
+        setQuickText(text);
+        toast.error(failure.signIn ? "Sign in to post" : "Post not sent", {
+          description: failure.signIn ? "Create a free account or log in to post in SwiftGram." : failure.message,
+        });
+      }
     } catch {
-      // ignore
+      setRecentMessages((prev) => prev.filter((m) => m.id !== optimistic.id));
+      setQuickText(text);
+      toast.error("Post not sent", { description: "Check your connection and try again." });
     } finally {
       setPostingQuick(false);
     }

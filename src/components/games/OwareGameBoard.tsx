@@ -370,7 +370,13 @@ export function OwareGameBoard({
     return "medium";
   });
   // AI replies + authoritative board returned by the server for the last move.
-  const [serverReply, setServerReply] = useState<{ aiMoves: number[]; board: OwareState | null } | null>(null);
+  // Server-checked play: AI replies queued in refs so re-renders can't cancel
+  // their playback; the server's board is applied once the queue is empty.
+  const serverQueueRef = useRef<number[]>([]);
+  const serverBoardRef = useRef<OwareState | null>(null);
+  const preMoveStateRef = useRef<OwareState | null>(null);
+  const [awaitingServer, setAwaitingServer] = useState(false);
+  const [serverTick, setServerTick] = useState(0);
   const [serverError, setServerError] = useState<string | null>(null);
   const [sowingSpeed, setSowingSpeed] = useState<OwareSowingSpeed>(() => {
     try {
@@ -699,7 +705,7 @@ export function OwareGameBoard({
 
   const handlePitClick = useCallback(
     (pitIndex: number) => {
-      if (game.winner || isAnimating || serverReply) return;
+      if (game.winner || isAnimating || awaitingServer || serverQueueRef.current.length > 0) return;
       // Strict turn order: nobody may move out of turn (previously either
       // player could make the opening move of a P2P match).
       if (game.turn !== mySide) return;
@@ -714,20 +720,28 @@ export function OwareGameBoard({
       if (serverChecked && onServerMove) {
         // Animate immediately (same engine as the server); the server's reply
         // supplies the AI's moves and the authoritative board.
-        setServerReply({ aiMoves: [], board: null });
+        preMoveStateRef.current = game;
+        serverQueueRef.current = [];
+        serverBoardRef.current = null;
         setServerError(null);
+        setAwaitingServer(true);
         onServerMove(pitIndex, variant)
           .then((res) => {
             if (res.ok && res.board) {
-              setServerReply({ aiMoves: res.aiMoves || [], board: res.board });
+              serverQueueRef.current = [...(res.aiMoves || [])];
+              serverBoardRef.current = res.board;
             } else {
-              setServerError(res.error || "Move could not be confirmed. Board re-synced.");
-              setServerReply({ aiMoves: [], board: res.board || null });
+              setServerError(res.error || "Your move could not be confirmed. The board was restored.");
+              serverBoardRef.current = res.board || preMoveStateRef.current;
             }
           })
           .catch(() => {
-            setServerError("Connection problem. Your move was not confirmed; board re-synced.");
-            setServerReply({ aiMoves: [], board: null });
+            setServerError("Connection problem. Your move was not confirmed. The board was restored.");
+            serverBoardRef.current = preMoveStateRef.current;
+          })
+          .finally(() => {
+            setAwaitingServer(false);
+            setServerTick((t) => t + 1);
           });
         playAnimatedMove(simResult.steps, simResult.nextState, false, mySide);
         return;
@@ -735,30 +749,33 @@ export function OwareGameBoard({
 
       playAnimatedMove(simResult.steps, simResult.nextState, true, mySide);
     },
-    [game, isAnimating, mySide, variant, playAnimatedMove, serverChecked, onServerMove, serverReply]
+    [game, isAnimating, mySide, variant, playAnimatedMove, serverChecked, onServerMove, awaitingServer]
   );
 
   // Server-checked matches: play back the AI replies the server chose, then
-  // snap to the server's board (it is the source of truth).
+  // apply the server's board (the source of truth).
   useEffect(() => {
-    if (!serverChecked || !serverReply || isAnimating) return;
-    if (serverReply.aiMoves.length > 0 && game.turn === "opponent" && !game.winner) {
-      const [aiPit, ...remaining] = serverReply.aiMoves;
-      const sim =
-        variant === "nam-nam"
-          ? simulateNamNamMoveWithSteps(game, aiPit, "opponent", true)
-          : simulateAbapaMoveWithSteps(game, aiPit, "opponent", true);
-      setServerReply({ ...serverReply, aiMoves: remaining });
-      if (sim) {
-        const delay = (OWARE_SPEED_PROFILES[sowingSpeed] || OWARE_SPEED_PROFILES.normal).aiDelayMs / 2;
-        const t = window.setTimeout(() => playAnimatedMove(sim.steps, sim.nextState, false, "opponent"), delay);
-        return () => window.clearTimeout(t);
-      }
-      return;
+    if (!serverChecked || isAnimating || awaitingServer) return;
+    if (serverQueueRef.current.length > 0 && game.turn === "opponent" && !game.winner) {
+      const aiPit = serverQueueRef.current[0];
+      const delay = (OWARE_SPEED_PROFILES[sowingSpeed] || OWARE_SPEED_PROFILES.normal).aiDelayMs / 2;
+      // Only dequeue when the timer fires: if this effect re-runs first, the
+      // move is simply rescheduled instead of lost.
+      const t = window.setTimeout(() => {
+        serverQueueRef.current = serverQueueRef.current.slice(1);
+        const sim =
+          variant === "nam-nam"
+            ? simulateNamNamMoveWithSteps(game, aiPit, "opponent", true)
+            : simulateAbapaMoveWithSteps(game, aiPit, "opponent", true);
+        if (sim) playAnimatedMove(sim.steps, sim.nextState, false, "opponent");
+        else setServerTick((x) => x + 1);
+      }, delay);
+      return () => window.clearTimeout(t);
     }
-    if (serverReply.board === null && serverReply.aiMoves.length === 0 && !serverError) return; // still waiting
-    if (serverReply.board) {
-      const b = serverReply.board;
+    const b = serverBoardRef.current;
+    if (b) {
+      serverBoardRef.current = null;
+      serverQueueRef.current = [];
       const same =
         b.pits.join(",") === game.pits.join(",") &&
         b.scores.creator === game.scores.creator &&
@@ -767,8 +784,7 @@ export function OwareGameBoard({
         (b.winner || null) === (game.winner || null);
       if (!same) setGame({ variant, ...b });
     }
-    setServerReply(null);
-  }, [serverChecked, serverReply, serverError, isAnimating, game, variant, sowingSpeed, playAnimatedMove]);
+  }, [serverChecked, isAnimating, awaitingServer, serverTick, game, variant, sowingSpeed, playAnimatedMove]);
 
   // Trigger Human-Sense Challenger move when playing vs Challenger / Free Data mode
   useEffect(() => {
@@ -811,13 +827,13 @@ export function OwareGameBoard({
 
   // Auto-finish when the player to move has no legal move (same rule the server applies)
   useEffect(() => {
-    if (game.winner || isAnimating || serverReply) return;
+    if (game.winner || isAnimating || awaitingServer || serverQueueRef.current.length > 0 || serverBoardRef.current) return;
     const settled = settleIfNoLegalMoves(game);
     if (settled !== game) {
       setGame(settled);
       if (!serverChecked) onStateChange?.(settled);
     }
-  }, [game, isAnimating, onStateChange, serverChecked, serverReply]);
+  }, [game, isAnimating, onStateChange, serverChecked, awaitingServer, serverTick]);
 
   const handleInBoardRematch = useCallback(() => {
     setDismissedWinnerPopup(false);
@@ -959,6 +975,11 @@ export function OwareGameBoard({
               title="Every move is checked by the server and the AI plays on the server, so results can't be faked."
             >
               ✓ Verified match
+            </span>
+          )}
+          {serverChecked && serverError && (
+            <span className="h-6 inline-flex items-center rounded-xl bg-rose-500/15 border border-rose-400/40 px-2 text-[10px] font-bold text-rose-300">
+              {serverError}
             </span>
           )}
 
