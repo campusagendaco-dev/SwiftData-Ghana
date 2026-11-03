@@ -143,6 +143,23 @@ serve(async (req) => {
       });
     }
 
+    // 3b. SERVER-SIDE CHECK 3: never refund or (re)dispatch an order that was
+    // never paid. Rerouting an awaiting_payment gateway order would deliver
+    // data for free; refunding it would credit money that was never received.
+    const status = String(order.status || "").toLowerCase();
+    const neverPaid = ["awaiting_payment", "not_paid"].includes(status) ||
+      (!isCallerAdmin && ["pending", "cancelled", "pending_payment", "initiated"].includes(status));
+    if (neverPaid) {
+      return new Response(JSON.stringify({
+        success: false,
+        error: "Order is not eligible",
+        details: `Order status is '${order.status}': payment has not been confirmed, so it cannot be refunded or rerouted.`,
+      }), {
+        status: errStatus(400),
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     let upstreamRefundData: any = null;
     const isRerouteMode = mode === "refund_and_reroute" || mode === "reroute";
     const hasProviderRef = !isSentinelProviderOrderId(order.provider_order_id);

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo, lazy, Suspense } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -47,27 +47,61 @@ import {
   Minimize2,
 } from "lucide-react";
 import { useDeviceScreenFit } from "@/hooks/use-device-screen-fit";
-import { OwareGameBoard, INITIAL_OWARE_STATE } from "@/components/games/OwareGameBoard";
-import { GhanaLudoBoard, INITIAL_LUDO_STATE } from "@/components/games/GhanaLudoBoard";
-import { DameCheckersBoard, INITIAL_DAME_STATE } from "@/components/games/DameCheckersBoard";
-import { EightBallPoolBoard, INITIAL_POOL_STATE } from "@/components/games/EightBallPoolBoard";
-import { MarketSlashBoard, INITIAL_SLASH_STATE } from "@/components/games/MarketSlashBoard";
-import { CandyCrashBoard, INITIAL_CANDY_STATE } from "@/components/games/CandyCrashBoard";
-import { BeachBuggyTrack, INITIAL_BUGGY_STATE } from "@/components/games/BeachBuggyTrack";
 import { InGameVoiceChat } from "@/components/games/InGameVoiceChat";
-import {
-  GamerCommunityHub,
-  GamerCommunityPreviewCard,
-} from "@/components/games/GamerCommunityHub";
 import {
   DailyStoriesBar,
   VerifiedGamerAvatar,
   GamerAvatarPickerGrid,
 } from "@/components/games/DailyStoriesBar";
-import {
-  GameInstructionPromptModal,
-  ChallengeHowItWorks,
-} from "@/components/games/ChallengeHowItWorks";
+import { ArenaLobby } from "@/components/games/hub/ArenaLobby";
+import { GAME_CATALOG, type GameType } from "@/components/games/hub/gameCatalog";
+
+// Each game board is its own chunk: the lobby no longer downloads all seven
+// games (~15k lines) before it can paint. A board loads when a match opens.
+const OwareGameBoard = lazy(() => import("@/components/games/OwareGameBoard").then((m) => ({ default: m.OwareGameBoard })));
+const GhanaLudoBoard = lazy(() => import("@/components/games/GhanaLudoBoard").then((m) => ({ default: m.GhanaLudoBoard })));
+const DameCheckersBoard = lazy(() => import("@/components/games/DameCheckersBoard").then((m) => ({ default: m.DameCheckersBoard })));
+const EightBallPoolBoard = lazy(() => import("@/components/games/EightBallPoolBoard").then((m) => ({ default: m.EightBallPoolBoard })));
+const MarketSlashBoard = lazy(() => import("@/components/games/MarketSlashBoard").then((m) => ({ default: m.MarketSlashBoard })));
+const CandyCrashBoard = lazy(() => import("@/components/games/CandyCrashBoard").then((m) => ({ default: m.CandyCrashBoard })));
+const BeachBuggyTrack = lazy(() => import("@/components/games/BeachBuggyTrack").then((m) => ({ default: m.BeachBuggyTrack })));
+const GamerCommunityHub = lazy(() => import("@/components/games/GamerCommunityHub").then((m) => ({ default: m.GamerCommunityHub })));
+const GamerCommunityPreviewCard = lazy(() => import("@/components/games/GamerCommunityHub").then((m) => ({ default: m.GamerCommunityPreviewCard })));
+const GameInstructionPromptModal = lazy(() => import("@/components/games/ChallengeHowItWorks").then((m) => ({ default: m.GameInstructionPromptModal })));
+const ChallengeHowItWorks = lazy(() => import("@/components/games/ChallengeHowItWorks").then((m) => ({ default: m.ChallengeHowItWorks })));
+
+// Secret per-seat token issued by the server on create/join. It proves which
+// side this device plays when syncing moves and reporting the result.
+const SEAT_TOKENS_KEY = "swiftdata_arena_seat_tokens_v1";
+function rememberSeatToken(challengeId: string | undefined, token: string | undefined) {
+  if (!challengeId || !token) return;
+  try {
+    const all = JSON.parse(window.localStorage.getItem(SEAT_TOKENS_KEY) || "{}");
+    all[challengeId] = token;
+    const ids = Object.keys(all);
+    if (ids.length > 50) ids.slice(0, ids.length - 50).forEach((k) => delete all[k]);
+    window.localStorage.setItem(SEAT_TOKENS_KEY, JSON.stringify(all));
+  } catch {
+    // storage unavailable: signed-in players are still identified by their account
+  }
+}
+function getSeatToken(challengeId: string | undefined): string | undefined {
+  if (!challengeId) return undefined;
+  try {
+    return JSON.parse(window.localStorage.getItem(SEAT_TOKENS_KEY) || "{}")[challengeId] || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function ArenaSpinner({ label = "Loading…", tall = false }: { label?: string; tall?: boolean }) {
+  return (
+    <div className={`w-full flex flex-col items-center justify-center gap-3 text-slate-400 ${tall ? "flex-1 min-h-[60vh]" : "py-10"}`}>
+      <span className="h-9 w-9 rounded-full border-[3px] border-white/10 border-t-amber-400 animate-spin" />
+      <span className="text-sm font-semibold">{label}</span>
+    </div>
+  );
+}
 import { PaystackMomoCheckout } from "@/components/PaystackMomoCheckout";
 import { playSuccessSound } from "@/lib/sound";
 import {
@@ -88,7 +122,6 @@ declare global {
   }
 }
 
-type GameType = "oware" | "ludo" | "dame" | "pool" | "slash" | "candy" | "buggy";
 type ChallengeMode = "p2p" | "ai" | "free_data";
 type PaymentSource = "wallet" | "momo" | "free";
 type ProfileDrawerTab = "profile" | "settings" | "rooms" | "help";
@@ -101,159 +134,18 @@ interface SuggestedPlayer {
   is_agent: boolean;
 }
 
-const GAME_CATALOG: {
-  id: GameType;
-  name: string;
-  shortTitle: string;
-  categoryTag: string;
-  statusTag: string;
-  statusColor: "gold" | "green";
-  subtitle: string;
-  rulesSummary: string[];
-  badge: string;
-  emoji: string;
-  gradient: string;
-}[] = [
-  {
-    id: "oware",
-    name: "Oware",
-    shortTitle: "Oware",
-    categoryTag: "GHANA'S GAME",
-    statusTag: "PLAY ONLINE",
-    statusColor: "green",
-    subtitle: "Our own board game. Beat Kofi, Ama and Nana, or send a friend a code and play online.",
-    rulesSummary: [
-      "Tap any of your 6 bowls on your side to scoop all seeds and sow counter-clockwise.",
-      "Nam-Nam mode: relay-sow continuously and harvest whenever a bowl reaches 4 seeds.",
-      "Abapa mode: single-lap sowing; capture opponent bowls holding 2 or 3 seeds.",
-      "First player to capture 25 or more seeds wins the match!",
-    ],
-    badge: "Most Popular",
-    emoji: "🪨",
-    gradient: "from-amber-600/30 via-amber-900/20 to-slate-950 border-amber-500/40",
-  },
-  {
-    id: "pool",
-    name: "8-Ball Pool",
-    shortTitle: "8-Ball Pool",
-    categoryTag: "BILLIARDS",
-    statusTag: "ONLINE",
-    statusColor: "gold",
-    subtitle: "Aim the laser cue, fine-tune stick angle on the left tray, and pull the cue stick to strike.",
-    rulesSummary: [
-      "Play in Landscape view for full tournament table precision.",
-      "Use the Left Fine-Aim Tray to micro-adjust your cue angle and the Right Tray to pull & shoot.",
-      "Pot all 7 of your group (Solids 1–7 or Stripes 9–15), then legally sink the Black 8-Ball.",
-      "Scratching the white cue ball gives your opponent Ball-in-Hand anywhere on the felt.",
-    ],
-    badge: "Pro Physics",
-    emoji: "🎱",
-    gradient: "from-sky-600/30 via-blue-900/25 to-slate-950 border-sky-500/40",
-  },
-  {
-    id: "slash",
-    name: "Market Slash",
-    shortTitle: "Market Slash",
-    categoryTag: "REFLEX",
-    statusTag: "NEW",
-    statusColor: "gold",
-    subtitle: "Swipe fast to slice flying Makola watermelons, pineapples & papayas while dodging bombs.",
-    rulesSummary: [
-      "Drag or swipe your finger across flying fruits to slice them with your blade.",
-      "Slice 3+ fruits in a single swipe for multi-slice combo bonus points.",
-      "Never touch the black explosives — hitting a bomb costs a life and drops your combo!",
-      "Clear all 5 market stall stages with a higher score than your challenger to win.",
-    ],
-    badge: "Swipe & Slice",
-    emoji: "🍉",
-    gradient: "from-orange-600/35 via-amber-900/25 to-slate-950 border-orange-500/50",
-  },
-  {
-    id: "ludo",
-    name: "Ghana Ludo",
-    shortTitle: "Ghana Ludo",
-    categoryTag: "BOARD",
-    statusTag: "ONLINE",
-    statusColor: "gold",
-    subtitle: "52-cell track Ludo for 2–4 players. Roll a 6 to launch, kick opponents & race home.",
-    rulesSummary: [
-      "Tap the 3D dice on your turn; roll a 6 to bring a token out of your Base onto your start square.",
-      "Landing on an opponent token on a non-safe square sends it back to Base and grants a bonus roll.",
-      "Rolling a 6, capturing an opponent, or reaching the center Home triangle earns an extra roll.",
-      "First player to bring all 4 tokens into the center Home triangle wins!",
-    ],
-    badge: "2–4 Players",
-    emoji: "🎲",
-    gradient: "from-rose-600/30 via-amber-900/20 to-slate-950 border-rose-500/40",
-  },
-  {
-    id: "dame",
-    name: "Ghana Dame",
-    shortTitle: "Ghana Dame",
-    categoryTag: "STRATEGY",
-    statusTag: "ONLINE",
-    statusColor: "gold",
-    subtitle: "8×8 Ghanaian checkers with mandatory jump captures and crowned Kings.",
-    rulesSummary: [
-      "Tap one of your pieces, then tap a highlighted diagonal square to move.",
-      "Mandatory Capture Rule: if a jump over an opponent piece is available, you must take it.",
-      "Reach the opponent's back row to crown your piece into a King that moves forward and backward.",
-      "Capture all 12 opponent pieces or block all their legal moves to win!",
-    ],
-    badge: "Pure Skill",
-    emoji: "♟️",
-    gradient: "from-emerald-600/30 via-teal-900/20 to-slate-950 border-emerald-500/40",
-  },
-  {
-    id: "candy",
-    name: "Candy Crash (Alewa & Kube)",
-    shortTitle: "Candy Crash",
-    categoryTag: "GHANA SWEETS",
-    statusTag: "NEW",
-    statusColor: "gold",
-    subtitle: "Match 3+ Ghanaian Alewa, Kube & Golden Cocoa Pods — forge Kente Boosters & Calabash Bombs.",
-    rulesSummary: [
-      "Swipe or tap two adjacent Ghanaian sweets (Alewa, Kube, Cocoa Pod, Nkate Cake, Sobolo, Bofrot) on the 8×8 wooden tray.",
-      "Match 4 sweets to wrap a Red-Gold-Green Kente-Striped Booster that blasts an entire row or column.",
-      "Match 5 sweets to forge a Takoradi Calabash Cocoa Bomb that wipes out every sweet of that type.",
-      "Outscore Auntie Efua across 10 Ghana Markets (Makola, Osu, Kejetia) to earn up to 3 Stars and Free Data!",
-    ],
-    badge: "Alewa & Kube",
-    emoji: "🍬",
-    gradient: "from-amber-600/35 via-rose-900/25 to-slate-950 border-amber-500/45",
-  },
-  {
-    id: "buggy",
-    name: "Labadi Beach & Aburi Buggy GP",
-    shortTitle: "Labadi Buggy GP",
-    categoryTag: "GHANA RACING",
-    statusTag: "NEW 3D",
-    statusColor: "gold",
-    subtitle:
-      "Race 3 laps across Labadi Beach, Aburi Hills & Tema Motorway — hit Kente Boost Pads & upgrade at Suame Garage.",
-    rulesSummary: [
-      "Choose from 4 Ghanaian rides (Labadi Sand Buggy, Yellow-Yellow Pragya, VIP Sprinter Trotro, or Kantanka 4×4) and 3 circuits.",
-      "Hit glowing yellow Kente Boost Pads and tap Shito Nitro (N₂) to blast past Kwame Turbo and the 6-racer pack.",
-      "Dodge volcanic rocks, coconut palms, and beach huts so your Armor HP never hits 0 before finishing 3 laps.",
-      "Collect spinning Gold Ghana Cedi Coins (GH₵) to upgrade your Engine, Nitro & Armor at the Suame Magazine Workshop!",
-    ],
-    badge: "Suame Turbo",
-    emoji: "🏎️",
-    gradient: "from-red-600/35 via-amber-900/25 to-slate-950 border-red-500/45",
-  },
-];
-
 const QUICK_STAKES = [2, 5, 10, 20, 50];
 
-function getInitialBoardForGame(gameType: GameType) {
-  if (gameType === "buggy") return INITIAL_BUGGY_STATE;
-  if (gameType === "candy") return INITIAL_CANDY_STATE;
-  if (gameType === "slash") return INITIAL_SLASH_STATE;
-  if (gameType === "oware") return INITIAL_OWARE_STATE;
-  if (gameType === "ludo") return INITIAL_LUDO_STATE;
-  if (gameType === "pool") return INITIAL_POOL_STATE;
-  if (gameType === "dame") return INITIAL_DAME_STATE;
-  return INITIAL_DAME_STATE;
+async function getInitialBoardForGame(gameType: GameType) {
+  switch (gameType) {
+    case "buggy": return (await import("@/components/games/BeachBuggyTrack")).INITIAL_BUGGY_STATE;
+    case "candy": return (await import("@/components/games/CandyCrashBoard")).INITIAL_CANDY_STATE;
+    case "slash": return (await import("@/components/games/MarketSlashBoard")).INITIAL_SLASH_STATE;
+    case "oware": return (await import("@/components/games/OwareGameBoard")).INITIAL_OWARE_STATE;
+    case "ludo": return (await import("@/components/games/GhanaLudoBoard")).INITIAL_LUDO_STATE;
+    case "pool": return (await import("@/components/games/EightBallPoolBoard")).INITIAL_POOL_STATE;
+    default: return (await import("@/components/games/DameCheckersBoard")).INITIAL_DAME_STATE;
+  }
 }
 
 export default function ChallengeArena() {
@@ -1026,9 +918,19 @@ export default function ChallengeArena() {
       modeToStart === "free_data" ? 0 : Math.max(0, isNaN(rawStakeInput) ? 0 : rawStakeInput);
     const minStakeRequired = Number(settings.min_stake_ghs || 2);
 
+    if (modeToStart === "ai" && gameToStart !== "oware") {
+      toast({
+        title: "Cash vs AI is paused",
+        description:
+          "We're upgrading fairness checks. Play the AI free for Arena Points, or challenge a real player for cash.",
+      });
+      return;
+    }
+
     // Allow stake === 0 in "p2p" mode for Free 1v1 Friendly Online Rooms!
     if (
-      (modeToStart === "ai" || (modeToStart === "p2p" && stake > 0)) &&
+      modeToStart === "p2p" &&
+      stake > 0 &&
       stake < minStakeRequired
     ) {
       toast({
@@ -1058,7 +960,7 @@ export default function ChallengeArena() {
         paystackRef = await triggerMoMoStakeCheckout(stake);
       }
 
-      const initialBoard = getInitialBoardForGame(gameToStart);
+      const initialBoard = await getInitialBoardForGame(gameToStart);
       const effectivePaymentSource =
         modeToStart === "free_data" || stake === 0 ? "free" : paymentSource;
       const targetInvitedPhone =
@@ -1153,6 +1055,7 @@ export default function ChallengeArena() {
       setLaunchModalOpen(false);
       setProfileDrawerOpen(false);
       recordMyChallengeSide(data.challenge.id, "creator");
+      rememberSeatToken(data.challenge.id, data.seat_token);
       setMySide("creator");
       setActiveChallenge(data.challenge);
       setInvitedPhone("");
@@ -1251,6 +1154,7 @@ export default function ChallengeArena() {
         description: data.message,
       });
 
+      rememberSeatToken(data.challenge?.id, data.seat_token);
       const joinedChallenge = { ...data.challenge };
       const joinedBoard =
         joinedChallenge.board_state && typeof joinedChallenge.board_state === "object"
@@ -1388,6 +1292,7 @@ export default function ChallengeArena() {
           body: {
             action: "sync_board",
             challenge_id: activeChallenge.id,
+            seat_token: getSeatToken(activeChallenge.id),
             board_state: nextState,
             current_turn: nextTurn,
           },
@@ -1412,6 +1317,7 @@ export default function ChallengeArena() {
         body: {
           action: "sync_board",
           challenge_id: activeChallenge.id,
+          seat_token: getSeatToken(activeChallenge.id),
           board_state: activeChallenge.board_state || {},
           current_turn: currentTurnSide,
           notify_turn: true,
@@ -1470,12 +1376,24 @@ export default function ChallengeArena() {
           body: {
             action: "complete_match",
             challenge_id: activeChallenge.id,
+            seat_token: getSeatToken(activeChallenge.id),
             winner_side: winnerSide,
             board_state: finalState,
             winner_phone: playerPhone || profile?.phone || "",
             player_level: levelInfo.level,
           },
         });
+
+        if (!error && (data?.pending_confirmation || data?.disputed)) {
+          // P2P results settle only when both players report the same winner.
+          // Keep the local result screen; the server finishes settlement.
+          toast({
+            title: data.disputed ? "Result under review" : "Waiting for opponent to confirm",
+            description: data.message,
+            variant: data.disputed ? "destructive" : undefined,
+          });
+          return;
+        }
 
         if (!error && data?.challenge) {
           setActiveChallenge(data.challenge);
@@ -1875,15 +1793,19 @@ export default function ChallengeArena() {
       />
 
       {/* ── On-Select Game Instruction Modal (Live Gameplay Video + 4 Steps) ── */}
-      <GameInstructionPromptModal
-        gameType={selectedGame}
-        open={instructionModalOpen}
-        onSkip={() => setInstructionModalOpen(false)}
-        onStartGame={() => {
-          setInstructionModalOpen(false);
-          openLaunchSheetForGame(selectedGame, selectedMode);
-        }}
-      />
+      {instructionModalOpen && (
+        <Suspense fallback={null}>
+          <GameInstructionPromptModal
+            gameType={selectedGame}
+            open={instructionModalOpen}
+            onSkip={() => setInstructionModalOpen(false)}
+            onStartGame={() => {
+              setInstructionModalOpen(false);
+              openLaunchSheetForGame(selectedGame, selectedMode);
+            }}
+          />
+        </Suspense>
+      )}
 
       {/* ── TOP-LEFT GAMER PROFILE, SETTINGS, ONLINE ROOMS & HELP DRAWER ── */}
       {profileDrawerOpen && (
@@ -2445,12 +2367,14 @@ export default function ChallengeArena() {
               {profileDrawerTab === "help" && (
                 <div className="space-y-4">
                   {/* Live 60FPS Gameplay Video Showcase Starting from Ghana Oware */}
-                  <ChallengeHowItWorks
-                    onQuickStart={(g, m) => {
-                      setProfileDrawerOpen(false);
-                      openLaunchSheetForGame(g, m);
-                    }}
-                  />
+                  <Suspense fallback={<ArenaSpinner label="Loading game guides…" />}>
+                    <ChallengeHowItWorks
+                      onQuickStart={(g, m) => {
+                        setProfileDrawerOpen(false);
+                        openLaunchSheetForGame(g, m);
+                      }}
+                    />
+                  </Suspense>
 
                   <p className="text-xs font-black uppercase tracking-wider text-amber-300 pt-1">
                     Game Rules &amp; How to Play
@@ -2602,19 +2526,29 @@ export default function ChallengeArena() {
 
               <button
                 type="button"
+                disabled={selectedGame !== "oware"}
                 onClick={() => {
                   setSelectedMode("ai");
                   if (Number(stakeAmount || 0) <= 0) setStakeAmount("5");
                 }}
-                className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${
-                  selectedMode === "ai"
-                    ? "bg-sky-500/20 border-sky-400 text-white ring-1 ring-sky-400"
-                    : "bg-slate-950/70 border-white/10 text-slate-400 hover:text-white"
+                title={
+                  selectedGame === "oware"
+                    ? "Verified match: the server checks every move and plays the AI"
+                    : "Cash stakes against the AI are paused for this game while we upgrade fairness checks"
+                }
+                className={`p-3 rounded-2xl border text-left transition-all ${
+                  selectedGame !== "oware"
+                    ? "bg-slate-950/40 border-white/5 text-slate-500 cursor-not-allowed"
+                    : selectedMode === "ai"
+                    ? "bg-sky-500/20 border-sky-400 text-white ring-1 ring-sky-400 cursor-pointer"
+                    : "bg-slate-950/70 border-white/10 text-slate-400 hover:text-white cursor-pointer"
                 }`}
               >
-                <Brain className="w-4 h-4 text-sky-400 mb-1" />
+                <Brain className={`w-4 h-4 mb-1 ${selectedGame === "oware" ? "text-sky-400" : "text-slate-500"}`} />
                 <p className="text-xs font-black">1.8× Cash AI</p>
-                <p className="text-[10px] opacity-80">Staked Match</p>
+                <p className="text-[10px] opacity-80">
+                  {selectedGame === "oware" ? "Verified match" : "Paused for upgrade"}
+                </p>
               </button>
             </div>
 
@@ -3004,6 +2938,7 @@ export default function ChallengeArena() {
             className="w-full max-w-2xl h-[90dvh] sm:h-[88dvh] flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
+            <Suspense fallback={<ArenaSpinner label="Opening community…" tall />}>
             <GamerCommunityHub
               currentUserId={user?.id || null}
               playerName={displayFirstName}
@@ -3046,6 +2981,7 @@ export default function ChallengeArena() {
                 openLaunchSheetForGame(gKey as GameType, "p2p");
               }}
             />
+            </Suspense>
           </div>
         </div>
       )}
@@ -3655,6 +3591,7 @@ export default function ChallengeArena() {
                     );
                   })()}
 
+                <Suspense fallback={<ArenaSpinner label="Loading game…" tall />}>
                 {activeChallenge.game_type === "oware" && (
                   <OwareGameBoard
                     mode={activeChallenge.mode}
@@ -3668,6 +3605,25 @@ export default function ChallengeArena() {
                     initialState={activeChallenge.board_state}
                     onStateChange={handleBoardStateChange}
                     onMatchComplete={handleMatchComplete}
+                    serverChecked={Boolean(activeChallenge.metadata?.oware_server_checked)}
+                    onServerMove={async (pit, variant) => {
+                      const { data, error } = await supabase.functions.invoke("challenge-arena", {
+                        body: {
+                          action: "oware_play",
+                          challenge_id: activeChallenge.id,
+                          seat_token: getSeatToken(activeChallenge.id),
+                          pit,
+                          variant,
+                        },
+                      });
+                      if (!data && error) return { ok: false, error: error.message };
+                      return {
+                        ok: Boolean(data?.success),
+                        board: data?.board,
+                        aiMoves: data?.ai_moves || [],
+                        error: data?.error,
+                      };
+                    }}
                     onPointsEarned={handlePointsEarned}
                     playerLevel={levelInfo.level}
                     prizePoolGhs={Number(activeChallenge.prize_pool || activeChallenge.prize_pool_ghs || 0)}
@@ -3863,6 +3819,7 @@ export default function ChallengeArena() {
                     />
                   </>
                 )}
+                </Suspense>
               </>
             )}
 
@@ -4288,1032 +4245,128 @@ export default function ChallengeArena() {
           </CardContent>
         </Card>
       ) : (
-        /* ── PROFESSIONAL GAME HUB HOME (MATCHING REFERENCE DESIGN) ── */
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 pt-4 pb-16 space-y-7">
-          {/* 1. Top Bar: Left Profile/Settings/Help Corner + Home Pill & Right Status Pill */}
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              {/* Left-Corner Gamer Profile, Help & Settings Trigger */}
-              <button
-                type="button"
-                onClick={() => {
-                  setProfileDrawerTab("profile");
-                  setProfileDrawerOpen(true);
-                }}
-                className="group flex items-center gap-2.5 pl-1 pr-3.5 py-1 rounded-full bg-white/[0.07] hover:bg-white/[0.12] border border-white/15 transition-all cursor-pointer shadow-lg"
-                title="Open Gamer Profile, Avatar Grid, Settings, Online Rooms & Help"
-              >
-                <VerifiedGamerAvatar
-                  avatarId={playerAvatarId}
-                  seedName={displayFirstName}
-                  size={38}
-                  showVerifiedBadge={true}
-                  glow={true}
-                />
-                <div className="text-left leading-tight">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs font-black text-white">{displayFirstName}</span>
-                    <span className="text-[10px] font-black text-amber-400">
-                      Lv.{levelInfo.level}
-                    </span>
-                  </div>
-                  <span className="text-[10px] text-slate-400 flex items-center gap-1">
-                    Menu • Help &amp; Video
-                  </span>
-                </div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setProfileDrawerTab("help");
-                  setProfileDrawerOpen(true);
-                }}
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-amber-500/15 hover:bg-amber-500/25 border border-amber-400/40 text-xs font-black text-amber-300 transition-all cursor-pointer shadow"
-                title="Watch Live Gameplay Videos & Rules (Starting from Ghana Oware)"
-              >
-                <HelpCircle className="w-3.5 h-3.5 text-amber-400" />
-                <span>🎬 Help &amp; Video</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => navigate(user ? "/dashboard" : "/")}
-                className="flex items-center gap-1 px-3 py-2 rounded-full bg-white/[0.05] hover:bg-white/[0.1] border border-white/10 text-xs font-bold text-slate-300 hover:text-white transition-all cursor-pointer"
-              >
-                <ChevronLeft className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Home</span>
-              </button>
-            </div>
-
-            {/* Top-Right Live Arena Open Mic + Status Pill */}
-            <div className="flex items-center gap-2 flex-wrap justify-end">
-              <InGameVoiceChat
-                roomCode="ARENA-LOBBY"
-                mySide="creator"
-                myName={displayFirstName}
-                opponentName="Arena Lobby"
-                mode="p2p"
-              />
-
-              <button
-                type="button"
-                onClick={() => {
-                  setProfileDrawerTab("rooms");
-                  setProfileDrawerOpen(true);
-                }}
-                className="flex items-center gap-2 px-3.5 py-2 rounded-full bg-white/[0.06] hover:bg-white/[0.1] border border-white/12 text-xs font-bold text-slate-200 transition-all cursor-pointer"
-              >
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                <span>
-                  7 games • {openChallenges.length > 0 ? `${openChallenges.length} open` : "free"}
-                </span>
-              </button>
-            </div>
-          </div>
-
-          {/* 2. Clean Editorial Hero Section */}
-          <div className="space-y-4 pt-1">
-            <p className="text-[11px] sm:text-xs font-black uppercase tracking-[0.22em] text-slate-400">
-              SWIFTDATA GAMES
-            </p>
-
-            <h1 className="text-4xl sm:text-6xl font-black tracking-tight leading-[1.03]">
-              <span className="block text-white">Play smart.</span>
-              <span className="block bg-gradient-to-r from-[#f59e0b] via-[#fb923c] to-[#fbbf24] bg-clip-text text-transparent">
-                Win data.
-              </span>
-            </h1>
-
-            <p className="text-sm sm:text-base text-slate-300/90 max-w-lg leading-relaxed">
-              Skill games only. No luck, no guesswork. Only the sharpest players will win.
-            </p>
-
-            {/* Interactive Feature Pills */}
-            <div className="flex flex-wrap items-center gap-2.5 pt-1">
-              <button
-                type="button"
-                onClick={() => openLaunchSheetForGame("buggy", "free_data")}
-                className="px-4 py-2 rounded-full bg-gradient-to-r from-orange-500/25 via-amber-500/25 to-emerald-500/20 hover:from-orange-500/35 hover:to-emerald-500/30 border border-amber-400/50 text-xs sm:text-sm font-black text-amber-200 flex items-center gap-2 transition-all cursor-pointer shadow-[0_0_20px_rgba(245,158,11,0.2)]"
-              >
-                <span>🏎️</span>
-                <span>Labadi Buggy GP • NEW</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => openLaunchSheetForGame("oware", "free_data")}
-                className="px-4 py-2 rounded-full bg-white/[0.05] hover:bg-white/[0.1] border border-white/12 text-xs sm:text-sm font-bold text-slate-200 flex items-center gap-2 transition-all cursor-pointer"
-              >
-                <span>🧠</span>
-                <span>Skill, not luck</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setInitialDmPartner(null);
-                  setCommunityModalTab("dms");
-                  setCommunityModalOpen(true);
-                }}
-                className="px-4 py-2 rounded-full bg-gradient-to-r from-pink-500/25 via-rose-500/25 to-amber-500/25 hover:from-pink-500/35 hover:to-amber-500/35 border border-pink-400/50 text-xs sm:text-sm font-black text-pink-200 flex items-center gap-2 transition-all cursor-pointer shadow-[0_0_20px_rgba(236,72,153,0.2)]"
-              >
-                <span>✈️</span>
-                <span>Text Gamers (DMs)</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
+        <ArenaLobby
+          isSignedIn={!!user}
+          playerName={displayFirstName}
+          level={levelInfo.level}
+          levelTitle={levelInfo.title}
+          levelProgressPercent={levelInfo.levelProgressPercent}
+          arenaPoints={arenaPoints}
+          walletBalance={walletBalance}
+          dataGoalSize={targetDataSize}
+          dataGoalPercent={targetProgressPercent}
+          remainingFreeDataToday={remainingFreeDataToday}
+          openChallenges={openChallenges}
+          inProgressChallenges={activeInProgressChallenges}
+          invitedChallenge={invitedSpotlightChallenge}
+          recentWinners={recentClaims}
+          loading={loading}
+          joiningChallengeId={joiningChallengeId}
+          roomCodeInput={roomCodeInput}
+          resolveMySide={resolveMySideForChallenge}
+          isInvitedForMe={isChallengeInvitedForMe}
+          onLaunchGame={openLaunchSheetForGame}
+          onOpenDrawer={(tab, game) => {
+            if (game) setSelectedGame(game);
+            setProfileDrawerTab(tab);
+            setProfileDrawerOpen(true);
+          }}
+          onOpenCommunity={(tab) => {
+            setInitialDmPartner(null);
+            setCommunityModalTab(tab);
+            setCommunityModalOpen(true);
+          }}
+          onGoHome={() => navigate(user ? "/dashboard" : "/")}
+          onRefresh={() => fetchLobby()}
+          onJoinChallenge={(chal, source, byInvite) => handleJoinChallenge(chal, source, byInvite)}
+          onCancelChallenge={handleCancelOpenChallenge}
+          onResumeChallenge={(chal, side) => {
+            recordMyChallengeSide(chal.id, side);
+            setMySide(side);
+            setActiveChallenge(chal);
+          }}
+          onRoomCodeChange={setRoomCodeInput}
+          onJoinByRoomCode={() => handleJoinByRoomCode()}
+          avatarSlot={
+            <VerifiedGamerAvatar
+              avatarId={playerAvatarId}
+              seedName={displayFirstName}
+              size={36}
+              showVerifiedBadge={true}
+              glow={true}
+            />
+          }
+          voiceSlot={
+            <InGameVoiceChat
+              roomCode="ARENA-LOBBY"
+              mySide="creator"
+              myName={displayFirstName}
+              opponentName="Arena Lobby"
+              mode="p2p"
+            />
+          }
+          storiesSlot={
+            <DailyStoriesBar
+              currentUserId={user?.id || null}
+              playerName={displayFirstName}
+              playerPhone={playerPhone || profile?.phone || ""}
+              playerAvatarId={playerAvatarId}
+              playerLevel={levelInfo.level}
+              playerTitle={levelInfo.title}
+              favoriteGame={selectedGame}
+              activeRoomCode={activeChallenge?.room_code || null}
+              onJoinRoomCode={(code) => handleJoinByRoomCode(code)}
+              onChallengeStoryAuthor={(author) => {
+                setSelectedInvitedUser({
+                  user_id: author.user_id || "",
+                  full_name: author.display_name,
+                  masked_phone: "Story Gamer",
+                  phone: "",
+                  is_agent: false,
+                });
+                openLaunchSheetForGame((author.favorite_game as GameType) || "oware", "p2p", "private");
+              }}
+            />
+          }
+          communitySlot={
+            <Suspense fallback={<div className="h-48 rounded-3xl bg-white/[0.03] border border-white/[0.06] animate-pulse" />}>
+              <GamerCommunityPreviewCard
+                currentUserId={user?.id || null}
+                playerName={displayFirstName}
+                playerPhone={playerPhone || profile?.phone || ""}
+                playerAvatarId={playerAvatarId}
+                playerLevel={levelInfo.level}
+                playerTitle={levelInfo.title}
+                onOpenChat={() => {
                   setInitialDmPartner(null);
                   setCommunityModalTab("chat");
                   setCommunityModalOpen(true);
                 }}
-                className="px-4 py-2 rounded-full bg-amber-500/15 hover:bg-amber-500/25 border border-amber-400/40 text-xs sm:text-sm font-bold text-amber-300 flex items-center gap-2 transition-all cursor-pointer"
-              >
-                <span>💬</span>
-                <span>SwiftGram Feed</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
+                onOpenDirectMessages={(targetGamer) => {
+                  setInitialDmPartner(targetGamer || null);
+                  setCommunityModalTab("dms");
+                  setCommunityModalOpen(true);
+                }}
+                onOpenMeetGamers={() => {
+                  setInitialDmPartner(null);
                   setCommunityModalTab("gamers");
                   setCommunityModalOpen(true);
                 }}
-                className="px-4 py-2 rounded-full bg-white/[0.05] hover:bg-white/[0.1] border border-white/12 text-xs sm:text-sm font-bold text-slate-200 flex items-center gap-2 transition-all cursor-pointer"
-              >
-                <span>👥</span>
-                <span>Meet &amp; Challenge Players</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setProfileDrawerTab("profile");
-                  setProfileDrawerOpen(true);
+                onJoinByRoomCode={(code) => handleJoinByRoomCode(code)}
+                onQuickChallengeGamer={(g) => {
+                  setSelectedInvitedUser({
+                    user_id: g.user_id || "",
+                    full_name: g.display_name,
+                    masked_phone: g.masked_phone || "",
+                    phone: g.raw_phone || "",
+                    is_agent: false,
+                  });
+                  openLaunchSheetForGame((g.favorite_game as GameType) || "oware", "p2p", "private");
                 }}
-                className="px-4 py-2 rounded-full bg-white/[0.05] hover:bg-white/[0.1] border border-white/12 text-xs sm:text-sm font-bold text-slate-200 flex items-center gap-2 transition-all cursor-pointer"
-              >
-                <span>🎁</span>
-                <span>
-                  {targetDataSize} Goal ({targetProgressPercent}%)
-                </span>
-              </button>
-            </div>
-          </div>
-
-          {/* 2A. Gamer Daily Life Stories (Photos, Videos & Statuses + Glossy Avatars) */}
-          <DailyStoriesBar
-            currentUserId={user?.id || null}
-            playerName={displayFirstName}
-            playerPhone={playerPhone || profile?.phone || ""}
-            playerAvatarId={playerAvatarId}
-            playerLevel={levelInfo.level}
-            playerTitle={levelInfo.title}
-            favoriteGame={selectedGame}
-            activeRoomCode={activeChallenge?.room_code || null}
-            onJoinRoomCode={(code) => handleJoinByRoomCode(code)}
-            onChallengeStoryAuthor={(author) => {
-              setSelectedInvitedUser({
-                user_id: author.user_id || "",
-                full_name: author.display_name,
-                masked_phone: "Story Gamer",
-                phone: "",
-                is_agent: false,
-              });
-              openLaunchSheetForGame(
-                (author.favorite_game as GameType) || "oware",
-                "p2p",
-                "private"
-              );
-            }}
-          />
-
-          {/* 2B. Live SwiftGram Gamer Feed & 1-on-1 Direct Messaging Card */}
-          <GamerCommunityPreviewCard
-            currentUserId={user?.id || null}
-            playerName={displayFirstName}
-            playerPhone={playerPhone || profile?.phone || ""}
-            playerAvatarId={playerAvatarId}
-            playerLevel={levelInfo.level}
-            playerTitle={levelInfo.title}
-            onOpenChat={() => {
-              setInitialDmPartner(null);
-              setCommunityModalTab("chat");
-              setCommunityModalOpen(true);
-            }}
-            onOpenDirectMessages={(targetGamer) => {
-              setInitialDmPartner(targetGamer || null);
-              setCommunityModalTab("dms");
-              setCommunityModalOpen(true);
-            }}
-            onOpenMeetGamers={() => {
-              setInitialDmPartner(null);
-              setCommunityModalTab("gamers");
-              setCommunityModalOpen(true);
-            }}
-            onJoinByRoomCode={(code) => handleJoinByRoomCode(code)}
-            onQuickChallengeGamer={(g) => {
-              setSelectedInvitedUser({
-                user_id: g.user_id || "",
-                full_name: g.display_name,
-                masked_phone: g.masked_phone || "",
-                phone: g.raw_phone || "",
-                is_agent: false,
-              });
-              openLaunchSheetForGame(
-                (g.favorite_game as GameType) || "oware",
-                "p2p",
-                "private"
-              );
-            }}
-          />
-
-          {/* 3. Live / Accepted Match Alert (Only shown when user has an active or invited room) */}
-          {invitedSpotlightChallenge && (
-            <div className="p-4 rounded-3xl bg-gradient-to-r from-amber-500/20 to-emerald-500/15 border border-amber-400/60 flex items-center justify-between gap-3">
-              <div>
-                <p className="text-xs font-black text-amber-300 uppercase">
-                  {invitedSpotlightChallenge.metadata?.is_private
-                    ? `🔒 Private Challenge Invite • #${invitedSpotlightChallenge.room_code}`
-                    : `🎯 Direct Room Invite • #${invitedSpotlightChallenge.room_code}`}
-                </p>
-                <p className="text-sm font-black text-white">
-                  {invitedSpotlightChallenge.creator_name} invited you to play{" "}
-                  {String(invitedSpotlightChallenge.game_type || "").toUpperCase()}
-                </p>
-              </div>
-              <Button
-                size="sm"
-                onClick={() =>
-                  handleJoinChallenge(
-                    invitedSpotlightChallenge,
-                    user ? "wallet" : "momo",
-                    true
-                  )
-                }
-                className="h-10 rounded-full bg-[#f59e0b] hover:bg-[#fbbf24] text-slate-950 font-black text-xs px-5"
-              >
-                Accept &amp; Play →
-              </Button>
-            </div>
-          )}
-
-          {activeInProgressChallenges.length > 0 && (
-            <div className="p-4 rounded-3xl bg-emerald-500/10 border border-emerald-500/40 space-y-2.5">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-black text-emerald-300 flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
-                  Live Match Ready to Resume ({activeInProgressChallenges.length})
-                </span>
-              </div>
-              {activeInProgressChallenges.slice(0, 2).map((chal) => {
-                const detectedRole = resolveMySideForChallenge(chal);
-                const effectiveSide: "creator" | "opponent" =
-                  detectedRole ||
-                  (user?.id && chal.creator_id === user.id ? "creator" : "opponent");
-                return (
-                  <div
-                    key={chal.id}
-                    className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-slate-950/80 border border-white/10"
-                  >
-                    <div>
-                      <p className="text-xs font-black text-white uppercase">
-                        {chal.game_type} • Room #{chal.room_code}
-                      </p>
-                      <p className="text-[11px] text-slate-400">
-                        {chal.creator_name} vs {chal.opponent_name || "Challenger"}
-                      </p>
-                    </div>
-                    <Button
-                      size="sm"
-                      onClick={() => {
-                        recordMyChallengeSide(chal.id, effectiveSide);
-                        setMySide(effectiveSide);
-                        setActiveChallenge(chal);
-                      }}
-                      className="h-9 rounded-full bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-black text-xs px-4"
-                    >
-                      Play now →
-                    </Button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {/* 3B. LIVE PUBLIC CHALLENGES & PRIVATE ROOM CODE HUB (Directly on Main Arena Lobby) */}
-          <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-b from-[#10192d] to-[#0b1220] border border-white/12 shadow-xl space-y-3.5">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
-                <h3 className="text-sm sm:text-base font-black text-white tracking-tight">
-                  🌍 Public Challenges &amp; Private Room Codes
-                </h3>
-                <Badge className="bg-amber-500/20 text-amber-300 border border-amber-400/40 font-black text-[10px]">
-                  {openChallenges.length} OPEN
-                </Badge>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => openLaunchSheetForGame(selectedGame, "p2p", "public")}
-                  className="h-8 px-3 rounded-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-[11px] flex items-center gap-1 cursor-pointer shadow"
-                >
-                  <PlusCircle className="w-3.5 h-3.5" />
-                  <span>+ Public Challenge</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => openLaunchSheetForGame(selectedGame, "p2p", "private")}
-                  className="h-8 px-3 rounded-full bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/50 text-amber-300 font-black text-[11px] flex items-center gap-1 cursor-pointer"
-                >
-                  <UserPlus className="w-3.5 h-3.5" />
-                  <span>🔒 Private Friend</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => fetchLobby()}
-                  className="h-8 w-8 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center text-slate-300 cursor-pointer"
-                  title="Refresh Challenges"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
-                </button>
-              </div>
-            </div>
-
-            {/* Quick Private / Friend Room Code Entry Bar */}
-            <div className="flex flex-col sm:flex-row gap-2 p-2.5 rounded-2xl bg-slate-950/80 border border-white/10">
-              <div className="flex items-center gap-2 flex-1">
-                <Hash className="w-4 h-4 text-amber-400 shrink-0 ml-1" />
-                <Input
-                  placeholder="Have a Private or Friend Room Code? Enter #CODE (e.g. 8F2K9A)"
-                  value={roomCodeInput}
-                  onChange={(e) => setRoomCodeInput(e.target.value.toUpperCase())}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") handleJoinByRoomCode();
-                  }}
-                  className="h-9 rounded-xl bg-slate-900 border-white/15 font-mono font-bold text-xs text-white uppercase"
-                />
-              </div>
-              <Button
-                type="button"
-                onClick={() => handleJoinByRoomCode()}
-                className="h-9 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs px-4 shrink-0"
-              >
-                Join by Code →
-              </Button>
-            </div>
-
-            {/* Live Open Public Challenges List */}
-            {openChallenges.length === 0 ? (
-              <div className="p-4 rounded-2xl border border-dashed border-white/10 bg-slate-950/40 flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left">
-                <div>
-                  <p className="text-xs font-bold text-slate-200">
-                    No open public challenges waiting right now.
-                  </p>
-                  <p className="text-[11px] text-slate-400">
-                    Post a Public Challenge to alert online players, or create a Private Challenge for a friend!
-                  </p>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <Button
-                    size="sm"
-                    onClick={() => openLaunchSheetForGame("oware", "p2p", "public")}
-                    className="h-8 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs"
-                  >
-                    🌍 Post Public Room
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => openLaunchSheetForGame("oware", "p2p", "private")}
-                    className="h-8 rounded-xl border-amber-400/50 text-amber-300 font-black text-xs"
-                  >
-                    🔒 Private Invite
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-[280px] overflow-y-auto pr-0.5">
-                {openChallenges.slice(0, 8).map((chal) => {
-                  const isMine = resolveMySideForChallenge(chal) === "creator";
-                  const isInvitedToMe = isChallengeInvitedForMe(chal);
-                  const isPrivate = Boolean(chal.metadata?.is_private);
-                  const stake = Number(chal.stake_amount || 0);
-                  const gMeta = GAME_CATALOG.find((g) => g.id === chal.game_type);
-                  return (
-                    <div
-                      key={chal.id}
-                      className={`p-3 rounded-2xl border flex flex-col justify-between gap-2.5 ${
-                        isInvitedToMe
-                          ? "bg-amber-500/15 border-amber-400/60"
-                          : "bg-slate-950/85 border-white/10"
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="text-xl shrink-0">{gMeta?.emoji || "⚔️"}</span>
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="text-xs font-black text-white uppercase">
-                                {gMeta?.shortTitle || chal.game_type}
-                              </span>
-                              <Badge
-                                className={
-                                  isPrivate
-                                    ? "bg-amber-500/20 text-amber-300 border border-amber-400/40 text-[9px] font-black px-1.5 py-0"
-                                    : "bg-emerald-500/20 text-emerald-300 border border-emerald-400/40 text-[9px] font-black px-1.5 py-0"
-                                }
-                              >
-                                {isPrivate ? "🔒 PRIVATE" : "🌍 PUBLIC"} • #{chal.room_code}
-                              </Badge>
-                            </div>
-                            <p className="text-[11px] text-slate-300 truncate">
-                              Host: <strong className="text-white">{chal.creator_name}</strong>
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="text-right shrink-0">
-                          <p className="text-[11px] font-mono font-black text-emerald-400">
-                            {stake === 0
-                              ? "FREE 1v1"
-                              : `Win GH₵ ${Number(chal.prize_pool || 0).toFixed(2)}`}
-                          </p>
-                          <p className="text-[10px] font-mono text-slate-400">
-                            {stake === 0 ? "+35 Pts" : `Stake GH₵ ${stake.toFixed(2)}`}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-1.5">
-                        {isMine ? (
-                          <>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => {
-                                setMySide("creator");
-                                setActiveChallenge(chal);
-                              }}
-                              className="h-8 flex-1 rounded-xl border-amber-400/40 text-amber-300 text-xs font-bold"
-                            >
-                              Open My Room
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => handleCancelOpenChallenge(chal.id)}
-                              className="h-8 text-rose-400 text-xs font-bold px-2.5"
-                            >
-                              Cancel
-                            </Button>
-                          </>
-                        ) : stake === 0 ? (
-                          <Button
-                            size="sm"
-                            disabled={joiningChallengeId === chal.id}
-                            onClick={() => handleJoinChallenge(chal, "wallet")}
-                            className="h-8 flex-1 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs"
-                          >
-                            {joiningChallengeId === chal.id ? (
-                              <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />
-                            ) : null}
-                            ⚡ Accept Challenge (Free)
-                          </Button>
-                        ) : (
-                          <>
-                            {user && (
-                              <Button
-                                size="sm"
-                                disabled={joiningChallengeId === chal.id}
-                                onClick={() => handleJoinChallenge(chal, "wallet")}
-                                className="h-8 flex-1 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs"
-                              >
-                                Accept (Wallet)
-                              </Button>
-                            )}
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              disabled={joiningChallengeId === chal.id}
-                              onClick={() => handleJoinChallenge(chal, "momo")}
-                              className="h-8 flex-1 rounded-xl border-amber-500/40 text-amber-300 font-black text-xs"
-                            >
-                              Accept (MoMo)
-                            </Button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* 4. Featured Hero Game Card — OWARE (Carved Wooden Board + Seeds Showcase) */}
-          <div
-            onClick={() => openLaunchSheetForGame("oware", "free_data")}
-            className="group relative rounded-[28px] overflow-hidden border border-amber-500/30 bg-gradient-to-b from-[#6b3c1b] via-[#3c210e] to-[#0f131d] shadow-[0_24px_60px_rgba(0,0,0,0.75)] cursor-pointer transition-transform duration-200 hover:scale-[1.01]"
-          >
-            {/* Carved Wooden Oware Board Illustration */}
-            <div className="relative pt-4 px-4 sm:px-6 pb-2">
-              {/* Top Badges inside Featured Card */}
-              <div className="relative z-10 flex items-center gap-2 mb-3">
-                <span className="px-3.5 py-1 rounded-full bg-[#fde08d] text-slate-950 font-black text-[11px] uppercase tracking-wider shadow">
-                  GHANA&apos;S GAME
-                </span>
-                <span className="px-3.5 py-1 rounded-full bg-[#34d399] text-slate-950 font-black text-[11px] uppercase tracking-wider shadow">
-                  PLAY ONLINE
-                </span>
-              </div>
-
-              {/* Carved Oware Wooden Plank with 2 End Stores & 12 Pits */}
-              <div
-                className="relative rounded-2xl p-3 sm:p-4 border border-amber-300/20 shadow-inner"
-                style={{
-                  background:
-                    "linear-gradient(180deg, #9a5b2c 0%, #7c451b 55%, #4d290e 100%)",
-                  boxShadow:
-                    "inset 0 4px 12px rgba(255,255,255,0.15), 0 12px 28px rgba(0,0,0,0.65)",
-                }}
-              >
-                <div className="flex items-center gap-2 sm:gap-3">
-                  {/* Left Store */}
-                  <div className="w-10 sm:w-14 h-24 sm:h-28 rounded-full bg-gradient-to-b from-[#2a1506] to-[#43230c] shadow-[inset_0_6px_12px_rgba(0,0,0,0.85)] flex flex-wrap items-center justify-center p-1.5 gap-0.5">
-                    {Array.from({ length: 6 }).map((_, i) => (
-                      <span
-                        key={i}
-                        className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full"
-                        style={{
-                          background:
-                            "radial-gradient(circle at 35% 30%, #f1f5f9 0%, #94a3b8 60%, #334155 100%)",
-                        }}
-                      />
-                    ))}
-                  </div>
-
-                  {/* 12 Pits (2 Rows of 6) */}
-                  <div className="flex-1 grid grid-cols-6 gap-1.5 sm:gap-2.5">
-                    {Array.from({ length: 12 }).map((_, pitIdx) => (
-                      <div
-                        key={pitIdx}
-                        className="aspect-square rounded-full bg-gradient-to-b from-[#261205] to-[#46240c] shadow-[inset_0_5px_10px_rgba(0,0,0,0.85)] flex flex-wrap items-center justify-center p-1 gap-0.5"
-                      >
-                        {Array.from({ length: (pitIdx % 3) + 2 }).map((__, sIdx) => (
-                          <span
-                            key={sIdx}
-                            className="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full shadow"
-                            style={{
-                              background:
-                                "radial-gradient(circle at 35% 30%, #f8fafc 0%, #94a3b8 60%, #334155 100%)",
-                            }}
-                          />
-                        ))}
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Right Store */}
-                  <div className="w-10 sm:w-14 h-24 sm:h-28 rounded-full bg-gradient-to-b from-[#2a1506] to-[#43230c] shadow-[inset_0_6px_12px_rgba(0,0,0,0.85)] flex flex-wrap items-center justify-center p-1.5 gap-0.5">
-                    {Array.from({ length: 7 }).map((_, i) => (
-                      <span
-                        key={i}
-                        className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full"
-                        style={{
-                          background:
-                            "radial-gradient(circle at 35% 30%, #f1f5f9 0%, #94a3b8 60%, #334155 100%)",
-                        }}
-                      />
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Bottom Text & Gold CTA Overlay */}
-            <div className="px-5 sm:px-7 pt-2 pb-6 space-y-3 bg-gradient-to-t from-[#090d16] via-[#090d16]/90 to-transparent">
-              <h2 className="text-3xl sm:text-4xl font-black text-white tracking-tight">Oware</h2>
-              <p className="text-xs sm:text-sm text-slate-300 max-w-lg leading-relaxed">
-                Our own board game. Beat Kofi, Ama and Nana, or send a friend a code and play online.
-              </p>
-              <div className="pt-1 flex flex-wrap items-center gap-2.5">
-                <span className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-[#f59e0b] group-hover:bg-[#fbbf24] text-slate-950 font-black text-sm shadow-lg transition-all">
-                  <span>Play now</span>
-                  <ArrowRight className="w-4 h-4" />
-                </span>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setSelectedGame("oware");
-                    setProfileDrawerTab("help");
-                    setProfileDrawerOpen(true);
-                  }}
-                  className="inline-flex items-center gap-2 px-5 py-3 rounded-full bg-slate-950/90 hover:bg-slate-900 border border-amber-400/50 text-amber-300 font-black text-xs sm:text-sm shadow-lg transition-all cursor-pointer"
-                >
-                  <span>🎬 Help &amp; Gameplay Video</span>
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* 5. "All games" Grid Section */}
-          <div className="space-y-4">
-            <div className="flex items-baseline justify-between">
-              <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-                All games
-              </h2>
-              <span className="text-xs sm:text-sm font-semibold text-slate-400">Tap to play</span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3.5 sm:gap-4">
-              {/* Featured Racing Card: Labadi Beach & Aburi Buggy GP */}
-              <div
-                onClick={() => openLaunchSheetForGame("buggy", "free_data")}
-                className="group relative rounded-3xl overflow-hidden border-2 border-amber-400/40 bg-[#101829] hover:border-amber-400 transition-all cursor-pointer flex flex-col justify-between shadow-[0_14px_35px_rgba(245,158,11,0.18)] col-span-2"
-              >
-                <div className="relative h-40 sm:h-44 bg-gradient-to-br from-[#7c2d12] via-[#0f4c5c] to-[#081c24] p-3.5 sm:p-4 flex flex-col justify-between overflow-hidden">
-                  {/* Ghana Flag Racing Stripe Top Accent */}
-                  <div
-                    className="absolute inset-x-0 top-0 h-1.5"
-                    style={{
-                      background:
-                        "linear-gradient(90deg, #ef4444 0% 33%, #facc15 33% 66%, #22c55e 66% 100%)",
-                    }}
-                  />
-                  <div className="relative z-10 flex items-center justify-between gap-1">
-                    <span className="px-2.5 py-1 rounded-full bg-slate-950/80 backdrop-blur-md text-amber-300 font-black text-[10px] uppercase tracking-wider">
-                      🇬🇭 3D GHANA RACING • 3 LAPS
-                    </span>
-                    <span className="px-2.5 py-1 rounded-full bg-gradient-to-r from-amber-300 via-yellow-400 to-orange-400 text-slate-950 font-black text-[10px] uppercase tracking-wider shadow">
-                      NEW • SUAME GARAGE
-                    </span>
-                  </div>
-
-                  {/* Pseudo-3D Highway, Palm Trees, Kente Boost Pad & Buggy Illustration */}
-                  <div className="relative my-auto flex items-center justify-center gap-4 sm:gap-6">
-                    <span className="text-3xl sm:text-4xl drop-shadow-lg -rotate-6">🌴</span>
-                    <div className="relative px-5 py-2 rounded-2xl bg-slate-950/65 border border-amber-400/40 shadow-[0_0_24px_rgba(245,158,11,0.35)] flex items-center gap-3">
-                      <span className="text-4xl sm:text-5xl drop-shadow-[0_6px_12px_rgba(0,0,0,0.65)]">
-                        🏎️
-                      </span>
-                      <div className="text-left">
-                        <div className="text-[10px] font-black uppercase tracking-widest text-amber-300">
-                          LABADI • TEMA • ABURI
-                        </div>
-                        <div className="text-xs sm:text-sm font-black text-white flex items-center gap-1.5">
-                          <span>⚡ Sobolo Nitro</span>
-                          <span className="text-emerald-400">• ₵ Cedis</span>
-                        </div>
-                      </div>
-                    </div>
-                    <span className="text-3xl sm:text-4xl drop-shadow-lg rotate-6">🚐</span>
-                  </div>
-                </div>
-
-                <div className="p-3.5 sm:p-4 space-y-1 bg-[#0d1424]">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-base sm:text-lg font-black text-white flex items-center gap-2">
-                      <span>Labadi Beach &amp; Aburi Buggy GP</span>
-                      <span className="px-2 py-0.5 rounded-md bg-amber-500/20 border border-amber-400/40 text-amber-300 text-[10px] font-black uppercase">
-                        PLAY NOW
-                      </span>
-                    </h3>
-                    <ArrowRight className="w-4 h-4 text-amber-400 group-hover:translate-x-1 transition-transform" />
-                  </div>
-                  <p className="text-[11px] sm:text-xs text-slate-300 line-clamp-2">
-                    Race across Labadi Beach, Tema Motorway &amp; Aburi Hills! Hit Kente boost pads, collect ₵ Cedis &amp; upgrade your buggy in Suame Magazine Garage.
-                  </p>
-                </div>
-              </div>
-
-              {/* Card 1: 8-Ball Pool & Snooker */}
-              <div
-                onClick={() => openLaunchSheetForGame("pool", "free_data")}
-                className="group relative rounded-3xl overflow-hidden border border-white/10 bg-[#101829] hover:border-amber-400/50 transition-all cursor-pointer flex flex-col justify-between shadow-xl"
-              >
-                <div className="relative h-36 sm:h-44 bg-gradient-to-br from-[#0e4f82] via-[#1668a8] to-[#082c4c] p-3 flex flex-col justify-between overflow-hidden">
-                  <div className="relative z-10 flex items-center justify-between gap-1">
-                    <span className="px-2.5 py-1 rounded-full bg-slate-950/75 backdrop-blur-md text-white font-black text-[10px] uppercase tracking-wider">
-                      BILLIARDS
-                    </span>
-                    <span className="px-2.5 py-1 rounded-full bg-[#fde08d] text-slate-950 font-black text-[10px] uppercase tracking-wider">
-                      ONLINE
-                    </span>
-                  </div>
-
-                  {/* Pool Table Felt, Cue Stick & Balls Art */}
-                  <div className="relative my-auto flex items-center justify-center">
-                    <div className="w-full h-20 rounded-xl border-4 border-[#5c260c] bg-[#1d7ec2] shadow-inner flex items-center justify-around px-3 relative">
-                      <span className="w-5 h-5 rounded-full bg-white shadow-md" />
-                      <div className="w-12 h-0.5 border-t border-dashed border-white/60" />
-                      <div className="flex items-center -space-x-1">
-                        <span className="w-5 h-5 rounded-full bg-amber-400 border border-black/20 flex items-center justify-center text-[8px] font-black text-black">
-                          1
-                        </span>
-                        <span className="w-5 h-5 rounded-full bg-slate-950 border border-white/30 flex items-center justify-center text-[8px] font-black text-white">
-                          8
-                        </span>
-                        <span className="w-5 h-5 rounded-full bg-rose-600 border border-black/20 flex items-center justify-center text-[8px] font-black text-white">
-                          3
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="p-3.5 sm:p-4 space-y-1 bg-[#0d1424]">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-base sm:text-lg font-black text-white">8-Ball Pool</h3>
-                    <ArrowRight className="w-4 h-4 text-amber-400 group-hover:translate-x-0.5 transition-transform" />
-                  </div>
-                  <p className="text-[11px] sm:text-xs text-slate-400 line-clamp-2">
-                    Pro cue stick tray, spin &amp; laser sight. Play online or vs Yaw.
-                  </p>
-                </div>
-              </div>
-
-              {/* Card 2: Market Slash (Reflex / Watermelon Card matching screenshot!) */}
-              <div
-                onClick={() => openLaunchSheetForGame("slash", "free_data")}
-                className="group relative rounded-3xl overflow-hidden border border-white/10 bg-[#101829] hover:border-amber-400/50 transition-all cursor-pointer flex flex-col justify-between shadow-xl"
-              >
-                <div className="relative h-36 sm:h-44 bg-gradient-to-br from-[#4b2c18] via-[#7c3f1c] to-[#291509] p-3 flex flex-col justify-between overflow-hidden">
-                  <div className="relative z-10 flex items-center justify-between gap-1">
-                    <span className="px-2.5 py-1 rounded-full bg-slate-950/75 backdrop-blur-md text-white font-black text-[10px] uppercase tracking-wider">
-                      REFLEX
-                    </span>
-                    <span className="px-2.5 py-1 rounded-full bg-[#fde08d] text-slate-950 font-black text-[10px] uppercase tracking-wider">
-                      NEW
-                    </span>
-                  </div>
-
-                  {/* Sliced Watermelon & Blade Flash Illustration */}
-                  <div className="relative my-auto flex items-center justify-center">
-                    <div className="relative flex items-center gap-1">
-                      <span className="text-5xl sm:text-6xl drop-shadow-[0_8px_16px_rgba(0,0,0,0.6)] -rotate-12">
-                        🍉
-                      </span>
-                      <span className="text-3xl sm:text-4xl drop-shadow-[0_8px_16px_rgba(0,0,0,0.6)] rotate-12">
-                        🍍
-                      </span>
-                      <div className="absolute inset-x-0 top-1/2 h-1 bg-gradient-to-r from-transparent via-white to-amber-300 -rotate-12 shadow-[0_0_12px_#fff]" />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="p-3.5 sm:p-4 space-y-1 bg-[#0d1424]">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-base sm:text-lg font-black text-white">Market Slash</h3>
-                    <ArrowRight className="w-4 h-4 text-amber-400 group-hover:translate-x-0.5 transition-transform" />
-                  </div>
-                  <p className="text-[11px] sm:text-xs text-slate-400 line-clamp-2">
-                    Swipe to slice flying Makola fruits, build combos &amp; dodge bombs.
-                  </p>
-                </div>
-              </div>
-
-              {/* Card 3: Ghana Ludo */}
-              <div
-                onClick={() => openLaunchSheetForGame("ludo", "free_data")}
-                className="group relative rounded-3xl overflow-hidden border border-white/10 bg-[#101829] hover:border-amber-400/50 transition-all cursor-pointer flex flex-col justify-between shadow-xl"
-              >
-                <div className="relative h-36 sm:h-44 bg-gradient-to-br from-[#3b1d5e] via-[#1e2952] to-[#0f172a] p-3 flex flex-col justify-between overflow-hidden">
-                  <div className="relative z-10 flex items-center justify-between gap-1">
-                    <span className="px-2.5 py-1 rounded-full bg-slate-950/75 backdrop-blur-md text-white font-black text-[10px] uppercase tracking-wider">
-                      BOARD
-                    </span>
-                    <span className="px-2.5 py-1 rounded-full bg-[#fde08d] text-slate-950 font-black text-[10px] uppercase tracking-wider">
-                      ONLINE
-                    </span>
-                  </div>
-
-                  {/* 4-Color Ludo Home Bases & 3D Dice Art */}
-                  <div className="relative my-auto flex items-center justify-center gap-3">
-                    <div className="w-16 h-16 rounded-xl overflow-hidden grid grid-cols-2 grid-rows-2 gap-0.5 bg-white p-0.5 shadow-lg">
-                      <div className="bg-red-600 rounded-tl-md" />
-                      <div className="bg-emerald-600 rounded-tr-md" />
-                      <div className="bg-sky-600 rounded-bl-md" />
-                      <div className="bg-amber-400 rounded-br-md" />
-                    </div>
-                    <span className="text-4xl drop-shadow-lg -rotate-12">🎲</span>
-                  </div>
-                </div>
-
-                <div className="p-3.5 sm:p-4 space-y-1 bg-[#0d1424]">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-base sm:text-lg font-black text-white">Ghana Ludo</h3>
-                    <ArrowRight className="w-4 h-4 text-amber-400 group-hover:translate-x-0.5 transition-transform" />
-                  </div>
-                  <p className="text-[11px] sm:text-xs text-slate-400 line-clamp-2">
-                    2–4 players, step-by-step token hops, captures &amp; extra rolls.
-                  </p>
-                </div>
-              </div>
-
-              {/* Card 4: Ghana Dame Checkers */}
-              <div
-                onClick={() => openLaunchSheetForGame("dame", "free_data")}
-                className="group relative rounded-3xl overflow-hidden border border-white/10 bg-[#101829] hover:border-amber-400/50 transition-all cursor-pointer flex flex-col justify-between shadow-xl"
-              >
-                <div className="relative h-36 sm:h-44 bg-gradient-to-br from-[#0f3d3e] via-[#134e4a] to-[#091e22] p-3 flex flex-col justify-between overflow-hidden">
-                  <div className="relative z-10 flex items-center justify-between gap-1">
-                    <span className="px-2.5 py-1 rounded-full bg-slate-950/75 backdrop-blur-md text-white font-black text-[10px] uppercase tracking-wider">
-                      STRATEGY
-                    </span>
-                    <span className="px-2.5 py-1 rounded-full bg-[#fde08d] text-slate-950 font-black text-[10px] uppercase tracking-wider">
-                      ONLINE
-                    </span>
-                  </div>
-
-                  {/* Crowned Dame Pieces Art */}
-                  <div className="relative my-auto flex items-center justify-center gap-2.5">
-                    <div className="w-11 h-11 rounded-full bg-gradient-to-b from-amber-300 to-amber-600 border-2 border-white/60 shadow-lg flex items-center justify-center">
-                      <Crown className="w-5 h-5 text-slate-950" />
-                    </div>
-                    <div className="w-11 h-11 rounded-full bg-gradient-to-b from-rose-500 to-rose-800 border-2 border-white/40 shadow-lg flex items-center justify-center">
-                      <Crown className="w-5 h-5 text-amber-200" />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="p-3.5 sm:p-4 space-y-1 bg-[#0d1424]">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-base sm:text-lg font-black text-white">Ghana Dame</h3>
-                    <ArrowRight className="w-4 h-4 text-amber-400 group-hover:translate-x-0.5 transition-transform" />
-                  </div>
-                  <p className="text-[11px] sm:text-xs text-slate-400 line-clamp-2">
-                    8×8 Ghanaian checkers with mandatory jumps &amp; crowned Kings.
-                  </p>
-                </div>
-              </div>
-
-              {/* Card 5: Candy Crash — Alewa & Kube Ghanaian Sweet Match-3 */}
-              <div
-                onClick={() => openLaunchSheetForGame("candy", "free_data")}
-                className="group relative rounded-3xl overflow-hidden border border-white/10 bg-[#101829] hover:border-amber-400/60 transition-all cursor-pointer flex flex-col justify-between shadow-xl col-span-2 sm:col-span-2"
-              >
-                <div className="relative h-36 sm:h-40 bg-gradient-to-br from-[#5c260c] via-[#3b1507] to-[#1a0802] p-3.5 flex flex-col justify-between overflow-hidden">
-                  {/* Subtle Kente Top Accent Strip */}
-                  <div
-                    className="absolute inset-x-0 top-0 h-1"
-                    style={{
-                      background:
-                        "repeating-linear-gradient(90deg, #ef4444 0px 18px, #facc15 18px 36px, #22c55e 36px 54px, #111827 54px 60px)",
-                    }}
-                  />
-                  <div className="relative z-10 flex items-center justify-between gap-1">
-                    <span className="px-2.5 py-1 rounded-full bg-slate-950/75 backdrop-blur-md text-amber-200 font-black text-[10px] uppercase tracking-wider">
-                      🇬🇭 GHANA SWEETS • MATCH-3
-                    </span>
-                    <span className="px-2.5 py-1 rounded-full bg-gradient-to-r from-amber-400 via-orange-400 to-rose-400 text-slate-950 font-black text-[10px] uppercase tracking-wider">
-                      NEW • ALEWA &amp; KUBE
-                    </span>
-                  </div>
-
-                  {/* Glossy 3D Alewa, Kube, Golden Cocoa Pod & Calabash Bomb Art */}
-                  <div className="relative my-auto flex items-center justify-center gap-3">
-                    <div
-                      title="Alewa Swirl Toffee"
-                      className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#ff9fb0] via-[#e11d48] to-[#7f1d1d] border-2 border-amber-200/60 shadow-lg flex items-center justify-center -rotate-12 relative overflow-hidden"
-                    >
-                      <span className="w-8 h-1.5 bg-white/80 rotate-45 block" />
-                    </div>
-                    <div
-                      title="Takoradi Calabash Cocoa Bomb"
-                      className="w-12 h-12 rounded-full bg-gradient-to-br from-[#a16207] via-[#451a03] to-[#1c0a00] border-2 border-amber-300 shadow-[0_0_20px_rgba(251,191,36,0.5)] flex items-center justify-center relative"
-                    >
-                      <span className="text-xl">🍫</span>
-                    </div>
-                    <div
-                      title="Nkate Groundnut Brittle"
-                      className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#bbf7d0] via-[#16a34a] to-[#14532d] border-2 border-amber-200/60 shadow-lg flex items-center justify-center rotate-12"
-                    >
-                      <span className="text-sm font-black text-amber-200">🥜</span>
-                    </div>
-                    <div
-                      title="Golden Ghana Cocoa Pod"
-                      className="w-11 h-11 rounded-full bg-gradient-to-br from-[#fef9c3] via-[#eab308] to-[#854d0e] border-2 border-amber-200/60 shadow-lg hidden sm:flex items-center justify-center -rotate-6"
-                    >
-                      <span className="text-sm font-black text-amber-950">★</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="p-3.5 sm:p-4 space-y-1 bg-[#0d1424]">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-base sm:text-lg font-black text-white">
-                      Candy Crash • Alewa &amp; Kube
-                    </h3>
-                    <ArrowRight className="w-4 h-4 text-amber-400 group-hover:translate-x-0.5 transition-transform" />
-                  </div>
-                  <p className="text-[11px] sm:text-xs text-slate-400 line-clamp-2">
-                    Match 3+ Ghanaian Alewa, Kube &amp; Golden Cocoa Pods, forge Kente Boosters &amp; Calabash Bombs across Makola &amp; Kejetia.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* 6. Compact Open Friend Challenges Strip (If Any Open Rooms Exist) */}
-          {openChallenges.length > 0 && (
-            <div className="p-4 sm:p-5 rounded-3xl bg-white/[0.03] border border-white/10 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-black uppercase tracking-wider text-amber-300 flex items-center gap-2">
-                  <Sparkles className="w-4 h-4" /> Open Friend Challenges ({openChallenges.length})
-                </span>
-                <button
-                  type="button"
-                  onClick={() => fetchLobby()}
-                  className="text-xs font-bold text-slate-400 hover:text-white flex items-center gap-1"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
-                  Refresh
-                </button>
-              </div>
-
-              <div className="space-y-2">
-                {openChallenges.slice(0, 4).map((chal) => {
-                  const isMine = user && chal.creator_id === user.id;
-                  const stake = Number(chal.stake_amount || 0);
-                  return (
-                    <div
-                      key={chal.id}
-                      className="p-3 rounded-2xl bg-slate-950/80 border border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5"
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <Badge className="bg-amber-500 text-slate-950 font-black text-[10px] uppercase">
-                          {chal.game_type}
-                        </Badge>
-                        <div>
-                          <p className="text-xs font-black text-white">
-                            {chal.creator_name}{" "}
-                            <span className="text-slate-400 font-mono">#{chal.room_code}</span>
-                          </p>
-                          <p className="text-[11px] text-emerald-400 font-mono">
-                            Stake: GH₵ {stake.toFixed(2)} • Winner Takes GH₵{" "}
-                            {Number(chal.prize_pool || 0).toFixed(2)}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        {isMine ? (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              setMySide("creator");
-                              setActiveChallenge(chal);
-                            }}
-                            className="h-8 rounded-full border-amber-400/40 text-amber-300 text-xs font-bold"
-                          >
-                            Open Room
-                          </Button>
-                        ) : stake === 0 ? (
-                          <Button
-                            size="sm"
-                            disabled={joiningChallengeId === chal.id}
-                            onClick={() => handleJoinChallenge(chal, "wallet")}
-                            className="h-8 rounded-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs px-4"
-                          >
-                            Accept &amp; Play (Free)
-                          </Button>
-                        ) : (
-                          <>
-                            {user && (
-                              <Button
-                                size="sm"
-                                disabled={joiningChallengeId === chal.id}
-                                onClick={() => handleJoinChallenge(chal, "wallet")}
-                                className="h-8 rounded-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs px-3.5"
-                              >
-                                Accept (Wallet)
-                              </Button>
-                            )}
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              disabled={joiningChallengeId === chal.id}
-                              onClick={() => handleJoinChallenge(chal, "momo")}
-                              className="h-8 rounded-full border-amber-500/40 text-amber-300 font-black text-xs px-3.5"
-                            >
-                              Accept (MoMo)
-                            </Button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </div>
+              />
+            </Suspense>
+          }
+        />
       )}
     </div>
   );

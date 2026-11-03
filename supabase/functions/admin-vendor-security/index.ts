@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
+import { verifyAdmin } from "../_shared/auth.ts";
 import { sendSmsViaTxtConnect, getSmsConfig, normalizePhone } from "../_shared/sms.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
@@ -12,6 +13,14 @@ serve(async (req: Request) => {
   const supabaseAdmin = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
 
   try {
+    const authResult = await verifyAdmin(req, supabaseAdmin);
+    if (!authResult.success) {
+      return new Response(JSON.stringify({ error: authResult.error }), {
+        status: authResult.status || 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const { agent_id, action } = await req.json(); // action: 'lock' | 'unlock'
 
     if (!agent_id || !['lock', 'unlock'].includes(action)) {

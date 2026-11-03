@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
+import { verifyAdmin } from "../_shared/auth.ts";
 import { getWatiChatbots, startWatiChatbot } from "../_shared/whatsapp.ts";
 
 declare const Deno: any;
@@ -15,6 +16,13 @@ serve(async (req: Request) => {
 
   try {
     const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    const authResult = await verifyAdmin(req, supabaseAdmin);
+    if (!authResult.success) {
+      return new Response(JSON.stringify({ error: authResult.error }), {
+        status: authResult.status || 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
     const body = await req.json().catch(() => ({}));
 
     const action = body.action || "list";

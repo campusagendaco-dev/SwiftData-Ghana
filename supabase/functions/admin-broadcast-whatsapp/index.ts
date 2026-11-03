@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
+import { verifyAdmin } from "../_shared/auth.ts";
 import {
   sendWhatsAppMessage,
   sendWaSenderMessage,
@@ -171,6 +172,30 @@ serve(async (req: Request) => {
   try {
     const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     const body = await req.json().catch(() => ({}));
+
+    // Every action is admin/service-role only, except the WhatsApp number check
+    // agents use from the dashboard bot page, which needs any signed-in user.
+    if (body.action === "check_on_whatsapp" || body.action === "check_whatsapp") {
+      const token = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
+      const { data: { user } } = token ? await supabaseAdmin.auth.getUser(token) : { data: { user: null } };
+      if (!user) {
+        const adminCheck = await verifyAdmin(req, supabaseAdmin);
+        if (!adminCheck.success) {
+          return new Response(JSON.stringify({ error: "Unauthorized" }), {
+            status: 401,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+      }
+    } else {
+      const authResult = await verifyAdmin(req, supabaseAdmin);
+      if (!authResult.success) {
+        return new Response(JSON.stringify({ error: authResult.error }), {
+          status: authResult.status || 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
 
     // Action: Live WhatsApp Session Status (from Wasender API)
     if (body.action === "session_status" || body.action === "status") {

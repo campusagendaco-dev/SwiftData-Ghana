@@ -1,4 +1,5 @@
-const apiKey = '43e680d7d469f84a5fd5425cf5c8b86154a8438a21d39c6f76f6c3b1287f88d0';
+const apiKey = process.env.DATAMART_API_KEY; // never commit provider keys
+if (!apiKey) { console.error('Set DATAMART_API_KEY to run this script.'); process.exit(1); }
 const baseUrl = 'https://api.datamartgh.shop/api/developer';
 
 async function run() {

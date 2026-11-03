@@ -6,25 +6,12 @@ import {
   playTurnNotificationSound,
   getGameSensoryPreferences,
 } from "@/lib/game-sensory-engine";
-import {
-  Trophy,
-  Wrench,
-  Flame,
-  Shield,
-  Gauge,
-  Play,
-  RotateCcw,
-  ArrowLeft,
-  Volume2,
-  VolumeX,
-  Maximize2,
-  Minimize2,
-  Crosshair,
-} from "lucide-react";
+import { ArrowLeft, Crosshair } from "lucide-react";
 import { InGameVoiceChat } from "./InGameVoiceChat";
+import { RacerGarage, RacerMenu, RacerRail, RacerResults } from "./racing/RacerScreens";
 
 export type GhanaTrackId = "labadi" | "aburi" | "motorway";
-export type GhanaVehicleId = "buggy" | "pragya" | "trotro" | "kantanka";
+export type GhanaVehicleId = "roadster" | "buggy" | "pragya" | "trotro" | "kantanka";
 
 export interface BuggyRaceBoardState {
   trackId: GhanaTrackId;
@@ -64,6 +51,8 @@ interface SuameSaveData {
   bank: number;
   best: number;
   vehicle: GhanaVehicleId;
+  /** Set once the default buggy has been swapped for the Volt Roadster. */
+  roadsterMigrated?: boolean;
   track: GhanaTrackId;
   up: {
     eng: number;
@@ -166,6 +155,17 @@ const GHANA_VEHICLES: {
   steerBonus: number;
   armorBonus: number;
 }[] = [
+  {
+    // Electric hypercar (original design, no real-brand name or badge).
+    id: "roadster",
+    name: "Volt Roadster",
+    tagline: "All-Electric Hypercar • Instant Torque Boost",
+    color: "#b3121f",
+    accent: "#e5e7eb",
+    speedBonus: 1.06,
+    steerBonus: 1.04,
+    armorBonus: 0.96,
+  },
   {
     id: "buggy",
     name: "Labadi Sand Buggy",
@@ -286,7 +286,8 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
     const fallback: SuameSaveData = {
       bank: 300,
       best: 0,
-      vehicle: "buggy",
+      vehicle: "roadster",
+      roadsterMigrated: true,
       track: (initialState?.trackId as GhanaTrackId) || "labadi",
       up: { eng: 0, nit: 0, arm: 0 },
     };
@@ -294,9 +295,16 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
       const raw = localStorage.getItem(SUAME_SAVE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
+        // One-time swap: players still on the old default buggy get the roadster.
+        const migratedVehicle =
+          !parsed.roadsterMigrated && (!parsed.vehicle || parsed.vehicle === "buggy")
+            ? "roadster"
+            : parsed.vehicle;
         return {
           ...fallback,
           ...parsed,
+          vehicle: migratedVehicle,
+          roadsterMigrated: true,
           up: { ...fallback.up, ...(parsed.up || {}) },
         };
       }
@@ -1652,6 +1660,21 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
         L ? trk.roadLight : trk.roadDark
       );
 
+      // White edge lines just inside the kerbs
+      for (const side of [-1, 1]) {
+        poly(
+          a.x + side * a.w * 0.93,
+          a.y,
+          a.x + side * a.w * 0.97,
+          a.y,
+          b.x + side * b.w * 0.97,
+          b.y,
+          b.x + side * b.w * 0.93,
+          b.y,
+          "rgba(248,250,252,0.85)"
+        );
+      }
+
       // Persistent Drift Tire Skidmarks on Road
       if (s.skidmarks && s.skidmarks.length > 0) {
         for (const skX of s.skidmarks) {
@@ -1894,6 +1917,155 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
       sign: drawSign,
     };
 
+    /**
+     * Volt Roadster, seen from behind: low wide body, glass canopy, full-width
+     * light bar and diffuser. Boost is an electric glow with arcs (no exhaust).
+     * Expects the context already translated to the car's ground point.
+     */
+    function drawRoadsterBody(u: number, col: string, steer: number, boost: boolean, drifting: boolean) {
+      const c = ctx!;
+
+      // Rear tyres
+      for (const side of [-1, 1]) {
+        c.fillStyle = "#0b0b0e";
+        c.beginPath();
+        c.roundRect(side * 40 * u - 9 * u, -24 * u, 18 * u, 24 * u, 5 * u);
+        c.fill();
+        c.fillStyle = "#3f3f46";
+        const tread = ((gt * 30) % 6) * u;
+        for (let i = 0; i < 3; i++) {
+          c.fillRect(side * 40 * u - 8 * u, -21 * u + i * 7 * u + tread * 0.3, 16 * u, 1.6 * u);
+        }
+      }
+
+      c.translate(steer * 2.2 * u, 0);
+
+      // Body shell with metallic gradient
+      const body = c.createLinearGradient(0, -44 * u, 0, -6 * u);
+      body.addColorStop(0, "#ffffff");
+      body.addColorStop(0.14, col);
+      body.addColorStop(0.72, col);
+      body.addColorStop(1, "#1a0508");
+      c.fillStyle = body;
+      c.beginPath();
+      c.moveTo(-50 * u, -10 * u);
+      c.lineTo(-50 * u, -24 * u);
+      c.bezierCurveTo(-50 * u, -34 * u, -44 * u, -38 * u, -32 * u, -39 * u);
+      c.lineTo(32 * u, -39 * u);
+      c.bezierCurveTo(44 * u, -38 * u, 50 * u, -34 * u, 50 * u, -24 * u);
+      c.lineTo(50 * u, -10 * u);
+      c.quadraticCurveTo(0, -5 * u, -50 * u, -10 * u);
+      c.closePath();
+      c.fill();
+
+      // Shoulder highlight
+      c.strokeStyle = "rgba(255,255,255,0.35)";
+      c.lineWidth = 1.4 * u;
+      c.beginPath();
+      c.moveTo(-40 * u, -37 * u);
+      c.lineTo(40 * u, -37 * u);
+      c.stroke();
+
+      // Glass canopy + reflection
+      const glass = c.createLinearGradient(0, -62 * u, 0, -38 * u);
+      glass.addColorStop(0, "#1e293b");
+      glass.addColorStop(0.55, "#0b1220");
+      glass.addColorStop(1, "#020617");
+      c.fillStyle = glass;
+      c.beginPath();
+      c.moveTo(-27 * u, -39 * u);
+      c.bezierCurveTo(-24 * u, -54 * u, -16 * u, -61 * u, 0, -61 * u);
+      c.bezierCurveTo(16 * u, -61 * u, 24 * u, -54 * u, 27 * u, -39 * u);
+      c.closePath();
+      c.fill();
+      c.fillStyle = "rgba(186,230,253,0.18)";
+      c.beginPath();
+      c.moveTo(-18 * u, -42 * u);
+      c.lineTo(-8 * u, -58 * u);
+      c.lineTo(-2 * u, -58 * u);
+      c.lineTo(-12 * u, -42 * u);
+      c.fill();
+
+      // Driver silhouette leaning into corners
+      c.fillStyle = "rgba(15,23,42,0.92)";
+      c.beginPath();
+      c.arc(steer * 2.4 * u, -47 * u, 6 * u, 0, Math.PI * 2);
+      c.fill();
+
+      // Ducktail lip
+      c.fillStyle = "#0f0f12";
+      c.beginPath();
+      c.roundRect(-30 * u, -41 * u, 60 * u, 3 * u, 1.5 * u);
+      c.fill();
+
+      // Full-width LED light bar (brighter when braking)
+      const braking = keysRef.current.down;
+      c.save();
+      c.shadowColor = "#ff1f3d";
+      c.shadowBlur = (braking ? 18 : 9) * u;
+      c.fillStyle = braking ? "#ff2d4a" : "#e11d48";
+      c.beginPath();
+      c.roundRect(-44 * u, -31 * u, 88 * u, 3.2 * u, 1.6 * u);
+      c.fill();
+      c.restore();
+
+      // Rear diffuser fins
+      c.fillStyle = "#0a0a0c";
+      c.beginPath();
+      c.moveTo(-34 * u, -15 * u);
+      c.lineTo(34 * u, -15 * u);
+      c.lineTo(28 * u, -7 * u);
+      c.lineTo(-28 * u, -7 * u);
+      c.closePath();
+      c.fill();
+      c.strokeStyle = "#27272a";
+      c.lineWidth = 1.2 * u;
+      for (let i = -2; i <= 2; i++) {
+        c.beginPath();
+        c.moveTo(i * 11 * u, -15 * u);
+        c.lineTo(i * 9.5 * u, -7 * u);
+        c.stroke();
+      }
+
+      // Ghana EV plate
+      c.fillStyle = "#f8fafc";
+      c.fillRect(-9 * u, -25 * u, 18 * u, 6 * u);
+      c.fillStyle = "#0f172a";
+      c.font = `800 ${4.4 * u}px system-ui, sans-serif`;
+      c.textAlign = "center";
+      c.textBaseline = "middle";
+      c.fillText("GH-EV", 0, -21.8 * u);
+
+      // Electric boost / drift glow
+      if (boost || drifting) {
+        c.save();
+        const glow = c.createRadialGradient(0, -6 * u, 2 * u, 0, -6 * u, 46 * u);
+        glow.addColorStop(0, boost ? "rgba(125,211,252,0.85)" : "rgba(251,146,60,0.5)");
+        glow.addColorStop(1, "rgba(56,189,248,0)");
+        c.fillStyle = glow;
+        c.beginPath();
+        c.ellipse(0, -4 * u, 52 * u, 14 * u, 0, 0, Math.PI * 2);
+        c.fill();
+        if (boost) {
+          c.strokeStyle = "rgba(224,242,254,0.95)";
+          c.lineWidth = 1.3 * u;
+          for (let k = 0; k < 3; k++) {
+            let ax = (Math.random() * 60 - 30) * u;
+            let ay = -8 * u;
+            c.beginPath();
+            c.moveTo(ax, ay);
+            for (let j = 0; j < 4; j++) {
+              ax += (Math.random() * 10 - 5) * u;
+              ay += (4 + Math.random() * 4) * u;
+              c.lineTo(ax, ay);
+            }
+            c.stroke();
+          }
+        }
+        c.restore();
+      }
+    }
+
     function drawBuggy(
       x: number,
       y: number,
@@ -1921,6 +2093,12 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
       ctx!.beginPath();
       ctx!.ellipse(0, bounce + u * 2, u * 56, u * 8.5, 0, 0, 7);
       ctx!.fill();
+
+      if (vehicleStyle === "roadster") {
+        drawRoadsterBody(u, col, steer, flame, drifting);
+        ctx!.restore();
+        return;
+      }
 
       // Articulated Front Wheels (Turn Left/Right with Steering)
       for (const s of [-1, 1]) {
@@ -2139,162 +2317,175 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
       }
     }
 
-    function drawPill(x: number, y: number, w: number, h: number) {
-      ctx!.fillStyle = "rgba(6, 18, 34, 0.74)";
+    const HUD_FONT = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
+
+    function glassPanel(x: number, y: number, w: number, h: number, r: number) {
+      ctx!.save();
+      ctx!.fillStyle = "rgba(7, 11, 20, 0.62)";
       ctx!.beginPath();
-      ctx!.roundRect(x, y, w, h, 14);
+      ctx!.roundRect(x, y, w, h, r);
       ctx!.fill();
-      ctx!.strokeStyle = "rgba(255, 255, 255, 0.25)";
-      ctx!.lineWidth = 1.5;
+      ctx!.strokeStyle = "rgba(255, 255, 255, 0.12)";
+      ctx!.lineWidth = 1;
       ctx!.stroke();
+      ctx!.restore();
+    }
+
+    function hudBar(x: number, y: number, w: number, h: number, pct: number, fill: string | CanvasGradient, label: string, fs: (n: number) => number) {
+      ctx!.fillStyle = "rgba(255,255,255,0.12)";
+      ctx!.beginPath();
+      ctx!.roundRect(x, y, w, h, h / 2);
+      ctx!.fill();
+      ctx!.fillStyle = fill;
+      ctx!.beginPath();
+      ctx!.roundRect(x, y, Math.max(h, (w * clamp(pct, 0, 100)) / 100), h, h / 2);
+      ctx!.fill();
+      ctx!.fillStyle = "rgba(255,255,255,0.7)";
+      ctx!.font = `800 ${fs(9)}px ${HUD_FONT}`;
+      ctx!.textAlign = "left";
+      ctx!.fillText(label, x, y - fs(4));
     }
 
     function drawHud() {
       const r = getRank();
       const lap = Math.min(LAPS, Math.floor((P.tot - playerZ) / trackLen) + 1);
-      const topY = 40; // Leaves top 36px for floating interactive control bar
+      const k = clamp(H / 420, 0.8, 1.7);
+      const fs = (n: number) => Math.round(n * k);
+      const pad = fs(10);
+      const top = pad;
+      const ph = fs(64);
+      ctx!.save();
+      ctx!.textBaseline = "alphabetic";
 
-      // 1. Top-Left Telemetry Card: Position & Coins
+      // Left: position, lap, coins
+      const lw = fs(150);
+      glassPanel(pad, top, lw, ph, fs(16));
       ctx!.textAlign = "left";
-      drawPill(12, topY, 142, 54);
-      ctx!.fillStyle = "#94a3b8";
-      ctx!.font = "800 10px Trebuchet MS, sans-serif";
-      ctx!.fillText("POS", 22, topY + 15);
-      ctx!.font = "900 30px Impact, sans-serif";
-      ctx!.fillStyle = r === 1 ? "#fde047" : "#38bdf8";
-      ctx!.fillText(
-        ["", "1ST", "2ND", "3RD", "4TH", "5TH", "6TH"][r] || `${r}TH`,
-        22,
-        topY + 45
-      );
-      ctx!.font = "800 12px Impact, sans-serif";
-      ctx!.fillStyle = "#ffd23a";
-      ctx!.fillText(`🪙 ₵${P.coins * 15}`, 88, topY + 20);
-      ctx!.fillStyle = "#e2e8f0";
-      ctx!.fillText(`${r} / 6`, 94, topY + 42);
-
-      // 2. Top-Right Telemetry Card: Lap & 95s Countdown Clock
-      drawPill(W - 160, topY, 148, 54);
-      ctx!.fillStyle = "#94a3b8";
-      ctx!.font = "800 10px Trebuchet MS, sans-serif";
-      ctx!.fillText("LAP", W - 148, topY + 15);
-      ctx!.fillStyle = "#ffffff";
-      ctx!.font = "900 26px Impact, sans-serif";
-      ctx!.fillText(`${lap}/${LAPS}`, W - 148, topY + 44);
-
-      const remainingSec = Math.max(0, RACE_CUTOFF_SECONDS - P.time);
+      ctx!.fillStyle = "rgba(255,255,255,0.55)";
+      ctx!.font = `800 ${fs(9)}px ${HUD_FONT}`;
+      ctx!.fillText("POSITION", pad + fs(12), top + fs(17));
+      ctx!.font = `900 ${fs(30)}px ${HUD_FONT}`;
+      ctx!.fillStyle = r === 1 ? "#fde047" : "#ffffff";
+      const posText = `P${r}`;
+      ctx!.fillText(posText, pad + fs(12), top + fs(47));
+      const posW = ctx!.measureText(posText).width;
+      ctx!.font = `700 ${fs(12)}px ${HUD_FONT}`;
+      ctx!.fillStyle = "rgba(255,255,255,0.5)";
+      ctx!.fillText("/6", pad + fs(14) + posW, top + fs(47));
       ctx!.textAlign = "right";
-      ctx!.font = "800 11px Trebuchet MS, sans-serif";
-      ctx!.fillStyle = remainingSec <= 15 ? "#ff4d4d" : "#ffd24a";
-      ctx!.fillText(`⏱️ ${remainingSec.toFixed(1)}s`, W - 22, topY + 20);
-      ctx!.fillStyle = "#cbd5e1";
-      ctx!.fillText(`${P.time.toFixed(1)}s`, W - 22, topY + 42);
+      ctx!.fillStyle = "rgba(255,255,255,0.55)";
+      ctx!.font = `800 ${fs(9)}px ${HUD_FONT}`;
+      ctx!.fillText("LAP", pad + lw - fs(12), top + fs(17));
+      ctx!.fillStyle = "#ffffff";
+      ctx!.font = `900 ${fs(20)}px ${HUD_FONT}`;
+      ctx!.fillText(`${lap}/${LAPS}`, pad + lw - fs(12), top + fs(42));
+      ctx!.fillStyle = "#fcd34d";
+      ctx!.font = `800 ${fs(10)}px ${HUD_FONT}`;
+      ctx!.fillText(`₵${P.coins * 15}`, pad + lw - fs(12), top + fs(57));
 
-      // 3. Top-Center Integrated Cockpit Pod: Speedometer + Nitro + Armor + Live Track Radar
-      // Positioned at the top so the entire bottom-center road & buggy view is 100% open!
-      const centerAvailW = Math.max(240, W - 336);
-      const podW = Math.min(460, centerAvailW);
-      const podH = 54;
-      const podX = Math.round(W / 2 - podW / 2);
-      const podY = topY;
-      drawPill(podX, podY, podW, podH);
-
-      // Digital Speedometer & Gear on Left of Center Pod
-      const kmh = Math.round((P.speed / MAX) * 195);
-      const gear = Math.min(6, Math.max(1, Math.ceil(kmh / 34)));
+      // Right: time left (turns red in the last 15s) + elapsed
+      const rw = fs(118);
+      const rx = W - pad - rw;
+      glassPanel(rx, top, rw, ph, fs(16));
+      const remainingSec = Math.max(0, RACE_CUTOFF_SECONDS - P.time);
       ctx!.textAlign = "left";
-      ctx!.fillStyle = P.boosting ? "#38bdf8" : "#ffffff";
-      ctx!.font = "900 28px Impact, sans-serif";
-      ctx!.fillText(String(kmh), podX + 12, podY + 32);
-      ctx!.font = "800 9px Trebuchet MS, sans-serif";
-      ctx!.fillStyle = "#94a3b8";
-      ctx!.fillText(`KM/H • G${gear}`, podX + 12, podY + 46);
+      ctx!.fillStyle = "rgba(255,255,255,0.55)";
+      ctx!.font = `800 ${fs(9)}px ${HUD_FONT}`;
+      ctx!.fillText("TIME LEFT", rx + fs(12), top + fs(17));
+      ctx!.fillStyle = remainingSec <= 15 ? "#f87171" : "#ffffff";
+      ctx!.font = `900 ${fs(24)}px ${HUD_FONT}`;
+      ctx!.fillText(`${remainingSec.toFixed(1)}s`, rx + fs(12), top + fs(44));
+      ctx!.fillStyle = "rgba(255,255,255,0.5)";
+      ctx!.font = `700 ${fs(10)}px ${HUD_FONT}`;
+      ctx!.fillText(`Race ${P.time.toFixed(1)}s`, rx + fs(12), top + fs(58));
 
-      // Live Track Radar Bar along Top Half of Center Pod
-      const barX = podX + 86;
-      const barW = Math.max(130, podW - 98);
-      const radarY = podY + 12;
-      ctx!.fillStyle = "rgba(255,255,255,0.25)";
-      ctx!.fillRect(barX, radarY, barW, 3);
+      // Centre: speed, race progress, boost + armor
+      const cw = Math.min(fs(400), W - lw - rw - pad * 4);
+      if (cw > fs(180)) {
+        const cx = Math.round(W / 2 - cw / 2);
+        glassPanel(cx, top, cw, ph, fs(16));
+        const kmh = Math.round((P.speed / MAX) * 195);
+        ctx!.textAlign = "left";
+        ctx!.fillStyle = P.boosting ? "#7dd3fc" : "#ffffff";
+        ctx!.font = `900 ${fs(30)}px ${HUD_FONT}`;
+        ctx!.fillText(String(kmh), cx + fs(12), top + fs(40));
+        ctx!.fillStyle = "rgba(255,255,255,0.5)";
+        ctx!.font = `800 ${fs(9)}px ${HUD_FONT}`;
+        ctx!.fillText("KM/H", cx + fs(12), top + fs(55));
 
-      const prog = (t: number) => clamp((t - playerZ) / (LAPS * trackLen), 0, 1);
-      cars.forEach((c) => {
-        ctx!.fillStyle = c.col;
+        const innerX = cx + fs(86);
+        const innerW = cw - fs(98);
+        // progress track with every car
+        const trackY = top + fs(14);
+        ctx!.fillStyle = "rgba(255,255,255,0.18)";
         ctx!.beginPath();
-        ctx!.arc(barX + barW * prog(c.tot), radarY + 1.5, 4, 0, 7);
+        ctx!.roundRect(innerX, trackY, innerW, fs(3), fs(1.5));
         ctx!.fill();
-      });
-
-      if (mode === "p2p" && initialStateRef.current) {
-        const oppProg =
-          mySide === "creator"
-            ? Number(initialStateRef.current.opponentProgress || 0)
-            : Number(initialStateRef.current.creatorProgress || 0);
-        ctx!.fillStyle = "#22d3ee";
+        const prog = (t: number) => clamp((t - playerZ) / (LAPS * trackLen), 0, 1);
+        cars.forEach((c) => {
+          ctx!.fillStyle = c.col;
+          ctx!.beginPath();
+          ctx!.arc(innerX + innerW * prog(c.tot), trackY + fs(1.5), fs(3.5), 0, Math.PI * 2);
+          ctx!.fill();
+        });
+        if (mode === "p2p" && initialStateRef.current) {
+          const oppProg =
+            mySide === "creator"
+              ? Number(initialStateRef.current.opponentProgress || 0)
+              : Number(initialStateRef.current.creatorProgress || 0);
+          ctx!.fillStyle = "#22d3ee";
+          ctx!.beginPath();
+          ctx!.arc(innerX + innerW * clamp(oppProg, 0, 1), trackY + fs(1.5), fs(4.5), 0, Math.PI * 2);
+          ctx!.fill();
+        }
+        const myVeh = GHANA_VEHICLES.find((v) => v.id === saveRef.current.vehicle) || GHANA_VEHICLES[0];
+        ctx!.fillStyle = myVeh.color;
+        ctx!.strokeStyle = "#ffffff";
+        ctx!.lineWidth = fs(1.6);
         ctx!.beginPath();
-        ctx!.arc(barX + barW * clamp(oppProg, 0, 1), radarY + 1.5, 5.5, 0, 7);
+        ctx!.arc(innerX + innerW * prog(P.tot), trackY + fs(1.5), fs(5), 0, Math.PI * 2);
         ctx!.fill();
+        ctx!.stroke();
+
+        const half = (innerW - fs(10)) / 2;
+        const barY = top + fs(44);
+        const barH = fs(7);
+        const boostGrad = ctx!.createLinearGradient(innerX, 0, innerX + half, 0);
+        boostGrad.addColorStop(0, "#38bdf8");
+        boostGrad.addColorStop(1, "#a78bfa");
+        hudBar(innerX, barY, half, barH, P.boost, boostGrad, "BOOST", fs);
+        hudBar(
+          innerX + half + fs(10),
+          barY,
+          half,
+          barH,
+          P.hp,
+          P.hp > 50 ? "#34d399" : P.hp > 25 ? "#fbbf24" : "#f87171",
+          "ARMOR",
+          fs
+        );
       }
 
-      const myVeh =
-        GHANA_VEHICLES.find((v) => v.id === saveRef.current.vehicle) ||
-        GHANA_VEHICLES[0];
-      ctx!.fillStyle = myVeh.color;
-      ctx!.strokeStyle = "#fff";
-      ctx!.lineWidth = 1.8;
-      ctx!.beginPath();
-      ctx!.arc(barX + barW * prog(P.tot), radarY + 1.5, 5.5, 0, 7);
-      ctx!.fill();
-      ctx!.stroke();
-
-      // Side-by-Side Nitro & Armor Gauges on Bottom Half of Center Pod
-      const halfGaugeW = Math.floor((barW - 8) / 2);
-      const gaugeY = podY + 29;
-      ctx!.fillStyle = "rgba(255,255,255,0.16)";
-      ctx!.fillRect(barX, gaugeY, halfGaugeW, 13);
-      const nitGrad = ctx!.createLinearGradient(barX, 0, barX + halfGaugeW, 0);
-      nitGrad.addColorStop(0, "#38bdf8");
-      nitGrad.addColorStop(0.5, "#facc15");
-      nitGrad.addColorStop(1, "#ef4444");
-      ctx!.fillStyle = nitGrad;
-      ctx!.fillRect(
-        barX,
-        gaugeY,
-        (halfGaugeW * clamp(P.boost, 0, 100)) / 100,
-        13
-      );
-      ctx!.fillStyle = "#ffffff";
-      ctx!.font = "900 8.5px Trebuchet MS, sans-serif";
-      ctx!.fillText("N₂ NITRO", barX + 4, gaugeY + 10);
-
-      const armX = barX + halfGaugeW + 8;
-      ctx!.fillStyle = "rgba(255,255,255,0.16)";
-      ctx!.fillRect(armX, gaugeY, halfGaugeW, 13);
-      ctx!.fillStyle =
-        P.hp > 50 ? "#10b981" : P.hp > 25 ? "#f59e0b" : "#ef4444";
-      ctx!.fillRect(
-        armX,
-        gaugeY,
-        (halfGaugeW * clamp(P.hp, 0, 100)) / 100,
-        13
-      );
-      ctx!.fillStyle = "#ffffff";
-      ctx!.fillText("ARMOR", armX + 4, gaugeY + 10);
-
-      // Active Drift / Slipstream / Nitro Status Banner below Top Pod
+      // Drift / slipstream status pill under the centre panel
       if (P.drifting || P.drafting || P.driftBoostTimer > 0) {
-        ctx!.textAlign = "center";
-        ctx!.font = "900 14px Impact, sans-serif";
-        const statusLabel =
+        const label =
           P.driftBoostTimer > 0
-            ? "🔥 DRIFT TURBO BOOST!"
+            ? "DRIFT BOOST"
             : P.drifting
-            ? `⚡ DRIFT CHARGING ${Math.round(P.driftCharge)}%`
-            : "💨 SLIPSTREAM DRAFTING +20 KM/H";
-        ctx!.fillStyle =
-          P.driftBoostTimer > 0 || P.driftCharge >= 80 ? "#38bdf8" : "#facc15";
-        ctx!.fillText(statusLabel, W / 2, topY + 72);
+            ? `DRIFT ${Math.round(P.driftCharge)}%`
+            : "SLIPSTREAM +20 KM/H";
+        ctx!.font = `900 ${fs(11)}px ${HUD_FONT}`;
+        const tw = ctx!.measureText(label).width + fs(24);
+        const py = top + ph + fs(8);
+        ctx!.fillStyle = P.driftBoostTimer > 0 || P.driftCharge >= 80 ? "rgba(56,189,248,0.9)" : "rgba(251,191,36,0.9)";
+        ctx!.beginPath();
+        ctx!.roundRect(W / 2 - tw / 2, py, tw, fs(22), fs(11));
+        ctx!.fill();
+        ctx!.fillStyle = "#0b1220";
+        ctx!.textAlign = "center";
+        ctx!.fillText(label, W / 2, py + fs(15));
       }
+      ctx!.restore();
     }
 
     function render() {
@@ -2399,7 +2590,7 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
             Math.sin(time * 2 + c.ph) * 0.5,
             Math.sin(time * 30 + c.ph) * w * 0.01,
             false,
-            "buggy",
+            "roadster",
             false
           );
           if (f > 0.02) {
@@ -2422,7 +2613,8 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
       const sp = P.speed / MAX;
       const bn = P.speed > 200 ? Math.sin(time * 42) * sp * 2.4 : 0;
       const playerBuggyY = H * 0.89;
-      const playerBuggyW = Math.round(Math.min(192, H * 0.355));
+      // Sized to sit naturally among the rival cars on the grid.
+      const playerBuggyW = Math.round(Math.min(W * 0.26, H * 0.5));
       ctx!.save();
       ctx!.translate(W / 2, playerBuggyY);
       ctx!.rotate(P.st * 0.045 * sp + ps.curve * 0.004 * sp);
@@ -2446,31 +2638,35 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
       drawPostEffects();
       drawHud();
 
-      if (st === "count") {
-        const n = Math.floor(cd);
-        const t = n > 0 ? String(n) : "GO!";
-        const k = 1 + (cd % 1) * 0.25;
+      if (st === "count" || (st === "race" && P.time < 0.8)) {
+        const counting = st === "count";
+        const n = counting ? Math.floor(cd) : 0;
+        const label = n > 0 ? String(n) : "GO";
+        const R = Math.min(W, H) * 0.12;
+        const cxC = W / 2;
+        const cyC = H * 0.42;
         ctx!.save();
-        ctx!.translate(W / 2, H * 0.38);
-        ctx!.scale(k, k);
-        ctx!.font = "900 130px Impact, sans-serif";
+        ctx!.globalAlpha = counting ? 1 : 1 - P.time / 0.8;
+        ctx!.fillStyle = "rgba(7,11,20,0.6)";
+        ctx!.beginPath();
+        ctx!.arc(cxC, cyC, R, 0, Math.PI * 2);
+        ctx!.fill();
+        ctx!.lineWidth = R * 0.09;
+        ctx!.strokeStyle = "rgba(255,255,255,0.14)";
+        ctx!.beginPath();
+        ctx!.arc(cxC, cyC, R * 0.9, 0, Math.PI * 2);
+        ctx!.stroke();
+        ctx!.strokeStyle = n > 0 ? "#fbbf24" : "#4ade80";
+        ctx!.lineCap = "round";
+        ctx!.beginPath();
+        ctx!.arc(cxC, cyC, R * 0.9, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (counting ? cd % 1 : 1));
+        ctx!.stroke();
+        ctx!.fillStyle = n > 0 ? "#ffffff" : "#4ade80";
+        ctx!.font = `900 ${Math.round(R * (n > 0 ? 1.05 : 0.8))}px ${HUD_FONT}`;
         ctx!.textAlign = "center";
-        ctx!.lineWidth = 10;
-        ctx!.strokeStyle = "#6b1d0b";
-        ctx!.strokeText(t, 0, 0);
-        ctx!.fillStyle = n > 0 ? "#ffd24a" : "#5dff7a";
-        ctx!.fillText(t, 0, 0);
+        ctx!.textBaseline = "middle";
+        ctx!.fillText(label, cxC, cyC + R * 0.04);
         ctx!.restore();
-      } else if (st === "race" && P.time < 1.2) {
-        ctx!.font = "900 115px Impact, sans-serif";
-        ctx!.textAlign = "center";
-        ctx!.globalAlpha = 1 - P.time / 1.2;
-        ctx!.lineWidth = 9;
-        ctx!.strokeStyle = "#1d5a14";
-        ctx!.strokeText("GO!", W / 2, H * 0.38);
-        ctx!.fillStyle = "#5dff7a";
-        ctx!.fillText("GO!", W / 2, H * 0.38);
-        ctx!.globalAlpha = 1;
       }
     }
 
@@ -2616,427 +2812,103 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
         className="w-full h-full block object-fill"
       />
 
-      {/* Floating Glassmorphic Top Telemetry & Control Bar (Zero Vertical Space Wasted) */}
-      <div className="absolute top-1.5 inset-x-2.5 z-30 flex items-center justify-between gap-1.5 px-2.5 py-1 rounded-full bg-slate-950/75 backdrop-blur-md border border-white/15 pointer-events-auto">
-        <div className="flex items-center gap-1.5 min-w-0">
-          {onBackToLobby && (
-            <button
-              type="button"
-              onClick={onBackToLobby}
-              className="px-2.5 py-0.5 rounded-full bg-white/10 hover:bg-white/20 text-[10px] font-black text-white flex items-center gap-1 cursor-pointer shrink-0"
-            >
-              <ArrowLeft className="w-3 h-3" />
-              <span>Lobby</span>
-            </button>
-          )}
-          <InGameVoiceChat
-            roomCode={roomCode || "BUGGY-ARENA"}
-            mySide={mySide}
-            myName={mySide === "creator" ? creatorName : opponentName}
-            opponentName={mySide === "creator" ? opponentName : creatorName}
-            mode={mode}
-            compact={true}
-          />
-          <span className="px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-400/30 text-[10px] font-black text-amber-300 truncate max-w-[110px] sm:max-w-[200px]">
-            {activeTrackMeta.badge} {activeTrackMeta.name}
-          </span>
-          <span className="hidden lg:inline-flex px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-400/30 text-[10px] font-black text-emerald-300">
-            🏎️ {activeVehicleMeta.name} • 📱 {racingMetrics.fitSummaryLabel}
-          </span>
-        </div>
+      {/* In-race: a small icon rail on the right edge keeps the HUD clear */}
+      {uiScreen === "racing" && (
+        <RacerRail
+          muted={muted}
+          isFullscreen={screenFit.isFullscreen}
+          onToggleMute={() => setMuted((m) => !m)}
+          onToggleFullscreen={toggleFullscreenLandscape}
+          onLeave={onBackToLobby}
+          voice={
+            mode !== "p2p" ? undefined : <InGameVoiceChat
+              roomCode={roomCode || "BUGGY-ARENA"}
+              mySide={mySide}
+              myName={mySide === "creator" ? creatorName : opponentName}
+              opponentName={mySide === "creator" ? opponentName : creatorName}
+              mode={mode}
+              compact={true}
+            />
+          }
+        />
+      )}
 
-        {/* Live 3-Way Steering Control Selector (Wheel / Motion Tilt / Arrows) */}
-        <div className="flex items-center gap-0.5 bg-slate-900/90 p-0.5 rounded-full border border-white/15 shrink-0">
-          {(
-            [
-              { id: "wheel", label: "🛞 Wheel" },
-              { id: "tilt", label: "📱 Tilt" },
-              { id: "arrows", label: "◀▶ Arrows" },
-            ] as const
-          ).map((opt) => (
-            <button
-              key={opt.id}
-              type="button"
-              onClick={() => changeSteeringMode(opt.id)}
-              className={`px-2 py-0.5 rounded-full text-[10px] font-black transition cursor-pointer ${
-                steeringMode === opt.id
-                  ? "bg-amber-400 text-slate-950 shadow"
-                  : "text-slate-300 hover:text-white"
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="flex items-center gap-1 shrink-0">
-          <span className="hidden sm:inline-flex px-2 py-0.5 rounded-full bg-slate-900 border border-white/10 text-[10px] font-black text-amber-300">
-            💰 GH₵ {saveData.bank.toLocaleString()}
-          </span>
-          <button
-            type="button"
-            onClick={() => setAutoGas((v) => !v)}
-            className={`px-2 py-0.5 rounded-full text-[10px] font-black border cursor-pointer ${
-              autoGas
-                ? "bg-emerald-500/20 text-emerald-300 border-emerald-400/40"
-                : "bg-white/5 text-slate-400 border-white/10"
-            }`}
-          >
-            Gas: {autoGas ? "AUTO" : "MAN"}
-          </button>
-          <button
-            type="button"
-            onClick={() => setMuted((m) => !m)}
-            className="p-1 rounded-full bg-white/10 hover:bg-white/20 text-white cursor-pointer"
-            title={muted ? "Unmute Engine Sound" : "Mute Engine Sound"}
-          >
-            {muted ? (
-              <VolumeX className="w-3.5 h-3.5 text-rose-400" />
-            ) : (
-              <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
-            )}
-          </button>
-          <button
-            type="button"
-            onClick={toggleFullscreenLandscape}
-            className="p-1 rounded-full bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/40 text-amber-300 cursor-pointer"
-            title="Stretch Fullscreen Landscape"
-          >
-            {screenFit.isFullscreen ? (
-              <Minimize2 className="w-3.5 h-3.5" />
-            ) : (
-              <Maximize2 className="w-3.5 h-3.5" />
-            )}
-          </button>
-        </div>
-      </div>
-
-      {/* ── 1. START / TRACK & RIDE MENU OVERLAY ────────────────────────── */}
+      {/* ── 1. START MENU ───────────────────────────────────────────────── */}
       {uiScreen === "menu" && (
-        <div className="absolute inset-0 z-20 pt-10 pb-2 px-3 sm:px-6 bg-gradient-to-b from-slate-950/85 via-slate-950/90 to-slate-950/95 backdrop-blur-sm flex flex-col items-center justify-evenly text-center overflow-y-auto">
-          <div className="space-y-0.5">
-            <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-gradient-to-r from-red-600 via-amber-400 to-emerald-600 text-slate-950 text-[10px] font-black uppercase tracking-wider">
-              🇬🇭 Fullscreen Pro Landscape Rally • 📱 {racingMetrics.fitSummaryLabel}
-            </div>
-            <h1 className="text-xl sm:text-3xl font-black uppercase tracking-tight bg-gradient-to-b from-amber-200 via-amber-400 to-orange-600 bg-clip-text text-transparent drop-shadow">
-              Labadi Beach &amp; Aburi Buggy GP
-            </h1>
-            <p className="text-[11px] text-slate-300 max-w-xl mx-auto">
-              3 Laps • 6 Racers ({creatorName} vs {opponentName} &amp; Pack) • Power-Slide Drift + Slipstream + 95s Cutoff!
-            </p>
-          </div>
-
-          {/* Steering Control Mode Selector in Pre-Race Menu */}
-          <div className="flex flex-wrap items-center justify-center gap-1.5 bg-slate-900/90 px-3 py-1.5 rounded-2xl border border-white/15">
-            <span className="text-[10px] font-black uppercase tracking-wider text-amber-300 mr-1">
-              Steering Control:
-            </span>
-            {(
-              [
-                {
-                  id: "wheel",
-                  label: "🛞 Pro Steering Wheel",
-                },
-                {
-                  id: "tilt",
-                  label: "📱 Motion Tilt Sensor",
-                },
-                {
-                  id: "arrows",
-                  label: "◀ ▶ Touch Arrows",
-                },
-              ] as const
-            ).map((m) => (
-              <button
-                key={m.id}
-                type="button"
-                onClick={() => changeSteeringMode(m.id)}
-                className={`px-2.5 py-1 rounded-xl text-[11px] font-black border transition cursor-pointer ${
-                  steeringMode === m.id
-                    ? "bg-amber-400 text-slate-950 border-amber-300 shadow"
-                    : "bg-white/5 text-slate-200 border-white/10 hover:bg-white/10"
-                }`}
-              >
-                {m.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Circuit Selector */}
-          <div className="w-full max-w-2xl grid grid-cols-3 gap-2 my-0.5">
-            {GHANA_TRACKS.map((trk) => {
-              const selected = saveData.track === trk.id;
-              return (
-                <button
-                  key={trk.id}
-                  type="button"
-                  onClick={() => {
-                    triggerHapticSensor("tap");
-                    persistSave({ ...saveData, track: trk.id });
-                  }}
-                  className={`p-2 rounded-xl border text-left transition cursor-pointer ${
-                    selected
-                      ? "bg-amber-500/20 border-amber-400 ring-2 ring-amber-400/40"
-                      : "bg-white/5 border-white/10 hover:bg-white/10"
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-[9px] font-black text-amber-300">
-                      {trk.badge}
-                    </span>
-                    {selected && (
-                      <span className="text-[8px] font-black px-1.5 py-0.2 rounded bg-amber-400 text-slate-950">
-                        ACTIVE
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-[11px] font-black text-white mt-0.5 truncate">
-                    {trk.name}
-                  </p>
-                  <p className="text-[9px] text-slate-400 line-clamp-1">
-                    {trk.subtitle}
-                  </p>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Vehicle Selector */}
-          <div className="w-full max-w-2xl grid grid-cols-4 gap-2">
-            {GHANA_VEHICLES.map((v) => {
-              const selected = saveData.vehicle === v.id;
-              return (
-                <button
-                  key={v.id}
-                  type="button"
-                  onClick={() => {
-                    triggerHapticSensor("tap");
-                    persistSave({ ...saveData, vehicle: v.id });
-                  }}
-                  className={`p-1.5 rounded-xl border text-left transition cursor-pointer ${
-                    selected
-                      ? "bg-emerald-500/20 border-emerald-400 ring-2 ring-emerald-400/40"
-                      : "bg-white/5 border-white/10 hover:bg-white/10"
-                  }`}
-                >
-                  <div className="flex items-center gap-1.5">
-                    <span
-                      className="w-2.5 h-2.5 rounded-full shrink-0 border border-white/40"
-                      style={{ background: v.color }}
-                    />
-                    <span className="text-[10px] font-black text-white truncate">
-                      {v.name}
-                    </span>
-                  </div>
-                  <p className="text-[8px] text-slate-400 line-clamp-1 mt-0.5">
-                    {v.tagline}
-                  </p>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Action Buttons */}
-          <div className="flex flex-wrap items-center justify-center gap-3 mt-0.5">
-            <button
-              type="button"
-              onClick={() => {
-                try {
-                  (window.screen as any)?.orientation
-                    ?.lock?.("landscape")
-                    ?.catch?.(() => {});
-                } catch {
-                  // ignore
-                }
-                startRaceFnRef.current?.();
-              }}
-              className="px-6 py-2 rounded-full bg-gradient-to-r from-amber-400 via-orange-500 to-red-600 text-slate-950 font-black text-xs sm:text-sm tracking-wider uppercase shadow-xl flex items-center gap-2 hover:scale-105 active:scale-95 transition cursor-pointer"
-            >
-              <Play className="w-4 h-4 fill-current" />
-              Start 3-Lap Race
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                triggerHapticSensor("tap");
-                setUiScreen("garage");
-              }}
-              className="px-4 py-2 rounded-full bg-gradient-to-r from-sky-500 to-blue-700 text-white font-black text-xs uppercase tracking-wider shadow-lg flex items-center gap-2 hover:scale-105 active:scale-95 transition cursor-pointer"
-            >
-              <Wrench className="w-4 h-4" />
-              Suame Garage (GH₵ {saveData.bank})
-            </button>
-          </div>
-        </div>
+        <RacerMenu
+          title="Labadi Buggy GP"
+          tracks={GHANA_TRACKS}
+          vehicles={GHANA_VEHICLES}
+          trackId={saveData.track}
+          vehicleId={saveData.vehicle}
+          bank={saveData.bank}
+          best={saveData.best}
+          steeringMode={steeringMode}
+          autoGas={autoGas}
+          muted={muted}
+          isFullscreen={screenFit.isFullscreen}
+          onSelectTrack={(id) => {
+            triggerHapticSensor("tap");
+            persistSave({ ...saveData, track: id as GhanaTrackId });
+          }}
+          onSelectVehicle={(id) => {
+            triggerHapticSensor("tap");
+            persistSave({ ...saveData, vehicle: id as GhanaVehicleId });
+          }}
+          onSteeringMode={changeSteeringMode}
+          onToggleAutoGas={() => setAutoGas((v) => !v)}
+          onToggleMute={() => setMuted((m) => !m)}
+          onToggleFullscreen={toggleFullscreenLandscape}
+          onStart={() => {
+            try {
+              (window.screen as any)?.orientation?.lock?.("landscape")?.catch?.(() => {});
+            } catch {
+              // ignore
+            }
+            startRaceFnRef.current?.();
+          }}
+          onGarage={() => {
+            triggerHapticSensor("tap");
+            setUiScreen("garage");
+          }}
+          onBack={onBackToLobby}
+        />
       )}
 
-      {/* ── 2. SUAME MAGAZINE MECHANIC GARAGE OVERLAY ───────────────────── */}
+      {/* ── 2. GARAGE ───────────────────────────────────────────────────── */}
       {uiScreen === "garage" && (
-        <div className="absolute inset-0 z-20 pt-11 pb-3 px-4 sm:px-6 bg-slate-950/95 backdrop-blur-md flex flex-col items-center justify-between overflow-y-auto">
-          <div className="text-center space-y-1">
-            <h2 className="text-xl sm:text-2xl font-black uppercase text-amber-400 flex items-center justify-center gap-2">
-              <Wrench className="w-5 h-5" />
-              Suame Magazine Mechanic Workshop
-            </h2>
-            <p className="text-xs text-slate-300">
-              Workshop Balance:{" "}
-              <strong className="text-emerald-400 font-black">
-                GH₵ {saveData.bank.toLocaleString()}
-              </strong>{" "}
-              {saveData.best > 0 && (
-                <span>• Best 3-Lap Record: {saveData.best.toFixed(1)}s</span>
-              )}
-            </p>
-          </div>
-
-          <div className="w-full max-w-xl space-y-2 my-1">
-            {(["eng", "nit", "arm"] as const).map((k) => {
-              const lvl = saveData.up[k];
-              const c = upgradeCost(lvl);
-              const meta = UPGRADE_META[k];
-              const Icon =
-                k === "eng" ? Gauge : k === "nit" ? Flame : Shield;
-              return (
-                <div
-                  key={k}
-                  className="flex items-center justify-between gap-3 p-2.5 rounded-2xl bg-slate-900 border border-white/15"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-amber-300">
-                      <Icon className="w-4 h-4" />
-                    </div>
-                    <div className="text-left">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-black text-white">
-                          {meta.title}
-                        </span>
-                        <span className="text-xs font-mono text-amber-400">
-                          {"●".repeat(lvl)}
-                          {"○".repeat(5 - lvl)}
-                        </span>
-                      </div>
-                      <p className="text-[10px] text-slate-400">
-                        {meta.subtitle}
-                      </p>
-                    </div>
-                  </div>
-
-                  {lvl < 5 ? (
-                    <button
-                      type="button"
-                      disabled={saveData.bank < c}
-                      onClick={() => handleBuyUpgrade(k)}
-                      className="px-3.5 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 disabled:opacity-40 text-slate-950 font-black text-xs shrink-0 cursor-pointer"
-                    >
-                      GH₵ {c}
-                    </button>
-                  ) : (
-                    <span className="px-3 py-1 rounded-xl bg-emerald-500/20 text-emerald-300 text-xs font-black">
-                      MAXED
-                    </span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => setUiScreen("menu")}
-              className="px-5 py-2 rounded-full bg-white/10 hover:bg-white/20 text-white font-black text-xs uppercase cursor-pointer"
-            >
-              ← Back
-            </button>
-            <button
-              type="button"
-              onClick={() => startRaceFnRef.current?.()}
-              className="px-6 py-2 rounded-full bg-gradient-to-r from-amber-400 to-orange-500 text-slate-950 font-black text-xs uppercase flex items-center gap-1.5 cursor-pointer"
-            >
-              <Play className="w-4 h-4 fill-current" />
-              Race Now
-            </button>
-          </div>
-        </div>
+        <RacerGarage
+          bank={saveData.bank}
+          best={saveData.best}
+          levels={saveData.up}
+          meta={UPGRADE_META}
+          cost={upgradeCost}
+          onBuy={handleBuyUpgrade}
+          onBack={() => setUiScreen("menu")}
+          onRace={() => startRaceFnRef.current?.()}
+        />
       )}
 
-      {/* ── 3. RACE FINISH / GAME OVER SUMMARY OVERLAY ──────────────────── */}
+      {/* ── 3. RESULTS ──────────────────────────────────────────────────── */}
       {uiScreen === "end" && endSummary && (
-        <div className="absolute inset-0 z-20 bg-slate-950/90 backdrop-blur-md flex flex-col items-center justify-center p-5 text-center space-y-2.5">
-          <div className="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-amber-300">
-            {endSummary.wrecked || endSummary.timedOut ? (
-              <Flame className="w-7 h-7 text-rose-400" />
-            ) : (
-              <Trophy className="w-7 h-7 text-amber-300" />
-            )}
-          </div>
-
-          <h2 className="text-xl sm:text-3xl font-black uppercase text-amber-300">
-            {endSummary.timedOut
-              ? "⏱️ Time's Up (95s Cutoff)!"
-              : endSummary.wrecked
-              ? "💥 Buggy Wrecked!"
-              : endSummary.rank === 1
-              ? "🏆 1st Place Champion!"
-              : `🏁 Finished #${endSummary.rank} of 6`}
-          </h2>
-
-          <p className="text-xs text-slate-200 max-w-md">
-            {endSummary.timedOut
-              ? `You reached Lap ${endSummary.lap} of 3 when the 95-second race clock expired. Hit Kente boost pads and upgrade your engine in Suame Garage to beat the clock!`
-              : endSummary.wrecked
-              ? `Crashed out on Lap ${endSummary.lap} of 3. Upgrade Kantanka Armor in Suame Garage or dodge roadside rocks & coconut palms!`
-              : `Completed 3 Laps on ${activeTrackMeta.name} in ${endSummary.raceTime.toFixed(
-                  2
-                )}s!`}
-          </p>
-
-          <div className="px-4 py-2 rounded-2xl bg-slate-900 border border-white/10 text-xs font-bold text-emerald-300 space-y-1">
-            <div>
-              💰 Race Prize: GH₵ {endSummary.prizeCoins} + Track Coins: GH₵{" "}
-              {endSummary.collectedCoins} ={" "}
-              <strong className="text-white">
-                +GH₵ {endSummary.prizeCoins + endSummary.collectedCoins}
-              </strong>
-            </div>
-            {endSummary.newBest && (
-              <div className="text-amber-300 font-black">
-                ⚡ NEW TRACK RECORD: {endSummary.raceTime.toFixed(2)}s!
-              </div>
-            )}
-          </div>
-
-          <div className="flex flex-wrap items-center justify-center gap-2.5 pt-1">
-            <button
-              type="button"
-              onClick={() => {
-                startRaceFnRef.current?.();
-                onRematch?.();
-              }}
-              className="px-5 py-2 rounded-full bg-gradient-to-r from-amber-400 to-orange-500 text-slate-950 font-black text-xs uppercase flex items-center gap-1.5 shadow-lg cursor-pointer"
-            >
-              <RotateCcw className="w-4 h-4" />
-              🔄 Rematch
-            </button>
-            {onPlayAnotherGame && (
-              <button
-                type="button"
-                onClick={onPlayAnotherGame}
-                className="px-5 py-2 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs uppercase flex items-center gap-1.5 shadow-lg cursor-pointer"
-              >
-                🎮 Play Another Game
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => setUiScreen("garage")}
-              className="px-4 py-2 rounded-full bg-sky-600 hover:bg-sky-500 text-white font-black text-xs uppercase flex items-center gap-1.5 cursor-pointer"
-            >
-              <Wrench className="w-4 h-4" />
-              Suame Garage
-            </button>
-          </div>
-        </div>
+        <RacerResults
+          rank={endSummary.rank}
+          raceTime={endSummary.raceTime}
+          lap={endSummary.lap}
+          wrecked={endSummary.wrecked}
+          timedOut={Boolean(endSummary.timedOut)}
+          newBest={endSummary.newBest}
+          prizeCoins={endSummary.prizeCoins}
+          collectedCoins={endSummary.collectedCoins}
+          trackName={activeTrackMeta.name}
+          onRematch={() => {
+            startRaceFnRef.current?.();
+            onRematch?.();
+          }}
+          onGarage={() => setUiScreen("garage")}
+          onMenu={() => setUiScreen("menu")}
+          onPlayAnother={onPlayAnotherGame}
+        />
       )}
 
       {/* ── 4. ON-SCREEN COCKPIT STEERING (WHEEL / TILT / ARROWS) & PEDALS ─ */}
@@ -3051,7 +2923,7 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
                 onPointerMove={handleWheelPointerMove}
                 onPointerUp={handleWheelPointerUp}
                 onPointerCancel={handleWheelPointerUp}
-                className="relative w-28 h-28 sm:w-32 sm:h-32 rounded-full bg-slate-950/70 border-2 border-amber-400/70 shadow-[0_10px_28px_rgba(0,0,0,0.85)] flex items-center justify-center touch-none cursor-grab active:cursor-grabbing backdrop-blur-sm"
+                className="relative w-28 h-28 sm:w-32 sm:h-32 rounded-full bg-black/45 border border-white/20 shadow-[0_10px_28px_rgba(0,0,0,0.6)] flex items-center justify-center touch-none cursor-grab active:cursor-grabbing"
                 title="Drag Left or Right to Steer Wheel"
               >
                 <svg
@@ -3072,7 +2944,7 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
                     cy="50"
                     r="42"
                     fill="none"
-                    stroke="#f59e0b"
+                    stroke="#fbbf24"
                     strokeWidth="9"
                     strokeDasharray="36 190"
                     strokeDashoffset="-25"
@@ -3122,9 +2994,7 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
                     GP
                   </text>
                 </svg>
-                <span className="absolute -top-5 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full bg-black/85 border border-amber-400/50 text-[9px] font-black text-amber-300 whitespace-nowrap">
-                  🛞 {wheelAngleDeg > 0 ? `+${wheelAngleDeg}°` : `${wheelAngleDeg}°`}
-                </span>
+
               </div>
             ) : steeringMode === "tilt" ? (
               <div className="p-2.5 rounded-2xl bg-slate-950/85 border border-amber-400/60 backdrop-blur-md space-y-1.5 min-w-[175px] shadow-xl">
@@ -3185,7 +3055,7 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
                   onPointerUp={() => setTouchKey("left", 0)}
                   onPointerCancel={() => setTouchKey("left", 0)}
                   onPointerLeave={() => setTouchKey("left", 0)}
-                  className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-black/70 active:bg-amber-400 active:text-slate-950 border-2 border-white/80 text-white font-black text-xl flex items-center justify-center shadow-lg backdrop-blur-sm"
+                  className="w-16 h-16 sm:w-[72px] sm:h-[72px] rounded-2xl bg-black/45 active:bg-white active:text-slate-950 border border-white/20 text-white font-black text-xl flex items-center justify-center shadow-lg"
                   aria-label="Steer Left"
                 >
                   ◀
@@ -3199,7 +3069,7 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
                   onPointerUp={() => setTouchKey("right", 0)}
                   onPointerCancel={() => setTouchKey("right", 0)}
                   onPointerLeave={() => setTouchKey("right", 0)}
-                  className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-black/70 active:bg-amber-400 active:text-slate-950 border-2 border-white/80 text-white font-black text-xl flex items-center justify-center shadow-lg backdrop-blur-sm"
+                  className="w-16 h-16 sm:w-[72px] sm:h-[72px] rounded-2xl bg-black/45 active:bg-white active:text-slate-950 border border-white/20 text-white font-black text-xl flex items-center justify-center shadow-lg"
                   aria-label="Steer Right"
                 >
                   ▶
@@ -3234,13 +3104,11 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
               onPointerUp={() => setTouchKey("down", 0)}
               onPointerCancel={() => setTouchKey("down", 0)}
               onPointerLeave={() => setTouchKey("down", 0)}
-              className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-slate-950/75 active:bg-orange-500 border-2 border-amber-300/80 text-white font-black flex flex-col items-center justify-center shadow-lg backdrop-blur-sm"
+              className="w-16 h-16 sm:w-[72px] sm:h-[72px] rounded-2xl bg-black/45 active:bg-amber-400 active:text-slate-950 border border-white/20 text-white font-black flex flex-col items-center justify-center shadow-lg"
               aria-label="Power-Slide Drift and Brake"
             >
-              <span className="text-xs leading-none">💨</span>
-              <span className="text-[9px] font-black leading-tight text-amber-300">
-                DRIFT
-              </span>
+              <span className="text-[11px] font-black tracking-wider">DRIFT</span>
+              <span className="text-[9px] font-bold text-white/60">brake</span>
             </button>
             <button
               type="button"
@@ -3251,11 +3119,11 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
               onPointerUp={() => setTouchKey("boost", 0)}
               onPointerCancel={() => setTouchKey("boost", 0)}
               onPointerLeave={() => setTouchKey("boost", 0)}
-              className="w-15 h-15 sm:w-16 sm:h-16 px-4 py-3.5 rounded-full bg-gradient-to-br from-sky-400 via-amber-400 to-red-600 active:scale-95 border-2 border-white text-slate-950 font-black text-base flex flex-col items-center justify-center shadow-[0_0_24px_rgba(56,189,248,0.65)]"
-              aria-label="Nitro Boost"
+              className="w-[76px] h-[76px] sm:w-20 sm:h-20 rounded-full bg-gradient-to-b from-sky-300 to-sky-500 active:scale-95 border-2 border-white/80 text-slate-950 font-black flex flex-col items-center justify-center shadow-[0_0_28px_rgba(56,189,248,0.6)]"
+              aria-label="Boost"
             >
-              <span className="leading-none">🔥</span>
-              <span className="text-[11px] font-black leading-none">N₂</span>
+              <span className="text-lg leading-none">⚡</span>
+              <span className="text-[11px] font-black leading-none tracking-wider">BOOST</span>
             </button>
           </div>
         </div>

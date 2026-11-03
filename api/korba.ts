@@ -1,10 +1,19 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import https from 'node:https';
+import { timingSafeEqual } from 'node:crypto';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 
-// Read proxy URL and bridge secret from environment with reliable defaults
-const KORBA_PROXY_URL = process.env.KORBA_PROXY_URL || "https://WCaCqU:PL9knqRP@149-28-121-181.ip.private.ipb.cloud:9443";
-const BRIDGE_SECRET = process.env.KORBA_BRIDGE_SECRET || "swiftdata-korba-bridge-token-2026";
+// Both values MUST come from the Vercel project environment. There are no
+// fallbacks: a missing value fails closed instead of exposing the proxy.
+const KORBA_PROXY_URL = process.env.KORBA_PROXY_URL?.trim() || "";
+const BRIDGE_SECRET = process.env.KORBA_BRIDGE_SECRET?.trim() || "";
+
+function isValidBridgeToken(provided: unknown): boolean {
+  if (typeof provided !== 'string' || provided.length === 0) return false;
+  const a = Buffer.from(provided);
+  const b = Buffer.from(BRIDGE_SECRET);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Allow only POST requests
@@ -13,26 +22,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   // Validate server configuration
-  if (!BRIDGE_SECRET || !KORBA_PROXY_URL) {
-    console.error("[korba-bridge] Missing KORBA_PROXY_URL or KORBA_BRIDGE_SECRET in environment");
+  if (!KORBA_PROXY_URL || BRIDGE_SECRET.length < 32) {
+    console.error("[korba-bridge] KORBA_PROXY_URL missing or KORBA_BRIDGE_SECRET missing/shorter than 32 chars");
     return res.status(500).json({ error: 'Server misconfigured: missing proxy bridge credentials' });
   }
 
-  // Validate the bridge secret for security
-  const authHeaderToken = req.headers['x-bridge-secret'];
-  const expectedSecret = BRIDGE_SECRET || "swiftdata-korba-bridge-token-2026";
-  const isAuthorized = 
-    !expectedSecret ||
-    authHeaderToken === expectedSecret ||
-    authHeaderToken === "swiftdata-korba-bridge-token-2026" ||
-    !authHeaderToken ||
-    authHeaderToken === "";
-
-  if (!isAuthorized) {
+  // Validate the bridge secret (constant-time, header required)
+  if (!isValidBridgeToken(req.headers['x-bridge-secret'])) {
     return res.status(401).json({ error: 'Unauthorized: Invalid bridge token' });
   }
 
-  const { url, method, headers, body } = req.body;
+  const { url, method, headers, body } = req.body || {};
   if (!url) {
     return res.status(400).json({ error: 'Missing destination url' });
   }
@@ -52,8 +52,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const isAllowedHost = ALLOWED_HOSTS.some(
     (host) => urlObj.hostname === host || urlObj.hostname.endsWith(`.${host}`)
   );
-  if (!isAllowedHost) {
+  if (!isAllowedHost || urlObj.protocol !== 'https:' || (urlObj.port !== '' && urlObj.port !== '443')) {
     return res.status(403).json({ error: 'Destination host not allowed' });
+  }
+  const forwardMethod = String(method || 'POST').toUpperCase();
+  if (!['GET', 'POST'].includes(forwardMethod)) {
+    return res.status(400).json({ error: 'Method not allowed for bridge' });
   }
 
   try {
@@ -65,7 +69,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       for (const [key, val] of Object.entries(headers)) {
         const lowerKey = key.toLowerCase();
         // Do not forward host or content-length (let Node.js handle them)
-        if (lowerKey !== 'host' && lowerKey !== 'content-length') {
+        if (!['host', 'content-length', 'proxy-authorization', 'connection', 'transfer-encoding'].includes(lowerKey)) {
           forwardHeaders[key] = String(val);
         }
       }
@@ -91,9 +95,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const options = {
       hostname: urlObj.hostname,
-      port: urlObj.port || 443,
+      port: 443,
       path: urlObj.pathname + urlObj.search,
-      method: method || 'POST',
+      method: forwardMethod,
       headers: forwardHeaders,
       agent: proxyAgent,
       timeout: 25000

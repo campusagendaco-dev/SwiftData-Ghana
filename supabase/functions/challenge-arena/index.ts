@@ -4,6 +4,59 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import postgres from "https://deno.land/x/postgresjs@v3.4.4/mod.js";
 import { corsHeaders } from "../_shared/cors.ts";
+import { verifyAdmin } from "../_shared/auth.ts";
+import {
+  INITIAL_OWARE_STATE,
+  chooseOwareAiMove,
+  isValidOwareState,
+  settleIfNoLegalMoves,
+  simulateOwareMove,
+  type OwareState,
+} from "../_shared/oware_engine.ts";
+
+/** Oware vs the AI is server-checked: the server replays moves and plays the AI. */
+function isServerCheckedOware(gameType: string, mode: string): boolean {
+  return gameType === "oware" && (mode === "ai" || mode === "free_data");
+}
+
+// ── Match integrity helpers ─────────────────────────────────────────────────
+// Each seat gets a secret token when it creates or joins a match. The hash is
+// stored on the challenge; the client keeps the token and sends it back to
+// prove which side it plays (guests have no user id to check against).
+function newSeatToken(): string {
+  return Array.from(crypto.getRandomValues(new Uint8Array(24)))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+async function sha256Hex(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function resolveCallerSide(
+  challenge: any,
+  authUser: any,
+  seatToken: unknown
+): Promise<"creator" | "opponent" | null> {
+  if (authUser?.id) {
+    if (challenge.creator_id && authUser.id === challenge.creator_id) return "creator";
+    if (challenge.opponent_id && authUser.id === challenge.opponent_id) return "opponent";
+  }
+  const hashes = challenge?.metadata?.seat_token_hashes || {};
+  if (typeof seatToken === "string" && seatToken.length >= 32) {
+    const h = await sha256Hex(seatToken);
+    if (hashes.creator && h === hashes.creator) return "creator";
+    if (hashes.opponent && h === hashes.opponent) return "opponent";
+  }
+  return null;
+}
+
+// Cash stakes and free-data rewards against the AI are paused: the AI runs on
+// the player's own phone and the server never sees the moves, so a "win" can't
+// be verified. P2P matches settle only when both players report the same winner.
+const AI_REWARDS_PAUSED_MESSAGE =
+  "Cash stakes and free-data rewards against the AI are paused while we upgrade fairness checks. Play the AI free for Arena Points, or challenge a real player.";
 import {
   normalizePhone,
   getSmsConfig,
@@ -293,7 +346,7 @@ function formatGameLabel(gameType: string): string {
   if (g === "dame") return "Ghanaian Dame";
   if (g === "pool") return "8-Ball Pool";
   if (g === "slash") return "Market Slash";
-  if (g === "candy") return "Candy Crash";
+  if (g === "candy") return "Alewa Match";
   if (g === "buggy") return "Labadi Buggy GP";
   return g.toUpperCase();
 }
@@ -803,6 +856,13 @@ serve(async (req: Request) => {
     const body = req.method === "POST" ? await req.json().catch(() => ({})) : {};
     const action = String(body.action || "get_lobby");
 
+    if (action.startsWith("admin_")) {
+      const adminCheck = await verifyAdmin(req, supabaseAdmin);
+      if (!adminCheck.success) {
+        return jsonResponse({ success: false, error: adminCheck.error || "Admin access required" }, adminCheck.status || 403);
+      }
+    }
+
     // Load arena settings (fallback to sensible defaults if table is being initialized)
     const { data: settingsRow } = await supabaseAdmin
       .from("game_arena_settings")
@@ -933,6 +993,14 @@ serve(async (req: Request) => {
           ? String(settings.free_data_package_size || "1GB")
           : String(body.reward_data_size || "1GB");
 
+      const serverChecked = isServerCheckedOware(gameType, mode);
+      if (mode === "ai" && rawStake > 0 && !serverChecked) {
+        return jsonResponse({ success: false, error: AI_REWARDS_PAUSED_MESSAGE, ai_rewards_paused: true }, 403);
+      }
+
+      const creatorSeatToken = newSeatToken();
+      const creatorSeatTokenHash = await sha256Hex(creatorSeatToken);
+
       if (mode !== "free_data") {
         // Allow rawStake === 0 in 'p2p' mode for Free 1v1 Friendly Online Rooms!
         if (rawStake > 0 || mode === "ai") {
@@ -1054,7 +1122,10 @@ serve(async (req: Request) => {
         reward_type: rewardType,
         reward_network: rewardNetwork,
         reward_data_size: rewardDataSize,
-        board_state: body.board_state || body.initial_board_state || {},
+        // Server-checked Oware starts from the server's own initial board.
+        board_state: serverChecked
+          ? { ...INITIAL_OWARE_STATE, variant: body.board_state?.variant === "abapa" ? "abapa" : "nam-nam" }
+          : body.board_state || body.initial_board_state || {},
         current_turn: "creator",
         status: isImmediateStart ? "in_progress" : "open",
         metadata: {
@@ -1064,6 +1135,8 @@ serve(async (req: Request) => {
           invited_user_id: invitedUserId || null,
           invited_name: invitedName || null,
           rematch_of_challenge_id: rematchOfChallengeId,
+          seat_token_hashes: { creator: creatorSeatTokenHash },
+          ...(serverChecked ? { oware_server_checked: true, oware_moves: [] } : {}),
         },
       };
 
@@ -1213,6 +1286,7 @@ serve(async (req: Request) => {
       return jsonResponse({
         success: true,
         challenge: created,
+        seat_token: creatorSeatToken,
         notifications: notifyStats,
         message: isImmediateStart
           ? `Match started against ${challengerPersonaName} (Medium Difficulty)! Earn points & win!`
@@ -1465,9 +1539,18 @@ serve(async (req: Request) => {
         }
       }
 
+      const opponentSeatToken = newSeatToken();
+      const joinMeta = challenge.metadata && typeof challenge.metadata === "object" ? challenge.metadata : {};
       const { data: updated, error: joinErr } = await supabaseAdmin
         .from("game_challenges")
         .update({
+          metadata: {
+            ...joinMeta,
+            seat_token_hashes: {
+              ...(joinMeta.seat_token_hashes || {}),
+              opponent: await sha256Hex(opponentSeatToken),
+            },
+          },
           opponent_id: authUser?.id || (body.opponent_id ? String(body.opponent_id) : null),
           opponent_name: opponentName,
           opponent_phone: opponentPhone || null,
@@ -1502,6 +1585,7 @@ serve(async (req: Request) => {
       return jsonResponse({
         success: true,
         challenge: updated,
+        seat_token: opponentSeatToken,
         message: `Joined ${challenge.creator_name}'s ${String(
           updated.game_type || challenge.game_type
         ).toUpperCase()} challenge! Match is LIVE!`,
@@ -1567,6 +1651,18 @@ serve(async (req: Request) => {
         .select("*")
         .eq("id", challengeId)
         .maybeSingle();
+
+      if (!prevChallenge) {
+        return jsonResponse({ success: false, error: "Challenge not found" }, 404);
+      }
+      const hasSeatTokens = Boolean(prevChallenge.metadata?.seat_token_hashes);
+      const syncSide = await resolveCallerSide(prevChallenge, authUser, body.seat_token);
+      if (!syncSide && (hasSeatTokens || prevChallenge.creator_id || prevChallenge.opponent_id)) {
+        return jsonResponse({ success: false, error: "You are not a player in this match." }, 403);
+      }
+      if (prevChallenge.status === "completed" || prevChallenge.status === "cancelled") {
+        return jsonResponse({ success: false, error: "This match is already over." }, 409);
+      }
 
       const prevMeta =
         prevChallenge?.metadata && typeof prevChallenge.metadata === "object"
@@ -1686,11 +1782,86 @@ serve(async (req: Request) => {
       });
     }
 
+    // ── 5B. SERVER-CHECKED OWARE MOVE (player move + server AI reply) ──────────
+    if (action === "oware_play") {
+      const challengeId = String(body.challenge_id || "").trim();
+      const pit = Number(body.pit);
+      const { data: challenge } = await supabaseAdmin
+        .from("game_challenges")
+        .select("*")
+        .eq("id", challengeId)
+        .maybeSingle();
+      if (!challenge) return jsonResponse({ success: false, error: "Challenge not found" }, 404);
+      if (!challenge.metadata?.oware_server_checked) {
+        return jsonResponse({ success: false, error: "This match is not server-checked." }, 400);
+      }
+      const side = await resolveCallerSide(challenge, authUser, body.seat_token);
+      if (side !== "creator") {
+        return jsonResponse({ success: false, error: "You are not the player in this match." }, 403);
+      }
+      const board = challenge.board_state as OwareState;
+      if (challenge.status !== "in_progress" || !isValidOwareState(board)) {
+        return jsonResponse({ success: false, error: "This match is not active.", board }, 409);
+      }
+      if (board.winner) {
+        return jsonResponse({ success: false, error: "This match is already decided.", board }, 409);
+      }
+      if (board.turn !== "creator") {
+        return jsonResponse({ success: false, error: "It is not your turn.", board }, 409);
+      }
+
+      // The rule variant can only be chosen before the first move.
+      let state: OwareState = board;
+      if ((board.moveCount || 0) === 0 && (body.variant === "abapa" || body.variant === "nam-nam")) {
+        state = { ...board, variant: body.variant };
+      }
+
+      const afterHuman = Number.isInteger(pit) ? simulateOwareMove(state, pit, "creator") : null;
+      if (!afterHuman) {
+        return jsonResponse({ success: false, error: "That move is not legal.", board }, 400);
+      }
+
+      const moves: { side: "c" | "o"; pit: number }[] = [{ side: "c", pit }];
+      const aiMoves: number[] = [];
+      let next = settleIfNoLegalMoves(afterHuman);
+      // Staked matches face the strongest server AI; free matches a fair "hard".
+      const difficulty = Number(challenge.stake_amount || 0) > 0 ? "hard" : "medium";
+      for (let guard = 0; guard < 12 && !next.winner && next.turn === "opponent"; guard++) {
+        const aiPit = chooseOwareAiMove(next, { difficulty, aiSide: "opponent", timeMs: 350 });
+        if (aiPit < 0) break;
+        const played = simulateOwareMove(next, aiPit, "opponent");
+        if (!played) break;
+        aiMoves.push(aiPit);
+        moves.push({ side: "o", pit: aiPit });
+        next = settleIfNoLegalMoves(played);
+      }
+
+      // Compare-and-swap on updated_at: two taps can't both apply to the same board.
+      const meta = challenge.metadata || {};
+      const { data: saved } = await supabaseAdmin
+        .from("game_challenges")
+        .update({
+          board_state: next,
+          current_turn: next.turn,
+          metadata: { ...meta, oware_moves: [...(meta.oware_moves || []), ...moves].slice(-400) },
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", challengeId)
+        .eq("updated_at", challenge.updated_at)
+        .select("id");
+      if (!saved || saved.length === 0) {
+        const { data: fresh } = await supabaseAdmin.from("game_challenges").select("board_state").eq("id", challengeId).maybeSingle();
+        return jsonResponse({ success: false, error: "Board changed; re-synced.", board: fresh?.board_state }, 409);
+      }
+
+      return jsonResponse({ success: true, board: next, ai_moves: aiMoves });
+    }
+
     // ── 6. COMPLETE MATCH & SETTLE PRIZE / FREE DATA REWARD ─────────────────────
     if (action === "complete_match") {
       const challengeId = String(body.challenge_id || "").trim();
-      const winnerSide = String(body.winner_side || "creator"); // 'creator' | 'opponent' | 'draw'
-      const finalBoardState = body.board_state || {};
+      let winnerSide = String(body.winner_side || "creator"); // 'creator' | 'opponent' | 'draw'
+      let finalBoardState = body.board_state || {};
 
       const { data: challenge } = await supabaseAdmin
         .from("game_challenges")
@@ -1709,6 +1880,112 @@ serve(async (req: Request) => {
           challenge,
           already_completed: true,
         });
+      }
+
+      // Server-checked Oware: ignore what the client claims; the server's board decides.
+      if (challenge.metadata?.oware_server_checked) {
+        const serverBoard = challenge.board_state as OwareState;
+        if (!serverBoard?.winner) {
+          return jsonResponse({ success: false, error: "The server has not recorded a finished game yet." }, 409);
+        }
+        const callerSide = await resolveCallerSide(challenge, authUser, body.seat_token);
+        if (callerSide !== "creator") {
+          return jsonResponse({ success: false, error: "You are not the player in this match." }, 403);
+        }
+        winnerSide = serverBoard.winner;
+        finalBoardState = serverBoard;
+      } else if (challenge.mode !== "p2p" && Number(challenge.stake_amount || 0) > 0) {
+        // Legacy staked AI match created before the lockdown: the result can't be
+        // verified, so void it as a draw (wallet stakes are refunded below).
+        winnerSide = "draw";
+      }
+
+      if (!["creator", "opponent", "draw"].includes(winnerSide)) {
+        return jsonResponse({ success: false, error: "Invalid winner_side" }, 400);
+      }
+
+      // Only a live match can be settled. An open P2P room has no opponent
+      // stake in the pot yet, so "winning" it would pay out money nobody paid.
+      if (challenge.status !== "in_progress") {
+        return jsonResponse({ success: false, error: "This match has not started yet." }, 409);
+      }
+
+      if (challenge.mode === "p2p") {
+        const reporterSide = await resolveCallerSide(challenge, authUser, body.seat_token);
+        if (!reporterSide) {
+          return jsonResponse({ success: false, error: "You are not a player in this match." }, 403);
+        }
+
+        // Record this side's report with compare-and-swap on updated_at so the
+        // two players' near-simultaneous reports can't overwrite each other.
+        let current = challenge;
+        let reports: Record<string, string> = {};
+        for (let attempt = 0; attempt < 4; attempt++) {
+          const meta = current.metadata && typeof current.metadata === "object" ? current.metadata : {};
+          reports = { ...(meta.result_reports || {}), [reporterSide]: winnerSide };
+          const otherSide = reporterSide === "creator" ? "opponent" : "creator";
+          const disputed = Boolean(reports[otherSide]) && reports[otherSide] !== winnerSide;
+          const { data: saved } = await supabaseAdmin
+            .from("game_challenges")
+            .update({
+              metadata: {
+                ...meta,
+                result_reports: reports,
+                ...(disputed ? { disputed: true, disputed_at: new Date().toISOString() } : {}),
+              },
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", challengeId)
+            .eq("updated_at", current.updated_at)
+            .select("*");
+          if (saved && saved.length > 0) {
+            current = saved[0];
+            break;
+          }
+          const { data: fresh } = await supabaseAdmin.from("game_challenges").select("*").eq("id", challengeId).maybeSingle();
+          if (!fresh) break;
+          if (fresh.status === "completed") {
+            return jsonResponse({ success: true, challenge: fresh, already_completed: true });
+          }
+          current = fresh;
+        }
+
+        const otherSide = reporterSide === "creator" ? "opponent" : "creator";
+        const otherReport = reports[otherSide];
+        if (!otherReport) {
+          return jsonResponse({
+            success: true,
+            pending_confirmation: true,
+            challenge: current,
+            message: "Result recorded. Waiting for your opponent's game to confirm the winner.",
+          });
+        }
+        if (otherReport !== winnerSide) {
+          return jsonResponse({
+            success: true,
+            disputed: true,
+            challenge: current,
+            message: "The two players reported different winners. Stakes are held and an admin will review this match.",
+          });
+        }
+        // Both players agree: fall through to settlement.
+      }
+
+      // Atomically claim settlement before moving any money: two concurrent
+      // complete_match calls (both players' clients fire one) must not both pay.
+      const { data: settlementClaim } = await supabaseAdmin
+        .from("game_challenges")
+        .update({ status: "completed", updated_at: new Date().toISOString() })
+        .eq("id", challengeId)
+        .eq("status", "in_progress")
+        .select("id");
+      if (!settlementClaim || settlementClaim.length === 0) {
+        const { data: current } = await supabaseAdmin
+          .from("game_challenges")
+          .select("*")
+          .eq("id", challengeId)
+          .maybeSingle();
+        return jsonResponse({ success: true, challenge: current, already_completed: true });
       }
 
       const isCreatorWin = winnerSide === "creator";
@@ -1734,23 +2011,12 @@ serve(async (req: Request) => {
 
       // Case A: Draw in a paid match -> Refund wallet stakes
       if (winnerSide === "draw" && stake > 0) {
+        // credit_wallet is an atomic increment (creates the wallet if missing).
         if (challenge.creator_payment_source === "wallet" && challenge.creator_id) {
-          const { data: w1 } = await supabaseAdmin.from("wallets").select("balance").eq("agent_id", challenge.creator_id).maybeSingle();
-          const nextBal1 = Number((Number(w1?.balance || 0) + stake).toFixed(2));
-          if (w1) {
-            await supabaseAdmin.from("wallets").update({ balance: nextBal1, updated_at: new Date().toISOString() }).eq("agent_id", challenge.creator_id);
-          } else {
-            await supabaseAdmin.from("wallets").insert({ agent_id: challenge.creator_id, balance: nextBal1, updated_at: new Date().toISOString() });
-          }
+          await supabaseAdmin.rpc("credit_wallet", { p_agent_id: challenge.creator_id, p_amount: stake });
         }
         if (challenge.opponent_payment_source === "wallet" && challenge.opponent_id) {
-          const { data: w2 } = await supabaseAdmin.from("wallets").select("balance").eq("agent_id", challenge.opponent_id).maybeSingle();
-          const nextBal2 = Number((Number(w2?.balance || 0) + stake).toFixed(2));
-          if (w2) {
-            await supabaseAdmin.from("wallets").update({ balance: nextBal2, updated_at: new Date().toISOString() }).eq("agent_id", challenge.opponent_id);
-          } else {
-            await supabaseAdmin.from("wallets").insert({ agent_id: challenge.opponent_id, balance: nextBal2, updated_at: new Date().toISOString() });
-          }
+          await supabaseAdmin.rpc("credit_wallet", { p_agent_id: challenge.opponent_id, p_amount: stake });
         }
         rewardClaimed = true;
         settlementMessage = "Match ended in a draw! Wallet stakes have been returned.";
@@ -1763,27 +2029,7 @@ serve(async (req: Request) => {
 
       if (humanWon && stake > 0 && prizePool > 0) {
         if (challenge.reward_type === "wallet_cash" && winnerId) {
-          const { data: winnerWallet } = await supabaseAdmin
-            .from("wallets")
-            .select("balance")
-            .eq("agent_id", winnerId)
-            .maybeSingle();
-
-          const nextBal = Number((Number(winnerWallet?.balance || 0) + prizePool).toFixed(2));
-          if (winnerWallet) {
-            await supabaseAdmin
-              .from("wallets")
-              .update({ balance: nextBal, updated_at: new Date().toISOString() })
-              .eq("agent_id", winnerId);
-          } else {
-            await supabaseAdmin
-              .from("wallets")
-              .insert({
-                agent_id: winnerId,
-                balance: nextBal,
-                updated_at: new Date().toISOString(),
-              });
-          }
+          await supabaseAdmin.rpc("credit_wallet", { p_agent_id: winnerId, p_amount: prizePool });
 
           rewardClaimed = true;
           settlementMessage = `🎉 Victory! GH₵ ${prizePool.toFixed(2)} has been credited to ${winnerName}'s Wallet!`;
@@ -1903,6 +2149,9 @@ serve(async (req: Request) => {
       if (!challenge || challenge.status !== "completed") {
         return jsonResponse({ success: false, error: "Completed challenge not found" }, 404);
       }
+      if (challenge.mode !== "p2p" && !challenge.metadata?.oware_server_checked) {
+        return jsonResponse({ success: false, error: AI_REWARDS_PAUSED_MESSAGE, ai_rewards_paused: true }, 403);
+      }
       if (challenge.reward_claimed) {
         return jsonResponse({ success: false, error: "Reward for this challenge has already been claimed!" }, 400);
       }
@@ -1965,6 +2214,11 @@ serve(async (req: Request) => {
 
     // ── 7B. CLAIM ACCUMULATED LEVEL & TARGET POINTS DATA BUNDLE REWARD ──────────
     if (action === "claim_points_reward" || action === "redeem_points_bundle") {
+      // Arena Points are earned from AI matches the server can't verify yet;
+      // redemption for data resumes once server-checked games are live.
+      return jsonResponse({ success: false, error: AI_REWARDS_PAUSED_MESSAGE, ai_rewards_paused: true }, 403);
+    }
+    if (action === "__legacy_claim_points_reward") {
       if (!authUser?.id) {
         return jsonResponse(
           {

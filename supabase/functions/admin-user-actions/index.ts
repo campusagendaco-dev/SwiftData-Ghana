@@ -1542,16 +1542,31 @@ serve(async (req: Request) => {
         console.log(`[Grant Admin] Resolving identity for: ${targetEmail}`);
 
         // 1. Query direct Master Auth Directory (auth.users) as the SOURCE OF TRUTH
-        const { data: authData, error: authErr } = await supabaseAdmin.auth.admin.listUsers({
-          filter: `email = '${targetEmail}'`
-        });
-
-        if (authErr) {
-          console.error("[Grant Admin] Master Auth fetch failed:", authErr);
-          throw authErr;
+        // listUsers() ignores a `filter` option and returns the first page of
+        // ALL users, so users[0] was an arbitrary account. Resolve by exact,
+        // case-insensitive email match instead.
+        const wantedEmail = targetEmail.toLowerCase();
+        let authUser: any = null;
+        const { data: profileHit } = await supabaseAdmin
+          .from("profiles")
+          .select("user_id")
+          .ilike("email", wantedEmail)
+          .limit(1)
+          .maybeSingle();
+        if (profileHit?.user_id) {
+          const { data: byId } = await supabaseAdmin.auth.admin.getUserById(profileHit.user_id);
+          if (byId?.user && String(byId.user.email || "").toLowerCase() === wantedEmail) authUser = byId.user;
         }
-
-        const authUser = authData?.users?.[0] || null;
+        for (let page = 1; !authUser && page <= 50; page++) {
+          const { data: authData, error: authErr } = await supabaseAdmin.auth.admin.listUsers({ page, perPage: 1000 });
+          if (authErr) {
+            console.error("[Grant Admin] Master Auth fetch failed:", authErr);
+            throw authErr;
+          }
+          const users = authData?.users || [];
+          authUser = users.find((u: any) => String(u.email || "").toLowerCase() === wantedEmail) || null;
+          if (users.length < 1000) break;
+        }
 
         // If they aren't in global Auth, they definitely haven't registered yet!
         if (!authUser) {

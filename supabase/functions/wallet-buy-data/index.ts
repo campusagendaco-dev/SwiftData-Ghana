@@ -348,7 +348,7 @@ serve(async (req: Request) => {
     if (customMetadata?.is_data_traffic_promo && customMetadata?.promo_id) {
       const { data: promoRow } = await supabaseAdmin
         .from("data_promo_popups")
-        .select("promo_price, is_active, expires_at, max_claims, claimed_count")
+        .select("id, network, package_size, target_audience, per_user_limit, promo_price, is_active, expires_at, max_claims, claimed_count")
         .eq("id", customMetadata.promo_id)
         .maybeSingle();
 
@@ -356,9 +356,45 @@ serve(async (req: Request) => {
         const now = new Date();
         const isExpired = promoRow.expires_at && new Date(promoRow.expires_at) <= now;
         const isMaxClaimed = promoRow.max_claims > 0 && promoRow.claimed_count >= promoRow.max_claims;
+        // The promo price only applies to the exact bundle the promo advertises.
+        const matchesBundle =
+          normalizeNetworkForPricing(String(promoRow.network || "")) === normalizedNet &&
+          normalizeSize(String(promoRow.package_size || "")) === normalizeSize(String(package_size));
+        const isAgentBuyer = !!(agentProfile?.is_agent || agentProfile?.is_sub_agent);
+        const matchesAudience =
+          promoRow.target_audience === "all" ||
+          (promoRow.target_audience === "agents" && isAgentBuyer) ||
+          (promoRow.target_audience === "customers" && !isAgentBuyer);
 
-        if (!isExpired && !isMaxClaimed && Number(promoRow.promo_price) > 0) {
-          resolvedChargeAmount = Number(promoRow.promo_price);
+        let withinUserLimit = true;
+        if (Number(promoRow.per_user_limit) > 0) {
+          const { count: usedByUser } = await supabaseAdmin
+            .from("orders")
+            .select("id", { count: "exact", head: true })
+            .eq("agent_id", user.id)
+            .eq("metadata->>promo_id", String(promoRow.id))
+            .not("status", "in", "(refunded,cancelled)");
+          withinUserLimit = (usedByUser || 0) < Number(promoRow.per_user_limit);
+        }
+
+        const promoPrice = Number(promoRow.promo_price);
+        if (!isExpired && !isMaxClaimed && matchesBundle && matchesAudience && withinUserLimit &&
+            promoPrice > 0 && promoPrice < resolvedChargeAmount) {
+          // Claim a slot atomically (compare-and-swap on claimed_count) so
+          // concurrent buyers cannot exceed max_claims.
+          const { data: claimed } = await supabaseAdmin
+            .from("data_promo_popups")
+            .update({ claimed_count: Number(promoRow.claimed_count) + 1 })
+            .eq("id", promoRow.id)
+            .eq("claimed_count", promoRow.claimed_count)
+            .select("id");
+          if (claimed && claimed.length > 0) {
+            resolvedChargeAmount = promoPrice;
+          } else {
+            console.warn(`[wallet-buy-data] Promo ${promoRow.id} claim lost a race; charging normal price.`);
+          }
+        } else {
+          console.warn(`[SECURITY] Promo ${promoRow.id} not applied (bundle=${matchesBundle} audience=${matchesAudience} userLimit=${withinUserLimit}) for ${user.id}`);
         }
       }
     }
