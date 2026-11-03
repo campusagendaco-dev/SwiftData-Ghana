@@ -412,7 +412,7 @@ async function verifyKovaHmac(
 ): Promise<boolean> {
   try {
     const cleanSecret = secret.trim();
-    if (!cleanSecret || !signatureHeader) return true;
+    if (!cleanSecret || !signatureHeader) return false;
 
     const encoder = new TextEncoder();
     const candidateSecrets: Uint8Array[] = [
@@ -699,7 +699,7 @@ async function processWhatsAppSelfServiceRefund(supabase: any, fromPhone: string
   if (cleanRef) {
     const { data: order } = await supabase
       .from("orders")
-      .select("id, status, amount, network, package_size, customer_phone, agent_id, failure_reason, created_at, metadata, auto_refunded, payment_method, paystack_verified_amount")
+      .select("id, status, amount, network, package_size, customer_phone, agent_id, failure_reason, created_at, metadata, auto_refunded, payment_method, paystack_verified_amount, order_type")
       .or(`id.ilike.${cleanRef}%,metadata->>client_reference.eq.${cleanRef}`)
       .order("created_at", { ascending: false })
       .limit(1)
@@ -736,6 +736,16 @@ async function processWhatsAppSelfServiceRefund(supabase: any, fromPhone: string
     }
 
     const refundAmt = Number(order.amount || 0);
+
+    // Only the account that paid may be refunded. Matching the recipient
+    // phone proves nothing about who paid: crediting the sender's wallet would
+    // turn someone else's failed purchase into the recipient's balance.
+    if (userId && order.agent_id && order.agent_id !== userId) {
+      return `🔒 *Refund Not Available Here*\n\nOrder #${order.id.slice(0, 8)} was paid for by another account. The buyer can claim the refund from their own dashboard.`;
+    }
+    if (["wallet_topup", "store_wallet_topup", "agent_activation", "sub_agent_activation", "vendor_activation"].includes(String(order.order_type || "").toLowerCase())) {
+      return `❌ *Refund Not Eligible*\n\nOrder #${order.id.slice(0, 8)} is not a data/airtime purchase and cannot be refunded here.`;
+    }
     if (!userId) {
       return `⚠️ *Account Required*\n\nTo receive an instant wallet refund for Order #${order.id.slice(0, 8)} (GH₵ ${refundAmt.toFixed(2)}), please reply *REGISTER* to activate your free account!`;
     }
@@ -2029,6 +2039,61 @@ async function initUtilityPayment(
 
 const inMemoryIncomingDedup = new Map<string, number>();
 
+// ── Inbound sender verification ────────────────────────────────────────────
+// Each provider signs its webhooks differently. A message is "verified" only
+// when its provider's secret is configured AND the signature checks out.
+// Unverified messages still get the customer menu, but never the admin
+// terminal, self-service refunds or wallet debits: otherwise anyone could
+// POST a fake message "from" any phone number and act as that user.
+function constantTimeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+async function hmacDigest(algo: "SHA-1" | "SHA-256", secret: string, data: string): Promise<{ b64: string; hex: string }> {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: algo }, false, ["sign"]);
+  const sig = new Uint8Array(await crypto.subtle.sign("HMAC", key, enc.encode(data)));
+  return {
+    b64: btoa(String.fromCharCode(...sig)),
+    hex: Array.from(sig).map((b) => b.toString(16).padStart(2, "0")).join(""),
+  };
+}
+
+/** Twilio: base64(HMAC-SHA1(authToken, publicUrl + sorted key/value pairs)). */
+async function verifyTwilioSignature(req: Request, form: FormData): Promise<boolean> {
+  const token = Deno.env.get("TWILIO_AUTH_TOKEN") || "";
+  const header = req.headers.get("x-twilio-signature") || "";
+  if (!token || !header) return false;
+  const search = new URL(req.url).search;
+  const base = (Deno.env.get("WHATSAPP_WEBHOOK_URL") || `${SUPABASE_URL}/functions/v1/whatsapp-webhook`).replace(/\/$/, "");
+  const keys = [...new Set([...form.keys()])].sort();
+  const params = keys.map((k) => k + String(form.get(k) ?? "")).join("");
+  for (const url of [base + search, base]) {
+    const { b64 } = await hmacDigest("SHA-1", token, url + params);
+    if (constantTimeEqual(b64, header)) return true;
+  }
+  return false;
+}
+
+/** Meta Cloud API: X-Hub-Signature-256 = "sha256=" + hex(HMAC-SHA256(appSecret, rawBody)). */
+async function verifyMetaSignature(req: Request, rawBody: string): Promise<boolean> {
+  const secret = Deno.env.get("META_APP_SECRET") || "";
+  const header = (req.headers.get("x-hub-signature-256") || "").replace(/^sha256=/i, "").toLowerCase();
+  if (!secret || !header) return false;
+  const { hex } = await hmacDigest("SHA-256", secret, rawBody);
+  return constantTimeEqual(hex, header);
+}
+
+/** WaSender: sends the configured webhook secret in X-Webhook-Signature. */
+function verifyWaSenderSecret(req: Request): boolean {
+  const secret = Deno.env.get("WASENDER_WEBHOOK_SECRET") || "";
+  const header = req.headers.get("x-webhook-signature") || "";
+  return !!secret && !!header && constantTimeEqual(header, secret);
+}
+
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -2053,6 +2118,7 @@ serve(async (req: Request) => {
   let imageUrl: string | null = null;
   let imageBase64: string | null = null;
   let imageMimeType = "image/jpeg";
+  let senderVerified = false;
   const contentType = req.headers.get("content-type") || "";
 
   try {
@@ -2077,6 +2143,7 @@ serve(async (req: Request) => {
       // Incoming from Twilio WhatsApp API
       isTwilio = true;
       const formData = await req.formData();
+      senderVerified = await verifyTwilioSignature(req, formData);
       const rawFrom = String(formData.get("From") || formData.get("WaId") || "");
       const rawBody = String(formData.get("Body") || "");
       const cleanPhone = rawFrom.replace(/^whatsapp:/i, "").trim();
@@ -2099,12 +2166,15 @@ serve(async (req: Request) => {
       const rawBody = await req.text().catch(() => "");
       const kovaSecret = Deno.env.get("KOVA_SIGNING_SECRET") || "";
 
-      if (kovaSecret && kovaSig) {
-        const valid = await verifyKovaHmac(rawBody, kovaSig, kovaSecret, kovaTimestamp);
+      if (verifyWaSenderSecret(req)) {
+        senderVerified = true; // WaSender also sends X-Webhook-Signature
+      } else if (kovaSecret) {
+        const valid = kovaSig ? await verifyKovaHmac(rawBody, kovaSig, kovaSecret, kovaTimestamp) : false;
         if (!valid) {
-          console.warn("[WA Webhook] Kova HMAC verification failed.");
+          console.warn("[WA Webhook] Kova HMAC verification failed or signature missing.");
           return new Response("Unauthorized signature", { status: 401, headers: corsHeaders });
         }
+        senderVerified = true;
       }
 
       let payload: any = null;
@@ -2126,7 +2196,10 @@ serve(async (req: Request) => {
       console.log(`[WA Webhook] Kova incoming from: ${from}, event: ${kovaEvent || "message"}, text: "${text.slice(0, 50)}", isImage: ${isImage}`);
     } else {
       // Incoming JSON (WaSender, Meta Cloud API, or raw Kova)
-      const payload = await req.json().catch(() => null);
+      const rawJsonBody = await req.text().catch(() => "");
+      let payload: any = null;
+      try { payload = JSON.parse(rawJsonBody); } catch { payload = null; }
+      senderVerified = verifyWaSenderSecret(req) || await verifyMetaSignature(req, rawJsonBody);
       if (payload?.action === "check_on_whatsapp" || payload?.action === "check_whatsapp") {
         const checkResult = await checkIsOnWhatsApp(payload.contact || payload.phone || payload.number || "");
         return new Response(JSON.stringify(checkResult), {
@@ -2412,7 +2485,9 @@ Return ONLY a valid JSON object matching these keys.`;
 
     // ── GLOBAL: Self-Service Refund Command ─────────────────────────────────
     if (input.startsWith("refund") || input === "request refund" || input === "my refund" || input === "claim refund") {
-      const refundReply = await processWhatsAppSelfServiceRefund(supabase, from, text);
+      const refundReply = senderVerified
+        ? await processWhatsAppSelfServiceRefund(supabase, from, text)
+        : "🔒 *Refunds via WhatsApp are temporarily unavailable.*\n\nPlease request your refund from your dashboard at https://swiftdatagh.shop.";
       await sendWhatsAppMessage(from, refundReply);
       return new Response("ok", { headers: corsHeaders });
     }
@@ -2829,7 +2904,8 @@ Return ONLY a valid JSON object matching these keys.`;
 
     const senderProfileMeta = await getUserProfileAndWallet(supabase, from);
     const senderProfile = senderProfileMeta?.profile;
-    const isSenderAdmin = Boolean(senderProfileMeta?.isAdmin);
+    // Admin is decided by phone number, so it requires a signature-verified sender.
+    const isSenderAdmin = Boolean(senderProfileMeta?.isAdmin) && senderVerified;
     const isSenderAgent = Boolean(senderProfileMeta?.isAgent);
 
     // ── GLOBAL: Role-Aware Mode Switching ──────────────────────────────────────
@@ -3189,7 +3265,9 @@ Return ONLY a valid JSON object matching these keys.`;
       case "AGENT_REG_STORE_NAME":
       case "AGENT_REG_PAY_CHOICE":
       case "AGENT_REG_MOMO_PHONE": {
-        const agRes = await handleAgentRegistrationStep(supabase, from, step, text, data);
+        const agRes = (!senderVerified && step === "AGENT_REG_PAY_CHOICE" && String(text).trim() === "1")
+          ? { reply: "🔒 Wallet payments via WhatsApp are unavailable right now. Please activate from your dashboard at https://swiftdatagh.shop.", nextStep: "MENU", updatedData: {} }
+          : await handleAgentRegistrationStep(supabase, from, step, text, data);
         await sendWhatsAppMessage(from, agRes.reply);
         await supabase.from("whatsapp_sessions").upsert({
           phone_number: from,
@@ -5209,6 +5287,12 @@ Return ONLY a valid JSON object matching these keys.`;
 
         // Handle Agent Wholesale Direct Wallet Debit Purchase
         const agentId = senderProfileMeta?.profile?.user_id || senderProfile?.user_id || data.agentBuyerId || data.authProfile?.user_id;
+        if ((data.paymentMethod === "wallet" || data.isAgentWholesale) && agentId && !senderVerified) {
+          reply = `🔒 *Wallet payments via WhatsApp are unavailable right now.*\n\nPlease buy from your dashboard at https://swiftdatagh.shop, or reply *Hi* to pay with Mobile Money.`;
+          data = {};
+          nextStep = "MENU";
+          break;
+        }
         if ((data.paymentMethod === "wallet" || data.isAgentWholesale) && agentId) {
           const cost = Number(data.finalCost || data.wholesaleCost || data.basePrice || (data.airtimeBase ? data.airtimeBase : 0) || data.totalPrice || 0);
 

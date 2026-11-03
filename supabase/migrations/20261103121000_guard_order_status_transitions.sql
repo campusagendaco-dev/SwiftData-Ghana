@@ -67,9 +67,13 @@ BEGIN
   END IF;
 
   -- 4. Delivered orders never regress (late/duplicate provider callbacks).
-  --    An explicit refund of a delivered order is still allowed.
+  --    An explicit refund of a delivered order is still allowed. Orders that
+  --    auto_deliver_mashup_orders() only ASSUMED delivered (metadata
+  --    auto_delivered=true) may still be corrected to failed by the provider,
+  --    so the customer gets refunded for a real failure.
   IF OLD.status IN ('fulfilled', 'completed')
-     AND NEW.status NOT IN ('fulfilled', 'completed', 'refunded') THEN
+     AND NEW.status NOT IN ('fulfilled', 'completed', 'refunded')
+     AND COALESCE(OLD.metadata->>'auto_delivered', 'false') <> 'true' THEN
     v_blocked := concat_ws(', ', v_blocked, format('%s -> %s regression', OLD.status, NEW.status));
     NEW.status := OLD.status;
   END IF;
@@ -97,3 +101,41 @@ CREATE TRIGGER a_guard_order_status_transitions
   FOR EACH ROW
   WHEN (OLD.status IS DISTINCT FROM NEW.status OR OLD.auto_refunded IS DISTINCT FROM NEW.auto_refunded)
   EXECUTE FUNCTION public.guard_order_status_transitions();
+
+-- auto_deliver_mashup_orders() (cron, every minute) marks processing orders as
+-- fulfilled after a delay WITHOUT provider confirmation. Same behaviour, but it
+-- now tags those rows so the guard above still lets a later provider failure
+-- through (and a confirmed delivery is not confused with an assumed one).
+CREATE OR REPLACE FUNCTION public.auto_deliver_mashup_orders()
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_delay_mins INTEGER;
+  v_count INTEGER;
+BEGIN
+  SELECT COALESCE(mashup_delivery_delay_mins, 15) INTO v_delay_mins
+  FROM public.system_settings
+  WHERE id = 1;
+
+  UPDATE public.orders
+  SET
+    status = 'fulfilled',
+    metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('auto_delivered', true, 'auto_delivered_at', now()),
+    updated_at = now()
+  WHERE
+    status = 'processing'
+    AND COALESCE(auto_refunded, false) = false
+    AND order_type NOT IN ('agent_activation', 'sub_agent_activation', 'wallet_topup')
+    AND updated_at <= (now() - (v_delay_mins * interval '1 minute'));
+
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  IF v_count > 0 THEN
+    RAISE NOTICE 'Auto-delivered % processing orders.', v_count;
+  END IF;
+END;
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.auto_deliver_mashup_orders() FROM PUBLIC, anon, authenticated;
