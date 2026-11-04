@@ -85,7 +85,7 @@ export default function FrequentCustomersReorder() {
   }
 
   return (
-    <section className="rounded-2xl border border-border/70 bg-card dark:border-white/[0.07] dark:bg-white/[0.025] overflow-hidden">
+    <section className="rounded-2xl border border-border/70 bg-card/85 dark:border-white/[0.07] dark:bg-black/30 overflow-hidden">
       <header className="flex items-start justify-between gap-3 px-4 sm:px-5 pt-4 sm:pt-5">
         <div>
           <h2 className="text-[15px] font-semibold text-foreground leading-snug">Top customers</h2>

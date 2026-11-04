@@ -52,7 +52,7 @@ export function PageHeader({
 /* ───────────────────────────── Surfaces ───────────────────────────── */
 
 export const surface =
-  "rounded-2xl border border-border/70 bg-card text-card-foreground shadow-[0_1px_2px_rgba(16,24,40,0.04)] dark:border-white/[0.07] dark:bg-white/[0.025] dark:shadow-none";
+  "rounded-2xl border border-border/70 bg-card/85 text-card-foreground shadow-[0_1px_2px_rgba(16,24,40,0.04)] dark:border-white/[0.08] dark:bg-black/30 dark:shadow-none";
 
 export function Panel({
   title,

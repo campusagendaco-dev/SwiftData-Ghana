@@ -181,8 +181,6 @@ const DashboardLayout = () => {
 
   return (
     <div className="dash-shell relative flex min-h-[100dvh] w-full bg-transparent text-foreground">
-      {/* Light wash over the traditional background so text stays readable */}
-      <div aria-hidden className="pointer-events-none fixed inset-0 bg-background/30 dark:bg-background/35" />
       {/* Soft top light — gives the canvas depth without competing with content */}
       <div
         aria-hidden
@@ -197,7 +195,7 @@ const DashboardLayout = () => {
       <div className="relative flex-1 flex flex-col min-w-0 h-[100dvh] overflow-hidden">
         {!isChallengeGameRoute && (
           <header
-            className="shrink-0 sticky top-0 z-40 border-b border-border/70 dark:border-white/[0.06] bg-background/80 backdrop-blur-xl supports-[backdrop-filter]:bg-background/70"
+            className="shrink-0 sticky top-0 z-40 border-b border-border/60 dark:border-white/[0.06] bg-background/60 backdrop-blur-xl"
             style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
           >
             <div className="h-14 sm:h-16 flex items-center gap-2 sm:gap-3 px-3 sm:px-6">
@@ -334,7 +332,7 @@ const DashboardLayout = () => {
 
         <main
           className={cn(
-            "relative flex-1 overflow-y-auto overflow-x-hidden",
+            "relative flex-1 overflow-y-auto overflow-x-hidden bg-white/20 dark:bg-black/15",
             !isChallengeGameRoute && "pb-[calc(76px+env(safe-area-inset-bottom,0px))] md:pb-0"
           )}
         >
@@ -413,7 +411,7 @@ const DashboardLayout = () => {
         {!isChallengeGameRoute && (
           <nav
             aria-label="Quick navigation"
-            className="md:hidden fixed inset-x-0 bottom-0 z-[90] border-t border-border/70 dark:border-white/[0.07] bg-background/90 backdrop-blur-xl"
+            className="md:hidden fixed inset-x-0 bottom-0 z-[90] border-t border-border/60 dark:border-white/[0.07] bg-background/75 backdrop-blur-xl"
             style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
           >
             <ul className="grid grid-cols-5 h-16">

@@ -95,7 +95,7 @@ export const AgentTierRecommenderCard: React.FC<AgentTierRecommenderCardProps> =
   const tierLabel = currentTier.badge.replace(/^[^A-Za-z]+/, "");
 
   return (
-    <section className="rounded-2xl border border-border/70 bg-card p-4 sm:p-5 dark:border-white/[0.07] dark:bg-white/[0.025]">
+    <section className="rounded-2xl border border-border/70 bg-card/85 p-4 sm:p-5 dark:border-white/[0.07] dark:bg-black/30">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
         <div className="flex items-center gap-3 sm:w-72 shrink-0">
           <span className="h-11 w-11 shrink-0 rounded-xl bg-muted flex items-center justify-center dark:bg-white/[0.06]">

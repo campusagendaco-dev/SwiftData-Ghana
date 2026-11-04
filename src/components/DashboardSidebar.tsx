@@ -199,7 +199,7 @@ const DashboardSidebar = ({ open, onClose, collapsed = false, onToggleCollapsed 
         aria-label="Dashboard navigation"
         className={cn(
           "fixed md:sticky top-0 left-0 z-[1000] h-[100dvh] shrink-0 flex flex-col",
-          "bg-background md:bg-background/60 md:backdrop-blur-md border-r border-border/70 dark:border-white/[0.06]",
+          "bg-background md:bg-background/40 md:backdrop-blur-xl border-r border-border/70 dark:border-white/[0.06]",
           "transition-[transform,width] duration-200 ease-out md:translate-x-0",
           "w-[284px]", open ? "translate-x-0 shadow-2xl md:shadow-none" : "-translate-x-full",
           rail ? "md:w-[72px]" : "md:w-[260px]"

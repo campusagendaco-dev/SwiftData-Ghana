@@ -91,7 +91,7 @@ const ReferAndEarn = () => {
   if (loading) return null;
 
   return (
-    <section className="rounded-2xl border border-border/70 bg-card p-4 sm:p-5 dark:border-white/[0.07] dark:bg-white/[0.025]">
+    <section className="rounded-2xl border border-border/70 bg-card/85 p-4 sm:p-5 dark:border-white/[0.07] dark:bg-black/30">
       <div className="grid gap-5 lg:grid-cols-[1fr_auto] lg:items-center">
         <div className="flex items-start gap-3 min-w-0">
           <span className="h-10 w-10 shrink-0 rounded-xl bg-pink-500/10 text-pink-600 dark:text-pink-400 flex items-center justify-center">

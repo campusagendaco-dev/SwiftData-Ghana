@@ -396,7 +396,7 @@ const AppContent = () => {
 
   return (
     <>
-      <TraditionalBackground className="fixed inset-0 z-0 opacity-[0.35] dark:opacity-[0.45] pointer-events-none" />
+      <TraditionalBackground className={`fixed inset-0 z-0 pointer-events-none ${isDashboard ? "opacity-[0.6] dark:opacity-[0.55]" : "opacity-[0.35] dark:opacity-[0.45]"}`} />
       <div className="relative z-10 min-h-screen flex flex-col">
         {!isDashboard && !isAgentStore && !isAdmin && !isChallengeArenaPage && <Navbar />}
         <ChunkErrorBoundary>

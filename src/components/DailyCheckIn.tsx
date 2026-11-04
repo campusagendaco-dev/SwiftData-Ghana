@@ -58,7 +58,7 @@ const DailyCheckIn = () => {
   const filled = hasCheckedIn ? ((streak - 1) % 7) + 1 : streak % 7;
 
   return (
-    <div className="rounded-2xl border border-border/70 bg-card p-4 dark:border-white/[0.07] dark:bg-white/[0.025]">
+    <div className="rounded-2xl border border-border/70 bg-card/85 p-4 dark:border-white/[0.07] dark:bg-black/30">
       <div className="flex items-center gap-3">
         <span className="h-10 w-10 shrink-0 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center">
           <Gift className="h-5 w-5" />

@@ -106,8 +106,13 @@ export const TraditionalBackground = memo(({ className = "fixed inset-0 z-20 opa
     { top: '88%', right: '5%', size: 140, rotate: -20, delay: 1 },
   ];
 
-  // On mobile screens, omit floating 3D animated symbols to save GPU rasterization and preserve 60fps scrolling
-  const symbols = isMobile ? [] : allSymbols;
+  // Phones get a few static (non-animated, no shadow) symbols: the brand look without the GPU cost of the floating ones.
+  const mobileSymbols: SymbolItem[] = [
+    { top: '9%', right: '-6%', size: 120, rotate: -12, delay: 0 },
+    { top: '42%', left: '-8%', size: 110, rotate: 20, delay: 0 },
+    { top: '78%', right: '-5%', size: 125, rotate: -24, delay: 0 },
+  ];
+  const symbols = isMobile ? mobileSymbols : allSymbols;
 
   const getSymbol = (index: number) => {
     const type = index % 3;
@@ -222,19 +227,19 @@ export const TraditionalBackground = memo(({ className = "fixed inset-0 z-20 opa
         return (
           <div
             key={i}
-            className="absolute text-amber-500 dark:text-amber-400 bg-floating-symbol drop-shadow-[0_2px_14px_rgba(245,158,11,0.35)]"
+            className={`absolute text-amber-500 dark:text-amber-400 ${isMobile ? "" : "bg-floating-symbol drop-shadow-[0_2px_14px_rgba(245,158,11,0.35)]"}`}
             style={{
               top: sym.top,
               left: sym.left,
               right: sym.right,
               bottom: sym.bottom,
-              animation: `floatVertical 12s ease-in-out infinite ${sym.delay}s`,
+              animation: isMobile ? undefined : `floatVertical 12s ease-in-out infinite ${sym.delay}s`,
             }}
           >
             <div
               style={{
                 transform: `rotate(${sym.rotate}deg)`,
-                animation: `${isEven ? 'floatRotate' : 'floatRotateRev'} 180s linear infinite`,
+                animation: isMobile ? undefined : `${isEven ? 'floatRotate' : 'floatRotateRev'} 180s linear infinite`,
               }}
             >
               <svg 
