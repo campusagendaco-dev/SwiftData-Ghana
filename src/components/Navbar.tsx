@@ -2,10 +2,11 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   Menu, X, LogOut, LayoutDashboard, ShieldCheck,
   TrendingUp, Home, HelpCircle, ChevronRight,
-  User, Users, Settings, Wallet, ClipboardList, RotateCcw, Store, Sun, Moon, Zap, Palette, Droplets, BookOpen,
+  Users, Settings, Wallet, ClipboardList, RotateCcw, Store, Sun, Moon, Zap, Palette, BookOpen,
+  Smartphone, PackageSearch, Check, ArrowRight, LogIn, Gamepad2,
 } from "lucide-react";
 import { THEMES } from "@/lib/themes";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useAppTheme } from "@/contexts/ThemeContext";
@@ -25,6 +26,48 @@ const openTutorial = () => window.dispatchEvent(new CustomEvent("open-tutorial")
 const NavIcon = ({ icon: Icon, className = "" }: { icon: typeof Home; className?: string }) => (
   <Icon className={`w-4 h-4 shrink-0 ${className}`} />
 );
+
+const initialsOf = (name?: string | null) => {
+  const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return "SD";
+  return ((parts[0][0] || "") + (parts.length > 1 ? parts[parts.length - 1][0] : "")).toUpperCase();
+};
+
+const DrawerGroup = ({ title, children }: { title: string; children: ReactNode }) => (
+  <div>
+    <p className="px-1 mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{title}</p>
+    <div className="rounded-2xl border border-border/70 dark:border-white/[0.08] bg-card/70 overflow-hidden divide-y divide-border/60 dark:divide-white/[0.06]">
+      {children}
+    </div>
+  </div>
+);
+
+const DrawerRow = ({
+  to, onClick, label, icon: Icon, active, trailing,
+}: {
+  to?: string;
+  onClick?: () => void;
+  label: string;
+  icon: typeof Home;
+  active?: boolean;
+  trailing?: ReactNode;
+}) => {
+  const body = (
+    <>
+      <span className={`h-8 w-8 shrink-0 rounded-lg flex items-center justify-center ${active ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"}`}>
+        <Icon className="w-4 h-4" />
+      </span>
+      <span className={`flex-1 min-w-0 truncate text-[14px] ${active ? "font-semibold text-foreground" : "font-medium text-foreground/90"}`}>{label}</span>
+      {trailing ?? <ChevronRight className={`w-4 h-4 shrink-0 ${active ? "text-primary" : "text-muted-foreground/50"}`} />}
+    </>
+  );
+  const cls = `w-full flex items-center gap-3 px-3 h-12 text-left transition-colors hover:bg-muted/60 active:bg-muted ${active ? "bg-primary/[0.06]" : ""}`;
+  return to ? (
+    <Link to={to} className={cls} aria-current={active ? "page" : undefined}>{body}</Link>
+  ) : (
+    <button type="button" onClick={onClick} className={cls}>{body}</button>
+  );
+};
 
 const Navbar = () => {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -70,6 +113,13 @@ const Navbar = () => {
    }, [api]);
  
    useEffect(() => { setMenuOpen(false); setThemePickerOpen(false); }, [location.pathname]);
+
+   useEffect(() => {
+     if (!menuOpen) return;
+     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setMenuOpen(false); };
+     window.addEventListener("keydown", onKey);
+     return () => window.removeEventListener("keydown", onKey);
+   }, [menuOpen]);
 
    useEffect(() => {
      const handler = (e: MouseEvent) => {
@@ -138,6 +188,20 @@ const Navbar = () => {
     ...(!user || !agentApproved ? [{ to: "/agent-program", label: "Agent", icon: TrendingUp }] : []),
   ];
 
+  /* ── Mobile drawer content ── */
+  const quickActions = [
+    { to: "/buy-data", label: "Buy data", hint: "All networks", icon: Zap, tone: "bg-amber-400/15 text-amber-600 dark:text-amber-400" },
+    { to: "/buy-airtime", label: "Buy airtime", hint: "Instant top-up", icon: Smartphone, tone: "bg-sky-500/15 text-sky-600 dark:text-sky-400" },
+    { to: "/order-status", label: "Track order", hint: "Live status", icon: PackageSearch, tone: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" },
+    { to: "/submit-numbers", label: "Verify number", hint: "Check & submit", icon: ShieldCheck, tone: "bg-violet-500/15 text-violet-600 dark:text-violet-400" },
+  ];
+  const exploreLinks = [
+    { to: "/", label: "Home", icon: Home },
+    { to: "/challenges", label: "Game challenges", icon: Gamepad2 },
+    { to: "/blog", label: "Guides", icon: BookOpen },
+    ...(!user || !agentApproved ? [{ to: "/agent-program", label: "Become an agent", icon: TrendingUp }] : []),
+  ];
+
   /* ── Style tokens ── */
   const pillBg = isDark
     ? scrolled ? "rgba(7, 5, 22, 0.82)" : "rgba(9, 7, 28, 0.58)"
@@ -180,38 +244,7 @@ const Navbar = () => {
         color: "#111827",
       };
 
-  const logoText = isDark ? "text-white" : "text-gray-900";
   const dividerBg = isDark ? "bg-white/10" : "bg-black/[0.08]";
-
-  /* ── Drawer tokens ── */
-  const drawerBg     = isDark ? "rgba(8, 5, 24, 0.97)"  : "rgba(252, 253, 255, 0.98)";
-  const drawerBorder = isDark ? "rgba(139,92,246,0.38)"  : "rgba(99,102,241,0.24)";
-  const drawerDivider= isDark ? "rgba(139,92,246,0.16)"  : "rgba(99,102,241,0.13)";
-
-  const drawerGlow1 = isDark
-    ? "radial-gradient(ellipse at 80% 10%, rgba(139,92,246,0.26) 0%, transparent 65%)"
-    : "radial-gradient(ellipse at 80% 10%, rgba(99,102,241,0.18) 0%, transparent 65%)";
-  const drawerGlow2 = isDark
-    ? "radial-gradient(ellipse at 20% 85%, rgba(251,191,36,0.16) 0%, transparent 60%)"
-    : "radial-gradient(ellipse at 20% 85%, rgba(251,191,36,0.13) 0%, transparent 60%)";
-
-  const drawerActiveItemStyle = isDark
-    ? {
-        background: "linear-gradient(135deg, rgba(251,191,36,0.24) 0%, rgba(251,191,36,0.08) 100%)",
-        boxShadow: "0 0 20px rgba(251,191,36,0.12), inset 0 1px 0 rgba(255,255,255,0.08)",
-        borderColor: "rgba(251,191,36,0.30)",
-        color: "white",
-      }
-    : {
-        background: "linear-gradient(135deg, rgba(251,191,36,0.20) 0%, rgba(251,191,36,0.06) 100%)",
-        borderColor: "rgba(251,191,36,0.32)",
-        color: "#111827",
-      };
-
-  const itemIdle   = isDark
-    ? "text-white/50 hover:text-white hover:bg-white/[0.07] border border-transparent transition-all duration-150"
-    : "text-gray-700 hover:text-gray-900 hover:bg-black/[0.04] border border-transparent transition-all duration-150";
-  const itemActive = isDark ? "text-white border" : "text-gray-900 border";
 
   return (
     <>
@@ -582,359 +615,297 @@ const Navbar = () => {
         </motion.div>
       </motion.div>
 
-      {/* ─────────── Backdrop & Drawer Animated Group (Portaled to document.body for reliable mobile viewport scrolling) ─────────── */}
+      {/* ─────────── Mobile menu drawer (portaled to body so it always scrolls on mobile) ─────────── */}
       {typeof document !== "undefined" && createPortal(
         <AnimatePresence>
           {menuOpen && (
             <>
-              {/* Backdrop overlay */}
               <motion.div
-                className="md:hidden fixed inset-0 z-[9998]"
+                className="md:hidden fixed inset-0 z-[9998] bg-black/45 dark:bg-black/65 backdrop-blur-[3px]"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                style={{
-                  background: isDark ? "rgba(0,0,0,0.65)" : "rgba(0,0,0,0.35)",
-                  backdropFilter: "blur(4px)",
-                  WebkitBackdropFilter: "blur(4px)",
-                }}
                 onClick={() => setMenuOpen(false)}
                 aria-hidden="true"
               />
 
-              {/* Side drawer locked to 100dvh viewport height so inner list always scrolls */}
-              <motion.div
+              <motion.aside
                 ref={drawerRef}
-                className="md:hidden fixed top-0 right-0 bottom-0 z-[9999] w-[300px] max-w-[86vw] flex flex-col overflow-hidden"
+                role="dialog"
+                aria-modal="true"
+                aria-label="Menu"
+                className="md:hidden fixed top-0 right-0 bottom-0 z-[9999] w-[340px] max-w-[88vw] flex flex-col overflow-hidden bg-background/95 backdrop-blur-2xl border-l border-border/70 dark:border-white/[0.08] shadow-[-24px_0_80px_rgba(0,0,0,0.35)]"
                 initial={{ x: "100%" }}
                 animate={{ x: 0 }}
                 exit={{ x: "100%" }}
-                transition={{ type: "spring", damping: 28, stiffness: 240 }}
-                style={{
-                  height: "100dvh",
-                  maxHeight: "100dvh",
-                  background: drawerBg,
-                  borderLeft: `1px solid ${drawerBorder}`,
-                  boxShadow: isDark
-                    ? "-24px 0 80px rgba(0,0,0,0.75), -1px 0 0 rgba(139,92,246,0.28)"
-                    : "-24px 0 64px rgba(99,102,241,0.16), -1px 0 0 rgba(99,102,241,0.20)",
-                }}
+                transition={{ type: "spring", damping: 30, stiffness: 280 }}
+                drag="x"
+                dragDirectionLock
+                dragConstraints={{ left: 0, right: 0 }}
+                dragElastic={{ left: 0, right: 0.5 }}
+                onDragEnd={(_, info) => { if (info.offset.x > 90 || info.velocity.x > 600) setMenuOpen(false); }}
+                style={{ height: "100dvh", maxHeight: "100dvh", paddingTop: "env(safe-area-inset-top, 0px)" }}
               >
-                {/* Ambient glow blobs */}
-                <div className="absolute inset-0 pointer-events-none overflow-hidden">
-                  <div className="absolute -top-10 -right-10 w-52 h-52 rounded-full"
-                    style={{ background: drawerGlow1, filter: "blur(36px)" }} />
-                  <div className="absolute bottom-20 -left-10 w-44 h-44 rounded-full"
-                    style={{ background: drawerGlow2, filter: "blur(30px)" }} />
-                </div>
+                {/* Soft brand glow */}
+                <div className="pointer-events-none absolute -top-24 -right-20 h-64 w-64 rounded-full bg-primary/20 blur-3xl" />
+                <div className="pointer-events-none absolute bottom-24 -left-24 h-56 w-56 rounded-full bg-amber-400/10 blur-3xl" />
 
-                {/* Glass edge highlights */}
-                <div className="absolute top-0 left-0 right-0 h-px pointer-events-none z-10"
-                  style={{ background: isDark ? "rgba(255,255,255,0.14)" : "rgba(255,255,255,0.98)" }} />
-                <div className="absolute top-0 left-0 bottom-0 w-px pointer-events-none z-10"
-                  style={{ background: isDark ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.85)" }} />
-
-                {/* ── Header (Pinned at top) ── */}
-                <div
-                  className="relative z-10 flex items-center justify-between px-4 h-14 shrink-0"
-                  style={{ borderBottom: `1px solid ${drawerDivider}` }}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <div className="relative">
-                      <div className="absolute inset-0 rounded-full blur-md"
-                        style={{ background: "rgba(251,191,36,0.38)", transform: "scale(1.45)" }} />
-                      <picture className="relative z-10">
-                        <source srcSet="/logo.webp" type="image/webp" />
-                        <img src="/logo.png" alt="SwiftData Ghana"
-                          className="w-8 h-8 rounded-full ring-1 ring-amber-400/40 relative z-10"
-                          width={32} height={32} />
-                      </picture>
+                {/* Header */}
+                <div className="relative z-10 flex items-center justify-between px-4 h-16 shrink-0">
+                  <Link to="/" className="flex items-center gap-2.5 min-w-0">
+                    <picture className="shrink-0">
+                      <source srcSet="/logo.webp" type="image/webp" />
+                      <img src="/logo.png" alt="" className="w-9 h-9 rounded-full ring-1 ring-amber-400/40" width={36} height={36} />
+                    </picture>
+                    <div className="min-w-0 leading-tight">
+                      <p className="text-[15px] font-bold tracking-tight text-foreground truncate">SwiftData Ghana</p>
+                      <p className="text-[11px] text-muted-foreground truncate">Data, airtime &amp; bills in seconds</p>
                     </div>
-                    <div>
-                      <span className={`${logoText} font-black text-sm tracking-tight block leading-tight`}>SwiftData Ghana</span>
-                      <span className="text-amber-400/70 text-[9px] font-semibold tracking-wider">MENU</span>
-                    </div>
-                  </div>
-                  <motion.button
+                  </Link>
+                  <button
+                    type="button"
                     onClick={() => setMenuOpen(false)}
-                    whileTap={{ scale: 0.9 }}
-                    className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${
-                      isDark
-                        ? "text-white/60 hover:text-white hover:bg-white/[0.09] border border-white/10"
-                        : "text-gray-600 hover:text-gray-900 hover:bg-black/[0.05] border border-black/10"
-                    }`}
+                    className="h-10 w-10 rounded-xl flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted border border-border/70 dark:border-white/10 transition"
                     aria-label="Close menu"
                   >
                     <X className="w-5 h-5" />
-                  </motion.button>
+                  </button>
                 </div>
 
-                {/* ── Scrollable content ── */}
+                {/* Scrollable content */}
                 <div
-                  className="relative z-10 flex-1 min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y px-3 py-3 pb-8 space-y-0.5"
-                  style={{
-                    WebkitOverflowScrolling: "touch",
-                    touchAction: "pan-y",
-                  }}
+                  className="relative z-10 flex-1 min-h-0 overflow-y-auto overscroll-y-contain px-4 pb-6 space-y-5"
+                  style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y" }}
                 >
-                  {/* User card */}
-                  {user && (
-                    <div
-                      className="flex items-center gap-3 px-3 py-2.5 mb-2.5 rounded-2xl shadow-sm"
-                      style={{
-                        background: isDark ? "rgba(139,92,246,0.13)" : "rgba(99,102,241,0.07)",
-                        border: `1px solid ${isDark ? "rgba(139,92,246,0.26)" : "rgba(99,102,241,0.18)"}`,
-                      }}
-                    >
-                      <div
-                        className="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
-                        style={{ background: "rgba(251,191,36,0.15)", border: "1px solid rgba(251,191,36,0.30)" }}
-                      >
-                        <User className="w-4 h-4 text-amber-400" />
+                  {/* Account / welcome card */}
+                  {user ? (
+                    <div className="rounded-2xl border border-border/70 dark:border-white/[0.08] bg-card/80 p-3.5">
+                      <div className="flex items-center gap-3">
+                        <span className="h-11 w-11 shrink-0 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 text-black flex items-center justify-center text-sm font-black">
+                          {initialsOf(profile?.full_name)}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-semibold text-foreground truncate">{profile?.full_name || "My account"}</p>
+                          <p className="text-xs text-muted-foreground truncate">
+                            {isAdmin ? "Administrator" : profile?.store_name || (agentApproved ? "Agent" : "Customer")}
+                          </p>
+                        </div>
                       </div>
-                      <div className="min-w-0">
-                        <p className={`${logoText} text-sm font-bold truncate`}>{profile?.full_name || "My Account"}</p>
-                        <p className={`text-xs truncate ${isDark ? "text-white/45" : "text-gray-500"}`}>
-                          {profile?.store_name || (isAdmin ? "Administrator" : "Customer")}
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  <p className={`text-[10px] font-bold uppercase tracking-widest px-3 py-1 ${isDark ? "text-white/30" : "text-gray-600"}`}>
-                    Explore
-                  </p>
-
-                  {mainLinks.map(({ to, label, icon }) => (
-                    <Link
-                      key={to} to={to}
-                      className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all touch-pan-y ${
-                        isActive(to) ? itemActive : itemIdle
-                      }`}
-                      style={isActive(to) ? { ...drawerActiveItemStyle, touchAction: "pan-y" } : { touchAction: "pan-y" }}
-                    >
-                      <div
-                        className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-all"
-                        style={{
-                          background: isActive(to) ? "rgba(251,191,36,0.20)" : isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)",
-                          border: isActive(to) ? "1px solid rgba(251,191,36,0.28)" : "1px solid transparent",
-                        }}
-                      >
-                        <NavIcon icon={icon} className={isActive(to) ? "text-amber-500" : isDark ? "text-white/50" : "text-gray-600"} />
-                      </div>
-                      {label}
-                      {isActive(to) && <ChevronRight className="w-4 h-4 ml-auto text-amber-400/55" />}
-                    </Link>
-                  ))}
-
-                  <button
-                    onClick={() => { setMenuOpen(false); openTutorial(); }}
-                    style={{ touchAction: "pan-y" }}
-                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium touch-pan-y ${itemIdle}`}
-                  >
-                    <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
-                      style={{ background: isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)" }}>
-                      <HelpCircle className={`w-4 h-4 ${isDark ? "text-white/50" : "text-gray-400"}`} />
-                    </div>
-                    How It Works
-                    <span className="ml-auto text-[10px] font-bold text-amber-400/80 bg-amber-400/[0.12] border border-amber-400/20 px-1.5 py-0.5 rounded-md">
-                      Tutorial
-                    </span>
-                  </button>
-
-                  {user && (
-                    <>
-                      <div className="h-px my-2" style={{ background: drawerDivider }} />
-                      <p className={`text-[10px] font-bold uppercase tracking-widest px-3 py-1 ${isDark ? "text-white/30" : "text-gray-600"}`}>
-                        Account
-                      </p>
-                      {[
-                        { to: isAdmin ? "/admin" : "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-                        { to: "/dashboard/wallet", label: "Account Balance", icon: Wallet },
-                        { to: "/dashboard/transactions", label: "My Transactions", icon: ClipboardList },
-                        { to: "/dashboard/refunded-orders", label: "Refunded Orders", icon: RotateCcw },
-                        ...(agentApproved ? [{ to: "/dashboard/my-store", label: "My Store", icon: Store }] : []),
-                        { to: "/dashboard/account-settings", label: "Account Settings", icon: Settings },
-                      ].map(({ to, label, icon: Icon }) => (
+                      <div className="mt-3 grid grid-cols-2 gap-2">
                         <Link
-                          key={to} to={to}
-                          style={{ touchAction: "pan-y" }}
-                          className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium touch-pan-y ${itemIdle}`}
+                          to={isAdmin ? "/admin" : "/dashboard"}
+                          className="h-10 rounded-xl bg-primary text-primary-foreground text-[13px] font-semibold inline-flex items-center justify-center gap-1.5 active:scale-[0.98] transition"
                         >
-                          <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
-                            style={{ background: isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)" }}>
-                            <Icon className={`w-4 h-4 ${isDark ? "text-white/50" : "text-gray-600"}`} />
-                          </div>
-                          {label}
+                          <LayoutDashboard className="w-4 h-4" /> {isAdmin ? "Admin" : "Dashboard"}
                         </Link>
-                      ))}
-                    </>
+                        <Link
+                          to="/dashboard/wallet"
+                          className="h-10 rounded-xl border border-border dark:border-white/10 bg-background/60 text-foreground text-[13px] font-semibold inline-flex items-center justify-center gap-1.5 hover:bg-muted active:scale-[0.98] transition"
+                        >
+                          <Wallet className="w-4 h-4" /> Wallet
+                        </Link>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="relative overflow-hidden rounded-2xl p-4 text-black bg-gradient-to-br from-amber-300 via-amber-400 to-orange-500">
+                      <div className="pointer-events-none absolute -right-8 -top-8 h-28 w-28 rounded-full bg-white/25 blur-2xl" />
+                      <p className="relative text-[15px] font-black leading-snug">Cheap data, delivered instantly</p>
+                      <p className="relative text-xs font-medium text-black/70 mt-0.5">MTN, Telecel &amp; AirtelTigo bundles. No account needed.</p>
+                      <div className="relative mt-3 grid grid-cols-2 gap-2">
+                        <Link to="/buy-data" className="h-10 rounded-xl bg-black text-white text-[13px] font-bold inline-flex items-center justify-center gap-1.5 active:scale-[0.98] transition">
+                          <Zap className="w-4 h-4 fill-amber-400 text-amber-400" /> Buy data
+                        </Link>
+                        <Link to="/login" className="h-10 rounded-xl bg-white/60 text-black text-[13px] font-bold inline-flex items-center justify-center gap-1.5 active:scale-[0.98] transition">
+                          <LogIn className="w-4 h-4" /> Sign in
+                        </Link>
+                      </div>
+                    </div>
                   )}
 
-                  <div className="h-px my-2" style={{ background: drawerDivider }} />
-
-                  {/* Appearance section */}
-                  <p className={`text-[10px] font-bold uppercase tracking-widest px-3 py-1 ${isDark ? "text-white/30" : "text-gray-600"}`}>
-                    Appearance
-                  </p>
-                  <div className="px-1 py-1">
-                    <div className="grid grid-cols-3 gap-1.5">
-                      {THEMES.map((t) => (
-                        <button
-                          type="button"
-                          key={t.id}
-                          onClick={() => setThemeId(t.id)}
-                          style={{ touchAction: "pan-y" }}
-                          className={`flex flex-col items-center gap-1.5 rounded-xl p-2 transition-all touch-pan-y ${
-                            theme.id === t.id
-                              ? isDark ? "bg-white/15 ring-1 ring-white/30" : "bg-gray-100 ring-1 ring-gray-300"
-                              : isDark ? "hover:bg-white/10" : "hover:bg-gray-100"
+                  {/* Quick actions */}
+                  <div className="grid grid-cols-2 gap-2.5">
+                    {quickActions.map(({ to, label, hint, icon: Icon, tone }) => {
+                      const active = isActive(to);
+                      return (
+                        <Link
+                          key={to}
+                          to={to}
+                          className={`group rounded-2xl border p-3 flex flex-col gap-2.5 transition active:scale-[0.98] ${
+                            active
+                              ? "border-primary/50 bg-primary/10"
+                              : "border-border/70 dark:border-white/[0.08] bg-card/70 hover:bg-card"
                           }`}
                         >
-                          <span className="w-6 h-6 rounded-full border border-white/20 shrink-0 block" style={{ background: t.dot }} />
-                          <span className={`text-[9px] font-bold leading-none ${isDark ? "text-white/70" : "text-gray-600"}`}>{t.label}</span>
-                        </button>
+                          <span className={`h-9 w-9 rounded-xl flex items-center justify-center ${tone}`}>
+                            <Icon className="w-[18px] h-[18px]" />
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block text-[13px] font-semibold text-foreground leading-tight">{label}</span>
+                            <span className="block text-[11px] text-muted-foreground mt-0.5 truncate">{hint}</span>
+                          </span>
+                        </Link>
+                      );
+                    })}
+                  </div>
+
+                  {/* Explore */}
+                  <DrawerGroup title="Explore">
+                    {exploreLinks.map(({ to, label, icon }) => (
+                      <DrawerRow key={to} to={to} label={label} icon={icon} active={isActive(to)} />
+                    ))}
+                    <DrawerRow
+                      label="How it works"
+                      icon={HelpCircle}
+                      onClick={() => { setMenuOpen(false); openTutorial(); }}
+                      trailing={<span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-400/15 px-1.5 py-0.5 rounded-md">Tutorial</span>}
+                    />
+                  </DrawerGroup>
+
+                  {/* Account */}
+                  {user && (
+                    <DrawerGroup title="Account">
+                      {[
+                        { to: "/dashboard/transactions", label: "Transactions", icon: ClipboardList },
+                        { to: "/dashboard/refunded-orders", label: "Refunded orders", icon: RotateCcw },
+                        ...(agentApproved ? [{ to: "/dashboard/my-store", label: "My store", icon: Store }] : []),
+                        { to: "/dashboard/account-settings", label: "Settings", icon: Settings },
+                      ].map(({ to, label, icon }) => (
+                        <DrawerRow key={to} to={to} label={label} icon={icon} active={isActive(to)} />
                       ))}
+                      <DrawerRow
+                        label="Switch account"
+                        icon={Users}
+                        onClick={() => { setMenuOpen(false); openAccountSwitcher(); }}
+                        trailing={savedAccounts.length > 0 ? <span className="text-[11px] text-muted-foreground tabular-nums">{savedAccounts.length} saved</span> : undefined}
+                      />
+                    </DrawerGroup>
+                  )}
+                  {!user && savedAccounts.length > 0 && (
+                    <DrawerGroup title="Accounts">
+                      <DrawerRow
+                        label="Switch account"
+                        icon={Users}
+                        onClick={() => { setMenuOpen(false); openAccountSwitcher(); }}
+                        trailing={savedAccounts.length > 0 ? <span className="text-[11px] text-muted-foreground tabular-nums">{savedAccounts.length} saved</span> : undefined}
+                      />
+                    </DrawerGroup>
+                  )}
+
+                  {/* Appearance */}
+                  <div>
+                    <p className="px-1 mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Appearance</p>
+                    <div className="rounded-2xl border border-border/70 dark:border-white/[0.08] bg-card/70 p-3 space-y-3">
+                      <div className="grid grid-cols-2 gap-1 rounded-xl bg-muted p-1" role="radiogroup" aria-label="Mode">
+                        {[
+                          { dark: false, label: "Light", icon: Sun },
+                          { dark: true, label: "Dark", icon: Moon },
+                        ].map(({ dark, label, icon: Icon }) => (
+                          <button
+                            key={label}
+                            type="button"
+                            role="radio"
+                            aria-checked={isDark === dark}
+                            onClick={() => { if (isDark !== dark) toggleDark(); }}
+                            className={`h-9 rounded-lg text-[13px] font-semibold inline-flex items-center justify-center gap-1.5 transition ${
+                              isDark === dark ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                            }`}
+                          >
+                            <Icon className="w-4 h-4" /> {label}
+                          </button>
+                        ))}
+                      </div>
+                      <div>
+                        <div className="flex items-center justify-between mb-2.5">
+                          <span className="text-xs font-medium text-muted-foreground">Colour</span>
+                          <span className="text-xs font-semibold text-foreground truncate max-w-[65%]">{theme.label}</span>
+                        </div>
+                        <div className="grid grid-cols-7 gap-2" role="radiogroup" aria-label="Colour theme">
+                          {THEMES.map((t) => {
+                            const selected = theme.id === t.id;
+                            return (
+                              <button
+                                key={t.id}
+                                type="button"
+                                role="radio"
+                                aria-checked={selected}
+                                aria-label={t.label}
+                                title={t.label}
+                                onClick={() => setThemeId(t.id)}
+                                className={`relative aspect-square w-full rounded-full transition active:scale-90 ring-offset-2 ring-offset-card shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18)] ${
+                                  selected ? "ring-2 ring-foreground/70" : "hover:scale-105"
+                                }`}
+                                style={{ background: t.dot }}
+                              >
+                                {selected && <Check className="absolute inset-0 m-auto w-3.5 h-3.5 text-white drop-shadow" strokeWidth={3} />}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
                     </div>
                   </div>
 
-                  <div className="h-px my-2" style={{ background: drawerDivider }} />
-
-                  {(user || savedAccounts.length > 0) && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setMenuOpen(false);
-                        openAccountSwitcher();
-                      }}
-                      style={{ touchAction: "pan-y" }}
-                      className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-all hover:bg-amber-400/10 touch-pan-y"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-amber-400/10 text-amber-400">
-                          <Users className="w-4 h-4" />
-                        </div>
-                        <div className="text-left">
-                          <p className={isDark ? "text-white font-bold" : "text-gray-900 font-bold"}>
-                            Switch Account
-                          </p>
-                          <p className={`text-[10px] ${isDark ? "text-white/40" : "text-gray-500"}`}>
-                            {savedAccounts.length} saved on device
-                          </p>
-                        </div>
-                      </div>
-                      <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-400/20 text-amber-400">
-                        Manage
-                      </span>
-                    </button>
-                  )}
-
+                  {/* Sign out / create account */}
                   {user ? (
                     <button
                       type="button"
                       onClick={handleSignOut}
-                      style={{ touchAction: "pan-y" }}
-                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-red-400/80 hover:text-red-400 hover:bg-red-500/10 transition-all touch-pan-y"
+                      className="w-full h-11 rounded-2xl border border-rose-500/25 bg-rose-500/[0.06] text-rose-600 dark:text-rose-400 text-sm font-semibold inline-flex items-center justify-center gap-2 hover:bg-rose-500/10 transition"
                     >
-                      <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-red-500/[0.12]">
-                        <LogOut className="w-4 h-4 text-red-400" />
-                      </div>
-                      Sign Out
+                      <LogOut className="w-4 h-4" /> Sign out
                     </button>
                   ) : (
-                    <Link to="/login" style={{ touchAction: "pan-y" }} className="block pt-1">
-                      <div
-                        className="flex items-center justify-center gap-2 w-full py-3 rounded-xl text-sm font-bold text-black cursor-pointer active:scale-[0.98] transition-transform"
-                        style={{
-                          background: "linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)",
-                          boxShadow: "0 0 28px rgba(251,191,36,0.40), 0 2px 10px rgba(245,158,11,0.28), inset 0 1px 0 rgba(255,255,255,0.32)",
-                        }}
-                      >
-                        <Zap className="w-4 h-4" /> Get Started — It&apos;s Free
-                      </div>
+                    <Link
+                      to="/login"
+                      className="w-full h-11 rounded-2xl bg-primary text-primary-foreground text-sm font-semibold inline-flex items-center justify-center gap-2 active:scale-[0.98] transition"
+                    >
+                      Create a free account <ArrowRight className="w-4 h-4" />
                     </Link>
                   )}
                 </div>
 
-                {/* ── Pinned ad banner (shrink-0 flex footer instead of absolute overlay) ── */}
+                {/* Pinned sponsored banner */}
                 {(bannersLoading || menuBanners.length > 0) && (
-                <div
-                  className="relative z-20 shrink-0 px-3 pb-3 pt-2"
-                  style={{ borderTop: `1px solid ${drawerDivider}`, background: drawerBg }}
-                >
-                  {bannersLoading ? (
-                    <div
-                      className="w-full rounded-xl animate-pulse"
-                      style={{ height: 64, background: "rgba(255,255,255,0.06)" }}
-                    />
-                  ) : menuBanners.length > 0 ? (
-                    <div className="relative">
-                      {/* Sponsored badge */}
-                      <span
-                        className="absolute top-1.5 right-1.5 z-10 text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-md pointer-events-none"
-                        style={{
-                          background: "rgba(0,0,0,0.55)",
-                          color: "rgba(255,255,255,0.70)",
-                          backdropFilter: "blur(4px)",
-                        }}
-                      >
-                        Sponsored
-                      </span>
-
-                      <Carousel
-                        setApi={setApi}
-                        plugins={[Autoplay({ delay: 4000 })]}
-                        className="w-full"
-                      >
-                        <CarouselContent className="-ml-0">
-                          {menuBanners.map((banner) => (
-                            <CarouselItem
-                              key={banner.id}
-                              className="pl-0"
-                              onClick={() => banner.target_url && navigate(banner.target_url)}
-                            >
-                              <div
-                                className="relative overflow-hidden rounded-xl cursor-pointer active:scale-[0.98] transition-transform"
-                                style={{ height: 64 }}
-                              >
-                                <img
-                                  src={banner.image_url}
-                                  alt="Sponsored"
-                                  className="w-full h-full object-cover"
-                                  onError={(e) => {
-                                    (e.target as HTMLImageElement).style.display = "none";
-                                  }}
-                                />
-                                <div
-                                  className="absolute inset-0 rounded-xl pointer-events-none"
-                                  style={{
-                                    background: "linear-gradient(90deg, rgba(0,0,0,0.28) 0%, transparent 55%)",
-                                    boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.07)",
-                                  }}
-                                />
-                              </div>
-                            </CarouselItem>
-                          ))}
-                        </CarouselContent>
-                      </Carousel>
-
-                      {menuBanners.length > 1 && (
-                        <div className="flex justify-center gap-1 mt-1.5">
-                          {menuBanners.map((_, i) => (
-                            <div
-                              key={i}
-                              className={`h-0.5 rounded-full transition-all duration-300 ${
-                                current === i ? "w-3 bg-amber-500" : "w-1.5 bg-white/10"
-                              }`}
-                            />
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ) : null}
-                </div>
+                  <div
+                    className="relative z-20 shrink-0 px-4 pt-2.5 border-t border-border/70 dark:border-white/[0.08] bg-background/95"
+                    style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 12px)" }}
+                  >
+                    {bannersLoading ? (
+                      <div className="w-full h-16 rounded-xl bg-muted animate-pulse" />
+                    ) : (
+                      <div className="relative">
+                        <span className="absolute top-1.5 right-1.5 z-10 text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-md pointer-events-none bg-black/55 text-white/75">
+                          Sponsored
+                        </span>
+                        <Carousel setApi={setApi} plugins={[Autoplay({ delay: 4000 })]} className="w-full">
+                          <CarouselContent className="-ml-0">
+                            {menuBanners.map((banner) => (
+                              <CarouselItem key={banner.id} className="pl-0" onClick={() => banner.target_url && navigate(banner.target_url)}>
+                                <div className="relative overflow-hidden rounded-xl cursor-pointer active:scale-[0.98] transition-transform h-16">
+                                  <img
+                                    src={banner.image_url}
+                                    alt="Sponsored"
+                                    className="w-full h-full object-cover"
+                                    onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                                  />
+                                  <div className="absolute inset-0 rounded-xl pointer-events-none ring-1 ring-inset ring-white/10" />
+                                </div>
+                              </CarouselItem>
+                            ))}
+                          </CarouselContent>
+                        </Carousel>
+                        {menuBanners.length > 1 && (
+                          <div className="flex justify-center gap-1 mt-1.5">
+                            {menuBanners.map((_, i) => (
+                              <div key={i} className={`h-1 rounded-full transition-all duration-300 ${current === i ? "w-3 bg-primary" : "w-1.5 bg-muted-foreground/25"}`} />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 )}
-              </motion.div>
+              </motion.aside>
             </>
           )}
         </AnimatePresence>,
