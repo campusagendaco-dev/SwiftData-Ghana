@@ -130,6 +130,16 @@ serve(async (req: Request) => {
         return false;
       }
 
+      // Never re-dispatch orders that are already fulfilled, refunded, or holding a valid active provider order ID (e.g. SKP... pending on SKDataPlug)
+      if (o.auto_refunded === true || Number(o.refund_amount || 0) > 0 || ["fulfilled", "completed", "refunded"].includes(String(o.status || "").toLowerCase())) {
+        return false;
+      }
+      const existingRef = String(o.provider_order_id || "").trim();
+      const isSentinelRef = !existingRef || ["dispatching", "timeout", "routed", "duplicate_cooldown", "manual_fulfillment_mode", "paused_by_admin", "refunded"].includes(existingRef) || existingRef.startsWith("failed_api_call");
+      if (!isSentinelRef && (o.status === "processing" || o.status === "pending")) {
+        return false;
+      }
+
       if (!isExplicit && o.provider_order_id === "dispatching") {
         const lastTouchMs = new Date(o.updated_at || o.created_at || 0).getTime();
         if (Date.now() - lastTouchMs < 2 * 60 * 1000) {

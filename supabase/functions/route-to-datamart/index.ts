@@ -127,6 +127,14 @@ serve(async (req) => {
           results.push({ id: ord.id, status: "skipped", reason: "Already refunded or fulfilled" });
           continue;
         }
+        // Never re-route an order that already holds a valid active provider_order_id (e.g. SKP... pending on SKDataPlug)
+        const existingProvRef = String(ord.provider_order_id || "").trim();
+        const isSentinelProvRef = !existingProvRef || ["dispatching", "timeout", "routed", "duplicate_cooldown", "manual_fulfillment_mode", "paused_by_admin", "refunded"].includes(existingProvRef) || existingProvRef.startsWith("failed_api_call");
+        if (!isSentinelProvRef && (ord.status === "processing" || ord.status === "pending")) {
+          skippedCount++;
+          results.push({ id: ord.id, status: "skipped", reason: `Order already active/pending on provider (${existingProvRef})` });
+          continue;
+        }
         if (!resume_api && isOrderPausedFromApi(ord)) {
           skippedCount++;
           results.push({ id: ord.id, status: "skipped", reason: "Paused by admin — held from entering API provider" });

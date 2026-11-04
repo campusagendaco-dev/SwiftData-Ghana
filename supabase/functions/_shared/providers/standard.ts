@@ -127,8 +127,19 @@ export class StandardAdapter implements ProviderAdapter {
       }
 
       if (endpoint === "status") {
-        const ref = String(data.transaction_id || data.reference || data.order_id || "");
-        return [`${cleanBase}/status/${ref}/`, `${cleanBase}/status/${ref}`];
+        const candidates = Array.from(
+          new Set(
+            [data.transaction_id, data.order_id, data.reference]
+              .map((v) => String(v || "").trim())
+              .filter(Boolean)
+          )
+        );
+        const statusUrls: string[] = [];
+        for (const ref of candidates) {
+          statusUrls.push(`${cleanBase}/status/${encodeURIComponent(ref)}/`);
+          statusUrls.push(`${cleanBase}/status/${encodeURIComponent(ref)}`);
+        }
+        return statusUrls;
       }
       if (endpoint === "purchase") {
         return [`${cleanBase}/order/`, `${cleanBase}/order`];
@@ -1677,6 +1688,7 @@ export class StandardAdapter implements ProviderAdapter {
     const baseUrl = (
       isHySpeedHandler(handlerType) ? (Deno.env.get("HYSPEEDDATA_BASE_URL") || Deno.env.get("SWIFTRESELLER_BASE_URL") || provider.base_url || "https://ihrvvniomtoofrjkmalb.supabase.co/functions/v1/api") :
       handlerType === "datahub" ? (Deno.env.get("DATAHUB_BASE_URL") || provider.base_url || "https://user.datahubgh.com/api/external") :
+      handlerType === "skdataplug" ? (Deno.env.get("SKDATAPLUG_BASE_URL") || Deno.env.get("SKPLUG_BASE_URL") || provider.base_url || "https://skdataplug.com/api/v1") :
       handlerType === "bundlezone" ? (Deno.env.get("BUNDLEZONE_BASE_URL") || provider.base_url || "https://bundlezone.shop") :
       handlerType === "datamart" ? (Deno.env.get("DATAMART_BASE_URL") || provider.base_url || "https://api.datamartgh.shop/api/developer") :
       provider.base_url
@@ -1779,21 +1791,32 @@ export class StandardAdapter implements ProviderAdapter {
                 dup?.data?.order?.client_reference ??
                 dup?.data?.reference ??
                 dup?.data?.order?.reference ??
+                dup?.client_reference ??
+                dup?.reference ??
+                dup?.order?.reference ??
                 ""
               ).trim();
+              const dupStatus = String(dup?.status ?? dup?.data?.status ?? dup?.order?.status ?? "").toLowerCase().trim();
               const dupText = [dup?.code, dup?.error_code, dup?.message, dup?.error]
                 .filter((v: unknown) => typeof v === "string")
                 .join(" ");
-              if (ourRef && echoedRef && echoedRef === ourRef && isDuplicateOrderError(dupText)) {
+              if (
+                ourRef &&
+                ((echoedRef && echoedRef === ourRef && (isDuplicateOrderError(dupText) || dupStatus === "pending" || dupStatus === "processing")) ||
+                  (handlerType === "skdataplug" && (dupStatus === "pending" || dupStatus === "processing") && Boolean(dup?.order_id || dup?.id || dup?.data?.order_id)))
+              ) {
                 const existingId = String(
+                  dup?.order_id ??
                   dup?.data?.order?.reference ??
                   dup?.data?.order_id ??
                   dup?.data?.order?.order_id ??
                   dup?.data?.order?.id ??
+                  dup?.order?.id ??
+                  dup?.id ??
                   ourRef
                 );
-                console.warn(`[StandardAdapter] ${handlerType} reports order ${ourRef} already placed (provider id ${existingId}). Treating as accepted - NOT re-routing.`);
-                return { ok: true, reason: `Already accepted by provider (${dupText})`, id: existingId, status: "processing" };
+                console.warn(`[StandardAdapter] ${handlerType} reports order ${ourRef} already placed/pending (provider id ${existingId}). Treating as accepted - NOT re-routing.`);
+                return { ok: true, reason: `Already accepted by provider (${dupText || dupStatus})`, id: existingId, status: "processing" };
               }
             } catch { /* non-JSON body - fall through to normal handling */ }
           }

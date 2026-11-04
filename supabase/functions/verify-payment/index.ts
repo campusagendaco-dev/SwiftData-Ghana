@@ -11,7 +11,7 @@ import { notifyApiClient } from "../_shared/webhooks.ts";
 import { getProviderAdapter } from "../_shared/providers/registry.ts";
 import { executeGuestBeneficiaryRefund, handleGuestBeneficiaryFailure, isGuestOrder } from "../_shared/guest-refund.ts";
 import { sendWhatsAppOrderReceipt, checkAndTriggerDeliveryOnFire } from "../_shared/whatsapp.ts";
-import { isDuplicateOrderError } from "../_shared/providers/utils.ts";
+import { isDuplicateOrderError, isBeneficiaryFailure } from "../_shared/providers/utils.ts";
 import { verifyAdmin } from "../_shared/auth.ts";
 import { autoSubmitBeneficiaryNumber } from "../_shared/beneficiary_auto_submit.ts";
 
@@ -938,8 +938,9 @@ serve(async (req: any) => {
         }), { headers: corsHeaders });
       }
 
-      // If actively in-flight/dispatching within the last 60 seconds, block duplicate concurrent dispatch
-      if (secondsSinceUpdate < 60 && existingOrder.provider_order_id !== "timeout" && existingOrder.provider_order_id !== "failed_api_call" && !force) {
+      // If actively in-flight/dispatching within the last 60 seconds, block duplicate concurrent dispatch.
+      // NOTE: Routine checkout polling passes `force: true`, so `force` MUST NOT bypass an active in-flight dispatch lock!
+      if (secondsSinceUpdate < 60 && existingOrder.provider_order_id !== "timeout" && existingOrder.provider_order_id !== "failed_api_call" && body?.confirm_redispatch !== true) {
         console.log(`[verify-payment] Order ${targetReference} is currently actively in-flight/dispatching (${secondsSinceUpdate.toFixed(1)}s ago). Blocking duplicate concurrent dispatch.`);
         return new Response(JSON.stringify({ 
           status: "processing", 
@@ -1041,7 +1042,7 @@ serve(async (req: any) => {
               status: "processing", 
               provider_id: provider.id,
               provider_order_id: checkResult.id || currentRef || targetReference,
-              failure_reason: "Provider is processing the order"
+              failure_reason: null
             }).eq("id", targetReference);
             return new Response(JSON.stringify({ status: "processing", provider_order_id: checkResult.id || currentRef || targetReference }), { headers: corsHeaders });
           }
@@ -1448,18 +1449,20 @@ serve(async (req: any) => {
     const lockSecondsSinceUpdate = (now - lockUpdatedAt) / 1000;
     
     // An order in 'processing' is ONLY re-claimable if:
-    // 1. It explicitly timed out or failed previously (provider_order_id === "timeout" or "failed_api_call")
-    // 2. OR it has been stuck/abandoned for > 90 seconds AND force is true / explicit retry
+    // 1. It has no provider_order_id or holds a non-in-flight sentinel (timeout, failed_api_call, manual_fulfillment_mode, etc.)
+    // 2. OR it has been stuck in 'dispatching' for > 60 seconds
+    const currentProvOrderId = String(existingOrder?.provider_order_id || "").trim();
     const isUndispatchedProcessing = existingOrder?.status === "processing" && (
-      isSentinelOrderId(existingOrder?.provider_order_id) ||
-      !existingOrder?.provider_order_id ||
-      (lockSecondsSinceUpdate > 90 && (!existingOrder?.provider_order_id || existingOrder?.provider_order_id === "dispatching"))
+      !currentProvOrderId ||
+      (isSentinelOrderId(currentProvOrderId) && currentProvOrderId !== "dispatching") ||
+      (currentProvOrderId === "dispatching" && lockSecondsSinceUpdate > 60)
     );
     const allowedStatuses = isUndispatchedProcessing 
       ? ["pending", "paid", "fulfillment_failed", "awaiting_payment", "failed", "processing", "cancelled"]
       : ["pending", "paid", "fulfillment_failed", "awaiting_payment", "failed", "cancelled"];
 
     const targetStatus = "processing";
+    // Guard against overwriting a real provider_order_id (e.g. SKP...) that was written by a concurrent worker while we verified payment
     const { data: claimedOrder, error: claimError } = await supabaseAdmin
       .from("orders")
       .update({ 
@@ -1472,6 +1475,7 @@ serve(async (req: any) => {
       })
       .eq("id", targetReference)
       .in("status", allowedStatuses)
+      .or("provider_order_id.is.null,provider_order_id.in.(dispatching,timeout,failed_api_call,routed,manual_fulfillment_mode,paused_by_admin,duplicate_cooldown,refunded)")
       .select("*")
       .maybeSingle();
 
@@ -1589,15 +1593,15 @@ serve(async (req: any) => {
         // This ensures the 3% processing fee is effectively charged.
         const creditAmount = Number(claimedOrder.amount || verifiedAmount);
         const walletType = (claimedOrder.metadata?.wallet_type || metadata?.wallet_type) === "api" ? "api" : "main";
-        if (walletType === "api") {
-          await supabaseAdmin.schema("api").rpc("credit_api_wallet", { p_user_id: agentId, p_amount: creditAmount });
-        } else {
-          const { error: repayErr } = await supabaseAdmin.rpc("repay_credit", { p_agent_id: agentId, p_amount: creditAmount });
-          if (repayErr) {
-            await supabaseAdmin.rpc("credit_wallet", { p_agent_id: agentId, p_amount: creditAmount });
-          }
+        // Atomic, once-only credit through the wallet ledger (also marks the order fulfilled).
+        const { data: credit, error: creditErr } = await supabaseAdmin.rpc("credit_topup_order", {
+          p_order_id: targetReference,
+          p_paid_amount: null,
+        });
+        if (creditErr || !(credit as any)?.success) {
+          console.error("[verify-payment] top-up credit failed:", creditErr || (credit as any)?.error, { walletType, creditAmount });
+          return new Response(JSON.stringify({ status: "error", error: "Could not credit your wallet. Support has been alerted." }), { headers: corsHeaders });
         }
-        await supabaseAdmin.from("orders").update({ status: "fulfilled" }).eq("id", targetReference);
       }
       return new Response(JSON.stringify({ status: "fulfilled" }), { headers: corsHeaders });
     }
@@ -2381,12 +2385,18 @@ serve(async (req: any) => {
         }
       }
 
-      // Auto-failover to Datamart/SKPlug for MTN orders rejected by DataHub (Beneficiary / Payee Limit / Unlisted number / Provider rejection)
-      const isDataHub = (provider.handler_type || "").toLowerCase() === "datahub";
+      // Auto-failover to Datamart for MTN orders rejected by DataHub due to Beneficiary / Payee Limit / Whitelist
+      // Never trigger this hardcoded DataMart failover if the current provider is already SKDataPlug/DataMart or if the error is a duplicate/pending order!
+      const providerHandlerLower = (provider.handler_type || "").toLowerCase();
+      const isDataHub = providerHandlerLower === "datahub";
+      const isNonBeneficiaryProvider = providerHandlerLower === "skdataplug" || providerHandlerLower === "datamart" || providerHandlerLower === "spendless";
       const isMtn = network.toUpperCase().includes("MTN") || network.toUpperCase() === "YELLO";
-      const isBeneficiaryOrLimitError = /beneficiary|payee|limit|not_allowed|not allowed|not added|whitelist|recipient/i.test(String(result.reason || ""));
+      const isBeneficiaryOrLimitError = !isNonBeneficiaryProvider && !isDuplicateOrderError(result.reason) && (
+        isBeneficiaryFailure(result.reason) ||
+        /payee|daily.*limit|not_allowed|not allowed|not added|whitelist/i.test(String(result.reason || ""))
+      );
       
-      if (!result.ok && isMtn && (isDataHub || isBeneficiaryOrLimitError)) {
+      if (!result.ok && isMtn && !isDuplicateOrderError(result.reason) && (isDataHub || isBeneficiaryOrLimitError)) {
         console.log(`[verify-payment] MTN order rejected by ${provider.name} (${result.reason}). Attempting Datamart/SKPlug API failover...`);
         const { data: dmProvider } = await supabaseAdmin
           .from("providers")

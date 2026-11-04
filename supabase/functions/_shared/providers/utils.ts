@@ -232,9 +232,14 @@ export function parseProviderResponse(body: string, contentType: string | null):
     if (ok && parsed?.success !== false) {
       // Do not treat HTTP 200 or `success: true` as delivery confirmation when `order` is present
       // unless `deliveryStatus` explicitly confirms completion (`completed` / `delivered` / `fulfilled`).
+      const normalizedTopStatus = ["completed", "delivered", "fulfilled"].includes(effectiveStatus)
+        ? "fulfilled"
+        : (["pending", "processing", "queued", "ongoing", "submitted", "accepted"].includes(effectiveStatus)
+          ? "processing"
+          : (effectiveStatus || "processing"));
       const resolvedOkStatus = (parsed?.order || data?.order || data?.result)
         ? (["completed", "delivered", "fulfilled"].includes(deliveryStatus) ? "fulfilled" : "processing")
-        : (effectiveStatus || "processing");
+        : normalizedTopStatus;
       return { ok: true, id: orderId || undefined, status: resolvedOkStatus, prepaid_token: prepaidToken };
     }
 
@@ -244,9 +249,14 @@ export function parseProviderResponse(body: string, contentType: string | null):
     }
     
     if (orderId && orderId !== "undefined" && orderId !== "") {
+      const normalizedTopFallback = ["completed", "delivered", "fulfilled"].includes(effectiveStatus)
+        ? "fulfilled"
+        : (["pending", "processing", "queued", "ongoing", "submitted", "accepted"].includes(effectiveStatus)
+          ? "processing"
+          : (effectiveStatus || "processing"));
       const fallbackStatus = (parsed?.order || data?.order || data?.result)
         ? (["completed", "delivered", "fulfilled"].includes(deliveryStatus) ? "fulfilled" : "processing")
-        : (effectiveStatus || "processing");
+        : normalizedTopFallback;
       return { ok: true, id: orderId, status: fallbackStatus, prepaid_token: prepaidToken };
     }
 
