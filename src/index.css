@@ -559,3 +559,8 @@ body.shield-active .secure-area {
 @media (prefers-reduced-motion: reduce) {
   .arena-ticker { animation: none; }
 }
+
+/* Live challenge invite auto-dismiss bar (15s) */
+@keyframes arena-countdown { from { width: 100%; } to { width: 0%; } }
+.arena-countdown-bar { animation: arena-countdown 15s linear forwards; }
+@media (prefers-reduced-motion: reduce) { .arena-countdown-bar { animation-duration: 15s; } }

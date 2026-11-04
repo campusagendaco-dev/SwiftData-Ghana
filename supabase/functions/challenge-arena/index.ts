@@ -2012,7 +2012,21 @@ serve(async (req: Request) => {
       // complete_match calls (both players' clients fire one) must not both pay.
       const { data: settlementClaim } = await supabaseAdmin
         .from("game_challenges")
-        .update({ status: "completed", updated_at: new Date().toISOString() })
+        // The winner is written in the same update that claims settlement, so
+        // a concurrent "already completed" reply never carries a blank winner.
+        .update({
+          status: "completed",
+          winner_side: winnerSide,
+          winner_id: winnerSide === "creator" ? challenge.creator_id : winnerSide === "opponent" ? challenge.opponent_id : null,
+          winner_name:
+            winnerSide === "creator"
+              ? challenge.creator_name
+              : winnerSide === "opponent"
+              ? challenge.opponent_name || "Challenger"
+              : "Draw",
+          completed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
         .eq("id", challengeId)
         .eq("status", "in_progress")
         .select("id");

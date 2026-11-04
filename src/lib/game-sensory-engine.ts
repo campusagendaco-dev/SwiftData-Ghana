@@ -1,25 +1,12 @@
-// Procedural Web Audio API Sound Synthesizer, Haptic Vibration Sensor Controller,
-// DeviceOrientation Motion Sensor Helper & Human-Sense Level/Point Progression Engine
-
-let audioCtx: AudioContext | null = null;
-let soundEnabled = true;
-let vibrationEnabled = true;
-
-function getAudioContext(): AudioContext | null {
-  if (!soundEnabled || typeof window === "undefined") return null;
-  try {
-    if (!audioCtx) {
-      const Ctx = window.AudioContext || (window as any).webkitAudioContext;
-      if (Ctx) audioCtx = new Ctx();
-    }
-    if (audioCtx && audioCtx.state === "suspended") {
-      audioCtx.resume().catch(() => {});
-    }
-    return audioCtx;
-  } catch (_e) {
-    return null;
-  }
-}
+// Procedural sound (SwiftArena audio engine), haptics, motion helpers and
+// player level/point progression. Sound functions keep their old names so
+// every game picks up the new engine without code changes.
+import {
+  getAudioSettings,
+  sfx as arenaSfx,
+  ui as arenaUi,
+  updateAudioSettings,
+} from "@/lib/audio/arenaAudio";
 
 export function setGameSensoryPreferences(opts: {
   sound?: boolean;
@@ -27,14 +14,17 @@ export function setGameSensoryPreferences(opts: {
   soundEnabled?: boolean;
   vibrationEnabled?: boolean;
 }) {
-  if (typeof opts.sound === "boolean") soundEnabled = opts.sound;
-  if (typeof opts.soundEnabled === "boolean") soundEnabled = opts.soundEnabled;
-  if (typeof opts.vibration === "boolean") vibrationEnabled = opts.vibration;
-  if (typeof opts.vibrationEnabled === "boolean") vibrationEnabled = opts.vibrationEnabled;
+  const patch: { enabled?: boolean; vibration?: boolean } = {};
+  if (typeof opts.sound === "boolean") patch.enabled = opts.sound;
+  if (typeof opts.soundEnabled === "boolean") patch.enabled = opts.soundEnabled;
+  if (typeof opts.vibration === "boolean") patch.vibration = opts.vibration;
+  if (typeof opts.vibrationEnabled === "boolean") patch.vibration = opts.vibrationEnabled;
+  updateAudioSettings(patch);
 }
 
 export function getGameSensoryPreferences() {
-  return { soundEnabled, vibrationEnabled };
+  const s = getAudioSettings();
+  return { soundEnabled: s.enabled, vibrationEnabled: s.vibration };
 }
 
 export type HapticPreset =
@@ -51,7 +41,7 @@ export type HapticPreset =
   | "win";
 
 export function triggerHapticSensor(pattern: number | number[] | HapticPreset) {
-  if (!vibrationEnabled || typeof navigator === "undefined" || !("vibrate" in navigator)) return;
+  if (!getAudioSettings().vibration || typeof navigator === "undefined" || !("vibrate" in navigator)) return;
   try {
     let vibPattern: number | number[] = 15;
     if (typeof pattern === "string") {
@@ -94,26 +84,7 @@ export function triggerHapticSensor(pattern: number | number[] | HapticPreset) {
 export function playCueStrikeSound(powerPercent: number) {
   const gainScale = Math.min(1, Math.max(0.25, powerPercent / 100));
   triggerHapticSensor(Math.round(18 + gainScale * 32));
-
-  const ctx = getAudioContext();
-  if (!ctx) return;
-  try {
-    const now = ctx.currentTime;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-
-    osc.type = "triangle";
-    osc.frequency.setValueAtTime(240 + gainScale * 140, now);
-    osc.frequency.exponentialRampToValueAtTime(55, now + 0.065);
-
-    gain.gain.setValueAtTime(0.42 * gainScale, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
-
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start(now);
-    osc.stop(now + 0.075);
-  } catch (_e) {}
+  arenaSfx.cueStrike(gainScale);
 }
 
 /**
@@ -122,215 +93,54 @@ export function playCueStrikeSound(powerPercent: number) {
  */
 export function playBallClackSound(impactSpeed = 8) {
   const intensity = Math.min(1, Math.max(0.12, impactSpeed / 18));
-  if (intensity > 0.25) {
-    triggerHapticSensor(Math.round(10 + intensity * 22));
-  }
-
-  const ctx = getAudioContext();
-  if (!ctx) return;
-  try {
-    const now = ctx.currentTime;
-
-    const osc1 = ctx.createOscillator();
-    const osc2 = ctx.createOscillator();
-    const gain = ctx.createGain();
-
-    osc1.type = "sine";
-    osc2.type = "triangle";
-    const jitter = (Math.random() - 0.5) * 120;
-    osc1.frequency.setValueAtTime(1820 + intensity * 280 + jitter, now);
-    osc1.frequency.exponentialRampToValueAtTime(620, now + 0.038);
-
-    osc2.frequency.setValueAtTime(3150 + jitter, now);
-    osc2.frequency.exponentialRampToValueAtTime(1100, now + 0.025);
-
-    gain.gain.setValueAtTime(0.34 * intensity, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.042);
-
-    osc1.connect(gain);
-    osc2.connect(gain);
-    gain.connect(ctx.destination);
-
-    osc1.start(now);
-    osc2.start(now);
-    osc1.stop(now + 0.045);
-    osc2.stop(now + 0.03);
-  } catch (_e) {}
+  if (intensity > 0.25) triggerHapticSensor(Math.round(10 + intensity * 22));
+  arenaSfx.ballClack(intensity);
 }
 
 /**
  * Rubber rail cushion thud
  */
 export function playRailBounceSound(impactSpeed = 6) {
-  const intensity = Math.min(1, Math.max(0.15, impactSpeed / 16));
-  triggerHapticSensor(12);
-
-  const ctx = getAudioContext();
-  if (!ctx) return;
-  try {
-    const now = ctx.currentTime;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-
-    osc.type = "sine";
-    osc.frequency.setValueAtTime(145 + intensity * 40, now);
-    osc.frequency.exponentialRampToValueAtTime(48, now + 0.06);
-
-    gain.gain.setValueAtTime(0.26 * intensity, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.065);
-
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start(now);
-    osc.stop(now + 0.07);
-  } catch (_e) {}
+  arenaSfx.railBounce(Math.min(1, Math.max(0.15, impactSpeed / 14)));
 }
 
 /**
  * Pocket drop + metallic ball-return rail roll
  */
 export function playPocketDropSound() {
-  triggerHapticSensor([40, 45, 75]);
-
-  const ctx = getAudioContext();
-  if (!ctx) return;
-  try {
-    const now = ctx.currentTime;
-    const oscDrop = ctx.createOscillator();
-    const gainDrop = ctx.createGain();
-    oscDrop.type = "sine";
-    oscDrop.frequency.setValueAtTime(190, now);
-    oscDrop.frequency.exponentialRampToValueAtTime(62, now + 0.14);
-    gainDrop.gain.setValueAtTime(0.38, now);
-    gainDrop.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
-    oscDrop.connect(gainDrop);
-    gainDrop.connect(ctx.destination);
-    oscDrop.start(now);
-    oscDrop.stop(now + 0.16);
-
-    const oscChime = ctx.createOscillator();
-    const gainChime = ctx.createGain();
-    oscChime.type = "triangle";
-    oscChime.frequency.setValueAtTime(587.33, now + 0.09); // D5
-    oscChime.frequency.setValueAtTime(880, now + 0.17); // A5
-    gainChime.gain.setValueAtTime(0.22, now + 0.09);
-    gainChime.gain.exponentialRampToValueAtTime(0.001, now + 0.34);
-    oscChime.connect(gainChime);
-    gainChime.connect(ctx.destination);
-    oscChime.start(now + 0.09);
-    oscChime.stop(now + 0.35);
-  } catch (_e) {}
+  triggerHapticSensor("pocket_drop");
+  arenaSfx.pocket();
 }
 
 /**
  * Foul / Cue ball scratch alert sound + double vibration
  */
 export function playFoulAlertSound() {
-  triggerHapticSensor([110, 55, 110]);
-  const ctx = getAudioContext();
-  if (!ctx) return;
-  try {
-    const now = ctx.currentTime;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = "sawtooth";
-    osc.frequency.setValueAtTime(220, now);
-    osc.frequency.linearRampToValueAtTime(155, now + 0.22);
-    gain.gain.setValueAtTime(0.2, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.24);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start(now);
-    osc.stop(now + 0.25);
-  } catch (_e) {}
+  triggerHapticSensor([40, 30, 40]);
+  arenaSfx.foul();
 }
 
 /**
  * Wooden nickernut seed drop in carved Oware terracotta bowl
  */
-export function playWoodSeedClack(seedIndex = 0) {
-  triggerHapticSensor(14);
-  const ctx = getAudioContext();
-  if (!ctx) return;
-  try {
-    const now = ctx.currentTime;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = "sine";
-    const baseFreq = 640 + (seedIndex % 6) * 42;
-    osc.frequency.setValueAtTime(baseFreq, now);
-    osc.frequency.exponentialRampToValueAtTime(210, now + 0.045);
-    gain.gain.setValueAtTime(0.28, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start(now);
-    osc.stop(now + 0.055);
-  } catch (_e) {}
+export function playWoodSeedClack(seedIndex = 0, pan = 0) {
+  arenaSfx.seedClack(seedIndex, pan);
 }
 
 /**
  * 3D Dice roll rattle & bounce for Ghana Ludo
  */
 export function playDiceRattleSound() {
-  triggerHapticSensor([25, 35, 25, 45]);
-  const ctx = getAudioContext();
-  if (!ctx) return;
-  try {
-    [0, 0.06, 0.13].forEach((offset, idx) => {
-      const now = ctx.currentTime + offset;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = "triangle";
-      osc.frequency.setValueAtTime(920 + idx * 180, now);
-      osc.frequency.exponentialRampToValueAtTime(340, now + 0.04);
-      gain.gain.setValueAtTime(0.24, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.045);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start(now);
-      osc.stop(now + 0.05);
-    });
-  } catch (_e) {}
+  triggerHapticSensor("dice_roll");
+  arenaSfx.diceRattle();
 }
 
 /**
  * Market Slash: Crisp blade swoosh + juicy fruit pop/squish (matches game_play_2_.mp4)
  */
 export function playFruitSliceSound(comboCount = 1) {
-  triggerHapticSensor(comboCount > 1 ? [18, 25, 28] : 18);
-  const ctx = getAudioContext();
-  if (!ctx) return;
-  try {
-    const now = ctx.currentTime;
-    const pitchBoost = Math.min(360, (comboCount - 1) * 65);
-
-    // 1. Blade swoosh + juicy pop
-    const oscPop = ctx.createOscillator();
-    const gainPop = ctx.createGain();
-    oscPop.type = "sine";
-    oscPop.frequency.setValueAtTime(520 + pitchBoost, now);
-    oscPop.frequency.exponentialRampToValueAtTime(980 + pitchBoost, now + 0.055);
-    gainPop.gain.setValueAtTime(0.32, now);
-    gainPop.gain.exponentialRampToValueAtTime(0.001, now + 0.085);
-    oscPop.connect(gainPop);
-    gainPop.connect(ctx.destination);
-    oscPop.start(now);
-    oscPop.stop(now + 0.09);
-
-    // 2. Crisp high-frequency slice shimmer
-    const oscSlice = ctx.createOscillator();
-    const gainSlice = ctx.createGain();
-    oscSlice.type = "triangle";
-    oscSlice.frequency.setValueAtTime(1650 + pitchBoost, now);
-    oscSlice.frequency.exponentialRampToValueAtTime(420, now + 0.045);
-    gainSlice.gain.setValueAtTime(0.2, now);
-    gainSlice.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
-    oscSlice.connect(gainSlice);
-    gainSlice.connect(ctx.destination);
-    oscSlice.start(now);
-    oscSlice.stop(now + 0.055);
-  } catch (_e) {}
+  triggerHapticSensor("slice");
+  arenaSfx.slice(comboCount);
 }
 
 /**
@@ -338,72 +148,23 @@ export function playFruitSliceSound(comboCount = 1) {
  */
 export function playBombExplosionSound() {
   triggerHapticSensor("bomb");
-  const ctx = getAudioContext();
-  if (!ctx) return;
-  try {
-    const now = ctx.currentTime;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = "sawtooth";
-    osc.frequency.setValueAtTime(145, now);
-    osc.frequency.exponentialRampToValueAtTime(28, now + 0.38);
-    gain.gain.setValueAtTime(0.48, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.42);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start(now);
-    osc.stop(now + 0.45);
-  } catch (_e) {}
+  arenaSfx.bomb();
 }
 
 /**
  * Market Slash: Stall Cleared celebratory chime (+150 / +300 / +450 bonus)
  */
 export function playStallClearedSound() {
-  triggerHapticSensor([50, 35, 85]);
-  const ctx = getAudioContext();
-  if (!ctx) return;
-  try {
-    const notes = [587.33, 783.99, 1046.5]; // D5, G5, C6
-    notes.forEach((freq, idx) => {
-      const now = ctx.currentTime + idx * 0.075;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = "triangle";
-      osc.frequency.setValueAtTime(freq, now);
-      gain.gain.setValueAtTime(0.28, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.24);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start(now);
-      osc.stop(now + 0.26);
-    });
-  } catch (_e) {}
+  arenaSfx.stageClear();
 }
 
 /**
  * Celebratory Level-Up / Target Data Bundle Unlocked Fanfare
  */
 export function playLevelUpFanfare() {
-  triggerHapticSensor([70, 45, 70, 45, 160]);
-  const ctx = getAudioContext();
-  if (!ctx) return;
-  try {
-    const notes = [523.25, 659.25, 783.99, 1046.5]; // C5, E5, G5, C6
-    notes.forEach((freq, i) => {
-      const now = ctx.currentTime + i * 0.085;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = "triangle";
-      osc.frequency.setValueAtTime(freq, now);
-      gain.gain.setValueAtTime(0.28, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start(now);
-      osc.stop(now + 0.3);
-    });
-  } catch (_e) {}
+  // A short sparkle: the full win stinger plays once from the result screen.
+  triggerHapticSensor("victory");
+  arenaUi.reward();
 }
 
 /**
@@ -412,69 +173,22 @@ export function playLevelUpFanfare() {
  * - When `isMyTurn === false`: soft warm handoff tone (E5 -> B4)
  */
 export function playTurnNotificationSound(isMyTurn = true) {
-  triggerHapticSensor(isMyTurn ? [35, 45, 75] : 18);
-  const ctx = getAudioContext();
-  if (!ctx) return;
-  try {
-    const notes = isMyTurn ? [783.99, 1174.66] : [659.25, 493.88];
-    notes.forEach((freq, idx) => {
-      const now = ctx.currentTime + idx * 0.095;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = "sine";
-      osc.frequency.setValueAtTime(freq, now);
-      gain.gain.setValueAtTime(isMyTurn ? 0.26 : 0.16, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start(now);
-      osc.stop(now + 0.24);
-    });
-  } catch (_e) {}
+  if (isMyTurn) triggerHapticSensor("tap");
+  arenaUi.turn(isMyTurn);
 }
 
 /**
  * Ultra-crisp mechanical precision tick when scrolling the Pool Fine-Aiming Tray wheel
  */
 export function playFineAimTickSound() {
-  triggerHapticSensor(8);
-  const ctx = getAudioContext();
-  if (!ctx) return;
-  try {
-    const now = ctx.currentTime;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = "triangle";
-    osc.frequency.setValueAtTime(1480, now);
-    osc.frequency.exponentialRampToValueAtTime(680, now + 0.018);
-    gain.gain.setValueAtTime(0.12, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.02);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start(now);
-    osc.stop(now + 0.022);
-  } catch (_e) {}
+  arenaUi.tick();
 }
 
 // ── Human-Sense Challenger Personas & Progressive Level / Point System ───────
 
 export function playCandyPopSound(combo = 1) {
-  triggerHapticSensor(combo > 1 ? [18, 24, 28] : 14);
-  const ctx = getAudioContext();
-  if (!ctx) return;
-  try {
-    const now = ctx.currentTime;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = "triangle";
-    osc.frequency.setValueAtTime(330 + Math.min(8, combo) * 80, now);
-    gain.gain.setValueAtTime(0.11, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start(now);
-    osc.stop(now + 0.165);
-  } catch (_e) {}
+  triggerHapticSensor("tap");
+  arenaSfx.candyPop(combo);
 }
 
 export interface HumanChallengerPersona {

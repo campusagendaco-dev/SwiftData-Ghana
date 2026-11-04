@@ -11,6 +11,8 @@ interface InGameVoiceChatProps {
   opponentName: string;
   mode: "free_data" | "p2p" | "ai";
   compact?: boolean;
+  /** "icon": one round mic button for slim toolbars (extra controls only while connected). */
+  variant?: "pill" | "icon";
 }
 
 const RTC_ICE_SERVERS: RTCIceServer[] = [
@@ -34,6 +36,7 @@ export const InGameVoiceChat: React.FC<InGameVoiceChatProps> = ({
   opponentName,
   mode,
   compact = false,
+  variant = "pill",
 }) => {
   const { toast } = useToast();
   const [micEnabled, setMicEnabled] = useState(false);
@@ -623,6 +626,53 @@ export const InGameVoiceChat: React.FC<InGameVoiceChatProps> = ({
       setMicMuted((prev) => !prev);
     }
   };
+
+  if (variant === "icon") {
+    const state = !micEnabled ? "off" : micMuted ? "muted" : "live";
+    return (
+      <div className="inline-flex items-center gap-1 shrink-0">
+        <button
+          type="button"
+          onClick={handleTogglePrimaryMic}
+          aria-label={state === "off" ? "Turn on voice chat" : state === "muted" ? "Unmute microphone" : "Mute microphone"}
+          title={state === "off" ? "Voice chat" : state === "muted" ? "Mic muted" : "Mic live"}
+          className={`relative h-9 w-9 rounded-xl flex items-center justify-center transition-colors ${
+            state === "off"
+              ? "text-slate-300 hover:text-white hover:bg-white/10"
+              : state === "muted"
+              ? "bg-amber-400/15 text-amber-300"
+              : "bg-emerald-400/15 text-emerald-300"
+          }`}
+        >
+          {state === "muted" ? <MicOff className="w-[18px] h-[18px]" /> : <Mic className="w-[18px] h-[18px]" />}
+          {state === "live" && (
+            <span className={`absolute inset-0 rounded-xl ring-2 ring-emerald-400/70 ${isLocalSpeaking ? "animate-pulse" : ""}`} />
+          )}
+          {isRemoteSpeaking && <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-amber-400 animate-ping" />}
+        </button>
+        {micEnabled && (
+          <button
+            type="button"
+            onClick={stopMicrophone}
+            aria-label="End voice chat"
+            className="h-9 px-2 rounded-xl text-[11px] font-bold text-rose-300 hover:bg-rose-500/15"
+          >
+            End
+          </button>
+        )}
+        {peerConnected && (
+          <button
+            type="button"
+            onClick={() => setSpeakerMuted((prev) => !prev)}
+            aria-label={speakerMuted ? "Unmute opponent" : "Mute opponent"}
+            className="h-9 w-9 rounded-xl flex items-center justify-center text-slate-300 hover:text-white hover:bg-white/10"
+          >
+            {speakerMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+          </button>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="inline-flex items-center gap-1.5 shrink-0">

@@ -2,8 +2,10 @@ import { useEffect, useState, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { playSound, safeVibrate } from "@/lib/sound";
-import { Trophy, Swords, Flame, X, ArrowRight, Sparkles } from "lucide-react";
+import { safeVibrate } from "@/lib/sound";
+import { ui as arenaUi } from "@/lib/audio/arenaAudio";
+import { getGameMeta } from "@/components/games/hub/gameCatalog";
+import { Trophy, X, ArrowRight } from "lucide-react";
 
 interface LiveChallengeAlert {
   id: string;
@@ -127,7 +129,7 @@ export function ChallengeLiveNotifier() {
               stakeAmount: Number(row.stake_amount || 0),
               prizePool: Number(row.prize_pool || 0),
             });
-            playSound("/sounds/notification_system.mp3", 0.35);
+            arenaUi.invite();
             safeVibrate([150, 80, 150]);
             break;
           } else if (row.status === "in_progress" && row.opponent_name) {
@@ -149,7 +151,7 @@ export function ChallengeLiveNotifier() {
               stakeAmount: Number(row.stake_amount || 0),
               prizePool: Number(row.prize_pool || 0),
             });
-            playSound("/sounds/notification_system.mp3", 0.35);
+            arenaUi.invite();
             safeVibrate([150, 80, 150]);
             break;
           }
@@ -197,7 +199,7 @@ export function ChallengeLiveNotifier() {
             prizePool: prize,
           });
 
-          playSound("/sounds/notification_system.mp3", 0.45);
+          arenaUi.invite();
           safeVibrate([200, 100, 200]);
           fireBrowserNotification(
             `⚔️ Open ${gameLabel} Challenge (Win GH₵ ${prize.toFixed(2)})!`,
@@ -238,7 +240,7 @@ export function ChallengeLiveNotifier() {
               prizePool: prize,
             });
 
-            playSound("/sounds/notification_system.mp3", 0.5);
+            arenaUi.invite();
             safeVibrate([250, 100, 250]);
             fireBrowserNotification(
               isCreator
@@ -279,135 +281,72 @@ export function ChallengeLiveNotifier() {
     navigate(`/challenges?room=${encodeURIComponent(targetRoom)}`);
   };
 
+  const meta = getGameMeta(alert.gameType);
+  const accent = meta?.accent || "#f59e0b";
+  const isOpen = alert.type === "open";
+  const headline = isOpen
+    ? `${alert.creatorName} wants a ${gameLabel} match`
+    : `${alert.opponentName} accepted ${isCreatorAlert ? "your" : `${alert.creatorName}'s`} challenge`;
+  const cta = isOpen ? "Accept challenge" : isCreatorAlert ? "Play your turn" : "Watch live";
+
   return (
-    <div className="fixed bottom-20 sm:bottom-6 left-4 right-4 sm:left-6 sm:right-auto sm:w-[400px] z-[95] animate-in slide-in-from-bottom-5 fade-in duration-300">
-      <div className="relative overflow-hidden rounded-3xl bg-slate-950/95 backdrop-blur-2xl border-2 border-amber-500/50 shadow-[0_20px_60px_rgba(0,0,0,0.85)] p-4">
-        {/* Top glowing accent bar */}
-        <div
-          className={`absolute top-0 inset-x-0 h-1 bg-gradient-to-r ${
-            alert.type === "open"
-              ? "from-amber-400 via-orange-500 to-emerald-400"
-              : "from-emerald-400 via-teal-400 to-amber-400"
-          }`}
-        />
-
-        <button
-          type="button"
-          onClick={handleDismiss}
-          aria-label="Dismiss challenge alert"
-          className="absolute top-3 right-3 w-7 h-7 rounded-full bg-white/5 hover:bg-white/15 border border-white/10 flex items-center justify-center text-slate-400 hover:text-white transition-colors"
-        >
-          <X className="w-3.5 h-3.5" />
-        </button>
-
-        <div className="flex items-start gap-3.5 pr-6">
-          {/* Game Artwork Thumbnail */}
-          <div className="relative shrink-0">
-            {alert.gameType === "ludo" ? (
-              <img
-                src="/ludo-challenge-icon.png"
-                alt="Ghana Ludo"
-                className="w-13 h-13 rounded-2xl object-cover border border-amber-400/50 shadow-lg"
-              />
-            ) : alert.gameType === "oware" ? (
-              <img
-                src="/oware-challenge-icon.jpg"
-                alt="Ghana Oware"
-                className="w-13 h-13 rounded-2xl object-cover border border-amber-400/50 shadow-lg"
-              />
-            ) : alert.gameType === "pool" ? (
-              <img
-                src="/pool-challenge-icon.jpg"
-                alt="8-Ball Pool"
-                className="w-13 h-13 rounded-2xl object-cover border border-sky-400/50 shadow-lg"
-              />
+    <div className="fixed top-3 sm:top-auto sm:bottom-6 left-3 right-3 sm:left-6 sm:right-auto sm:w-[380px] z-[95] animate-in slide-in-from-top-4 sm:slide-in-from-bottom-4 fade-in duration-300">
+      <div
+        className="relative overflow-hidden rounded-2xl bg-[#0b1220]/95 border border-white/10 p-3.5 shadow-[0_18px_50px_-12px_rgba(0,0,0,0.85)]"
+        style={{ boxShadow: `0 0 0 1px ${accent}55, 0 18px 50px -12px rgba(0,0,0,0.85)` }}
+      >
+        <div className="flex items-start gap-3">
+          <span
+            className="h-11 w-11 shrink-0 rounded-xl flex items-center justify-center text-2xl"
+            style={{ background: `${accent}22`, boxShadow: `inset 0 0 0 1px ${accent}55` }}
+            aria-hidden
+          >
+            {meta?.emoji || "⚔️"}
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-[11px] font-bold uppercase tracking-wider" style={{ color: accent }}>
+              {isOpen ? "Live challenge" : "Match is live"} · #{alert.roomCode}
+            </p>
+            <p className="text-[14px] font-extrabold text-white leading-snug mt-0.5">{headline}</p>
+            {alert.prizePool > 0 ? (
+              <p className="text-[12px] text-slate-400 mt-0.5 flex items-center gap-1">
+                <Trophy className="w-3.5 h-3.5 text-amber-300" />
+                Win <strong className="text-emerald-300">GH₵ {alert.prizePool.toFixed(2)}</strong>
+                {isOpen && alert.stakeAmount > 0 && <span> · stake GH₵ {alert.stakeAmount.toFixed(2)}</span>}
+              </p>
             ) : (
-              <div className="w-13 h-13 rounded-2xl bg-gradient-to-br from-emerald-500/30 to-slate-900 border border-emerald-400/50 flex items-center justify-center text-2xl shadow-lg">
-                ♟️
-              </div>
-            )}
-            <span className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-amber-500 text-slate-950 flex items-center justify-center shadow">
-              {alert.type === "open" ? <Swords className="w-3 h-3" /> : <Flame className="w-3 h-3" />}
-            </span>
-          </div>
-
-          <div className="min-w-0 flex-1 space-y-1">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span
-                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border ${
-                  alert.type === "open"
-                    ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
-                    : "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
-                }`}
-              >
-                <Sparkles className="w-2.5 h-2.5" />
-                {alert.type === "open"
-                  ? "Open Challenge Live"
-                  : isCreatorAlert
-                  ? "Your Challenge Accepted!"
-                  : "Challenge Accepted & Live"}
-              </span>
-              <span className="text-[10px] font-mono font-bold text-slate-400">
-                Room #{alert.roomCode}
-              </span>
-            </div>
-
-            {alert.type === "open" ? (
-              <>
-                <p className="text-xs sm:text-sm font-black text-white leading-snug">
-                  {alert.creatorName} invited players to a{" "}
-                  <span className="text-amber-400">{gameLabel}</span> duel!
-                </p>
-                <div className="flex items-center gap-2 text-[11px]">
-                  <span className="text-slate-300">
-                    Stake: <strong className="text-amber-300 font-mono">GH₵ {alert.stakeAmount.toFixed(2)}</strong>
-                  </span>
-                  <span className="text-slate-600">•</span>
-                  <span className="text-emerald-400 font-black font-mono flex items-center gap-1">
-                    <Trophy className="w-3 h-3" /> Win GH₵ {alert.prizePool.toFixed(2)}
-                  </span>
-                </div>
-              </>
-            ) : (
-              <>
-                <p className="text-xs sm:text-sm font-black text-white leading-snug">
-                  <span className="text-emerald-400">{alert.opponentName}</span> accepted{" "}
-                  <span className="text-amber-300">{isCreatorAlert ? "your" : `${alert.creatorName}'s`}</span>{" "}
-                  {gameLabel} challenge!
-                </p>
-                <p className="text-[11px] text-slate-300">
-                  Winner Pot:{" "}
-                  <strong className="text-emerald-400 font-mono">GH₵ {alert.prizePool.toFixed(2)}</strong> • Match is LIVE now!
-                </p>
-              </>
+              <p className="text-[12px] text-slate-400 mt-0.5">Free match · earn Arena Points</p>
             )}
           </div>
+          <button
+            type="button"
+            onClick={handleDismiss}
+            aria-label="Dismiss"
+            className="h-7 w-7 shrink-0 rounded-lg text-slate-500 hover:text-white hover:bg-white/10 flex items-center justify-center"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
         </div>
-
-        <div className="mt-3.5 flex items-center gap-2">
+        <div className="mt-3 flex items-center gap-2">
           <button
             type="button"
             onClick={handleAction}
-            className={`flex-1 py-2.5 px-4 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 shadow-lg transition-all cursor-pointer ${
-              alert.type === "open"
-                ? "bg-gradient-to-r from-amber-400 via-orange-500 to-amber-500 text-slate-950 hover:opacity-95"
-                : "bg-gradient-to-r from-emerald-400 via-teal-400 to-emerald-500 text-slate-950 hover:opacity-95"
-            }`}
+            className="flex-1 h-10 rounded-xl text-slate-950 font-extrabold text-[13px] inline-flex items-center justify-center gap-1.5 transition hover:brightness-110"
+            style={{ background: accent }}
           >
-            {alert.type === "open"
-              ? `⚔️ Accept Challenge (#${alert.roomCode})`
-              : isCreatorAlert
-              ? `🚨 Play Your Turn Now (#${alert.roomCode})`
-              : `🔥 View Live Arena (#${alert.roomCode})`}
-            <ArrowRight className="w-3.5 h-3.5" />
+            {cta} <ArrowRight className="w-4 h-4" />
           </button>
           <button
             type="button"
             onClick={handleDismiss}
-            className="px-3 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-[11px] font-bold text-slate-400 hover:text-white transition-colors cursor-pointer"
+            className="h-10 px-3.5 rounded-xl border border-white/10 text-[13px] font-bold text-slate-300 hover:text-white hover:bg-white/5"
           >
             Later
           </button>
+        </div>
+        {/* auto-dismiss countdown */}
+        <div className="absolute inset-x-0 bottom-0 h-0.5 bg-white/5">
+          <div className="h-full arena-countdown-bar" style={{ background: accent }} onAnimationEnd={handleDismiss} />
         </div>
       </div>
     </div>

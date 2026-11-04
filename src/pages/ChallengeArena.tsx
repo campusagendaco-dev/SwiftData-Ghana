@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo, lazy, Suspense } fro
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { useToast } from "@/hooks/use-toast";
+import { useArenaToast } from "@/components/games/notify/arenaNotify";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -54,6 +54,8 @@ import {
   GamerAvatarPickerGrid,
 } from "@/components/games/DailyStoriesBar";
 import { ArenaLobby } from "@/components/games/hub/ArenaLobby";
+import { GameShellBar, GameShellPill } from "@/components/games/shell/GameShellBar";
+import { startMusic, stopMusic, stingers } from "@/lib/audio/arenaAudio";
 import { GAME_CATALOG, type GameType } from "@/components/games/hub/gameCatalog";
 
 // Each game board is its own chunk: the lobby no longer downloads all seven
@@ -150,7 +152,8 @@ async function getInitialBoardForGame(gameType: GameType) {
 
 export default function ChallengeArena() {
   const { user, profile } = useAuth();
-  const { toast } = useToast();
+  // SwiftArena notification cards (same call signature as the old toast)
+  const { toast } = useArenaToast();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const roomQueryParam = (searchParams.get("room") || "").trim().toUpperCase();
@@ -1268,6 +1271,27 @@ export default function ChallengeArena() {
     }
   };
 
+  // One outcome stinger (win / lose / draw) per finished match when the result opens
+  const resultStingerPlayedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!showMatchResultModal || !activeChallenge?.winner_side) return;
+    const key = `${activeChallenge.id}:${activeChallenge.winner_side}`;
+    if (resultStingerPlayedRef.current === key) return;
+    resultStingerPlayedRef.current = key;
+    if (activeChallenge.winner_side === "draw") stingers.draw();
+    else if (activeChallenge.winner_side === mySide) stingers.win();
+    else stingers.lose();
+  }, [showMatchResultModal, activeChallenge?.id, activeChallenge?.winner_side, mySide]);
+
+  // Optional background music (off by default; players enable it in Sound settings)
+  useEffect(() => {
+    if (activeChallenge?.status === "in_progress") {
+      startMusic(String(activeChallenge.game_type || "default"));
+      return () => stopMusic();
+    }
+    return undefined;
+  }, [activeChallenge?.status, activeChallenge?.game_type]);
+
   const handleBoardStateChange = useCallback(
     async (nextState: any) => {
       if (!activeChallenge) return;
@@ -1396,16 +1420,16 @@ export default function ChallengeArena() {
         }
 
         if (!error && data?.challenge) {
-          setActiveChallenge(data.challenge);
-          toast({
-            title:
-              winnerSide === mySide
-                ? "🏆 VICTORY!"
-                : winnerSide === "draw"
-                ? "🤝 Match Draw!"
-                : `🏁 ${resolvedWinnerName} Won!`,
-            description: data.message,
-          });
+          setActiveChallenge((prev: any) =>
+            data.challenge.winner_side || !prev
+              ? data.challenge
+              : { ...data.challenge, winner_side: prev.winner_side, winner_name: prev.winner_name }
+          );
+          // The result popup already announces win/lose/draw; only add a card
+          // when money actually landed in the wallet.
+          if (data.reward_claim && winnerSide === mySide) {
+            toast({ title: "Prize credited to your wallet", description: data.message });
+          }
           fetchWalletAndPaystackKey();
           fetchLobby(true);
         }
@@ -2989,288 +3013,88 @@ export default function ChallengeArena() {
       {/* ── ACTIVE GAME STAGE (ULTRA-COMPACT TOP BAR + FULL-SCREEN FITTED BOARD) ── */}
       {activeChallenge ? (
         <Card className="relative flex-1 min-h-0 w-full flex flex-col border-0 rounded-none bg-[#070b14] shadow-none overflow-hidden">
-          {topHudCollapsed ? (
-            /* Floating Corner Pill when Board is 100% Locked to Screen */
-            <div className="fixed top-1.5 left-1.5 z-[115] flex flex-wrap items-center gap-1 px-2 py-1 rounded-full bg-slate-950/90 border border-white/15 shadow-xl backdrop-blur-md">
-              <button
-                type="button"
-                onClick={() => setActiveChallenge(null)}
-                className="px-2 py-0.5 rounded-full bg-white/10 hover:bg-white/20 text-[10px] font-black text-white flex items-center gap-1 cursor-pointer"
-              >
-                <ArrowLeft className="w-3 h-3" /> Lobby
-              </button>
+          {(() => {
+            const opponentLabel =
+              mySide === "creator"
+                ? activeChallenge.opponent_name ||
+                  HUMAN_CHALLENGER_PERSONAS[(activeChallenge.game_type || "oware") as GameType]?.name ||
+                  "Opponent"
+                : activeChallenge.creator_name || "Creator";
+            const myLabel =
+              mySide === "creator"
+                ? activeChallenge.creator_name || displayFirstName
+                : activeChallenge.opponent_name || displayFirstName;
+            const voice = (
               <InGameVoiceChat
                 roomCode={activeChallenge.room_code || "ARENA"}
                 challengeId={activeChallenge.id}
                 mySide={mySide}
-                myName={
-                  mySide === "creator"
-                    ? activeChallenge.creator_name || displayFirstName
-                    : activeChallenge.opponent_name || displayFirstName
-                }
-                opponentName={
-                  mySide === "creator"
-                    ? activeChallenge.opponent_name ||
-                      HUMAN_CHALLENGER_PERSONAS[
-                        (activeChallenge.game_type || "oware") as GameType
-                      ]?.name ||
-                      "Opponent"
-                    : activeChallenge.creator_name || "Creator"
-                }
+                myName={myLabel}
+                opponentName={opponentLabel}
                 mode={activeChallenge.mode || "free_data"}
-                compact={true}
+                variant="icon"
               />
-              <button
-                type="button"
-                onClick={handleRematchCurrentGame}
-                className="px-2 py-0.5 rounded-full bg-amber-500/25 hover:bg-amber-500/35 border border-amber-400/50 text-[9px] font-black text-amber-300 flex items-center gap-1 cursor-pointer"
-                title="Start Instant Rematch"
-              >
-                <RefreshCw className="w-2.5 h-2.5" /> Rematch
-              </button>
-              <button
-                type="button"
-                onClick={() => {
+            );
+            if (topHudCollapsed) {
+              return <GameShellPill onLeave={() => setActiveChallenge(null)} onExpand={() => setTopHudCollapsed(false)} voice={voice} />;
+            }
+            const isFinished =
+              activeChallenge.status === "completed" ||
+              Boolean(activeChallenge.board_state?.winner) ||
+              Boolean(activeChallenge.board_state?.engine?.winner);
+            return (
+              <GameShellBar
+                gameType={activeChallenge.game_type || "oware"}
+                roomCode={activeChallenge.room_code}
+                status={activeChallenge.status}
+                myName={myLabel}
+                opponentName={opponentLabel}
+                prizeLabel={
+                  activeChallenge.mode === "free_data"
+                    ? `Free ${activeChallenge.reward_data_size || "1GB"}`
+                    : Number(activeChallenge.prize_pool || 0) > 0
+                    ? `Win GH₵ ${Number(activeChallenge.prize_pool).toFixed(2)}`
+                    : "Friendly"
+                }
+                pointsPopup={lastPointsPopup?.pts ?? null}
+                copied={copiedCode}
+                voice={voice}
+                canShowWinnerCard={isFinished}
+                rematchDisabled={submitting || Boolean(joiningChallengeId)}
+                onLeave={() => setActiveChallenge(null)}
+                onRematch={handleRematchCurrentGame}
+                onPlayAnother={() => {
                   setShowPlayAnotherPicker(true);
                   setShowMatchResultModal(true);
                 }}
-                className="px-2 py-0.5 rounded-full bg-emerald-500/25 hover:bg-emerald-500/35 border border-emerald-400/50 text-[9px] font-black text-emerald-300 flex items-center gap-1 cursor-pointer"
-                title="Switch to Another Game"
-              >
-                <Gamepad2 className="w-2.5 h-2.5" /> Play Another
-              </button>
-              <button
-                type="button"
-                onClick={() => {
+                onOpenChat={() => {
                   setCommunityModalTab("room");
                   setCommunityModalOpen(true);
                 }}
-                className="px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/40 text-[9px] font-black text-emerald-300 flex items-center gap-1 cursor-pointer"
-                title="Open Room & Community Chat"
-              >
-                <MessageCircle className="w-2.5 h-2.5" /> Chat
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setProfileDrawerTab("settings");
+                onOpenHelp={() => {
+                  setProfileDrawerTab("help");
                   setProfileDrawerOpen(true);
                 }}
-                className="p-1 rounded-full bg-white/5 hover:bg-white/15 text-amber-400 cursor-pointer"
-                title="Settings & Rules"
-              >
-                <Settings className="w-3 h-3" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setTopHudCollapsed(false)}
-                className="px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-400/40 text-[9px] font-black text-amber-300 flex items-center gap-1 cursor-pointer"
-                title="Show Top Bar"
-              >
-                <Minimize2 className="w-2.5 h-2.5" /> Bar
-              </button>
-            </div>
-          ) : (
-            <CardHeader className="relative z-[105] shrink-0 min-h-8 py-1 px-2 sm:px-3 border-b border-white/10 bg-[#0c1322] flex flex-row flex-wrap items-center justify-between gap-1.5 space-y-0">
-              <div className="flex items-center gap-1.5 min-w-0 shrink-0">
-                {/* Left-Corner Profile / Settings / Help Micro Button */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setProfileDrawerTab("settings");
-                    setProfileDrawerOpen(true);
-                  }}
-                  className="h-5 px-1.5 rounded-md bg-white/5 hover:bg-white/10 border border-white/15 flex items-center gap-1 text-[9px] font-bold text-white cursor-pointer shrink-0"
-                  title="Player Profile, Sound Settings & Game Rules"
-                >
-                  <span className="w-3.5 h-3.5 rounded bg-amber-500 text-slate-950 font-black text-[8px] flex items-center justify-center">
-                    {displayFirstName.slice(0, 1).toUpperCase()}
-                  </span>
-                  <Settings className="w-2.5 h-2.5 text-amber-400" />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setProfileDrawerTab("help");
-                    setProfileDrawerOpen(true);
-                  }}
-                  className="h-5 px-1.5 rounded-md bg-amber-500/15 hover:bg-amber-500/25 border border-amber-400/40 flex items-center gap-1 text-[9px] font-black text-amber-300 cursor-pointer shrink-0"
-                  title="Watch Gameplay Videos & Rules"
-                >
-                  <HelpCircle className="w-2.5 h-2.5 text-amber-400" />
-                  <span>🎬 Help</span>
-                </button>
-
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setActiveChallenge(null)}
-                  className="h-5 px-1.5 rounded-md border-white/15 bg-white/5 text-[9px] text-slate-200 hover:text-white gap-1 font-bold shrink-0"
-                >
-                  <ArrowLeft className="w-2.5 h-2.5" /> Lobby
-                </Button>
-
-                <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/40 font-mono text-[8px] px-1 py-0 shrink-0">
-                  #{activeChallenge.room_code}
-                </Badge>
-
-                <Badge
-                  className={
-                    activeChallenge.status === "in_progress"
-                      ? "bg-emerald-500 text-slate-950 font-black text-[8px] px-1 py-0 shrink-0"
-                      : activeChallenge.status === "open"
-                      ? "bg-amber-500 text-slate-950 font-black animate-pulse text-[8px] px-1 py-0 shrink-0"
-                      : "bg-purple-500 text-white font-black text-[8px] px-1 py-0 shrink-0"
-                  }
-                >
-                  {activeChallenge.status === "open"
-                    ? "⏳ WAIT"
-                    : activeChallenge.status === "in_progress"
-                    ? "🟢 LIVE"
-                    : "🏁 DONE"}
-                </Badge>
-
-                <span className="text-[9px] sm:text-[11px] font-black text-white truncate max-w-[110px] sm:max-w-[200px]">
-                  {activeChallenge.creator_name} <span className="text-amber-400">vs.</span>{" "}
-                  {activeChallenge.opponent_name || "Waiting..."}
-                </span>
-              </div>
-
-              <div className="flex items-center gap-1 shrink-0">
-                {/* 🎙️ LIVE IN-GAME OPEN MIC VOICE COMMUNICATION */}
-                <InGameVoiceChat
-                  roomCode={activeChallenge.room_code || "ARENA"}
-                  challengeId={activeChallenge.id}
-                  mySide={mySide}
-                  myName={
-                    mySide === "creator"
-                      ? activeChallenge.creator_name || displayFirstName
-                      : activeChallenge.opponent_name || displayFirstName
-                  }
-                  opponentName={
-                    mySide === "creator"
-                      ? activeChallenge.opponent_name ||
-                        HUMAN_CHALLENGER_PERSONAS[
-                          (activeChallenge.game_type || "oware") as GameType
-                        ]?.name ||
-                        "Opponent"
-                      : activeChallenge.creator_name || "Creator"
-                  }
-                  mode={activeChallenge.mode || "free_data"}
-                />
-
-                {/* 🔄 ALWAYS-VISIBLE 1-TAP REMATCH BUTTON */}
-                <button
-                  type="button"
-                  disabled={submitting || Boolean(joiningChallengeId)}
-                  onClick={handleRematchCurrentGame}
-                  className="h-5 px-2 rounded-md bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[9px] flex items-center gap-1 cursor-pointer shrink-0 shadow"
-                  title="Rematch / Start Fresh Round"
-                >
-                  <RefreshCw className="w-2.5 h-2.5" />
-                  <span>Rematch</span>
-                </button>
-
-                {/* 🎮 ALWAYS-VISIBLE 1-TAP PLAY ANOTHER GAME BUTTON */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowPlayAnotherPicker(true);
-                    setShowMatchResultModal(true);
-                  }}
-                  className="h-5 px-2 rounded-md bg-emerald-500/25 hover:bg-emerald-500/35 border border-emerald-400/50 text-emerald-200 font-black text-[9px] flex items-center gap-1 cursor-pointer shrink-0"
-                  title="Switch to Another Game"
-                >
-                  <Gamepad2 className="w-2.5 h-2.5 text-emerald-300" />
-                  <span>Play Another</span>
-                </button>
-
-                {lastPointsPopup && (
-                  <Badge className="bg-amber-400 text-slate-950 font-black text-[8px] animate-bounce px-1 py-0">
-                    +{lastPointsPopup.pts} PTS
-                  </Badge>
-                )}
-
-                <div className="px-1.5 py-0.2 rounded-md bg-emerald-500/15 border border-emerald-500/35 flex items-center gap-1 shrink-0">
-                  <span className="text-[9px] font-black text-emerald-400 font-mono whitespace-nowrap">
-                    {activeChallenge.mode === "free_data"
-                      ? `🎁 Free ${activeChallenge.reward_data_size || "1GB"}`
-                      : `GH₵ ${Number(activeChallenge.prize_pool || 0).toFixed(2)}`}
-                  </span>
-                </div>
-
-                {/* 1-Tap Live Room & Community Chat Button */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCommunityModalTab("room");
-                    setCommunityModalOpen(true);
-                  }}
-                  className="h-5 px-1.5 rounded-md bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/40 text-[9px] font-black text-emerald-300 flex items-center gap-1 cursor-pointer shrink-0"
-                  title="Open Room & Community Chat"
-                >
-                  <MessageCircle className="w-2.5 h-2.5" />
-                  <span>Chat</span>
-                </button>
-
-                {/* 1-Tap Full Board Lock Toggle (Collapses Top Bar for 100% Screen Fit) */}
-                <button
-                  type="button"
-                  onClick={() => setTopHudCollapsed(true)}
-                  className="h-5 px-1.5 rounded-md bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/40 text-[9px] font-black text-amber-300 flex items-center gap-1 cursor-pointer shrink-0"
-                  title="Hide top bar and lock board to 100% of screen"
-                >
-                  <Maximize2 className="w-2.5 h-2.5" />
-                  <span className="hidden sm:inline">Lock</span>
-                </button>
-
-                {(activeChallenge.status === "completed" ||
-                  Boolean(activeChallenge.board_state?.winner) ||
-                  Boolean(activeChallenge.board_state?.engine?.winner)) && (
-                  <button
-                    type="button"
-                    onClick={() => setShowMatchResultModal(true)}
-                    className="h-5 px-2 rounded-md bg-gradient-to-r from-amber-500 to-emerald-500 text-slate-950 font-black text-[9px] flex items-center gap-1 cursor-pointer shrink-0 shadow"
-                  >
-                    <Trophy className="w-2.5 h-2.5" />
-                    <span>Winner Card</span>
-                  </button>
-                )}
-
-                {activeChallenge.status === "open" && (
-                  <>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
+                onLockBoard={() => setTopHudCollapsed(true)}
+                onShowWinnerCard={() => setShowMatchResultModal(true)}
+                onCopyInvite={
+                  activeChallenge.status === "open"
+                    ? () => {
                         const shareUrl = `${window.location.origin}/challenges?room=${activeChallenge.room_code}`;
                         navigator.clipboard.writeText(shareUrl);
                         setCopiedCode(true);
                         toast({
-                          title: "Challenge Link Copied! 📋",
-                          description: `Room #${activeChallenge.room_code} link copied. Send to a friend on WhatsApp or SMS!`,
+                          title: "Invite link copied",
+                          description: `Room #${activeChallenge.room_code}: send it to a friend on WhatsApp or SMS.`,
                         });
                         setTimeout(() => setCopiedCode(false), 2000);
-                      }}
-                      className="h-5 px-1.5 rounded-md border-amber-500/40 bg-amber-500/10 text-amber-300 font-bold text-[9px] gap-1"
-                    >
-                      {copiedCode ? <Check className="w-2.5 h-2.5" /> : <Share2 className="w-2.5 h-2.5" />}
-                      Copy
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      onClick={() => handleCancelOpenChallenge(activeChallenge.id)}
-                      className="h-5 px-1.5 rounded-md text-[9px] font-bold gap-1"
-                    >
-                      <XCircle className="w-2.5 h-2.5" /> Cancel
-                    </Button>
-                  </>
-                )}
-              </div>
-            </CardHeader>
-          )}
+                      }
+                    : undefined
+                }
+                onCancelRoom={activeChallenge.status === "open" ? () => handleCancelOpenChallenge(activeChallenge.id) : undefined}
+              />
+            );
+          })()}
 
           <CardContent
             className={
@@ -3491,10 +3315,10 @@ export default function ChallengeArena() {
 
                     return (
                       <div
-                        className={`px-2.5 py-1 rounded-xl border flex flex-wrap items-center justify-between gap-1.5 shrink-0 ${
+                        className={`mx-auto w-full max-w-3xl px-3 py-2 rounded-2xl border flex flex-wrap items-center justify-between gap-2 shrink-0 ${
                           isCurrentlyMyTurn
-                            ? "bg-emerald-950/50 border-emerald-500/40"
-                            : "bg-amber-950/40 border-amber-500/40"
+                            ? "bg-emerald-400/[0.07] border-emerald-400/25"
+                            : "bg-white/[0.03] border-white/10"
                         }`}
                       >
                         <div className="flex items-center gap-2">
@@ -3505,19 +3329,17 @@ export default function ChallengeArena() {
                                 : "bg-amber-400 animate-pulse"
                             }`}
                           />
-                          <span className="text-[11px] font-black text-white">
-                            {isCurrentlyMyTurn
-                              ? `🟢 YOUR TURN (${nextUpName})`
-                              : `🔔 NEXT TURN: ${nextUpName.toUpperCase()}`}
+                          <span className={`text-[13px] font-extrabold ${isCurrentlyMyTurn ? "text-emerald-300" : "text-slate-200"}`}>
+                            {isCurrentlyMyTurn ? "Your turn" : `${nextUpName} is playing…`}
                           </span>
                           <span
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-black border ${
+                            className={`px-2 py-0.5 rounded-lg text-[12px] font-bold tabular-nums ${
                               turnShotClockSec <= 6
-                                ? "bg-rose-600/90 border-rose-300 text-white animate-pulse"
-                                : "bg-slate-950/80 border-amber-400/40 text-amber-300"
+                                ? "bg-rose-500/20 text-rose-200 animate-pulse"
+                                : "bg-white/[0.06] text-slate-300"
                             }`}
                           >
-                            ⏱️ {turnShotClockSec}s
+                            {turnShotClockSec}s
                           </span>
                         </div>
 
@@ -3826,10 +3648,11 @@ export default function ChallengeArena() {
             {/* ── CELEBRATORY END-OF-MATCH WINNER, REWARD & REMATCH POPUP MODAL ── */}
             {showMatchResultModal && (() => {
               const ludoWinner = activeChallenge.board_state?.engine?.winner;
+              // Never assume a winner: an unknown result shows as pending, not "you won".
               const winnerSide =
                 activeChallenge.winner_side ||
                 activeChallenge.board_state?.winner ||
-                (ludoWinner ? (ludoWinner === "RED" ? "creator" : "opponent") : "creator");
+                (ludoWinner ? (ludoWinner === "RED" ? "creator" : "opponent") : "draw");
               const isDraw = winnerSide === "draw";
               const iWon = !isDraw && winnerSide === mySide;
               const gType = (activeChallenge.game_type || "oware") as GameType;
@@ -3860,7 +3683,21 @@ export default function ChallengeArena() {
 
               return (
                 <div className="fixed inset-0 z-[140] flex items-center justify-center p-3 sm:p-5 bg-slate-950/88 backdrop-blur-xl animate-in fade-in duration-200 overflow-y-auto">
-                  <div className="relative w-full max-w-lg rounded-3xl border border-amber-400/40 bg-gradient-to-b from-[#11192e] via-[#0c1324] to-[#080d1a] p-5 sm:p-6 shadow-[0_25px_80px_rgba(0,0,0,0.92)] text-white space-y-4 my-auto">
+                  <div
+                    className={`relative w-full max-w-lg rounded-[28px] border bg-[#0b1220] p-5 sm:p-6 text-white space-y-4 my-auto overflow-hidden ${
+                      isDraw ? "border-indigo-300/30" : iWon ? "border-amber-300/50" : "border-white/10"
+                    }`}
+                    style={{
+                      boxShadow: iWon
+                        ? "0 30px 90px -20px rgba(245,158,11,0.45), 0 25px 80px rgba(0,0,0,0.9)"
+                        : "0 25px 80px rgba(0,0,0,0.9)",
+                      backgroundImage: iWon
+                        ? "radial-gradient(120% 60% at 50% 0%, rgba(245,158,11,0.18), transparent 60%)"
+                        : isDraw
+                        ? "radial-gradient(120% 60% at 50% 0%, rgba(129,140,248,0.14), transparent 60%)"
+                        : "radial-gradient(120% 60% at 50% 0%, rgba(148,163,184,0.1), transparent 60%)",
+                    }}
+                  >
                     {/* Close / View Board Corner Button */}
                     <button
                       type="button"
@@ -3916,19 +3753,15 @@ export default function ChallengeArena() {
                         </div>
 
                         <div className="mt-2.5 space-y-0.5">
-                          <p className="text-[11px] font-black uppercase tracking-[0.2em] text-emerald-400">
-                            {isDraw
-                              ? "STAKES REFUNDED"
-                              : iWon
-                              ? "🎉 YOU ARE THE WINNER!"
-                              : `🏆 WINNER: ${winnerDisplayName.toUpperCase()}`}
+                          <p
+                            className={`text-[11px] font-black uppercase tracking-[0.24em] ${
+                              isDraw ? "text-indigo-300" : iWon ? "text-amber-300" : "text-slate-400"
+                            }`}
+                          >
+                            {isDraw ? "Draw" : iWon ? "Victory" : "Defeat"}
                           </p>
-                          <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-white">
-                            {isDraw
-                              ? "Match Ended in a Draw!"
-                              : iWon
-                              ? `${winnerDisplayName} Wins!`
-                              : `${winnerDisplayName} Won This Round!`}
+                          <h2 className="text-3xl sm:text-4xl font-black tracking-tight text-white">
+                            {isDraw ? "It's a draw" : iWon ? "You won!" : `${winnerDisplayName} won`}
                           </h2>
                           <p className="text-xs text-slate-300 max-w-md mx-auto">
                             {activeChallenge.board_state?.summary ||
