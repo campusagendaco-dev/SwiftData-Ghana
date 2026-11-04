@@ -427,7 +427,7 @@ const AdminKorbaHub = () => {
             ) : (
               <div>
                 <h3 className="text-3xl font-black tracking-tight text-foreground">
-                  GHS {balance !== null ? balance.toFixed(2) : "?.??"}
+                  GHS {typeof balance === "number" && Number.isFinite(balance) ? balance.toFixed(2) : "?.??"}
                 </h3>
                 <div className="flex items-center justify-between mt-4">
                   <span className="text-[10px] text-muted-foreground font-semibold">
@@ -756,7 +756,7 @@ const AdminKorbaHub = () => {
                               )}
                             </td>
                             <td className="p-4 font-black text-right text-foreground">
-                              GHS {order.amount.toFixed(2)}
+                              GHS {Number(order.amount || 0).toFixed(2)}
                             </td>
                             <td className="p-4">
                               <Badge className={cn("rounded-md border font-black uppercase text-[10px] tracking-wider", STATUS_COLORS[order.status] || "bg-muted text-muted-foreground")}>

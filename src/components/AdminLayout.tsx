@@ -632,6 +632,42 @@ const AdminSidebar = ({
   );
 };
 
+
+/* ───────────── Orders hub tabs ───────────── */
+
+const OrdersHubTabs = ({ items, activeQueueCount }: { items: NavItem[]; activeQueueCount: number }) => {
+  const location = useLocation();
+  const short = (label: string) => label.replace(/ Orders$/, "").replace("Non-Beneficiary List", "Non-beneficiary").replace("Submitted Numbers", "Submitted numbers").replace("AFA Registrations", "AFA");
+  return (
+    <nav aria-label="Order types" className="-mx-4 sm:mx-0 overflow-x-auto no-scrollbar">
+      <ul className="flex items-center gap-1 px-4 sm:px-0 min-w-max border-b border-border/70 dark:border-white/[0.07]">
+        {items.map((i) => {
+          const active = location.pathname === i.path;
+          return (
+            <li key={i.path}>
+              <Link
+                to={i.path}
+                aria-current={active ? "page" : undefined}
+                className={cn(
+                  "relative inline-flex items-center gap-1.5 h-10 px-3 text-[13px] font-semibold whitespace-nowrap transition-colors",
+                  active ? "text-foreground" : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <i.icon className="h-4 w-4" />
+                {i.path === "/admin/orders" ? "All orders" : short(i.label)}
+                {i.path === "/admin/orders" && activeQueueCount > 0 && (
+                  <span className="rounded-md bg-sky-500/15 px-1.5 py-px text-[11px] font-semibold tabular-nums text-sky-700 dark:text-sky-300">{activeQueueCount}</span>
+                )}
+                {active && <span className="absolute inset-x-2 -bottom-px h-[2px] rounded-full bg-primary" />}
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    </nav>
+  );
+};
+
 /* ───────────── Layout ───────────── */
 
 const AdminLayout = () => {
@@ -874,7 +910,7 @@ const AdminLayout = () => {
                   aria-checked={expressMode}
                   title={expressMode ? "MTN Express mode is on (BundleZone Express). Click to turn off." : "Turn on MTN Express mode (BundleZone Express)."}
                   className={cn(
-                    "hidden lg:flex items-center gap-2 h-9 pl-2.5 pr-2 rounded-xl border text-[12.5px] font-semibold transition-colors",
+                    "hidden lg:flex shrink-0 whitespace-nowrap items-center gap-2 h-9 pl-2.5 pr-2 rounded-xl border text-[12.5px] font-semibold transition-colors",
                     expressMode ? "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300" : "border-border/80 bg-card text-muted-foreground hover:text-foreground dark:bg-white/[0.03] dark:border-white/[0.08]"
                   )}
                 >
@@ -890,7 +926,7 @@ const AdminLayout = () => {
                   onClick={handleQuickReconcileAndSync}
                   disabled={syncingNow}
                   title={`Reconcile active orders and sync providers · last checked ${lastHeartbeat.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`}
-                  className="flex items-center gap-1.5 h-9 px-2.5 rounded-xl border border-border/80 bg-card text-[12.5px] font-semibold text-foreground hover:bg-muted transition-colors dark:bg-white/[0.03] dark:border-white/[0.08]"
+                  className="flex shrink-0 whitespace-nowrap items-center gap-1.5 h-9 px-2.5 rounded-xl border border-border/80 bg-card text-[12.5px] font-semibold text-foreground hover:bg-muted transition-colors dark:bg-white/[0.03] dark:border-white/[0.08]"
                 >
                   <RefreshCw className={cn("h-4 w-4", syncingNow && "animate-spin")} />
                   <span className="hidden xl:inline">{syncingNow ? "Syncing…" : "Sync & check"}</span>
@@ -947,6 +983,9 @@ const AdminLayout = () => {
 
         <main className="relative flex-1 overflow-y-auto overflow-x-hidden bg-white/20 dark:bg-black/15 [-webkit-overflow-scrolling:touch]">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-5 sm:py-8 space-y-6">
+            {pathAllowed && currentSection?.title === "Operations & Orders" && (
+              <OrdersHubTabs items={(allowedNavItems.filter((i) => currentSection.items.some((c) => c.path === i.path)) as NavItem[]).filter((i) => i.path.startsWith("/admin"))} activeQueueCount={activeQueueCount} />
+            )}
             {pathAllowed ? (
               <Outlet />
             ) : (

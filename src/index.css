@@ -578,3 +578,196 @@ body.shield-active .secure-area {
     margin-bottom: calc(140px + env(safe-area-inset-bottom, 0px));
   }
 }
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Admin console: legacy style normaliser (light mode)
+   Many admin pages were built dark-only (white text, black panels, white/10
+   borders). In light mode these map onto the theme tokens so every page is
+   readable without rewriting its logic. Scoped to the admin <main> only.
+   ═══════════════════════════════════════════════════════════════════════════ */
+html:not(.dark) .admin-shell main [class*="bg-[#0"],
+html:not(.dark) .admin-shell main [class*="bg-[#1"],
+html:not(.dark) .admin-shell main [class~="bg-black"],
+html:not(.dark) .admin-shell main [class*=" bg-black/"],
+html:not(.dark) .admin-shell main [class^="bg-black/"],
+html:not(.dark) .admin-shell main [class*=" bg-slate-900"],
+html:not(.dark) .admin-shell main [class^="bg-slate-900"],
+html:not(.dark) .admin-shell main [class*=" bg-slate-950"],
+html:not(.dark) .admin-shell main [class^="bg-slate-950"],
+html:not(.dark) .admin-shell main [class*=" bg-slate-800"],
+html:not(.dark) .admin-shell main [class^="bg-slate-800"],
+html:not(.dark) .admin-shell main [class*=" bg-gray-900"],
+html:not(.dark) .admin-shell main [class*=" bg-zinc-900"],
+html:not(.dark) .admin-shell main [class*=" bg-neutral-900"],
+html:not(.dark) .admin-shell main [class*="from-slate-9"],
+html:not(.dark) .admin-shell main [class*="from-slate-8"],
+html:not(.dark) .admin-shell main [class*="from-gray-9"],
+html:not(.dark) .admin-shell main [class*="from-zinc-9"],
+html:not(.dark) .admin-shell main [class*="from-black"],
+html:not(.dark) .admin-shell main [class*="from-indigo-95"] {
+  background-color: hsl(var(--card) / 0.9) !important;
+  background-image: none !important;
+  border-color: hsl(var(--border)) !important;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05) !important;
+}
+html:not(.dark) .admin-shell main [class*="bg-[#0"][class~="text-white"],
+html:not(.dark) .admin-shell main [class*="bg-[#1"][class~="text-white"],
+html:not(.dark) .admin-shell main [class~="bg-black"][class~="text-white"],
+html:not(.dark) .admin-shell main [class*=" bg-black/"][class~="text-white"],
+html:not(.dark) .admin-shell main [class^="bg-black/"][class~="text-white"],
+html:not(.dark) .admin-shell main [class*=" bg-slate-900"][class~="text-white"],
+html:not(.dark) .admin-shell main [class^="bg-slate-900"][class~="text-white"],
+html:not(.dark) .admin-shell main [class*=" bg-slate-950"][class~="text-white"],
+html:not(.dark) .admin-shell main [class^="bg-slate-950"][class~="text-white"],
+html:not(.dark) .admin-shell main [class*=" bg-slate-800"][class~="text-white"],
+html:not(.dark) .admin-shell main [class^="bg-slate-800"][class~="text-white"],
+html:not(.dark) .admin-shell main [class*=" bg-gray-900"][class~="text-white"],
+html:not(.dark) .admin-shell main [class*=" bg-zinc-900"][class~="text-white"],
+html:not(.dark) .admin-shell main [class*=" bg-neutral-900"][class~="text-white"],
+html:not(.dark) .admin-shell main [class*="from-slate-9"][class~="text-white"],
+html:not(.dark) .admin-shell main [class*="from-slate-8"][class~="text-white"],
+html:not(.dark) .admin-shell main [class*="from-gray-9"][class~="text-white"],
+html:not(.dark) .admin-shell main [class*="from-zinc-9"][class~="text-white"],
+html:not(.dark) .admin-shell main [class*="from-black"][class~="text-white"],
+html:not(.dark) .admin-shell main [class*="from-indigo-95"][class~="text-white"] {
+  color: hsl(var(--foreground)) !important;
+}
+html:not(.dark) .admin-shell main [class~="text-white"]:not([class*="bg-"]) {
+  color: hsl(var(--foreground));
+}
+html:not(.dark) .admin-shell main [class*="text-white/"]:not([class*="bg-"]) {
+  color: hsl(var(--muted-foreground));
+}
+html:not(.dark) .admin-shell main [class*="text-slate-300"], html:not(.dark) .admin-shell main [class*="text-slate-400"], html:not(.dark) .admin-shell main [class*="text-gray-300"], html:not(.dark) .admin-shell main [class*="text-gray-400"] {
+  color: hsl(var(--muted-foreground));
+}
+html:not(.dark) .admin-shell main [class*="border-white/"] {
+  border-color: hsl(var(--border));
+}
+html:not(.dark) .admin-shell main [class*=" bg-white/"]:not([class*="hover:bg-white/"]), html:not(.dark) .admin-shell main [class^="bg-white/"] {
+  background-color: rgba(15, 23, 42, 0.035);
+}
+html:not(.dark) .admin-shell main [class*="divide-white/"] > * + * {
+  border-color: hsl(var(--border));
+}
+html:not(.dark) .admin-shell main input[class*="bg-white/"], html:not(.dark) .admin-shell main input[class*="bg-black/"], html:not(.dark) .admin-shell main textarea[class*="bg-white/"], html:not(.dark) .admin-shell main textarea[class*="bg-black/"], html:not(.dark) .admin-shell main select[class*="bg-white/"], html:not(.dark) .admin-shell main select[class*="bg-black/"] {
+  background-color: hsl(var(--background)) !important;
+  color: hsl(var(--foreground));
+}
+html:not(.dark) .admin-shell main [class~="text-amber-200"],
+html:not(.dark) .admin-shell main [class~="text-amber-300"],
+html:not(.dark) .admin-shell main [class~="text-amber-400"] {
+  color: #b45309;
+}
+html:not(.dark) .admin-shell main [class~="text-emerald-200"],
+html:not(.dark) .admin-shell main [class~="text-emerald-300"],
+html:not(.dark) .admin-shell main [class~="text-emerald-400"] {
+  color: #047857;
+}
+html:not(.dark) .admin-shell main [class~="text-sky-200"],
+html:not(.dark) .admin-shell main [class~="text-sky-300"],
+html:not(.dark) .admin-shell main [class~="text-sky-400"] {
+  color: #0369a1;
+}
+html:not(.dark) .admin-shell main [class~="text-rose-200"],
+html:not(.dark) .admin-shell main [class~="text-rose-300"],
+html:not(.dark) .admin-shell main [class~="text-rose-400"] {
+  color: #e11d48;
+}
+html:not(.dark) .admin-shell main [class~="text-cyan-200"],
+html:not(.dark) .admin-shell main [class~="text-cyan-300"],
+html:not(.dark) .admin-shell main [class~="text-cyan-400"] {
+  color: #0e7490;
+}
+html:not(.dark) .admin-shell main [class~="text-violet-200"],
+html:not(.dark) .admin-shell main [class~="text-violet-300"],
+html:not(.dark) .admin-shell main [class~="text-violet-400"] {
+  color: #7c3aed;
+}
+html:not(.dark) .admin-shell main [class~="text-purple-200"],
+html:not(.dark) .admin-shell main [class~="text-purple-300"],
+html:not(.dark) .admin-shell main [class~="text-purple-400"] {
+  color: #9333ea;
+}
+html:not(.dark) .admin-shell main [class~="text-indigo-200"],
+html:not(.dark) .admin-shell main [class~="text-indigo-300"],
+html:not(.dark) .admin-shell main [class~="text-indigo-400"] {
+  color: #4f46e5;
+}
+html:not(.dark) .admin-shell main [class~="text-blue-200"],
+html:not(.dark) .admin-shell main [class~="text-blue-300"],
+html:not(.dark) .admin-shell main [class~="text-blue-400"] {
+  color: #2563eb;
+}
+html:not(.dark) .admin-shell main [class~="text-green-200"],
+html:not(.dark) .admin-shell main [class~="text-green-300"],
+html:not(.dark) .admin-shell main [class~="text-green-400"] {
+  color: #15803d;
+}
+html:not(.dark) .admin-shell main [class~="text-red-200"],
+html:not(.dark) .admin-shell main [class~="text-red-300"],
+html:not(.dark) .admin-shell main [class~="text-red-400"] {
+  color: #dc2626;
+}
+html:not(.dark) .admin-shell main [class~="text-yellow-200"],
+html:not(.dark) .admin-shell main [class~="text-yellow-300"],
+html:not(.dark) .admin-shell main [class~="text-yellow-400"] {
+  color: #a16207;
+}
+html:not(.dark) .admin-shell main [class~="text-orange-200"],
+html:not(.dark) .admin-shell main [class~="text-orange-300"],
+html:not(.dark) .admin-shell main [class~="text-orange-400"] {
+  color: #c2410c;
+}
+html:not(.dark) .admin-shell main [class~="text-fuchsia-200"],
+html:not(.dark) .admin-shell main [class~="text-fuchsia-300"],
+html:not(.dark) .admin-shell main [class~="text-fuchsia-400"] {
+  color: #c026d3;
+}
+html:not(.dark) .admin-shell main [class~="text-pink-200"],
+html:not(.dark) .admin-shell main [class~="text-pink-300"],
+html:not(.dark) .admin-shell main [class~="text-pink-400"] {
+  color: #db2777;
+}
+html:not(.dark) .admin-shell main [class~="text-teal-200"],
+html:not(.dark) .admin-shell main [class~="text-teal-300"],
+html:not(.dark) .admin-shell main [class~="text-teal-400"] {
+  color: #0f766e;
+}
+html:not(.dark) .admin-shell main [class~="text-lime-200"],
+html:not(.dark) .admin-shell main [class~="text-lime-300"],
+html:not(.dark) .admin-shell main [class~="text-lime-400"] {
+  color: #4d7c0f;
+}
+
+
+/* white text sitting on a translucent-white chip (invisible on light) */
+html:not(.dark) .admin-shell main [class~="text-white"][class*="bg-white/"],
+html:not(.dark) .admin-shell main [class~="text-white"][class*="bg-transparent"] {
+  color: hsl(var(--foreground));
+}
+html:not(.dark) .admin-shell main [class*="text-white/"][class*="bg-white/"],
+html:not(.dark) .admin-shell main [class*="text-white/"][class*="bg-transparent"] {
+  color: hsl(var(--muted-foreground));
+}
+/* very dark tints (e.g. bg-emerald-950/20) look muddy grey on light */
+html:not(.dark) .admin-shell main [class*=" bg-"][class*="-950/"],
+html:not(.dark) .admin-shell main [class^="bg-"][class*="-950/"],
+html:not(.dark) .admin-shell main [class*=" bg-"][class*="-900/"],
+html:not(.dark) .admin-shell main [class^="bg-"][class*="-900/"] {
+  background-color: rgba(15, 23, 42, 0.035) !important;
+}
+
+
+/* white-to-transparent gradient titles vanish on light backgrounds */
+html:not(.dark) .admin-shell main [class*="bg-clip-text"][class*="from-white"] {
+  background-image: none !important;
+  color: hsl(var(--foreground)) !important;
+  -webkit-text-fill-color: hsl(var(--foreground));
+}
+
+/* Calmer type weight across admin pages (both themes) */
+.admin-shell main .font-black {
+  font-weight: 700;
+}

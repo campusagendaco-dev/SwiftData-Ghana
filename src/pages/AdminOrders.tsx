@@ -14,8 +14,16 @@ import {
   CheckCircle2, PlayCircle, PauseCircle, UserCheck, Download,
   Coins, ShieldAlert, Zap, Check, X,
   DollarSign, Sparkles, AlertCircle, AlertTriangle, Copy, Activity,
-  Calendar, FileSpreadsheet, Edit3, FileText, Smartphone
+  Calendar, FileSpreadsheet, Edit3, FileText, Smartphone, ChevronDown
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { getFunctionErrorMessage } from "@/lib/function-errors";
 import PhoneOrderTracker from "@/components/PhoneOrderTracker";
@@ -1717,326 +1725,103 @@ export default function AdminOrders() {
 
   return (
     <div className="space-y-6 pb-12 max-w-7xl mx-auto">
-      {/* Phone tracker widget */}
-      <PhoneOrderTracker
-        title="Track Customer Order by Phone"
-        subtitle="Admin quick lookup for live delivery status, beneficiary status, and bundle size."
-      />
-
-      {/* ── Header Hero Section ── */}
-      <motion.div
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.35 }}
-        className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900/90 via-slate-900/50 to-amber-950/20 p-6 sm:p-8 border border-white/10 backdrop-blur-2xl shadow-2xl"
-      >
-        <div className="absolute top-0 right-0 -mt-16 -mr-16 w-80 h-80 bg-amber-500/10 rounded-full blur-3xl pointer-events-none"></div>
-        <div className="absolute bottom-0 left-1/3 -mb-16 w-60 h-60 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
-
-        <div className="relative z-10 flex flex-col xl:flex-row xl:items-center xl:justify-between gap-6">
-          <div className="flex items-start gap-4">
-            <div className="relative shrink-0 hidden sm:block">
-              <motion.div
-                animate={{ rotate: 360 }}
-                transition={{ duration: 11, repeat: Infinity, ease: "linear" }}
-                className="w-14 h-14 rounded-2xl border-2 border-dashed border-amber-500/25 flex items-center justify-center"
-              >
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center shadow-lg shadow-amber-500/30">
-                  <ShoppingCart className="w-5 h-5 text-slate-950" />
-                </div>
-              </motion.div>
-              <span className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 border-2 border-slate-900 flex items-center justify-center">
-                <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
-              </span>
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex items-center gap-2.5 flex-wrap">
-                <span className="px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs font-bold flex items-center gap-1.5">
-                  <Activity className="w-3.5 h-3.5 text-amber-400 animate-pulse" /> Live Order Stream
-                </span>
-                <span className="text-xs text-muted-foreground font-mono">
-                  {totalCount.toLocaleString()} Total Records Found
-                </span>
-                <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/30 text-[10px] font-bold">
-                  {fulfillmentSuccessRate}% Success Rate
-                </Badge>
-              </div>
-              <h1 className="font-display text-2xl sm:text-4xl font-black tracking-tight text-white flex items-center gap-3">
-                Admin Orders & Transactions
-              </h1>
-              <p className="text-xs sm:text-sm text-slate-300 max-w-2xl leading-relaxed">
-                Monitor, retry, refund, manually transition, and export customer data and airtime orders database-wide.
-              </p>
-            </div>
-          </div>
-
-          {/* Quick Action Grid */}
-          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2.5">
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-2 h-10 rounded-xl border-white/10 bg-white/5 hover:bg-white/10 text-white text-xs font-bold backdrop-blur-sm"
-              onClick={() => fetchOrders()}
-            >
-              <RefreshCw className="w-3.5 h-3.5" /> Refresh
-            </Button>
-
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-2 h-10 rounded-xl border-emerald-500/30 text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 text-xs font-bold"
-              onClick={handleExportCSV}
-              disabled={allOrders.length === 0}
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5" /> Export Full CSV
-            </Button>
-
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-2 h-10 rounded-xl border-white/10 bg-white/5 text-xs font-bold text-slate-300"
-              onClick={handleExportSimpleCSV}
-              disabled={allOrders.length === 0}
-            >
-              <Download className="w-3.5 h-3.5" /> Simple Queue CSV
-            </Button>
-            
-            <Button
-              size="sm"
-              className="gap-2 h-10 rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-400 hover:to-orange-400 text-white font-extrabold shadow-lg shadow-amber-950/40 border border-amber-400/40 text-xs transition-all active:scale-95"
-              onClick={handleRetryAutoRouterQueue}
-              disabled={retryingAutoRouter}
-              title="Retry all verified telecom orders in Auto Router Queue through DataHub, Spendless, and SKPlug"
-            >
-              {retryingAutoRouter ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5 fill-white text-white" />}
-              {retryingAutoRouter ? "Auto-Routing..." : `⚡ Retry Auto-Router (${autoRouterQueueCount})`}
-            </Button>
-
-            <Button
-              size="sm"
-              className="gap-2 h-10 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-xs font-bold transition-all active:scale-95"
-              onClick={handleRetryAll}
-              disabled={retryingAll}
-            >
-              {retryingAll ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PlayCircle className="w-3.5 h-3.5" />}
-              {retryingAll ? "Retrying…" : `Retry Page (${pending + failed + allOrders.filter(o => o.status === "processing").length})`}
-            </Button>
-
-            <Button
-              size="sm"
-              className="gap-2 h-10 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/30 text-xs font-bold transition-all active:scale-95"
-              onClick={() => handleBulkCheckStatus(allOrders.filter(o => o.status === "processing").map(o => o.id))}
-              disabled={bulkCheckingStatus || allOrders.filter(o => o.status === "processing").length === 0}
-              title="Query upstream carrier/provider API live for all processing orders on this page (Auto-checks every 3 mins)"
-            >
-              {bulkCheckingStatus ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-              {bulkCheckingStatus ? "Checking Status..." : `Bulk Check Status (${allOrders.filter(o => o.status === "processing").length}) • 3m Auto`}
-            </Button>
-
-            <Button
-              size="sm"
-              variant="destructive"
-              className="gap-2 h-10 rounded-xl text-xs font-bold transition-all active:scale-95"
-              onClick={handleForceFulfillAllProcessing}
-              disabled={forcingFulfill}
-            >
-              {forcingFulfill ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
-              {forcingFulfill ? "Fulfilling…" : "Force Fulfill"}
-            </Button>
-          </div>
+      {/* ── Header ── */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="text-[22px] sm:text-[26px] font-bold tracking-[-0.02em] text-foreground leading-tight">Orders</h1>
+          <p className="text-sm text-muted-foreground">
+            {totalCount.toLocaleString()} orders · <span className="font-semibold text-foreground">{fulfillmentSuccessRate}%</span> delivered
+          </p>
         </div>
-      </motion.div>
-
-      {/* ── Provider API Gateway Balances Display Card ── */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-900/90 via-slate-900/70 to-indigo-950/80 p-4 border border-amber-500/30 backdrop-blur-xl shadow-xl space-y-3">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/10 border border-amber-500/30 text-amber-400 shrink-0">
-              <Coins className="w-5 h-5 animate-pulse" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-black uppercase tracking-widest px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                  DataHub & Provider Balances
-                </span>
-                <span className="text-[11px] text-muted-foreground font-mono">
-                  Live Gateway Monitoring & Per-Provider API Pause
-                </span>
-              </div>
-              <h4 className="text-sm font-black text-white mt-0.5">
-                Active Provider API Balances
-              </h4>
-            </div>
-          </div>
-
-          <Button
-            onClick={syncAllProviderBalances}
-            disabled={syncingBalances}
-            variant="outline"
-            className="h-9 px-4 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold text-xs gap-2 shrink-0 transition-all shadow-sm"
-          >
-            <RefreshCw className={cn("w-3.5 h-3.5", syncingBalances && "animate-spin text-amber-400")} />
-            {syncingBalances ? "Syncing API Balances..." : "Refresh Balances"}
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" size="sm" className="h-9 gap-1.5 rounded-xl text-[13px] font-semibold" onClick={() => fetchOrders()}>
+            <RefreshCw className="w-4 h-4" /> Refresh
           </Button>
-        </div>
-
-        {/* Provider Balance Cards Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 pt-1">
-          {providers.length === 0 ? (
-            <div className="col-span-full py-4 text-center text-xs text-muted-foreground font-mono">
-              No API providers configured.
-            </div>
-          ) : (
-            providers.map((prov) => {
-              const balanceNum = Number(prov.balance || 0);
-              const isProvPaused = prov?.settings?.is_paused === true;
-              const isHealthy = prov.is_active && !isProvPaused && balanceNum > 50;
-              const isLow = prov.is_active && !isProvPaused && balanceNum <= 50 && balanceNum > 0;
-
-              return (
-                <div
-                  key={prov.id}
-                  className={cn(
-                    "flex flex-col justify-between gap-2.5 p-3 rounded-xl border backdrop-blur-md transition-all",
-                    isProvPaused
-                      ? "bg-violet-950/30 border-violet-500/40 hover:border-violet-500/60"
-                      : isHealthy
-                      ? "bg-emerald-950/20 border-emerald-500/30 hover:border-emerald-500/50"
-                      : isLow
-                      ? "bg-amber-950/20 border-amber-500/30 hover:border-amber-500/50"
-                      : "bg-rose-950/20 border-rose-500/30 hover:border-rose-500/50"
-                  )}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="space-y-0.5 min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <span className={cn(
-                          "w-2 h-2 rounded-full shrink-0",
-                          isProvPaused
-                            ? "bg-violet-400 animate-pulse"
-                            : isHealthy
-                            ? "bg-emerald-400 animate-pulse"
-                            : isLow
-                            ? "bg-amber-400 animate-pulse"
-                            : "bg-rose-500"
-                        )} />
-                        <span className="text-xs font-black text-white truncate max-w-[120px]">
-                          {prov.name}
-                        </span>
-                        {prov.handler_type && (
-                          <span className="text-[9px] font-mono uppercase px-1.5 py-0.2 rounded bg-white/10 text-white/70 shrink-0">
-                            {prov.handler_type}
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-[11px] font-mono font-bold text-white/60">
-                        {isProvPaused
-                          ? "⏸ API Paused"
-                          : prov.is_active
-                          ? prov?.settings?.is_primary_provider
-                            ? "★ Primary Active"
-                            : "Active (Failover)"
-                          : "Inactive"}
-                      </p>
-                    </div>
-
-                    <div className="text-right shrink-0">
-                      <div className={cn(
-                        "text-sm font-black font-mono tracking-tight",
-                        isProvPaused ? "text-violet-300" : isHealthy ? "text-emerald-400" : isLow ? "text-amber-400" : "text-rose-400"
-                      )}>
-                        GH₵ {balanceNum.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </div>
-                      <span className="text-[10px] font-mono text-muted-foreground uppercase">
-                        API Balance
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-end pt-1.5 border-t border-white/10">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={pausingProviderId === prov.id}
-                      onClick={() => handleTogglePauseProvider(prov)}
-                      className={cn(
-                        "text-[10px] gap-1.5 h-7 px-3 rounded-full font-extrabold transition-all",
-                        isProvPaused
-                          ? "border-violet-400/60 bg-violet-500/30 text-violet-100 hover:bg-violet-500/40 shadow-sm shadow-violet-950/50"
-                          : "border-violet-500/40 bg-violet-500/15 text-violet-300 hover:bg-violet-500/25"
-                      )}
-                      title={
-                        isProvPaused
-                          ? `Resume ${prov.name} API and release any held orders`
-                          : `Pause orders from entering ${prov.name} API`
-                      }
-                    >
-                      {pausingProviderId === prov.id ? (
-                        <Loader2 className="w-3 h-3 animate-spin" />
-                      ) : isProvPaused ? (
-                        <PlayCircle className="w-3.5 h-3.5" />
-                      ) : (
-                        <PauseCircle className="w-3.5 h-3.5" />
-                      )}
-                      {isProvPaused ? "Resume API" : "Pause API"}
-                    </Button>
-                  </div>
-                </div>
-              );
-            })
-          )}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="h-9 gap-1.5 rounded-xl text-[13px] font-semibold" disabled={allOrders.length === 0}>
+                <Download className="w-4 h-4" /> Export <ChevronDown className="w-3.5 h-3.5 opacity-60" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-60 rounded-xl p-1.5">
+              <DropdownMenuItem onSelect={handleExportCSV} className="gap-2 rounded-lg">
+                <FileSpreadsheet className="w-4 h-4" /> Full CSV (all columns)
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={handleExportSimpleCSV} className="gap-2 rounded-lg">
+                <FileText className="w-4 h-4" /> Simple queue CSV
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="sm" className="h-9 gap-1.5 rounded-xl text-[13px] font-semibold">
+                {retryingAutoRouter || retryingAll || bulkCheckingStatus || forcingFulfill ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+                Bulk actions <ChevronDown className="w-3.5 h-3.5 opacity-70" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-72 rounded-xl p-1.5">
+              <DropdownMenuLabel className="text-[11px] font-semibold text-muted-foreground">Retry &amp; check</DropdownMenuLabel>
+              <DropdownMenuItem onSelect={handleRetryAutoRouterQueue} disabled={retryingAutoRouter} className="gap-2 rounded-lg">
+                <Zap className="w-4 h-4" />
+                <span className="flex-1">Retry auto-router queue</span>
+                <span className="text-xs tabular-nums text-muted-foreground">{autoRouterQueueCount}</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={handleRetryAll} disabled={retryingAll} className="gap-2 rounded-lg">
+                <PlayCircle className="w-4 h-4" />
+                <span className="flex-1">Retry pending/failed on this page</span>
+                <span className="text-xs tabular-nums text-muted-foreground">{pending + failed + allOrders.filter(o => o.status === "processing").length}</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={() => handleBulkCheckStatus(allOrders.filter(o => o.status === "processing").map(o => o.id))}
+                disabled={bulkCheckingStatus || allOrders.filter(o => o.status === "processing").length === 0}
+                className="gap-2 rounded-lg"
+              >
+                <RefreshCw className="w-4 h-4" />
+                <span className="flex-1">Check provider status (auto every 3 min)</span>
+                <span className="text-xs tabular-nums text-muted-foreground">{allOrders.filter(o => o.status === "processing").length}</span>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel className="text-[11px] font-semibold text-rose-600 dark:text-rose-400">Danger zone</DropdownMenuLabel>
+              <DropdownMenuItem onSelect={handleForceFulfillAllProcessing} disabled={forcingFulfill} className="gap-2 rounded-lg text-rose-600 focus:text-rose-600 focus:bg-rose-500/10 dark:text-rose-400">
+                <CheckCircle2 className="w-4 h-4" />
+                <span className="flex-1">Force-fulfil all processing orders…</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
-      {/* ── Stats Metric Cards Grid ── */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-9 gap-3">
+      {/* ── Stats ── */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-9 gap-2.5">
         {[
-          { label: "Page Orders", value: allOrders.length.toLocaleString(), icon: ShoppingCart, color: "text-blue-400", bg: "bg-blue-500/10 border-blue-500/20", grad: "from-blue-500 to-cyan-500" },
-          {
-            label: "Auto-Router Queue",
-            value: autoRouterQueueCount.toString(),
-            icon: Zap,
-            color: "text-amber-400 font-extrabold",
-            bg: "bg-amber-500/15 border-amber-500/30 cursor-pointer hover:bg-amber-500/25 transition-all shadow-md shadow-amber-950/20",
-            grad: "from-amber-500 to-orange-500",
-            onClick: () => setStatusFilter("auto_router_queue")
-          },
-          { label: "Fulfilled Volume", value: `GH₵${totalRevenue.toFixed(2)}`, icon: TrendingUp, color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/20", grad: "from-emerald-500 to-teal-500" },
-          { label: "Admin Net Profit", value: `GH₵${totalAdminNetProfit.toFixed(2)}`, icon: DollarSign, color: "text-sky-400 font-black", bg: "bg-sky-500/15 border-sky-500/30 shadow-lg shadow-sky-950/20", grad: "from-sky-500 to-blue-500" },
-          {
-            label: "In Queue / Approval",
-            value: inQueueCount.toString(),
-            icon: Clock,
-            color: "text-emerald-400 font-extrabold",
-            bg: "bg-emerald-500/15 border-emerald-500/30 cursor-pointer hover:bg-emerald-500/25 transition-all",
-            grad: "from-emerald-500 to-green-500",
-            onClick: () => setStatusFilter("in_queue")
-          },
-          { label: "Agent Profits", value: `GH₵${(totalAgentProfits + totalParentProfits).toFixed(2)}`, icon: Sparkles, color: "text-purple-400", bg: "bg-purple-500/10 border-purple-500/20", grad: "from-purple-500 to-fuchsia-500" },
-          { label: "Paystack Fees", value: `GH₵${totalPaystackFees.toFixed(2)}`, icon: TrendingUp, color: "text-rose-400", bg: "bg-rose-500/10 border-rose-500/20", grad: "from-rose-500 to-red-500" },
-          { label: "Platform Costs", value: `GH₵${totalCosts.toFixed(2)}`, icon: TrendingUp, color: "text-amber-400", bg: "bg-amber-500/10 border-amber-500/20", grad: "from-amber-500 to-orange-500" },
-          { label: "Paystack Verified", value: verifiedCount.toLocaleString(), icon: CheckCircle2, color: "text-green-400", bg: "bg-green-500/10 border-green-500/20", grad: "from-green-500 to-emerald-500" },
-        ].map(({ label, value, icon: Icon, color, bg, grad, onClick }, i) => (
-          <motion.div
-            key={label}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.25, delay: i * 0.04 }}
-            onClick={onClick}
-            className={`relative overflow-hidden rounded-2xl p-3.5 flex flex-col justify-between border backdrop-blur-xl hover:-translate-y-0.5 hover:shadow-md transition-all duration-300 ${bg}`}
-          >
-            <div className={`absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r ${grad}`} />
-            <div className="flex items-center justify-between gap-1 mb-2">
-              <Icon className={`w-4 h-4 ${color}`} />
-              {onClick && <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-widest bg-emerald-500/20 px-1.5 py-0.5 rounded">Filter</span>}
-            </div>
-            <div>
-              <p className={`text-base font-black truncate text-foreground ${color}`}>{value}</p>
-              <p className="text-[10px] text-muted-foreground truncate uppercase tracking-wider font-semibold mt-0.5">{label}</p>
-            </div>
-          </motion.div>
-        ))}
+          { label: "On this page", value: allOrders.length.toLocaleString() },
+          { label: "Auto-router queue", value: autoRouterQueueCount.toString(), onClick: () => setStatusFilter("auto_router_queue"), highlight: autoRouterQueueCount > 0 },
+          { label: "In queue / approval", value: inQueueCount.toString(), onClick: () => setStatusFilter("in_queue"), highlight: inQueueCount > 0 },
+          { label: "Delivered volume", value: `GH₵${totalRevenue.toFixed(2)}` },
+          { label: "Admin net profit", value: `GH₵${totalAdminNetProfit.toFixed(2)}` },
+          { label: "Agent profits", value: `GH₵${(totalAgentProfits + totalParentProfits).toFixed(2)}` },
+          { label: "Paystack fees", value: `GH₵${totalPaystackFees.toFixed(2)}` },
+          { label: "Platform costs", value: `GH₵${totalCosts.toFixed(2)}` },
+          { label: "Paystack verified", value: verifiedCount.toLocaleString() },
+        ].map(({ label, value, onClick, highlight }: any) => {
+          const Tag: any = onClick ? "button" : "div";
+          return (
+            <Tag
+              key={label}
+              type={onClick ? "button" : undefined}
+              onClick={onClick}
+              className={cn(
+                "text-left rounded-xl border px-3 py-2.5 min-w-0 transition-colors",
+                highlight ? "border-amber-500/40 bg-amber-500/[0.07]" : "border-border/70 bg-card/85 dark:border-white/[0.08] dark:bg-black/30",
+                onClick && "hover:border-foreground/25"
+              )}
+              title={onClick ? `Show only: ${label}` : undefined}
+            >
+              <p className="text-[11px] text-muted-foreground truncate">{label}{onClick ? " ›" : ""}</p>
+              <p className="mt-0.5 text-[15px] font-bold tabular-nums text-foreground truncate">{value}</p>
+            </Tag>
+          );
+        })}
       </div>
 
       {/* ── Filters & Search Toolbar ── */}
@@ -2884,6 +2669,144 @@ export default function AdminOrders() {
           </div>
         </div>
       )}
+
+      {/* ── Providers & lookup ── */}
+      <div className="grid gap-4 lg:grid-cols-12">
+        <div className="lg:col-span-8">
+      <div className="rounded-2xl border border-border/70 bg-card/85 p-4 sm:p-5 space-y-3 dark:border-white/[0.08] dark:bg-black/30">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="h-9 w-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+              <Coins className="w-[18px] h-[18px]" />
+            </div>
+            <div>
+              <h4 className="text-[15px] font-semibold text-foreground">Provider balances</h4>
+              <p className="text-xs text-muted-foreground">Live balances. Pause a provider to stop new orders reaching it.</p>
+            </div>
+          </div>
+
+          <Button
+            onClick={syncAllProviderBalances}
+            disabled={syncingBalances}
+            variant="outline"
+            className="h-8 px-3 rounded-lg border-border text-[12.5px] font-semibold gap-1.5 shrink-0"
+          >
+            <RefreshCw className={cn("w-3.5 h-3.5", syncingBalances && "animate-spin text-amber-400")} />
+            {syncingBalances ? "Refreshing…" : "Refresh"}
+          </Button>
+        </div>
+
+        {/* Provider Balance Cards Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 pt-1">
+          {providers.length === 0 ? (
+            <div className="col-span-full py-4 text-center text-xs text-muted-foreground font-mono">
+              No API providers configured.
+            </div>
+          ) : (
+            providers.map((prov) => {
+              const balanceNum = Number(prov.balance || 0);
+              const isProvPaused = prov?.settings?.is_paused === true;
+              const isHealthy = prov.is_active && !isProvPaused && balanceNum > 50;
+              const isLow = prov.is_active && !isProvPaused && balanceNum <= 50 && balanceNum > 0;
+
+              return (
+                <div
+                  key={prov.id}
+                  className={cn(
+                    "flex flex-col justify-between gap-2.5 p-3 rounded-xl border transition-colors",
+                    isProvPaused
+                      ? "bg-violet-500/[0.07] border-violet-500/40"
+                      : isHealthy
+                      ? "border-border/70 dark:border-white/[0.08]"
+                      : isLow
+                      ? "bg-amber-500/[0.06] border-amber-500/40"
+                      : "bg-rose-500/[0.06] border-rose-500/40"
+                  )}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="space-y-0.5 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className={cn(
+                          "w-2 h-2 rounded-full shrink-0",
+                          isProvPaused
+                            ? "bg-violet-400 animate-pulse"
+                            : isHealthy
+                            ? "bg-emerald-400 animate-pulse"
+                            : isLow
+                            ? "bg-amber-400 animate-pulse"
+                            : "bg-rose-500"
+                        )} />
+                        <span className="text-[12.5px] font-semibold text-foreground truncate max-w-[120px]">
+                          {prov.name}
+                        </span>
+                        {prov.handler_type && (
+                          <span className="text-[10px] px-1.5 rounded bg-muted text-muted-foreground shrink-0">
+                            {prov.handler_type}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11.5px] text-muted-foreground">
+                        {isProvPaused
+                          ? "Paused"
+                          : prov.is_active
+                          ? prov?.settings?.is_primary_provider
+                            ? "Primary"
+                            : "Backup"
+                          : "Inactive"}
+                      </p>
+                    </div>
+
+                    <div className="text-right shrink-0">
+                      <div className={cn(
+                        "text-[14px] font-bold tabular-nums",
+                        isProvPaused ? "text-violet-600 dark:text-violet-300" : isHealthy ? "text-foreground" : isLow ? "text-amber-600 dark:text-amber-400" : "text-rose-600 dark:text-rose-400"
+                      )}>
+                        GH₵ {balanceNum.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </div>
+                      <span className="text-[10.5px] text-muted-foreground">Balance</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-end pt-1.5 border-t border-border/60">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={pausingProviderId === prov.id}
+                      onClick={() => handleTogglePauseProvider(prov)}
+                      className={cn(
+                        "text-[11.5px] gap-1.5 h-7 px-3 rounded-lg font-semibold",
+                        isProvPaused
+                          ? "border-violet-500/50 bg-violet-500/15 text-violet-700 dark:text-violet-200 hover:bg-violet-500/25"
+                          : "border-border text-foreground hover:bg-muted"
+                      )}
+                      title={
+                        isProvPaused
+                          ? `Resume ${prov.name} API and release any held orders`
+                          : `Pause orders from entering ${prov.name} API`
+                      }
+                    >
+                      {pausingProviderId === prov.id ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : isProvPaused ? (
+                        <PlayCircle className="w-3.5 h-3.5" />
+                      ) : (
+                        <PauseCircle className="w-3.5 h-3.5" />
+                      )}
+                      {isProvPaused ? "Resume" : "Pause"}
+                    </Button>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+
+        </div>
+        <div className="lg:col-span-4 rounded-2xl border border-border/70 bg-card/85 p-4 sm:p-5 dark:border-white/[0.08] dark:bg-black/30">
+          <PhoneOrderTracker variant="embedded" title="Find a customer's orders" subtitle="Look up by phone number or order reference." />
+        </div>
+      </div>
 
       {/* ── Manual Order Status Changer Modal ── */}
       <Dialog open={!!orderToEditStatus} onOpenChange={(open) => !open && setOrderToEditStatus(null)}>
