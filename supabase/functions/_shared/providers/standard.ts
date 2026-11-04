@@ -2051,6 +2051,13 @@ export class StandardAdapter implements ProviderAdapter {
                   (handlerType === "bundlezone" && (endpoint === "status" || endpoint === "bundles" || endpoint === "balance"));
 
     const maxAttempts = (endpoint === "status") ? 2 : 1;
+    // Requests that place an order: sent once, never re-sent once they may have reached the provider.
+    const isOrderEndpoint = ["purchase", "airtime", "afa", "mashup", "mashup_purchase", "utility"].includes(endpoint);
+    const uncertainResult = (detail: string) => ({
+      ok: false,
+      status: "uncertain",
+      reason: `UNCERTAIN_DELIVERY: ${handlerType} did not answer in time (${detail}); the order may have been received. Holding as pending at provider.`,
+    });
 
     for (const url of urls) {
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -2107,11 +2114,16 @@ export class StandardAdapter implements ProviderAdapter {
             headers,
             body: isGet ? undefined : JSON.stringify(payload),
             disableFallback: false,
-            allowMutationFallback: isStatus,
+            allowMutationFallback: !isOrderEndpoint,
           }, isStatus ? 25 : 35);
 
           const contentType = res.headers.get("content-type");
           const text = await res.text();
+
+          if (isOrderEndpoint && ([502, 504, 520, 521, 522, 523, 524].includes(res.status) || /UNCERTAIN_DELIVERY/.test(text))) {
+            console.warn(`[StandardAdapter] ${handlerType} ${endpoint} got no clear answer (HTTP ${res.status}). Not re-sending.`);
+            return uncertainResult(`HTTP ${res.status}`);
+          }
 
           // Same-Order Duplicate Guard (applies to HTTP 200 AND 409 replies):
           // If the provider says "duplicate" AND echoes back OUR OWN reference for this order,
@@ -2235,6 +2247,11 @@ export class StandardAdapter implements ProviderAdapter {
           }
 
           if (res.status === 401 || res.status === 403) return { ok: false, reason: lastReason };
+          // An order request the provider answered (anything but a missing route) must not be sent to the
+          // next URL variant: that would be a second purchase.
+          if (isOrderEndpoint && res.status !== 404 && res.status !== 405 && !isHtmlResponse(contentType, text)) {
+            return { ok: false, reason: lastReason };
+          }
           if (res.status === 404 || isHtmlResponse(contentType, text)) break;
 
           if (res.status >= 500 && attempt < 2) {
@@ -2245,6 +2262,10 @@ export class StandardAdapter implements ProviderAdapter {
           break;
         } catch (e: any) {
           lastReason = e?.message || "Network communication error";
+          if (isOrderEndpoint && !/connection refused|dns error|failed to lookup|no such host/i.test(lastReason)) {
+            console.warn(`[StandardAdapter] ${handlerType} ${endpoint} failed mid-request (${lastReason}). Not re-sending.`);
+            return uncertainResult(lastReason.slice(0, 120));
+          }
           if (attempt < 2) await new Promise((r) => setTimeout(r, 300));
         }
       }

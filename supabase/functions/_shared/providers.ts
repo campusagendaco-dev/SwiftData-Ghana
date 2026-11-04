@@ -1,4 +1,4 @@
-import { parseCapacity } from "./providers/utils.ts";
+import { parseCapacity, AWAITING_PROVIDER_REF } from "./providers/utils.ts";
 
 export interface Provider {
   id: string;
@@ -113,6 +113,42 @@ export function isOrderPausedFromApi(order: any): boolean {
     order?.metadata?.api_paused === true ||
     order?.status === "paused"
   );
+}
+
+/**
+ * Holds an order as "pending at provider" after a purchase call ended without a clear answer.
+ * The order stays locked to that provider (provider_id set, provider_order_id = awaiting_provider) so
+ * no job re-routes it. check-order-status asks the provider about it and either locks it to the
+ * provider's order id, marks it delivered, or releases it once the provider confirms it has no record.
+ */
+export async function markAwaitingProvider(
+  supabaseAdmin: any,
+  order: { id?: string; metadata?: any } | null | undefined,
+  provider: { id?: string; name?: string; handler_type?: string } | null | undefined,
+  reason: string | null | undefined,
+): Promise<Record<string, any>> {
+  const metadata = {
+    ...((order as any)?.metadata || {}),
+    awaiting_provider: {
+      provider_id: provider?.id || null,
+      provider_name: provider?.name || null,
+      handler_type: provider?.handler_type || null,
+      since: new Date().toISOString(),
+      reason: String(reason || "Provider did not answer in time").slice(0, 300),
+    },
+  };
+  const patch: Record<string, any> = {
+    status: "processing",
+    provider_order_id: AWAITING_PROVIDER_REF,
+    failure_reason: null,
+    metadata,
+    updated_at: new Date().toISOString(),
+  };
+  if (provider?.id) patch.provider_id = provider.id;
+  if (order?.id) {
+    await Promise.resolve(supabaseAdmin.from("orders").update(patch).eq("id", order.id)).catch(() => {});
+  }
+  return patch;
 }
 
 export function isSentinelProviderOrderId(id?: string | null): boolean {

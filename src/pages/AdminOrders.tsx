@@ -108,6 +108,12 @@ function isBeneficiaryFailure(order: Pick<OrderRow, "status" | "failure_reason">
   return reason.includes("beneficiary") || reason.includes("not added");
 }
 
+// "Pending at provider": the purchase call got no clear answer, so the order is held on that provider
+// (never sent elsewhere) until the status check confirms what the provider did with it.
+function isPendingAtProvider(order: Pick<OrderRow, "provider_order_id" | "status">): boolean {
+  return order.status === "processing" && ["awaiting_provider", "timeout"].includes(String(order.provider_order_id || ""));
+}
+
 function isOrderApiPaused(order: Pick<OrderRow, "provider_order_id" | "metadata" | "status">): boolean {
   return (
     order.provider_order_id === "paused_by_admin" ||
@@ -134,7 +140,7 @@ function canPauseOrResumeOrder(order: OrderRow): boolean {
   const provRef = String(order.provider_order_id || "").trim();
   const hasLiveExternalRef =
     provRef.length > 0 &&
-    !["failed_api_call", "timeout", "dispatching", "duplicate_cooldown", "paused_by_admin", "manual_fulfillment_mode", "refunded"].includes(provRef);
+    !["failed_api_call", "dispatching", "duplicate_cooldown", "paused_by_admin", "manual_fulfillment_mode", "refunded"].includes(provRef);
   return !hasLiveExternalRef;
 }
 
@@ -732,8 +738,10 @@ export default function AdminOrders() {
     }
 
     // Status Filter
-    if (statusFilter !== "all" && statusFilter !== "in_queue" && statusFilter !== "auto_router_queue" && statusFilter !== "parked" && statusFilter !== "paused_api") {
+    if (statusFilter !== "all" && statusFilter !== "in_queue" && statusFilter !== "auto_router_queue" && statusFilter !== "parked" && statusFilter !== "paused_api" && statusFilter !== "pending_at_provider") {
       q = q.eq("status", statusFilter);
+    } else if (statusFilter === "pending_at_provider") {
+      q = q.eq("status", "processing").in("provider_order_id", ["awaiting_provider", "timeout"]);
     } else if (statusFilter === "paused_api") {
       q = q.or("provider_order_id.eq.paused_by_admin,provider_order_id.eq.manual_fulfillment_mode,metadata->>api_paused.eq.true");
     } else if (statusFilter === "parked") {
@@ -746,7 +754,7 @@ export default function AdminOrders() {
         .not("package_size", "is", null)
         .not("order_type", "in", excludedTypes)
         .or("status.in.(paid,processing),paystack_verified_amount.gt.0,payment_method.in.(wallet,credit)")
-        .or("provider_id.is.null,provider_order_id.is.null,provider_order_id.eq.failed_api_call,provider_order_id.eq.timeout,provider_order_id.eq.manual_fulfillment_mode");
+        .or("provider_id.is.null,provider_order_id.is.null,provider_order_id.eq.failed_api_call,provider_order_id.eq.manual_fulfillment_mode");
     }
     // Network Filter
     if (networkFilter !== "all") {
@@ -1602,6 +1610,13 @@ export default function AdminOrders() {
       };
     }
 
+    if (isPendingAtProvider(order)) {
+      return {
+        className: "bg-sky-500/15 text-sky-600 dark:text-sky-300 border-sky-500/30 font-bold shadow-sm backdrop-blur-md",
+        label: "pending at provider",
+      };
+    }
+
     const ageMinutes = Math.floor((Date.now() - new Date(order.created_at).getTime()) / (60 * 1000));
     if (order.status === "processing" && ageMinutes >= 30) {
       const ageLabel = ageMinutes >= 60 ? `${Math.floor(ageMinutes / 60)}h ${ageMinutes % 60}m` : `${ageMinutes}m`;
@@ -1623,6 +1638,7 @@ export default function AdminOrders() {
     if (order.provider_order_id === "duplicate_cooldown" || (order.status === "processing" && String(order.failure_reason || "").toLowerCase().includes("duplicate"))) {
       return Clock;
     }
+    if (isPendingAtProvider(order)) return Clock;
     const ageMinutes = Math.floor((Date.now() - new Date(order.created_at).getTime()) / (60 * 1000));
     if (order.status === "processing" && ageMinutes >= 30) return AlertTriangle;
 
@@ -1647,6 +1663,9 @@ export default function AdminOrders() {
       if (statusFilter === "paused_api") {
         return isOrderApiPaused(o);
       }
+      if (statusFilter === "pending_at_provider") {
+        return isPendingAtProvider(o);
+      }
       if (statusFilter === "parked") {
         const ageMinutes = Math.floor((Date.now() - new Date(o.created_at).getTime()) / (60 * 1000));
         return o.status === "processing" && ageMinutes >= 30;
@@ -1657,7 +1676,7 @@ export default function AdminOrders() {
                        Number(o.paystack_verified_amount || 0) > 0 || 
                        o.status === "paid" || 
                        o.status === "processing";
-        const hasNoProvider = !o.provider_id || !o.provider_order_id || ["failed_api_call", "timeout", "manual_fulfillment_mode", "duplicate_cooldown"].includes(o.provider_order_id);
+        const hasNoProvider = !o.provider_id || !o.provider_order_id || ["failed_api_call", "manual_fulfillment_mode", "duplicate_cooldown"].includes(o.provider_order_id);
         const isNonTelecom = ["wallet_topup", "store_wallet_topup", "agent_activation", "sub_agent_activation", "vendor_activation", "free_data_claim"].includes(String(o.order_type || "").toLowerCase());
         const isMashUp = String(o.network || "").toLowerCase().includes("mash up");
         return isPaid && hasNoProvider && !isNonTelecom && !isMashUp;
@@ -1877,6 +1896,7 @@ export default function AdminOrders() {
             <option value="all">All Statuses</option>
             <option value="auto_router_queue">⚡ Auto-Router Queue ({autoRouterQueueCount})</option>
             <option value="paused_api">⏸️ Paused / API Hold {pausedCount > 0 ? `(${pausedCount})` : ""}</option>
+            <option value="pending_at_provider">⏳ Pending at Provider (awaiting confirmation)</option>
             <option value="parked">⚠️ Parked / Stalled (&gt;30m) {parkedCount > 0 ? `(${parkedCount})` : ""}</option>
             <option value="in_queue">In Queue (Beneficiary Approval)</option>
             <option value="fulfilled">Fulfilled (Successful)</option>

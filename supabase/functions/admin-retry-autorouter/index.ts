@@ -135,7 +135,7 @@ serve(async (req: Request) => {
         return false;
       }
       const existingRef = String(o.provider_order_id || "").trim();
-      const isSentinelRef = !existingRef || ["dispatching", "timeout", "routed", "duplicate_cooldown", "manual_fulfillment_mode", "paused_by_admin", "refunded"].includes(existingRef) || existingRef.startsWith("failed_api_call");
+      const isSentinelRef = !existingRef || ["dispatching", "routed", "duplicate_cooldown", "manual_fulfillment_mode", "paused_by_admin", "refunded"].includes(existingRef) || existingRef.startsWith("failed_api_call");
       if (!isSentinelRef && (o.status === "processing" || o.status === "pending")) {
         return false;
       }

@@ -358,3 +358,48 @@ export function isDuplicateOrderError(reason: string | null | undefined): boolea
 }
 
 
+
+/**
+ * Marker stored in orders.provider_order_id while we wait for a provider to confirm an order whose
+ * purchase call ended without a clear answer (timeout, dropped connection, gateway 504).
+ * The provider may already have the order, so it must NOT be sent to another provider until the
+ * status check confirms the provider does not have it.
+ */
+export const AWAITING_PROVIDER_REF = "awaiting_provider";
+
+/** Reason prefix produced by the transport layer when a purchase may have reached the provider. */
+export const UNCERTAIN_DELIVERY_TAG = "UNCERTAIN_DELIVERY";
+
+/** True for the "pending at provider" markers (new awaiting_provider, legacy timeout). */
+export function isAwaitingProviderRef(id: string | null | undefined): boolean {
+  const s = String(id || "").trim();
+  return s === AWAITING_PROVIDER_REF || s === "timeout";
+}
+
+/**
+ * True when a purchase failed in a way that does not tell us whether the provider received it.
+ * Such orders are held as "pending at provider" instead of cascading to another provider.
+ */
+export function isUncertainDeliveryError(reason: string | null | undefined): boolean {
+  if (!reason) return false;
+  const r = String(reason).toLowerCase();
+  if (r.includes(UNCERTAIN_DELIVERY_TAG.toLowerCase())) return true;
+  if (isDuplicateOrderError(r)) return false;
+  // Connection never opened: the provider cannot have received anything.
+  if (/connection refused|dns error|failed to lookup|name or service not known|no such host/.test(r)) return false;
+  return (
+    r.includes("timeout") ||
+    r.includes("timed out") ||
+    r.includes("time-out") ||
+    r.includes("aborted") ||
+    r.includes("aborterror") ||
+    r.includes("gateway time") ||
+    /(^|[^0-9])504([^0-9]|$)/.test(r) ||
+    r.includes("connection reset") ||
+    r.includes("connection closed") ||
+    r.includes("socket hang up") ||
+    r.includes("unexpected eof") ||
+    r.includes("network communication error") ||
+    r.includes("error sending request")
+  );
+}

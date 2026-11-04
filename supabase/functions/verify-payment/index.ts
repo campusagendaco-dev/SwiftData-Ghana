@@ -5,14 +5,14 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { fetchViaDb } from "../_shared/db_proxy.ts";
 import { sendPaymentSms } from "../_shared/sms.ts";
 import { corsHeaders } from "../_shared/cors.ts";
-import { getActiveProviders, getPausedTargetProvider, isOrderPausedFromApi, logProviderError, resolveProvidersForOrder } from "../_shared/providers.ts";
+import { getActiveProviders, getPausedTargetProvider, isOrderPausedFromApi, logProviderError, resolveProvidersForOrder, markAwaitingProvider } from "../_shared/providers.ts";
 import { log, notifyAdmins } from "../_shared/logger.ts";
 import { notifyApiClient } from "../_shared/webhooks.ts";
 import { getProviderAdapter } from "../_shared/providers/registry.ts";
 import { StandardAdapter } from "../_shared/providers/standard.ts";
 import { executeGuestBeneficiaryRefund, handleGuestBeneficiaryFailure, isGuestOrder } from "../_shared/guest-refund.ts";
 import { sendWhatsAppOrderReceipt, checkAndTriggerDeliveryOnFire } from "../_shared/whatsapp.ts";
-import { isDuplicateOrderError, isBeneficiaryFailure } from "../_shared/providers/utils.ts";
+import { isDuplicateOrderError, isBeneficiaryFailure, isUncertainDeliveryError, isAwaitingProviderRef, AWAITING_PROVIDER_REF } from "../_shared/providers/utils.ts";
 import { verifyAdmin } from "../_shared/auth.ts";
 import { autoSubmitBeneficiaryNumber } from "../_shared/beneficiary_auto_submit.ts";
 
@@ -862,7 +862,9 @@ serve(async (req: any) => {
 
     const isSentinelOrderId = (id?: string | null) => {
       const s = String(id || "").toLowerCase();
-      return !s || s === "dispatching" || s === "timeout" || s === "routed" || s.startsWith("failed_api_call") || s === "manual_fulfillment_mode" || s === "paused_by_admin" || s === "duplicate_cooldown" || s === "refunded";
+      // "timeout" / "awaiting_provider" are NOT sentinels here: the provider may have the order, so it is
+      // checked by our reference (section 1) and never re-dispatched from this function.
+      return !s || s === "dispatching" || s === "routed" || s.startsWith("failed_api_call") || s === "manual_fulfillment_mode" || s === "paused_by_admin" || s === "duplicate_cooldown" || s === "refunded";
     };
 
     // Allow verified Admin or Service Role to explicitly resume an API-paused order
@@ -936,9 +938,11 @@ serve(async (req: any) => {
       let foundOnProvider = false;
       for (const provider of providers) {
         console.log(`[verify-payment] Checking status for ${targetReference} at ${provider.name}`);
+        // Held "pending at provider" orders have no provider id yet: ask by our own reference.
+        const knownProviderRef = isAwaitingProviderRef(existingOrder.provider_order_id) ? targetReference : existingOrder.provider_order_id;
         const checkResult = await callProviderApi(supabaseAdmin, provider, {
-          transaction_id: existingOrder.provider_order_id,
-          order_id: existingOrder.provider_order_id || targetReference,
+          transaction_id: knownProviderRef,
+          order_id: knownProviderRef || targetReference,
           reference: targetReference,
         }, "status");
 
@@ -1035,7 +1039,7 @@ serve(async (req: any) => {
     const orderAgeSec = (Date.now() - new Date(existingOrder?.created_at || 0).getTime()) / 1000;
     const isStuckDispatchOnAssigned = Boolean(
       existingOrder?.provider_id &&
-      (existingOrder?.provider_order_id === "dispatching" || existingOrder?.provider_order_id === "timeout")
+      existingOrder?.provider_order_id === "dispatching"
     );
     const shouldCheckProvider = (!!existingOrder?.provider_order_id && !isSentinelOrderId(existingOrder.provider_order_id)) || isStuckDispatchOnAssigned;
 
@@ -2236,6 +2240,7 @@ serve(async (req: any) => {
 
     // Auto-failover: try each active provider in priority order
     let lastAttemptedProvider: any = null;
+    let heldAtProvider: any = null;
     for (const provider of activeProviders) {
       lastAttemptedProvider = provider;
       const providerCallStart = Date.now();
@@ -2425,6 +2430,14 @@ serve(async (req: any) => {
         result = await callProviderApi(supabaseAdmin, provider, await buildDataPayload(provider), "purchase");
       }
       
+      // No clear answer (timeout / dropped connection): the provider may have the order. Never try
+      // another provider or a fallback bundle for it; hold it as pending at this provider.
+      if (!result.ok && isUncertainDeliveryError(result.reason)) {
+        heldAtProvider = provider;
+        console.warn(`[verify-payment] ${provider.name} gave no clear answer for ${targetReference} (${result.reason}). Holding as pending at provider.`);
+        break;
+      }
+
       // Auto-fallback for AirtelTigo: If AT_PREMIUM fails with "Bundle not available", try AT_BIGTIME
       if (!result.ok && /bundle not available|invalid bundle/i.test(result.reason) && (network.toUpperCase().includes("AIRTEL") || network.toUpperCase() === "AT")) {
         const ht = String(provider.handler_type || "standard");
@@ -2599,6 +2612,26 @@ serve(async (req: any) => {
           message: "Duplicate order detected. We have queued it to automatically route in 60 minutes.",
           provider_order_id: "duplicate_cooldown",
           delayed_until: delayedUntil
+        }), { headers: corsHeaders });
+      }
+
+      if (heldAtProvider || isUncertainDeliveryError(result.reason)) {
+        const holdProvider = heldAtProvider || lastAttemptedProvider;
+        await markAwaitingProvider(supabaseAdmin, { id: targetReference, metadata: claimedOrder.metadata }, holdProvider, result.reason);
+        log(supabaseAdmin, {
+          level: "warn",
+          source: "verify-payment",
+          event: "order.awaiting_provider",
+          message: `No clear answer from ${holdProvider?.name || "provider"}. Held as pending at provider (not sent elsewhere): ${result.reason}`,
+          order_id: targetReference,
+          agent_id: claimedOrder.agent_id,
+          provider_id: holdProvider?.id,
+          data: { reason: result.reason, network, package_size: packageSize },
+        });
+        return new Response(JSON.stringify({
+          status: "processing",
+          reason: "Your order reached the network provider and is waiting for their confirmation. No need to order again.",
+          provider_order_id: AWAITING_PROVIDER_REF,
         }), { headers: corsHeaders });
       }
 

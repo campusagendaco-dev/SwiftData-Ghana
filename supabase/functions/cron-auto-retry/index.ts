@@ -158,7 +158,9 @@ serve(async (req) => {
       .from("orders")
       .select("*")
       .eq("status", "processing")
-      .or("provider_id.is.null,provider_order_id.is.null,provider_order_id.eq.dispatching,provider_order_id.eq.timeout,provider_order_id.eq.failed_api_call,provider_order_id.eq.duplicate_cooldown")
+      // "timeout" / "awaiting_provider" orders are pending at a provider that may have them: never re-dispatched
+      // here. check-order-status asks that provider and releases them only once it has no record.
+      .or("provider_id.is.null,provider_order_id.is.null,provider_order_id.eq.dispatching,provider_order_id.eq.failed_api_call,provider_order_id.eq.duplicate_cooldown")
       .not("order_type", "in", excludedTypes)
       .lte("created_at", oneMinuteAgo)
       .gte("created_at", twoDaysAgo)
@@ -441,7 +443,6 @@ serve(async (req) => {
         order.provider_order_id &&
         order.provider_order_id !== "dispatching" &&
         order.provider_order_id !== "failed_api_call" &&
-        order.provider_order_id !== "timeout" &&
         order.provider_order_id !== "routed" &&
         order.provider_order_id !== "duplicate_cooldown" &&
         order.provider_order_id !== "paused_by_admin" &&

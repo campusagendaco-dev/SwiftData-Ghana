@@ -6,7 +6,8 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { normalizePhone, getSmsConfig, sendSmsViaTxtConnect, formatTemplate, sendPaymentSms } from "../_shared/sms.ts";
 import { sendWhatsAppMessage } from "../_shared/whatsapp.ts";
 import { notifyApiClient, notifyWalletCredit } from "../_shared/webhooks.ts";
-import { getActiveProviders, getPausedTargetProvider, isOrderPausedFromApi, resolveProvidersForOrder } from "../_shared/providers.ts";
+import { getActiveProviders, getPausedTargetProvider, isOrderPausedFromApi, resolveProvidersForOrder, markAwaitingProvider } from "../_shared/providers.ts";
+import { isUncertainDeliveryError, AWAITING_PROVIDER_REF } from "../_shared/providers/utils.ts";
 import { log, notifyAdmins } from "../_shared/logger.ts";
 import { getProviderAdapter } from "../_shared/providers/registry.ts";
 import { handleGuestBeneficiaryFailure, isGuestOrder, isBeneficiaryFailure } from "../_shared/guest-refund.ts";
@@ -2258,6 +2259,33 @@ serve(async (req: Request) => {
       }
       const providerDuration = Date.now() - providerCallStart;
       lastProviderDuration = providerDuration;
+
+      // No clear answer (timeout / dropped connection): the provider may have the order. Hold it as
+      // pending at this provider; never send it to the next provider.
+      if (!result.ok && isUncertainDeliveryError(result.reason || (isTimeoutOrNetworkError ? "timeout" : ""))) {
+        await markAwaitingProvider(supabaseAdmin, { id: orderId, metadata: existingOrder?.metadata }, chosenProvider, result.reason);
+        log(supabaseAdmin, {
+          level: "warn",
+          source: "paystack-webhook",
+          event: "order.awaiting_provider",
+          message: `No clear answer from ${providerName}. Held as pending at provider (not sent elsewhere): ${result.reason}`,
+          order_id: orderId,
+          agent_id: existingOrder?.agent_id,
+          provider_id: providerId,
+          duration_ms: providerDuration,
+          data: { reason: result.reason, network, package_size: packageSize },
+        });
+        return new Response(JSON.stringify({
+          received: true,
+          fulfilled: false,
+          status: "processing",
+          reason: "Pending at provider: waiting for confirmation.",
+          provider_order_id: AWAITING_PROVIDER_REF,
+        }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
 
       console.log("Webhook fulfillment response:", {
         orderId,

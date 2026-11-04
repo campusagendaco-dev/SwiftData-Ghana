@@ -4,6 +4,7 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { StandardAdapter } from "../_shared/providers/standard.ts";
 import { dispatchOrderWithFailover } from "../_shared/provider_router.ts";
 import { isSentinelProviderOrderId } from "../_shared/providers.ts";
+import { isAwaitingProviderRef } from "../_shared/providers/utils.ts";
 import { executeGuestBeneficiaryRefund, isGuestOrder } from "../_shared/guest-refund.ts";
 
 serve(async (req) => {
@@ -162,7 +163,7 @@ serve(async (req) => {
 
     let upstreamRefundData: any = null;
     const isRerouteMode = mode === "refund_and_reroute" || mode === "reroute";
-    const hasProviderRef = !isSentinelProviderOrderId(order.provider_order_id);
+    const hasProviderRef = !isSentinelProviderOrderId(order.provider_order_id) && !isAwaitingProviderRef(order.provider_order_id);
 
     let assignedProvider: any = null;
     if (order.provider_id) {
@@ -344,7 +345,7 @@ serve(async (req) => {
             provider_id: dispatch.provider_id || null,
             provider_order_id: dispatch.provider_order_id || null,
             failure_reason: null,
-            metadata: nextMeta,
+            metadata: dispatch.awaiting_provider ? { ...nextMeta, awaiting_provider: dispatch.awaiting_provider } : nextMeta,
             updated_at: new Date().toISOString(),
           })
           .eq("id", order.id);

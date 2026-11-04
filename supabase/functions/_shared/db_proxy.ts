@@ -5,12 +5,12 @@ export type SupabaseClient = ReturnType<typeof createClient>;
 
 declare const Deno: any;
 
-async function performDirectFetch(url: string, options: any) {
+async function performDirectFetch(url: string, options: any, timeoutMs = 6000) {
   const fetchOpts: RequestInit = {
     method: options.method || "GET",
     headers: options.headers || {},
     body: options.body,
-    signal: AbortSignal.timeout(6000),
+    signal: AbortSignal.timeout(timeoutMs),
   };
 
   let client: any = undefined;
@@ -93,6 +93,28 @@ async function performRenderFallback(url: string, options: any, originalErr: any
   }
 }
 
+// A request that changes something at the provider (a purchase) must never be sent twice. Once it may
+// have reached the provider, a timeout or gateway error is reported as UNCERTAIN_DELIVERY instead of
+// being re-sent through another route; the order is then held as "pending at provider" until a status
+// check confirms what the provider did with it.
+function neverConnected(err: any): boolean {
+  return /connection refused|dns error|failed to lookup|name or service not known|no such host/i.test(String(err?.message || err || ""));
+}
+
+function uncertainResponse(detail: string) {
+  const payload = {
+    error: `UNCERTAIN_DELIVERY: provider did not answer in time, the order may have been received (${detail})`,
+    uncertain_delivery: true,
+  };
+  return {
+    ok: false,
+    status: 504,
+    text: async () => JSON.stringify(payload),
+    json: async () => payload,
+    headers: new Headers({ "Content-Type": "application/json" }),
+  };
+}
+
 /**
  * Routes an HTTP request directly via native Deno fetch for sub-second speeds,
  * with fast fallback to database RPC proxy / backup proxy if required.
@@ -115,6 +137,10 @@ export async function fetchViaDb(
   json: () => Promise<any>;
   headers: Headers;
 }> {
+  const method = String(options.method || "GET").toUpperCase();
+  // Callers placing an order pass allowMutationFallback: false (see StandardAdapter purchase): such a
+  // request is sent on one route only and never re-sent once it may have reached the provider.
+  const isMutation = method !== "GET" && method !== "HEAD" && options.allowMutationFallback === false;
   const configuredBridgeUrl = Deno.env.get("KORBA_BRIDGE_URL")?.trim() || "https://swiftdatagh.shop/api/korba";
   if (configuredBridgeUrl && (url.includes("korba365.com") || url.includes("datahubgh.com") || url.includes("skdataplug.com"))) {
     const bridgeSecret = Deno.env.get("KORBA_BRIDGE_SECRET")?.trim() || ""; // must match Vercel env; no public fallback
@@ -171,6 +197,10 @@ export async function fetchViaDb(
           headers: responseHeaders
         };
       }
+      if (isMutation) {
+        console.warn(`[db_proxy] Vercel bridge returned gateway error ${bridgeRes.status} for a ${method}. Not re-sending.`);
+        return uncertainResponse(`bridge ${bridgeRes.status}`);
+      }
       console.warn(`[db_proxy] Vercel bridge returned gateway error ${bridgeRes.status}. Falling back...`);
     } catch (bridgeErr: any) {
       if (url.includes("korba365.com")) {
@@ -183,6 +213,10 @@ export async function fetchViaDb(
           json: async () => ({ error: `Korba Bridge Error: ${bridgeErr?.message || bridgeErr}`, proxy_timeout: true }),
           headers: new Headers({ "Content-Type": "application/json" })
         };
+      }
+      if (isMutation && !neverConnected(bridgeErr)) {
+        console.error(`[db_proxy] Vercel bridge failed mid-request for a ${method}: ${bridgeErr?.message || bridgeErr}. Not re-sending.`);
+        return uncertainResponse(String(bridgeErr?.message || bridgeErr).slice(0, 120));
       }
       console.error(`[db_proxy] Vercel bridge connection failed: ${bridgeErr?.message || bridgeErr}. Falling back...`);
     }
@@ -203,12 +237,21 @@ export async function fetchViaDb(
   // 1. Try Direct Native Fetch First (fastest response path, ~100-200ms) - Skip for Korba as Deno Edge IPs are not whitelisted
   if (!url.includes("korba365.com")) {
     try {
-      const directResult = await performDirectFetch(url, options);
+      const directTimeoutMs = isMutation ? Math.min(Math.max(timeoutSeconds, 6), 30) * 1000 : 6000;
+      const directResult = await performDirectFetch(url, options, directTimeoutMs);
       if (directResult.ok || (directResult.status >= 200 && directResult.status < 500)) {
+        return directResult;
+      }
+      if (isMutation) {
+        // The provider answered: return its error as-is rather than sending the purchase again.
         return directResult;
       }
       console.warn(`[db_proxy] Direct native fetch returned status ${directResult.status}. Trying DB RPC fallback...`);
     } catch (directErr) {
+      if (isMutation && !neverConnected(directErr)) {
+        console.warn(`[db_proxy] Direct ${method} failed mid-request: ${directErr}. Not re-sending.`);
+        return uncertainResponse(String((directErr as any)?.message || directErr).slice(0, 120));
+      }
       console.warn(`[db_proxy] Direct native fetch failed: ${directErr}. Trying DB RPC fallback...`);
     }
   }
@@ -242,6 +285,7 @@ export async function fetchViaDb(
   }
 
   if (error || !data) {
+    if (isMutation) return uncertainResponse(String(error?.message || "db relay returned nothing").slice(0, 120));
     return await performRenderFallback(url, options, error || { message: "No data returned from RPC" });
   }
 
@@ -256,6 +300,7 @@ export async function fetchViaDb(
     responseBody.includes("statement timeout");
 
   if (isTimeout) {
+    if (isMutation) return uncertainResponse(`db relay ${status}`);
     return await performRenderFallback(url, options, { status, body: responseBody });
   }
 

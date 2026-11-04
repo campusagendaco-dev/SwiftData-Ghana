@@ -5,7 +5,7 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { getProviderAdapter } from "../_shared/providers/registry.ts";
 import { dispatchOrderWithFailover } from "../_shared/provider_router.ts";
 import { isSentinelProviderOrderId } from "../_shared/providers.ts";
-import { isNonRetryableTerminalError } from "../_shared/providers/utils.ts";
+import { isNonRetryableTerminalError, isAwaitingProviderRef, AWAITING_PROVIDER_REF } from "../_shared/providers/utils.ts";
 import { verifyAdmin } from "../_shared/auth.ts";
 import { normalizePhone, getSmsConfig, dispatchUnifiedSms } from "../_shared/sms.ts";
 
@@ -250,7 +250,9 @@ serve(async (req: Request) => {
               rawStatus = currentStatus;
             } else {
               const adapter = getProviderAdapter(providerInfo.handler_type);
-              const hasActiveProviderRef = !isSentinelProviderOrderId(order.provider_order_id);
+              // "Pending at provider": the purchase call got no clear answer, so ask the provider by our reference.
+              const isAwaiting = isAwaitingProviderRef(order.provider_order_id);
+              const hasActiveProviderRef = !isAwaiting && !isSentinelProviderOrderId(order.provider_order_id);
               const activeOrderId = hasActiveProviderRef ? order.provider_order_id : order.id;
 
               console.log(`[check-order-status-bulk] Checking ${providerInfo.name} for order ${order.id} (tx: ${activeOrderId})...`);
@@ -265,7 +267,10 @@ serve(async (req: Request) => {
               rawStatus = String(pRes?.status || "").toLowerCase().trim();
 
               const orderAgeMs = Date.now() - new Date(order.updated_at || order.created_at || Date.now()).getTime();
-              const isStuckUnacceptedOnProvider = !hasActiveProviderRef && rawStatus === "not_found" && orderAgeMs > 60_000;
+              // A held order is only released after the provider has had 20 minutes to show it.
+              const awaitingAgeMs = Date.now() - new Date(order.metadata?.awaiting_provider?.since || order.created_at || Date.now()).getTime();
+              const isStuckUnacceptedOnProvider = !hasActiveProviderRef && rawStatus === "not_found" &&
+                (isAwaiting ? awaitingAgeMs > 20 * 60_000 : orderAgeMs > 60_000);
 
               const isDelivered = rawStatus === "delivered" || rawStatus === "successful" || rawStatus === "completed" || rawStatus === "fulfilled" || rawStatus === "000";
               const isPendingRefund = rawStatus === "failed_pending_refund" || rawStatus === "submission_unknown";
@@ -328,7 +333,7 @@ serve(async (req: Request) => {
                     }
                   });
 
-                  if (failoverDispatch.ok) {
+                  if (failoverDispatch.ok || failoverDispatch.provider_order_id === AWAITING_PROVIDER_REF) {
                     currentStatus = failoverDispatch.status;
                     currentFailureReason = null;
                     wasUpdated = true;
@@ -349,6 +354,7 @@ serve(async (req: Request) => {
                         failed_provider_ids: updatedFailedIds,
                         auto_routed_from: order.provider_id,
                         auto_routed_at: new Date().toISOString(),
+                        ...(failoverDispatch.awaiting_provider ? { awaiting_provider: failoverDispatch.awaiting_provider } : {}),
                       },
                       updated_at: new Date().toISOString(),
                     }).eq("id", order.id);
@@ -389,9 +395,9 @@ serve(async (req: Request) => {
                 }
               } else {
                 processingCount++;
-                if (pRes.raw || pRes.id) {
+                if (pRes.raw || pRes.id || (isAwaiting && pRes.ok)) {
                   await supabaseAdmin.from("orders").update({
-                    ...(pRes.ok && pRes.id && !hasActiveProviderRef ? { provider_order_id: String(pRes.id) } : {}),
+                    ...(pRes.ok && !hasActiveProviderRef && (pRes.id || isAwaiting) ? { provider_order_id: String(pRes.id || order.id) } : {}),
                     provider_response: pRes.raw || pRes,
                     updated_at: new Date().toISOString()
                   }).eq("id", order.id);
@@ -536,7 +542,9 @@ serve(async (req: Request) => {
       if (providerInfo) {
         try {
           const adapter = getProviderAdapter(providerInfo.handler_type);
-          const hasActiveProviderRef = !isSentinelProviderOrderId(order.provider_order_id);
+          // "Pending at provider": the purchase call got no clear answer, so ask the provider by our reference.
+              const isAwaiting = isAwaitingProviderRef(order.provider_order_id);
+              const hasActiveProviderRef = !isAwaiting && !isSentinelProviderOrderId(order.provider_order_id);
           const activeOrderId = hasActiveProviderRef ? order.provider_order_id : order.id;
 
           console.log(`[check-order-status] Polling provider ${providerInfo.name} (${providerInfo.handler_type}) for order ${order.id} (tx: ${activeOrderId})...`);
@@ -552,7 +560,10 @@ serve(async (req: Request) => {
           const rawStatus = String(pRes?.status || "").toLowerCase().trim();
 
           const orderAgeMs = Date.now() - new Date(order.updated_at || order.created_at || Date.now()).getTime();
-          const isStuckUnacceptedOnProvider = !hasActiveProviderRef && rawStatus === "not_found" && orderAgeMs > 60_000;
+          // A held order is only released after the provider has had 20 minutes to show it.
+              const awaitingAgeMs = Date.now() - new Date(order.metadata?.awaiting_provider?.since || order.created_at || Date.now()).getTime();
+              const isStuckUnacceptedOnProvider = !hasActiveProviderRef && rawStatus === "not_found" &&
+                (isAwaiting ? awaitingAgeMs > 20 * 60_000 : orderAgeMs > 60_000);
 
           const isDelivered = rawStatus === "delivered" || rawStatus === "successful" || rawStatus === "completed" || rawStatus === "fulfilled" || rawStatus === "000";
           const isPendingRefund = rawStatus === "failed_pending_refund" || rawStatus === "submission_unknown";
@@ -617,7 +628,7 @@ serve(async (req: Request) => {
                 }
               });
 
-              if (failoverDispatch.ok) {
+              if (failoverDispatch.ok || failoverDispatch.provider_order_id === AWAITING_PROVIDER_REF) {
                 currentStatus = failoverDispatch.status;
                 currentFailureReason = null;
                 carrierStatusDesc = failoverDispatch.status === "fulfilled" ? "Delivered successfully via verified carrier" : "Routed to verified carrier — active in processing";
@@ -633,6 +644,7 @@ serve(async (req: Request) => {
                     failed_provider_ids: updatedFailedIds,
                     auto_routed_from: providerInfo.name,
                     auto_routed_at: new Date().toISOString(),
+                    ...(failoverDispatch.awaiting_provider ? { awaiting_provider: failoverDispatch.awaiting_provider } : {}),
                   },
                   updated_at: new Date().toISOString(),
                 }).eq("id", order.id);
@@ -675,9 +687,9 @@ serve(async (req: Request) => {
           } else {
             carrierStatusDesc = "Transmitting to carrier network — active in processing";
             // Persist latest live polling response into metadata/provider_response
-            if (pRes.raw || pRes.id) {
+            if (pRes.raw || pRes.id || (isAwaiting && pRes.ok)) {
               await supabaseAdmin.from("orders").update({
-                ...(pRes.ok && pRes.id && !hasActiveProviderRef ? { provider_order_id: String(pRes.id) } : {}),
+                ...(pRes.ok && !hasActiveProviderRef && (pRes.id || isAwaiting) ? { provider_order_id: String(pRes.id || order.id) } : {}),
                 provider_response: pRes.raw || pRes,
                 updated_at: new Date().toISOString()
               }).eq("id", order.id);

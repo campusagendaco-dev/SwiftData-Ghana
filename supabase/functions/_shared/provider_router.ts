@@ -1,6 +1,6 @@
-import { resolveProvidersForOrder, getPausedTargetProvider, isOrderPausedFromApi, type Provider } from "./providers.ts";
+import { resolveProvidersForOrder, getPausedTargetProvider, isOrderPausedFromApi, markAwaitingProvider, type Provider } from "./providers.ts";
 import { getProviderAdapter } from "./providers/registry.ts";
-import { isNonRetryableTerminalError, isDuplicateOrderError, isBeneficiaryFailure } from "./providers/utils.ts";
+import { isNonRetryableTerminalError, isDuplicateOrderError, isBeneficiaryFailure, isUncertainDeliveryError, AWAITING_PROVIDER_REF } from "./providers/utils.ts";
 import { autoSubmitBeneficiaryNumber } from "./beneficiary_auto_submit.ts";
 
 export interface DispatchResult {
@@ -13,6 +13,8 @@ export interface DispatchResult {
   raw?: any;
   delayed?: boolean;
   delayed_until?: string;
+  /** Set when the order is held as pending at provider; callers that rewrite metadata must keep it. */
+  awaiting_provider?: Record<string, any>;
 }
 
 export function parseCapacity(packageSize: string | null | undefined): number {
@@ -51,6 +53,9 @@ export function normalizeRecipient(phone: string | null | undefined): string {
  * Rules Enforced:
  * 1. Once an order is ACCEPTED by a provider (res.ok === true), it locks to that provider and NEVER enters a different provider.
  * 2. An order is ONLY marked as fulfillment_failed after it has been attempted and REJECTED by ALL active providers.
+ * 3. A call that ends without a clear answer (timeout, dropped connection, gateway 504) is NOT a rejection: the
+ *    provider may have the order. The order is held as "pending at provider" on that provider and is never sent
+ *    to another provider until check-order-status confirms the provider has no record of it.
  */
 export async function dispatchOrderWithFailover(
   supabaseAdmin: any,
@@ -158,6 +163,11 @@ export async function dispatchOrderWithFailover(
       }
 
       lastFailureReason = res.reason || `Failed at provider ${provider.name}`;
+
+      if (isUncertainDeliveryError(lastFailureReason)) {
+        return await holdAtProvider(supabaseAdmin, order, provider, lastFailureReason);
+      }
+
       console.warn(`[HybridRouter] Provider ${provider.name} REJECTED order ${order.id}: ${lastFailureReason}`);
 
       // Record rejection log
@@ -257,6 +267,9 @@ export async function dispatchOrderWithFailover(
     } catch (err: any) {
       console.error(`[HybridRouter] Exception while dispatching to ${provider.name}:`, err);
       lastFailureReason = err.message || "Network exception during provider call";
+      if (isUncertainDeliveryError(lastFailureReason)) {
+        return await holdAtProvider(supabaseAdmin, order, provider, lastFailureReason);
+      }
       if (provider.id && order?.id) {
         rejectedProviderIds.add(String(provider.id));
         Promise.resolve(supabaseAdmin.from("provider_errors").insert({
@@ -287,5 +300,23 @@ export async function dispatchOrderWithFailover(
     status: "processing",
     provider_order_id: "failed_api_call",
     reason: lastFailureReason,
+  };
+}
+
+async function holdAtProvider(supabaseAdmin: any, order: any, provider: Provider, reason: string): Promise<DispatchResult> {
+  console.warn(`[HybridRouter] ${provider.name} gave no clear answer for order ${order?.id} (${reason}). Holding as pending at provider - NOT cascading.`);
+  const patch = await markAwaitingProvider(supabaseAdmin, order, provider, reason);
+  if (order) {
+    order.provider_id = provider.id;
+    order.provider_order_id = AWAITING_PROVIDER_REF;
+    order.metadata = patch.metadata;
+  }
+  return {
+    ok: false,
+    status: "processing",
+    provider_id: provider.id,
+    provider_order_id: AWAITING_PROVIDER_REF,
+    awaiting_provider: patch.metadata?.awaiting_provider,
+    reason: `Pending at ${provider.name}: waiting for the provider to confirm. ${reason}`,
   };
 }

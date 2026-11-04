@@ -6,7 +6,7 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { notifyApiClient } from "../_shared/webhooks.ts";
 import { dispatchOrderWithFailover } from "../_shared/provider_router.ts";
 import { mapAfaStatus } from "../_shared/providers/afaregistration.ts";
-import { isNonRetryableTerminalError } from "../_shared/providers/utils.ts";
+import { isNonRetryableTerminalError, AWAITING_PROVIDER_REF } from "../_shared/providers/utils.ts";
 
 async function verifyHmacSha256(bodyText: string, keyString: string, expectedSignature: string): Promise<boolean> {
   try {
@@ -575,7 +575,8 @@ serve(async (req: Request) => {
           },
         });
 
-        if (failoverDispatch.ok) {
+        // A held order (pending at the next provider) is not a failure: keep it processing.
+        if (failoverDispatch.ok || failoverDispatch.provider_order_id === AWAITING_PROVIDER_REF) {
           console.log(`[provider-webhook] Automatic failover SUCCESS for order ${order.id} via provider ${failoverDispatch.provider_id} (${failoverDispatch.status})`);
           await supabaseAdmin.from("orders").update({
             status: failoverDispatch.status,
@@ -586,6 +587,7 @@ serve(async (req: Request) => {
               ...(order.metadata || {}),
               failed_provider_ids: failedIds,
               processed_webhook_event_ids: nextEventIds,
+              ...(failoverDispatch.awaiting_provider ? { awaiting_provider: failoverDispatch.awaiting_provider } : {}),
             },
             updated_at: new Date().toISOString()
           }).eq("id", order.id);
