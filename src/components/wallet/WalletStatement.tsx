@@ -20,6 +20,7 @@ type Entry = {
 const LABELS: Record<string, string> = {
   opening_balance: "Opening balance",
   wallet_topup: "Wallet top-up",
+  debt_recovery: "Applied to amount owed (15 Aug duplicate credit)",
   repay_credit: "Wallet top-up",
   credit_wallet: "Credit",
   debit_wallet: "Purchase",
