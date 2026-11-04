@@ -103,6 +103,28 @@ const parseCapacity = (sizeStr: string | null) => {
   return val;
 };
 
+/**
+ * PostgREST returns at most 1,000 rows per request (supabase/config.toml max_rows),
+ * so totals summed in the browser must page through every row. Returns the rows,
+ * the server's exact count, and whether we stopped early at maxRows.
+ */
+async function fetchAllRows(
+  build: (from: number, to: number) => any,
+  maxRows = 50_000
+): Promise<{ data: any[] | null; error: any; total: number | null; partial: boolean }> {
+  const PAGE = 1000;
+  let all: any[] = [];
+  let total: number | null = null;
+  for (let from = 0; from < maxRows; from += PAGE) {
+    const { data, error, count } = await build(from, from + PAGE - 1);
+    if (error) return { data: all.length ? all : null, error, total, partial: true };
+    if (total === null && typeof count === "number") total = count;
+    all = all.concat(data || []);
+    if (!data || data.length < PAGE) break;
+  }
+  return { data: all, error: null, total, partial: total !== null ? all.length < total : false };
+}
+
 const AdminOverview = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -152,6 +174,7 @@ const AdminOverview = () => {
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState<"topups" | "audit">("topups");
   const [aiRecommendations, setAiRecommendations] = useState<any[]>([]);
+  const [totalsPartial, setTotalsPartial] = useState<{ orders: boolean; wallets: boolean; orderTotal: number | null }>({ orders: false, wallets: false, orderTotal: null });
 
   const fetchData = useCallback(async () => {
     const now = new Date();
@@ -172,11 +195,11 @@ const AdminOverview = () => {
     const accessToken = sessionData?.session?.access_token || "";
 
     const settled = await Promise.allSettled([
-      supabase.from("orders").select("id, amount, status, order_type, profit, parent_profit, cost_price, paystack_fee, paystack_verified_amount, package_size"),
+      fetchAllRows((f, t) => supabase.from("orders").select("id, amount, status, order_type, profit, parent_profit, cost_price, paystack_fee, paystack_verified_amount, package_size", { count: "exact" }).order("id", { ascending: true }).range(f, t), 30_000),
       supabase.from("profiles").select("user_id, is_agent, is_sub_agent, agent_approved, sub_agent_approved, onboarding_complete, created_at").order("created_at", { ascending: false }).limit(5000),
       supabase.functions.invoke("maintenance-mode", { body: { action: "get" } }),
       supabase.from("orders").select("id, network, package_size, customer_phone, amount, status, created_at").order("created_at", { ascending: false }).limit(8),
-      supabase.from("orders").select("id, amount, agent_id, created_at, status, order_type, paystack_verified_amount, paystack_fee, profit, parent_profit, cost_price, package_size").gte("created_at", startDate.toISOString()).order("created_at", { ascending: false }).limit(4000),
+      fetchAllRows((f, t) => supabase.from("orders").select("id, amount, agent_id, created_at, status, order_type, paystack_verified_amount, paystack_fee, profit, parent_profit, cost_price, package_size", { count: "exact" }).gte("created_at", startDate.toISOString()).order("created_at", { ascending: false }).order("id", { ascending: true }).range(f, t), 30_000),
       supabase.functions.invoke("system-payout-v1", {
         body: { action: "get_provider_balance" },
         headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
@@ -185,8 +208,8 @@ const AdminOverview = () => {
       supabase.from("support_tickets").select("id", { count: "exact", head: true }).eq("status", "open"),
       supabase.from("orders").select("id, order_type, amount, status, created_at, network, package_size, customer_phone").eq("status", "fulfilled").order("created_at", { ascending: false }).limit(15),
       supabase.from("audit_logs").select("id, action, details, created_at, profiles(full_name)").order("created_at", { ascending: false }).limit(6),
-      supabase.from("wallets").select("balance"),
-      supabase.from("user_sales_stats").select("total_sales_volume, total_own_profit, total_commissions_paid"),
+      fetchAllRows((f, t) => supabase.from("wallets").select("balance", { count: "exact" }).order("agent_id", { ascending: true }).range(f, t)),
+      fetchAllRows((f, t) => supabase.from("user_sales_stats").select("total_sales_volume, total_own_profit, total_commissions_paid", { count: "exact" }).range(f, t)),
       (supabase.rpc as any)("get_admin_sales_stats_v2", { p_start_date: startDate.toISOString() }),
       supabase.from("ai_recommendations").select("*").is("user_id", null).eq("is_acted_upon", false).order("created_at", { ascending: false }),
       supabase.from("profiles").select("id", { count: "exact", head: true }),
@@ -203,6 +226,9 @@ const AdminOverview = () => {
     }
 
     const orders = ordersRes?.data || [];
+    const ordersPartial = Boolean((ordersRes as any)?.partial) || Boolean((rangeOrdersRes as any)?.partial);
+    const walletsPartial = Boolean((walletsRes as any)?.partial);
+    setTotalsPartial({ orders: ordersPartial, wallets: walletsPartial, orderTotal: (ordersRes as any)?.total ?? null });
     const profiles = profilesRes?.data || [];
     const rangeOrders = rangeOrdersRes?.data || [];
     const wallets = walletsRes?.data || [];
@@ -450,7 +476,7 @@ const AdminOverview = () => {
       const [rpcRes, recentRes, todayRes] = await Promise.all([
         (supabase.rpc as any)("get_admin_sales_stats_v2", { p_start_date: startDate.toISOString() }),
         supabase.from("orders").select("id, network, package_size, customer_phone, amount, status, created_at").order("created_at", { ascending: false }).limit(8),
-        supabase.from("orders").select("id, amount, agent_id, status, order_type, paystack_verified_amount, created_at, package_size").gte("created_at", `${todayStr}T00:00:00`),
+        fetchAllRows((f, t) => supabase.from("orders").select("id, amount, agent_id, status, order_type, paystack_verified_amount, created_at, package_size", { count: "exact" }).gte("created_at", `${todayStr}T00:00:00`).order("id", { ascending: true }).range(f, t), 30_000),
       ]);
 
       const rpcStats = (rpcRes.data || []) as any[];
@@ -696,12 +722,12 @@ const AdminOverview = () => {
   };
 
   const kpis = [
-    { label: "Net admin profit", value: ced(stats.totalNetAdminProfit), icon: TrendingUp, hint: "After costs & fees" },
-    { label: "Total inflow", value: ced(stats.totalRevenue), icon: DollarSign, hint: "All payments in" },
+    { label: "Net admin profit", value: ced(stats.totalNetAdminProfit), icon: TrendingUp, hint: totalsPartial.orders ? `Latest 30,000 of ${(totalsPartial.orderTotal || 0).toLocaleString()} orders` : "After costs & fees" },
+    { label: "Total inflow", value: ced(stats.totalRevenue), icon: DollarSign, hint: totalsPartial.orders ? "Partial: very large order history" : "All payments in" },
     { label: "Data sold", value: `${(stats.totalGb || 0).toLocaleString("en-GH", { maximumFractionDigits: 2 })} GB`, icon: Package, hint: `${(stats.rangeGb || 0).toFixed(1)} GB in ${rangeLabel}` },
     { label: "Agent profits", value: ced(Number(stats.totalAgentProfit || 0) + Number(stats.totalSubAgentProfit || 0)), icon: Users, hint: "Agents + sub-agents" },
     { label: "Provider wallet", value: providerBalance !== null ? ced(providerBalance) : "—", icon: Server, hint: providerLow ? "Low, top up soon" : "Main provider balance", warn: providerLow },
-    { label: "User wallet balances", value: ced(stats.totalSystemBalance), icon: Wallet, hint: "Owed to users (liability)" },
+    { label: "User wallet balances", value: ced(stats.totalSystemBalance), icon: Wallet, hint: totalsPartial.wallets ? "Partial: couldn't load every wallet" : "All wallets · owed to users" },
     { label: "Users", value: stats.totalUsers.toLocaleString(), icon: Users, hint: `${stats.todaySignups || todaySales.newUsers || 0} joined today` },
     { label: "Sales today", value: ced(todaySales.total), icon: Activity, hint: successRate === null ? "No completed orders yet" : `${successRate}% delivered · ${todaySales.count || todayAttempted} orders` },
   ];
