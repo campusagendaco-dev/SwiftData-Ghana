@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
-  AlertTriangle,
   ChevronRight,
   CloudOff,
   Eye,
@@ -47,7 +46,7 @@ import { getSafeAvatarUrl } from "@/lib/avatar";
 import { cn } from "@/lib/utils";
 import { buildNavCtx, findActive, itemLabel, visibleGroups } from "@/components/dashboard/navConfig";
 
-const LOW_BALANCE_THRESHOLD = 10; // GHS
+const LOW_BALANCE_THRESHOLD = 25; // GHS
 const COLLAPSE_KEY = "swiftdash_sidebar_collapsed_v1";
 
 const DashboardLayout = () => {
@@ -181,7 +180,9 @@ const DashboardLayout = () => {
   ];
 
   return (
-    <div className="dash-shell relative flex min-h-[100dvh] w-full bg-background text-foreground">
+    <div className="dash-shell relative flex min-h-[100dvh] w-full bg-transparent text-foreground">
+      {/* Light wash over the traditional background so text stays readable */}
+      <div aria-hidden className="pointer-events-none fixed inset-0 bg-background/30 dark:bg-background/35" />
       {/* Soft top light — gives the canvas depth without competing with content */}
       <div
         aria-hidden
@@ -340,17 +341,43 @@ const DashboardLayout = () => {
           {!isChallengeGameRoute && (showLowBalanceAlert || aiRecommendations.length > 0) && (
             <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 pt-4 space-y-2">
               {showLowBalanceAlert && (
-                <div className="flex items-center gap-3 rounded-xl border border-amber-500/25 bg-amber-500/[0.07] px-3.5 py-2.5">
-                  <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />
-                  <p className="text-[13px] text-foreground flex-1 min-w-0">
-                    <span className="font-semibold">Low balance:</span> ₵{maskValue(balance)} left. Top up to keep selling without delays.
-                  </p>
-                  <button type="button" onClick={() => navigate("/dashboard/wallet")} className="text-[13px] font-semibold text-amber-700 dark:text-amber-400 hover:underline shrink-0">
-                    Top up
-                  </button>
-                  <button type="button" onClick={() => setAlertDismissed(true)} aria-label="Dismiss" className="h-7 w-7 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground shrink-0">
-                    <X className="h-4 w-4" />
-                  </button>
+                <div className="relative overflow-hidden rounded-2xl border border-amber-300/60 bg-gradient-to-r from-amber-100/90 via-orange-50/90 to-pink-100/90 px-3.5 py-3 dark:border-amber-400/20 dark:from-amber-500/[0.12] dark:via-orange-500/[0.08] dark:to-pink-500/[0.1]">
+                  <span aria-hidden className="absolute -right-5 -top-6 h-20 w-20 rounded-full bg-white/50 dark:bg-white/[0.04]" />
+                  <div className="relative flex flex-col sm:flex-row sm:items-center gap-3">
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <span className="h-9 w-9 shrink-0 rounded-full bg-white shadow-sm flex items-center justify-center dark:bg-white/10">
+                        <Wallet className="h-[18px] w-[18px] text-amber-600 dark:text-amber-300" />
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-[13.5px] font-semibold text-foreground">
+                          Your wallet is getting light <span className="ml-1 rounded-full bg-white/80 px-2 py-0.5 text-[11.5px] font-semibold tabular-nums text-amber-700 dark:bg-white/10 dark:text-amber-300">₵{maskValue(balance)}</span>
+                        </p>
+                        <p className="text-[12px] text-muted-foreground">Top up so your customers’ orders go through without a hitch.</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar -mx-1 px-1 sm:mx-0 sm:px-0">
+                      {[50, 100, 200].map((amt) => (
+                        <button
+                          key={amt}
+                          type="button"
+                          onClick={() => navigate(`/dashboard/wallet?amount=${amt}`)}
+                          className="h-8 shrink-0 rounded-full bg-white/90 px-3 text-[12.5px] font-semibold text-amber-800 shadow-sm hover:bg-white dark:bg-white/10 dark:text-amber-200 dark:hover:bg-white/15"
+                        >
+                          +₵{amt}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => navigate("/dashboard/wallet")}
+                        className="h-8 shrink-0 rounded-full bg-primary px-3.5 text-[12.5px] font-semibold text-primary-foreground shadow-sm hover:brightness-105"
+                      >
+                        Top up
+                      </button>
+                      <button type="button" onClick={() => setAlertDismissed(true)} aria-label="Dismiss" className="h-8 w-8 shrink-0 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/60 dark:hover:bg-white/10">
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )}
               {aiRecommendations.slice(0, 1).map((rec) => (

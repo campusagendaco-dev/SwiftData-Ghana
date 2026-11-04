@@ -57,91 +57,102 @@ const PromoCarousel = () => {
   }, [api]);
 
   if (loading) {
-    return <Skeleton className="w-full aspect-[2/1] rounded-3xl" />;
+    return (
+      <div className="flex gap-3 overflow-hidden">
+        <Skeleton className="w-[88%] lg:w-[calc(50%-6px)] shrink-0 aspect-[2/1] lg:aspect-[21/9] rounded-[22px]" />
+        <Skeleton className="w-[88%] lg:w-[calc(50%-6px)] shrink-0 aspect-[2/1] lg:aspect-[21/9] rounded-[22px]" />
+      </div>
+    );
   }
 
   if (banners.length === 0) return null;
 
+  const pages = api ? api.scrollSnapList().length : banners.length;
+
   return (
-    <div className="relative group rounded-3xl shadow-[0_0_0_1px_rgba(251,191,36,0.12),0_12px_40px_rgba(0,0,0,0.45)]">
+    <section aria-label="Promotions" className="relative">
       <Carousel
         setApi={setApi}
-        plugins={[Autoplay({ delay: 5000 })]}
+        opts={{ align: "start", loop: banners.length > 2 }}
+        plugins={[Autoplay({ delay: 4500, stopOnInteraction: false, stopOnMouseEnter: true })]}
         className="w-full"
       >
-        <CarouselContent className="-ml-0">
-          {banners.map((banner) => (
+        <CarouselContent className="-ml-3">
+          {banners.map((banner, i) => (
             <CarouselItem
               key={banner.id}
-              className="pl-0 cursor-pointer"
-              onClick={() => banner.target_url && navigate(banner.target_url)}
+              className={`pl-3 ${banners.length > 1 ? "basis-[88%] sm:basis-[70%] lg:basis-1/2" : "basis-full"}`}
             >
-              <div className="relative aspect-[2/1] overflow-hidden rounded-3xl">
+              <button
+                type="button"
+                onClick={() => banner.target_url && navigate(banner.target_url)}
+                className="group block w-full text-left rounded-[22px] p-[3px] bg-gradient-to-br from-amber-300 via-pink-300 to-emerald-300 shadow-[0_10px_30px_-14px_rgba(236,72,153,0.55)] transition-transform duration-300 hover:-translate-y-0.5 active:scale-[0.99]"
+              >
+                <div className="relative aspect-[2/1] lg:aspect-[21/9] overflow-hidden rounded-[19px] bg-muted">
+                  {banner.banner_type === "text" ? (
+                    <div
+                      className="w-full h-full flex flex-col items-center justify-center p-6 text-center"
+                      style={{ backgroundColor: banner.background_color, color: banner.text_color }}
+                    >
+                      <span aria-hidden className="absolute -top-6 -right-6 h-24 w-24 rounded-full bg-white/20" />
+                      <span aria-hidden className="absolute -bottom-8 -left-4 h-20 w-20 rounded-full bg-white/15" />
+                      <p className="relative font-bold text-lg sm:text-xl leading-snug max-w-[85%]">{banner.content}</p>
+                    </div>
+                  ) : (
+                    <img
+                      src={banner.image_url || ""}
+                      alt={banner.title || "Promotion"}
+                      loading={i < 2 ? "eager" : "lazy"}
+                      decoding="async"
+                      className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-[1.04]"
+                    />
+                  )}
 
-                {/* ── Media ── */}
-                {banner.banner_type === "text" ? (
-                  <div
-                    className="w-full h-full flex flex-col items-center justify-center p-8 text-center"
-                    style={{ backgroundColor: banner.background_color, color: banner.text_color }}
-                  >
-                    <p className="font-black text-xl sm:text-2xl leading-tight max-w-[80%] drop-shadow">
-                      {banner.content}
-                    </p>
-                  </div>
-                ) : (
-                  <img
-                    src={banner.image_url || ""}
-                    alt={banner.title || "Promotion"}
-                    loading="lazy"
-                    decoding="async"
-                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-[1.03]"
-                  />
-                )}
+                  {banner.banner_type !== "text" && (banner.title || banner.target_url) && (
+                    <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/60 to-transparent pointer-events-none" />
+                  )}
 
-                {/* ── Bottom gradient overlay ── */}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/[0.18] to-transparent pointer-events-none" />
+                  <span className="absolute top-2.5 left-2.5 inline-flex items-center gap-1 rounded-full bg-white/90 px-2.5 py-1 text-[10.5px] font-semibold text-pink-600 shadow-sm backdrop-blur">
+                    <Sparkles className="h-3 w-3" /> Hot deal
+                  </span>
 
-                {/* ── PROMO badge ── */}
-                <div className="absolute top-3 left-3 flex items-center gap-1 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest text-black bg-gradient-to-r from-amber-400 to-amber-500 shadow-lg shadow-amber-500/40">
-                  <Sparkles className="w-2.5 h-2.5" />
-                  Promo
+                  {(banner.title || banner.target_url) && (
+                    <div className="absolute inset-x-0 bottom-0 p-3 sm:p-3.5 flex items-end justify-between gap-3">
+                      {banner.title ? (
+                        <p className="text-white font-semibold text-[13.5px] sm:text-sm leading-snug drop-shadow max-w-[70%]">{banner.title}</p>
+                      ) : (
+                        <span />
+                      )}
+                      {banner.target_url && (
+                        <span className="shrink-0 inline-flex items-center gap-0.5 rounded-full bg-white px-3 py-1.5 text-[11.5px] font-semibold text-slate-900 shadow-md transition-transform group-hover:translate-x-0.5">
+                          Grab it <ChevronRight className="h-3.5 w-3.5" />
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
-
-                {/* ── Title + CTA at bottom ── */}
-                {(banner.title || banner.target_url) && (
-                  <div className="absolute bottom-0 left-0 right-0 p-4 flex items-end justify-between gap-3">
-                    {banner.title && (
-                      <p className="text-white font-black text-sm leading-tight drop-shadow-lg max-w-[70%]">
-                        {banner.title}
-                      </p>
-                    )}
-                    {banner.target_url && (
-                      <div className="shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-full text-[10px] font-black text-black bg-amber-400 shadow-md shadow-black/30">
-                        View <ChevronRight className="w-3 h-3" />
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
+              </button>
             </CarouselItem>
           ))}
         </CarouselContent>
       </Carousel>
 
-      {/* ── Frosted-glass dot indicators ── */}
-      {banners.length > 1 && (
-        <div className="absolute bottom-3 right-4 flex gap-1.5 px-2.5 py-1.5 rounded-full bg-black/45 backdrop-blur-sm border border-white/10">
-          {banners.map((_, i) => (
-            <div
+      {pages > 1 && (
+        <div className="mt-2.5 flex justify-center gap-1.5" role="tablist" aria-label="Choose promotion">
+          {Array.from({ length: pages }).map((_, i) => (
+            <button
               key={i}
-              className={`h-1.5 rounded-full transition-all duration-300 ${
-                current === i ? "w-4 bg-amber-400" : "w-1.5 bg-white/30"
-              }`}
+              type="button"
+              role="tab"
+              aria-selected={current === i}
+              aria-label={`Promotion ${i + 1}`}
+              onClick={() => api?.scrollTo(i)}
+              className={`h-2 rounded-full transition-all duration-300 ${current === i ? "w-6 bg-gradient-to-r from-amber-400 to-pink-500" : "w-2 bg-foreground/15 hover:bg-foreground/30"}`}
             />
           ))}
         </div>
       )}
-    </div>
+    </section>
   );
 };
 

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRealtimeRefresh } from "@/hooks/useRealtimeRefresh";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
@@ -99,7 +99,12 @@ const DashboardWallet = () => {
   const [buying, setBuying] = useState(false);
   const [syncingDeposits, setSyncingDeposits] = useState(false);
   const [recentTopups, setRecentTopups] = useState<WalletTopupRow[]>([]);
-  const [topupAmount, setTopupAmount] = useState("");
+  const [searchParams] = useSearchParams();
+  // Prefill from quick top-up chips (e.g. /dashboard/wallet?amount=100)
+  const [topupAmount, setTopupAmount] = useState(() => {
+    const a = Number(searchParams.get("amount"));
+    return Number.isFinite(a) && a > 0 && a <= 10000 ? String(Math.round(a)) : "";
+  });
   const [showSuccessOverlay, setShowSuccessOverlay] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
 

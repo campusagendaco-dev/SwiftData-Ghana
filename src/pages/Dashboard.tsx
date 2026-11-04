@@ -46,7 +46,6 @@ import LastMtnOrderWidget from "@/components/LastMtnOrderWidget";
 import WorldCupPredictor from "@/components/WorldCupPredictor";
 import AgentTierRecommenderCard from "@/components/AgentTierRecommenderCard";
 import FrequentCustomersReorder from "@/components/FrequentCustomersReorder";
-import LowBalanceAlertDrawer from "@/components/LowBalanceAlertDrawer";
 import {
   EmptyState,
   NetworkMark,
@@ -304,7 +303,6 @@ const Dashboard = () => {
     <PageContainer>
       <FreeDataClaimBanner />
       <CompleteProfileBanner />
-      <LowBalanceAlertDrawer balance={walletBalance} />
 
       <PageHeader
         eyebrow={format(new Date(), "EEEE, d MMMM")}
@@ -328,6 +326,8 @@ const Dashboard = () => {
           </>
         }
       />
+
+      <PromoCarousel />
 
       {error && (
         <div className="flex items-center gap-3 rounded-xl border border-rose-500/25 bg-rose-500/[0.06] px-4 py-3">
@@ -673,7 +673,6 @@ const Dashboard = () => {
       </section>
 
       <WelcomeAnnouncement />
-      <PromoCarousel />
       {isPaidAgent && <AgentTierRecommenderCard totalOrders={stats.totalOrders} totalSales={stats.totalSales} />}
       <ReferAndEarn />
       {predictorEnabled && <WorldCupPredictor />}
