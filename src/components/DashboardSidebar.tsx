@@ -1,482 +1,355 @@
+import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { getSafeAvatarUrl } from "@/lib/avatar";
-import { useAuth } from "@/hooks/useAuth";
-import { useAppTheme } from "@/contexts/ThemeContext";
-import { supabase } from "@/integrations/supabase/client";
-import { motion, AnimatePresence } from "framer-motion";
 import {
-  LayoutDashboard,
-  Bell,
-  Wallet,
-  ClipboardList,
-  RotateCcw,
-  ShoppingCart,
-  Store,
-  Flag,
-  UserCog,
-  CreditCard,
-  HandCoins,
-  Settings,
-  Users2,
-  Users,
-  SlidersHorizontal,
-  FileText,
-  GraduationCap,
-  LogOut,
-  X,
-  User,
-  Key,
-  Trophy,
-  ShieldCheck,
-  ChevronRight,
   ChevronDown,
-  Zap,
-  Activity,
+  ChevronsLeft,
+  ChevronsRight,
+  LogOut,
+  Search,
   Star,
-  MessageCircle,
-  Gift,
-  Send,
-  Bot,
-  CalendarClock,
-  WifiOff,
+  Users,
+  X,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/integrations/supabase/client";
+import { getSafeAvatarUrl } from "@/lib/avatar";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
-import { useConnectivity } from "@/hooks/useConnectivity";
-import { useState, useEffect } from "react";
-import { format } from "date-fns";
-import { Clock } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
+import {
+  buildNavCtx,
+  isItemActive,
+  itemLabel,
+  visibleGroups,
+  type NavCtx,
+  type NavItem,
+} from "@/components/dashboard/navConfig";
 
+const FAV_KEY = "swiftdash_favourites_v1";
+const GROUPS_KEY = "swiftdash_closed_groups_v1";
 
-const userNavItems = [
-  { to: "/dashboard", label: "Overview", icon: LayoutDashboard },
-  { to: "/dashboard/challenges", label: "Game Challenges (Win Data)", icon: Trophy },
-  { to: "/dashboard/profile", label: "My Profile", icon: User },
-  { to: "/dashboard/account-settings", label: "Account & Security", icon: UserCog },
-  { to: "/dashboard/wallet", label: "Account Balance", icon: Wallet },
-  { to: "/dashboard/schedule", label: "Auto-Renewal", icon: CalendarClock },
-  { to: "/dashboard/direct-debit", label: "MTN Direct Debit", icon: CreditCard },
-  { to: "/dashboard/transactions", label: "Transactions", icon: ClipboardList },
-  { to: "/dashboard/refunded-orders", label: "Refunded Orders", icon: RotateCcw },
-  { to: "/dashboard/notifications", label: "Inbox Notifications", icon: Bell },
-  { to: "/dashboard/buy-data/mtn", label: "Buy Data", icon: ShoppingCart },
-  { to: "/dashboard/buy-airtime", label: "Buy Airtime", icon: CreditCard },
-  { to: "/dashboard/utilities", label: "Utility Bills", icon: Zap },
-  { to: "/dashboard/afa", label: "AFA Registration", icon: ShieldCheck },
-  { to: "/dashboard/submit-numbers", label: "Verify & Submit Numbers", icon: ShieldCheck },
-  // { to: "/dashboard/airtime-to-cash", label: "Airtime to Cash", icon: CreditCard },
-  { to: "/dashboard/my-store", label: "My Store", icon: Store },
-  { to: "/dashboard/report-issue", label: "Report Issue", icon: Flag },
-  { to: "/dashboard/customers", label: "Address Book", icon: Users2 },
-  { to: "/dashboard/referral", label: "Referral Program", icon: Gift },
-];
-
-const agentNavItems = [
-  { to: "/dashboard/agent-prices", label: "Agent Prices", icon: CreditCard },
-  { to: "/dashboard/withdrawals", label: "Withdrawals", icon: HandCoins },
-  { to: "/dashboard/store-settings", label: "Store Settings", icon: Settings },
-  { to: "/dashboard/subagents", label: "Subagents", icon: Users2 },
-  { to: "/dashboard/subagent-pricing", label: "Subagent Pricing", icon: SlidersHorizontal },
-  { to: "/dashboard/flyer", label: "Flyer Generator", icon: FileText },
-  { to: "/dashboard/marketing", label: "Marketing Tools", icon: Zap },
-  { to: "/dashboard/result-checker", label: "Result Checker", icon: GraduationCap },
-  { to: "/dashboard/api", label: "My API Access", icon: Key },
-  { to: "/dashboard/agent-dev-hub", label: "Agent Developer Hub", icon: Users2 },
-  { to: "/dashboard/bulk", label: "Bulk Disbursement", icon: Send },
-  { to: "/dashboard/whatsapp-bot", label: "WhatsApp Bot", icon: Bot },
-  { to: "/dashboard/swift-vendor", label: "Swift Vendor", icon: Zap },
-  { to: "/dashboard/leaderboard", label: "Agent Leaderboard", icon: Trophy },
-];
+function readJson<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+function writeJson(key: string, value: unknown) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    /* storage unavailable */
+  }
+}
 
 interface DashboardSidebarProps {
   open: boolean;
   onClose: () => void;
+  collapsed?: boolean;
+  onToggleCollapsed?: () => void;
 }
 
-const DashboardSidebar = ({ open, onClose }: DashboardSidebarProps) => {
+const DashboardSidebar = ({ open, onClose, collapsed = false, onToggleCollapsed }: DashboardSidebarProps) => {
   const location = useLocation();
   const navigate = useNavigate();
   const { profile, signOut, user: authUser, openAccountSwitcher, savedAccounts } = useAuth();
-  const { theme, isDark } = useAppTheme();
-  const { isOnline, quality } = useConnectivity();
-  const isPaidAgent = Boolean(profile?.agent_approved || profile?.sub_agent_approved || profile?.api_access_enabled);
-  const [time, setTime] = useState(new Date());
-  const [parentStore, setParentStore] = useState<{
-    store_name: string | null;
-    store_logo_url: string | null;
-    store_primary_color: string | null;
-  } | null>(null);
-  const [businessSuiteOpen, setBusinessSuiteOpen] = useState(() => 
-    agentNavItems.some(item => location.pathname === item.to)
-  );
+  const ctx: NavCtx = useMemo(() => buildNavCtx(profile), [profile]);
+  const groups = useMemo(() => visibleGroups(ctx), [ctx]);
+  const [query, setQuery] = useState("");
+  const [favs, setFavs] = useState<string[]>(() => readJson<string[]>(FAV_KEY, []));
+  const [closedGroups, setClosedGroups] = useState<string[]>(() => readJson<string[]>(GROUPS_KEY, []));
+  const [parentStore, setParentStore] = useState<{ store_name: string | null; store_logo_url: string | null } | null>(null);
 
-  // Auto-expand if the route changes to an agent page
+  // On desktop the rail can be icon-only; the mobile drawer is always full width.
+  const rail = collapsed && !open;
+
   useEffect(() => {
-    const isActive = agentNavItems.some(item => location.pathname === item.to);
-    if (isActive) {
-      setBusinessSuiteOpen(true);
+    let cancelled = false;
+    if (profile?.is_sub_agent && profile.parent_agent_id) {
+      supabase
+        .from("agent_stores")
+        .select("store_name, store_logo_url")
+        .eq("user_id", profile.parent_agent_id)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (!cancelled && data) setParentStore(data as any);
+        });
     }
-  }, [location.pathname]);
-
-  useEffect(() => {
-    const fetchParentStore = async () => {
-      if (profile?.is_sub_agent && profile.parent_agent_id) {
-        const { data } = await supabase
-          .from("agent_stores")
-          .select("store_name, store_logo_url, store_primary_color")
-          .eq("user_id", profile.parent_agent_id)
-          .maybeSingle();
-        if (data) {
-          setParentStore(data);
-        }
-      }
+    return () => {
+      cancelled = true;
     };
-    fetchParentStore();
-  }, [profile]);
+  }, [profile?.is_sub_agent, profile?.parent_agent_id]);
 
+  // Close the mobile drawer with Escape.
   useEffect(() => {
-    const tick = setInterval(() => setTime(new Date()), 1000);
-    return () => clearInterval(tick);
-  }, []);
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
 
+  const allItems = useMemo(() => groups.flatMap((g) => g.items), [groups]);
+  const favItems = useMemo(() => favs.map((to) => allItems.find((i) => i.to === to)).filter(Boolean) as NavItem[], [favs, allItems]);
 
-  const topupRef = (profile as any)?.topup_reference;
-  const accountId = topupRef ? `DH-${topupRef}` : "DH-USER";
+  const q = query.trim().toLowerCase();
+  const filteredGroups = useMemo(() => {
+    if (!q) return groups;
+    return groups
+      .map((g) => ({
+        ...g,
+        items: g.items.filter((i) => `${itemLabel(i, ctx)} ${i.keywords || ""} ${g.label}`.toLowerCase().includes(q)),
+      }))
+      .filter((g) => g.items.length);
+  }, [groups, q, ctx]);
 
-  const hasStore = !!(profile?.store_name && profile.store_name.trim() !== "");
-
-  const visibleAgentItemsCount = agentNavItems
-    .filter(
-      (item) => !((profile as any)?.is_sub_agent && !(profile as any)?.is_agent && ["/dashboard/subagents", "/dashboard/subagent-pricing"].includes(item.to)),
-    )
-    .filter(
-      (item) => hasStore || !["/dashboard/store-settings", "/dashboard/subagents", "/dashboard/subagent-pricing", "/dashboard/whatsapp-bot"].includes(item.to)
-    ).length;
+  const toggleFav = (to: string) => {
+    setFavs((prev) => {
+      const next = prev.includes(to) ? prev.filter((x) => x !== to) : [...prev, to].slice(-6);
+      writeJson(FAV_KEY, next);
+      return next;
+    });
+  };
+  const toggleGroup = (id: string) => {
+    setClosedGroups((prev) => {
+      const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
+      writeJson(GROUPS_KEY, next);
+      return next;
+    });
+  };
 
   const handleSignOut = async () => {
     await signOut();
     navigate("/");
   };
 
-  return (
-    <>
-      {/* Mobile Overlay */}
-      {open && (
-        <div
-          className="fixed inset-0 z-[999] bg-black/60 backdrop-blur-sm md:hidden transition-opacity duration-300"
-          onClick={onClose}
-        />
-      )}
+  const firstName = profile?.full_name?.split(" ")[0] || "Agent";
+  const tierLabel = ctx.apiPartner ? "API partner" : ctx.isPaidAgent ? "Pro agent" : "Member";
+  const brandName = parentStore?.store_name || "SwiftData";
 
-      <aside
+  const renderItem = (item: NavItem, opts: { inFavs?: boolean } = {}) => {
+    const active = isItemActive(item, location.pathname);
+    const label = itemLabel(item, ctx);
+    const isFav = favs.includes(item.to);
+    const link = (
+      <Link
+        to={item.to}
+        onClick={onClose}
+        aria-current={active ? "page" : undefined}
         className={cn(
-          "fixed md:sticky top-0 left-0 z-[1000] w-72 h-[100dvh] md:h-screen flex flex-col transition-all duration-300 ease-in-out md:translate-x-0 md:p-4 md:pr-2",
-          open ? "translate-x-0" : "-translate-x-full"
+          "group/item relative flex items-center gap-3 rounded-lg text-[13.5px] font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
+          rail ? "h-10 w-10 justify-center mx-auto" : "h-9 px-2.5",
+          active
+            ? "bg-foreground/[0.06] text-foreground dark:bg-white/[0.08]"
+            : "text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] dark:hover:bg-white/[0.05]"
         )}
       >
-      <div
-        className={cn(
-          "flex-1 flex flex-col overflow-hidden border-r shadow-2xl md:rounded-[24px] md:glass-panel-cyber",
-          isDark ? "bg-[#0a0a0f]/95 backdrop-blur-xl border-white/5" : "bg-white border-gray-200"
-        )}
-      >
-        {/* ── Premium Logo Section ── */}
-        <div className="p-4 sm:p-6 flex items-center justify-between shrink-0">
-          <Link to="/" className="flex items-center gap-3 group">
-            <div className="relative">
-              <div className="absolute -inset-1 bg-primary/20 rounded-xl blur opacity-0 group-hover:opacity-100 transition duration-500"></div>
-              {parentStore?.store_logo_url ? (
-                <div className="w-10 h-10 rounded-xl overflow-hidden bg-white flex items-center justify-center border border-white/10 shrink-0 relative">
-                  <img src={parentStore.store_logo_url} alt="Logo" className="w-full h-full object-contain" />
-                </div>
-              ) : (
-                <img src="/logo.png" alt="Logo" className="w-10 h-10 shrink-0 relative" />
-              )}
-              <div className={cn("absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-blue-600 flex items-center justify-center border-2 shadow-lg", isDark ? "border-[#0a0a0f]" : "border-white")}>
-                <ShieldCheck className="w-2.5 h-2.5 text-white" />
-              </div>
-            </div>
-            <div>
-              <p className={cn("font-black text-sm tracking-tight leading-tight group-hover:text-primary transition-colors truncate max-w-[140px]", isDark ? "text-white" : "text-gray-900")}>
-                {parentStore?.store_name || "SwiftData GH"}
-              </p>
-              <p className={cn("text-[10px] font-bold uppercase tracking-widest truncate max-w-[140px]", isDark ? "text-white/40" : "text-gray-400")}>
-                {parentStore ? "Reseller Partner" : "Agent Console"}
-              </p>
-            </div>
-          </Link>
-          <button 
-            onClick={onClose} 
-            aria-label="Close sidebar menu"
-            title="Close Menu"
+        {active && !rail ? <span className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full bg-primary" aria-hidden /> : null}
+        <item.icon className={cn("h-[18px] w-[18px] shrink-0", active ? "text-primary" : "text-muted-foreground/80 group-hover/item:text-foreground")} />
+        {!rail && <span className="truncate flex-1">{label}</span>}
+        {!rail && item.badge === "new" && !opts.inFavs ? (
+          <span className="rounded-md bg-emerald-500/10 px-1.5 py-px text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 ring-1 ring-inset ring-emerald-500/25">New</span>
+        ) : null}
+        {!rail ? (
+          <button
+            type="button"
+            aria-label={isFav ? `Unpin ${label}` : `Pin ${label}`}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              toggleFav(item.to);
+            }}
             className={cn(
-              "md:hidden p-2 rounded-full transition-colors",
-              isDark ? "hover:bg-white/5 text-white/50 hover:text-white" : "hover:bg-gray-100 text-gray-400 hover:text-gray-900"
+              "h-6 w-6 -mr-1 rounded-md flex items-center justify-center transition-opacity hover:bg-foreground/10",
+              isFav ? "opacity-100" : "opacity-0 group-hover/item:opacity-60 focus-visible:opacity-100"
             )}
           >
-            <X className="w-5 h-5" />
+            <Star className={cn("h-3.5 w-3.5", isFav ? "fill-primary text-primary" : "text-muted-foreground")} />
           </button>
+        ) : null}
+      </Link>
+    );
+    if (!rail) return <li key={item.to}>{link}</li>;
+    return (
+      <li key={item.to}>
+        <Tooltip>
+          <TooltipTrigger asChild>{link}</TooltipTrigger>
+          <TooltipContent side="right" className="text-xs font-medium">
+            {label}
+          </TooltipContent>
+        </Tooltip>
+      </li>
+    );
+  };
+
+  return (
+    <TooltipProvider delayDuration={150}>
+      {/* Mobile overlay */}
+      <div
+        className={cn(
+          "fixed inset-0 z-[999] bg-black/50 backdrop-blur-[2px] md:hidden transition-opacity duration-200",
+          open ? "opacity-100" : "opacity-0 pointer-events-none"
+        )}
+        onClick={onClose}
+        aria-hidden
+      />
+
+      <aside
+        aria-label="Dashboard navigation"
+        className={cn(
+          "fixed md:sticky top-0 left-0 z-[1000] h-[100dvh] shrink-0 flex flex-col",
+          "bg-background md:bg-transparent border-r border-border/70 dark:border-white/[0.06]",
+          "transition-[transform,width] duration-200 ease-out md:translate-x-0",
+          "w-[284px]", open ? "translate-x-0 shadow-2xl md:shadow-none" : "-translate-x-full",
+          rail ? "md:w-[72px]" : "md:w-[260px]"
+        )}
+        style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
+      >
+        {/* Brand */}
+        <div className={cn("h-16 shrink-0 flex items-center", rail ? "justify-center px-2" : "px-4 gap-3")}>
+          <Link to="/dashboard" onClick={onClose} className="flex items-center gap-2.5 min-w-0">
+            <span className="h-8 w-8 shrink-0 rounded-lg overflow-hidden bg-white ring-1 ring-black/5 flex items-center justify-center">
+              <img src={parentStore?.store_logo_url || "/logo.png"} alt="" className="h-full w-full object-contain" />
+            </span>
+            {!rail && (
+              <span className="min-w-0 leading-tight">
+                <span className="block text-[15px] font-bold tracking-[-0.01em] text-foreground truncate">{brandName}</span>
+                <span className="block text-[11px] text-muted-foreground truncate">{parentStore ? "Reseller partner" : "Agent console"}</span>
+              </span>
+            )}
+          </Link>
+          {!rail && (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close menu"
+              className="md:hidden ml-auto h-9 w-9 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          )}
         </div>
 
-        {/* ── Enhanced User Profile Section ── */}
-        <div className="px-4 py-3 sm:px-5 sm:py-5 shrink-0">
-          <div className={cn(
-            "p-4 rounded-2xl border relative overflow-hidden group transition-all",
-            isDark ? "bg-white/5 border-white/10" : "bg-gray-50 border-gray-200"
-          )}>
-            <div className="absolute top-0 right-0 p-2 opacity-10 group-hover:opacity-20 transition-opacity">
-              <Zap className="w-12 h-12" />
+        {/* Search */}
+        {!rail && (
+          <div className="px-3 pb-2 shrink-0">
+            <label className="relative block">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Jump to…"
+                aria-label="Filter menu"
+                className="h-9 w-full rounded-lg border border-border/80 bg-card pl-8 pr-3 text-[13px] text-foreground placeholder:text-muted-foreground/70 outline-none focus:ring-2 focus:ring-primary/40 dark:bg-white/[0.03] dark:border-white/[0.08]"
+              />
+            </label>
+          </div>
+        )}
+
+        {/* Navigation */}
+        <nav className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 pb-3 no-scrollbar" style={{ WebkitOverflowScrolling: "touch" }}>
+          {!q && favItems.length > 0 && (
+            <div className="pt-2">
+              {!rail && <p className="px-2.5 pb-1.5 text-[11px] font-semibold text-muted-foreground/80">Pinned</p>}
+              <ul className="space-y-0.5">{favItems.map((i) => renderItem(i, { inFavs: true }))}</ul>
+              {rail && <div className="mx-3 my-2 h-px bg-border" />}
             </div>
-            <div className="flex items-center gap-3 relative z-10">
-              <div className="relative">
-                <Avatar className="w-11 h-11 border-2 border-primary/20 p-0.5">
-                  <AvatarImage src={getSafeAvatarUrl(profile?.avatar_url, authUser?.id || authUser?.email)} />
-                  <AvatarFallback className="bg-primary/10 text-xs">{profile?.full_name?.charAt(0) || "U"}</AvatarFallback>
-                </Avatar>
-                <div className={cn("absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2", isDark ? "border-[#0a0a0f]" : "border-white")}></div>
+          )}
+
+          {filteredGroups.map((g) => {
+            const closed = !q && !rail && closedGroups.includes(g.id);
+            const hasActive = g.items.some((i) => isItemActive(i, location.pathname));
+            return (
+              <div key={g.id} className="pt-3">
+                {!rail ? (
+                  <button
+                    type="button"
+                    onClick={() => toggleGroup(g.id)}
+                    className="w-full flex items-center justify-between px-2.5 pb-1.5 text-[11px] font-semibold text-muted-foreground/80 hover:text-foreground transition-colors"
+                    aria-expanded={!closed}
+                  >
+                    <span className="flex items-center gap-1.5">
+                      {g.label}
+                      {closed && hasActive ? <span className="h-1.5 w-1.5 rounded-full bg-primary" /> : null}
+                    </span>
+                    <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", closed && "-rotate-90")} />
+                  </button>
+                ) : (
+                  <div className="mx-3 mb-2 h-px bg-border/70 first:hidden" />
+                )}
+                {!closed && <ul className="space-y-0.5">{g.items.map((i) => renderItem(i))}</ul>}
               </div>
-              <div className="flex-1 min-w-0">
-                <p className={cn("text-sm font-black truncate", isDark ? "text-white" : "text-gray-900")}>{profile?.full_name || "User"}</p>
-                <p className="text-primary text-[10px] font-mono font-bold">{accountId}</p>
+            );
+          })}
+
+          {q && filteredGroups.length === 0 && <p className="px-2.5 py-6 text-center text-xs text-muted-foreground">Nothing matches “{query}”.</p>}
+        </nav>
+
+        {/* Account footer */}
+        <div className={cn("shrink-0 border-t border-border/70 dark:border-white/[0.06] p-3", rail && "px-2")}>
+          {!rail ? (
+            <div className="flex items-center gap-2.5 rounded-xl p-1.5">
+              <Avatar className="h-9 w-9">
+                <AvatarImage src={getSafeAvatarUrl(profile?.avatar_url, authUser?.id || authUser?.email)} />
+                <AvatarFallback className="bg-primary/15 text-primary text-xs font-semibold">{firstName.charAt(0)}</AvatarFallback>
+              </Avatar>
+              <div className="min-w-0 flex-1 leading-tight">
+                <p className="text-[13px] font-semibold text-foreground truncate">{profile?.full_name || "Your account"}</p>
+                <p className="text-[11px] text-muted-foreground truncate">{tierLabel}</p>
               </div>
               <button
                 type="button"
                 onClick={openAccountSwitcher}
-                title="Switch Account"
-                className={cn(
-                  "px-2.5 py-1 rounded-xl text-[10px] font-black transition-all flex items-center gap-1.5 border shadow-sm shrink-0",
-                  isDark
-                    ? "bg-amber-400/10 hover:bg-amber-400 hover:text-black text-amber-400 border-amber-400/20"
-                    : "bg-amber-500/10 hover:bg-amber-500 hover:text-white text-amber-700 border-amber-500/20"
-                )}
+                title="Switch account"
+                aria-label="Switch account"
+                className="relative h-8 w-8 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted"
               >
-                <Users className="w-3 h-3" />
-                <span>Switch</span>
+                <Users className="h-4 w-4" />
                 {savedAccounts.length > 1 && (
-                  <span className="w-3.5 h-3.5 rounded-full bg-amber-400 text-black text-[8px] font-black flex items-center justify-center -ml-0.5">
+                  <span className="absolute -top-0.5 -right-0.5 h-4 min-w-4 px-1 rounded-full bg-primary text-primary-foreground text-[9px] font-bold flex items-center justify-center">
                     {savedAccounts.length}
                   </span>
                 )}
               </button>
-            </div>
-            <div className="mt-4 flex items-center justify-between relative z-10">
-              <Badge className={cn(
-                "h-5 text-[9px] font-black uppercase tracking-widest border-none",
-                profile?.api_access_enabled
-                  ? "bg-cyan-500 text-white shadow-[0_0_10px_rgba(6,182,212,0.3)]"
-                  : isPaidAgent 
-                    ? "bg-amber-400 text-black shadow-[0_0_10px_rgba(251,191,36,0.3)]" 
-                    : "bg-white/10 text-white/50"
-              )}>
-                {profile?.api_access_enabled ? "API Partner" : isPaidAgent ? "Pro Agent" : "Regular"}
-              </Badge>
-              
-              <div className="flex items-center gap-2">
-                <div className={cn(
-                  "flex items-center gap-1 text-[10px] font-bold opacity-60",
-                  isDark ? "text-white/60" : "text-gray-500"
-                )}>
-                  <Clock className="w-3 h-3" />
-                  {format(time, "hh:mm:ss a")}
-                </div>
-                
-                <div className={cn(
-                  "w-1 h-1 rounded-full bg-white/10 hidden sm:block"
-                )} />
-
-                <div className={cn(
-                  "flex items-center gap-1 text-[10px] font-bold transition-colors",
-                  !isOnline ? "text-red-500" : quality === "poor" ? "text-amber-500" : "text-green-500"
-                )}>
-                  {!isOnline ? <WifiOff className="w-3 h-3" /> : <Activity className="w-3 h-3" />}
-                  {!isOnline ? "Offline" : "Online"}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* ── Sophisticated Navigation ── */}
-        <nav className="flex-1 min-h-0 px-4 py-2 space-y-6 overflow-y-auto overscroll-y-contain touch-pan-y scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent" style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y" }}>
-          {/* User Menu */}
-          <div>
-            <p className={cn("px-4 text-[10px] font-black uppercase tracking-[0.2em] mb-4 flex items-center gap-2", isDark ? "text-white/20" : "text-gray-400")}>
-              <span className={cn("w-1 h-1 rounded-full", isDark ? "bg-white/20" : "bg-gray-300")}></span>
-              Core Services
-            </p>
-            <div className="space-y-1">
-              {userNavItems
-                .filter(item => item.to !== "/dashboard/my-store" || hasStore)
-                .map((item) => {
-                  const isActive = location.pathname === item.to || (item.to === "/dashboard/buy-data/mtn" && location.pathname.startsWith("/dashboard/buy-data/"));
-                return (
-                  <Link
-                    key={item.to}
-                    to={item.to}
-                    onClick={onClose}
-                    className={cn(
-                      "group flex items-center justify-between px-4 py-2.5 rounded-xl text-sm font-bold transition-all duration-200",
-                      isActive 
-                        ? (isDark ? "text-white bg-gradient-to-r from-primary/20 to-transparent border-l-2 border-primary shadow-lg shadow-primary/5" : "text-gray-900 bg-amber-50 border-l-2 border-primary")
-                        : (isDark ? "text-white/50 hover:text-white hover:bg-white/5" : "text-gray-500 hover:text-gray-900 hover:bg-gray-100")
-                    )}
-                  >
-                    <div className="flex items-center gap-3">
-                      <item.icon className={cn(
-                        "w-4 h-4 shrink-0 transition-transform duration-200 group-hover:scale-110",
-                        isActive 
-                          ? "text-primary" 
-                          : (isDark ? "text-white/30 group-hover:text-white/60" : "text-gray-400 group-hover:text-gray-900")
-                      )} />
-                      {item.label}
-                    </div>
-                    {["/dashboard/buy-airtime", "/dashboard/afa"].includes(item.to) && (
-                      <Badge className="text-[8px] h-4 bg-emerald-500 text-white border-none uppercase font-black px-1.5 shadow-[0_0_10px_rgba(16,185,129,0.4)] animate-pulse">
-                        NEW
-                      </Badge>
-                    )}
-                    {isActive && <ChevronRight className="w-3 h-3 text-primary" />}
-                  </Link>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Agent Menu */}
-          {isPaidAgent && (
-            <div className="space-y-2">
               <button
-                onClick={() => setBusinessSuiteOpen(!businessSuiteOpen)}
-                className={cn(
-                  "w-full px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] flex items-center justify-between transition-all",
-                  isDark 
-                    ? "text-white/50 hover:text-white hover:bg-white/5" 
-                    : "text-gray-500 hover:text-gray-900 hover:bg-gray-100"
-                )}
+                type="button"
+                onClick={handleSignOut}
+                title="Sign out"
+                aria-label="Sign out"
+                className="h-8 w-8 rounded-lg flex items-center justify-center text-muted-foreground hover:text-rose-500 hover:bg-rose-500/10"
               >
-                <span className="flex items-center gap-2">
-                  <span className={cn(
-                    "w-1.5 h-1.5 rounded-full animate-pulse", 
-                    isDark ? "bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.5)]" : "bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]"
-                  )}></span>
-                  Business Suite
-                </span>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  {!businessSuiteOpen && (
-                    <Badge className={cn(
-                      "text-[8px] h-4.5 border-none uppercase font-black px-1.5 animate-pulse",
-                      isDark ? "bg-amber-400/20 text-amber-400 animate-pulse" : "bg-amber-500/10 text-amber-600 animate-pulse"
-                    )}>
-                      {visibleAgentItemsCount} Tools
-                    </Badge>
-                  )}
-                  <ChevronDown className={cn("w-3.5 h-3.5 transition-transform duration-300", businessSuiteOpen ? "transform rotate-180" : "")} />
-                </div>
+                <LogOut className="h-4 w-4" />
               </button>
-
-              <AnimatePresence initial={false}>
-                {businessSuiteOpen && (
-                  <motion.div
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: "auto", opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    transition={{ duration: 0.3, ease: [0.04, 0.62, 0.23, 0.98] }}
-                    className="overflow-hidden"
-                  >
-                    <div className={cn(
-                      "p-2 space-y-1 rounded-2xl border backdrop-blur-xl shadow-lg relative overflow-hidden",
-                      isDark
-                        ? "bg-gradient-to-b from-white/[0.07] to-white/[0.02] border-white/[0.08] shadow-black/40"
-                        : "bg-gradient-to-b from-black/[0.03] to-black/[0.01] border-black/[0.05] shadow-white/40"
-                    )}>
-                      {/* Ambient background glow inside liquid glass */}
-                      <div className="absolute -top-12 -right-12 w-24 h-24 bg-amber-400/5 rounded-full blur-2xl pointer-events-none" />
-                      
-                      {agentNavItems
-                        .filter(
-                          (item) => !((profile as any)?.is_sub_agent && !(profile as any)?.is_agent && ["/dashboard/subagents", "/dashboard/subagent-pricing"].includes(item.to)),
-                        )
-                        .filter(
-                          (item) => hasStore || !["/dashboard/store-settings", "/dashboard/subagents", "/dashboard/subagent-pricing", "/dashboard/whatsapp-bot"].includes(item.to)
-                        )
-                        .map((item) => {
-                          const isActive = location.pathname === item.to;
-                          return (
-                            <Link
-                              key={item.to}
-                              to={item.to}
-                              onClick={onClose}
-                              className={cn(
-                                "group flex items-center justify-between px-4 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 relative overflow-hidden",
-                                isActive 
-                                  ? (isDark 
-                                      ? "text-white bg-amber-400/10 border-l-2 border-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.1)]" 
-                                      : "text-black bg-amber-500/10 border-l-2 border-amber-500")
-                                  : (isDark 
-                                      ? "text-white/60 hover:text-white hover:bg-white/5" 
-                                      : "text-gray-600 hover:text-gray-900 hover:bg-black/5")
-                              )}
-                            >
-                              <div className="flex items-center gap-3 relative z-10">
-                                <item.icon className={cn(
-                                  "w-3.5 h-3.5 shrink-0 transition-transform duration-200 group-hover:scale-110",
-                                  isActive 
-                                    ? "text-amber-400" 
-                                    : (isDark ? "text-white/30 group-hover:text-white/60" : "text-gray-400 group-hover:text-gray-900")
-                                )} />
-                                {item.to === "/dashboard/agent-prices" && profile?.api_access_enabled ? "API Prices" : item.label}
-                              </div>
-                              {["/dashboard/swift-vendor", "/dashboard/subagents", "/dashboard/subagent-pricing", "/dashboard/afa"].includes(item.to) && (
-                                <Badge className="text-[8px] h-4 bg-emerald-500 text-white border-none uppercase font-black px-1.5 shadow-[0_0_10px_rgba(16,185,129,0.4)] animate-pulse relative z-10">
-                                  NEW
-                                </Badge>
-                              )}
-                              {isActive && <Star className="w-3 h-3 text-amber-400 fill-amber-400 relative z-10" />}
-                            </Link>
-                          );
-                        })}
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
             </div>
+          ) : (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button type="button" onClick={handleSignOut} aria-label="Sign out" className="mx-auto h-10 w-10 rounded-lg flex items-center justify-center text-muted-foreground hover:text-rose-500 hover:bg-rose-500/10">
+                  <LogOut className="h-[18px] w-[18px]" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right" className="text-xs">Sign out</TooltipContent>
+            </Tooltip>
           )}
-        </nav>
-
-        {/* ── Premium Footer ── */}
-        <div className={cn("p-3 sm:p-4 border-t space-y-2 shrink-0", isDark ? "border-white/5" : "border-gray-100")}>
-          <button
-            onClick={openAccountSwitcher}
-            className={cn(
-              "flex items-center justify-center gap-2.5 w-full h-10 rounded-xl text-xs font-bold transition-all duration-200 border",
-              isDark
-                ? "bg-white/[0.03] hover:bg-white/[0.08] text-white/80 border-white/10"
-                : "bg-gray-100 hover:bg-gray-200 text-gray-700 border-gray-200"
-            )}
-          >
-            <Users className="w-3.5 h-3.5 text-amber-400" />
-            <span>Switch Account ({savedAccounts.length})</span>
-          </button>
-
-          <button
-            onClick={handleSignOut}
-            className={cn(
-              "flex items-center justify-center gap-3 w-full h-12 rounded-xl text-sm font-black transition-all duration-200",
-              isDark 
-                ? "text-red-400/80 hover:text-red-400 hover:bg-red-500/10 border border-transparent hover:border-red-500/20" 
-                : "text-red-600 hover:text-white hover:bg-red-500 border border-red-500/10"
-            )}
-          >
-            <LogOut className="w-4 h-4" />
-            Sign Out Securely
-          </button>
+          {onToggleCollapsed && (
+            <button
+              type="button"
+              onClick={onToggleCollapsed}
+              className={cn(
+                "hidden md:flex mt-1 items-center gap-2 rounded-lg text-[12px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors",
+                rail ? "mx-auto h-10 w-10 justify-center" : "w-full h-8 px-2.5"
+              )}
+              aria-label={rail ? "Expand sidebar" : "Collapse sidebar"}
+            >
+              {rail ? <ChevronsRight className="h-4 w-4" /> : <ChevronsLeft className="h-4 w-4" />}
+              {!rail && "Collapse"}
+            </button>
+          )}
         </div>
-      </div>
       </aside>
-    </>
+    </TooltipProvider>
   );
 };
 
 export default DashboardSidebar;
-

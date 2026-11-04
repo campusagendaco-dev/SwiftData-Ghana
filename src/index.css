@@ -564,3 +564,17 @@ body.shield-active .secure-area {
 @keyframes arena-countdown { from { width: 100%; } to { width: 0%; } }
 .arena-countdown-bar { animation: arena-countdown 15s linear forwards; }
 @media (prefers-reduced-motion: reduce) { .arena-countdown-bar { animation-duration: 15s; } }
+
+/* Agent console: keep floating widgets above the mobile tab bar */
+@media (max-width: 767px) {
+  html[data-dash-tabbar] [data-dash-float] {
+    margin-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+  }
+  html[data-dash-drawer] [data-dash-float] {
+    display: none;
+  }
+  /* sits above the assistant / WhatsApp bubbles too */
+  html[data-dash-tabbar] [data-dash-float="high"] {
+    margin-bottom: calc(140px + env(safe-area-inset-bottom, 0px));
+  }
+}

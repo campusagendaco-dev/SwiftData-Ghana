@@ -936,7 +936,7 @@ export default function AIConcierge() {
 
       {/* ── Mobile trigger (only when closed) ────────────────────────────── */}
       {isMobile && !open && (
-        <div className="fixed bottom-6 right-4 z-[9997]">
+        <div data-dash-float className="fixed bottom-6 right-4 z-[9997]">
           <TriggerButton open={open} unread={unread} onToggle={() => setOpen(o => !o)} />
         </div>
       )}

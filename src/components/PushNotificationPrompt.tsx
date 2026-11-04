@@ -192,105 +192,65 @@ export const PushNotificationPrompt: React.FC<PushNotificationPromptProps> = ({
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: 20, scale: 0.95 }}
         transition={{ duration: 0.3, ease: "easeOut" }}
-        className={`fixed z-50 bottom-4 right-4 left-4 sm:left-auto sm:max-w-md w-auto rounded-3xl p-5 shadow-2xl backdrop-blur-xl border transition-all ${
-          isDark 
-            ? "bg-slate-900/95 border-amber-500/30 text-white shadow-amber-500/10" 
-            : "bg-white/95 border-amber-500/30 text-slate-900 shadow-xl shadow-amber-500/10"
-        } ${className}`}
+        data-dash-float="high"
+        role="dialog"
+        aria-label="Turn on notifications"
+        className={`fixed z-50 bottom-4 right-4 left-4 sm:left-auto sm:right-28 sm:bottom-6 sm:w-[380px] rounded-2xl border border-border bg-popover text-popover-foreground p-4 shadow-[0_24px_48px_-16px_rgba(0,0,0,0.35)] ${className}`}
       >
-        <div className="flex items-start justify-between gap-3 mb-3">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center text-white shadow-lg shadow-amber-500/20 shrink-0">
-              <BellRing className="w-5 h-5 animate-pulse" />
-            </div>
-            <div>
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs font-black uppercase tracking-wider text-amber-500">Offline Alerts</span>
-                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-400">Instant</span>
-              </div>
-              <h4 className="text-sm font-extrabold leading-tight">
-                {title || "Turn On Lock-Screen Notifications"}
-              </h4>
-            </div>
+        <div className="flex items-start gap-3">
+          <span className="h-9 w-9 shrink-0 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
+            <BellRing className="h-[18px] w-[18px]" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-[14px] font-semibold leading-snug">{title || "Get alerts on your lock screen"}</p>
+            <p className="mt-0.5 text-[12.5px] leading-relaxed text-muted-foreground">
+              {description || "Know the moment a bundle is delivered or your wallet is credited, even with the app closed."}
+            </p>
           </div>
-
           <button
             onClick={() => handleDismiss(3)}
             aria-label="Dismiss"
-            className={`p-1.5 rounded-xl transition-colors ${
-              isDark ? "text-white/40 hover:text-white hover:bg-white/10" : "text-slate-400 hover:text-slate-800 hover:bg-slate-100"
-            }`}
+            className="-mr-1 -mt-1 h-8 w-8 shrink-0 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted"
           >
-            <X className="w-4 h-4" />
+            <X className="h-4 w-4" />
           </button>
         </div>
 
-        <p className={`text-xs leading-relaxed mb-4 ${isDark ? "text-slate-300" : "text-slate-600"}`}>
-          {description || "Get instant receipts the second your bundle arrives, wallet is credited, or network prices drop — even when your browser is closed."}
-        </p>
-
-        {/* Value Prop Badges */}
-        <div className="grid grid-cols-2 gap-2 mb-4">
-          <div className={`flex items-center gap-2 p-2 rounded-xl text-[11px] font-semibold border ${
-            isDark ? "bg-white/[0.03] border-white/5 text-slate-300" : "bg-slate-50 border-slate-200 text-slate-700"
-          }`}>
-            <Zap className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-            <span>Delivery Receipts</span>
-          </div>
-          <div className={`flex items-center gap-2 p-2 rounded-xl text-[11px] font-semibold border ${
-            isDark ? "bg-white/[0.03] border-white/5 text-slate-300" : "bg-slate-50 border-slate-200 text-slate-700"
-          }`}>
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-            <span>Wallet Updates</span>
-          </div>
-        </div>
-
-        {/* iOS Helper */}
         {isIosNotStandalone && showIosGuide && (
-          <div className={`mb-4 p-3 rounded-2xl border text-xs leading-relaxed ${
-            isDark ? "bg-amber-500/10 border-amber-500/30 text-amber-200" : "bg-amber-50 border-amber-200 text-amber-900"
-          }`}>
-            <div className="flex items-center gap-2 font-bold mb-1">
-              <Smartphone className="w-4 h-4 text-amber-400" />
-              <span>iPhone Setup (Required by Apple):</span>
-            </div>
-            <ol className="list-decimal pl-4 space-y-1 text-[11px]">
-              <li>Tap the <strong>Share</strong> button (<Share className="inline w-3 h-3 mx-0.5" />) in Safari.</li>
-              <li>Select <strong>Add to Home Screen</strong>.</li>
-              <li>Open SwiftData from your home screen to enable notifications.</li>
+          <div className="mt-3 rounded-xl border border-border bg-muted/50 p-3 text-[12px] leading-relaxed">
+            <p className="flex items-center gap-1.5 font-semibold mb-1">
+              <Smartphone className="h-4 w-4 text-muted-foreground" /> On iPhone, first add SwiftData to your home screen
+            </p>
+            <ol className="list-decimal pl-4 space-y-0.5 text-muted-foreground">
+              <li>Tap <strong className="text-foreground">Share</strong> (<Share className="inline h-3 w-3 mx-0.5" />) in Safari.</li>
+              <li>Choose <strong className="text-foreground">Add to Home Screen</strong>.</li>
+              <li>Open SwiftData from your home screen and turn alerts on.</li>
             </ol>
           </div>
         )}
 
-        {/* Action Buttons */}
-        <div className="flex items-center gap-2 pt-1">
-          <Button
+        <div className="mt-3.5 flex items-center justify-end gap-2">
+          <button
+            onClick={() => handleDismiss(7)}
+            className="h-9 px-3 rounded-xl text-[13px] font-semibold text-muted-foreground hover:text-foreground hover:bg-muted"
+          >
+            Not now
+          </button>
+          <button
             onClick={handleEnable}
             disabled={loading}
-            className="flex-1 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-slate-950 font-black text-xs h-9 rounded-xl shadow-lg shadow-amber-500/20 active:scale-95 transition-all"
+            className="h-9 px-4 rounded-xl bg-primary text-primary-foreground text-[13px] font-semibold inline-flex items-center gap-1.5 hover:brightness-105 disabled:opacity-60"
           >
             {loading ? (
-              <span className="flex items-center gap-1.5">
-                <span className="w-3.5 h-3.5 border-2 border-slate-950/30 border-t-slate-950 rounded-full animate-spin" />
-                Enabling...
-              </span>
+              <>
+                <span className="h-3.5 w-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" /> Turning on…
+              </>
             ) : (
-              <span className="flex items-center gap-1.5">
-                <Bell className="w-3.5 h-3.5" />
-                {buttonText || "Enable Offline Alerts"}
-              </span>
+              <>
+                <Bell className="h-4 w-4" /> {buttonText || "Turn on alerts"}
+              </>
             )}
-          </Button>
-
-          <Button
-            variant="ghost"
-            onClick={() => handleDismiss(7)}
-            className={`text-xs font-bold h-9 px-3 rounded-xl ${
-              isDark ? "text-slate-400 hover:text-white" : "text-slate-500 hover:text-slate-800"
-            }`}
-          >
-            Later
-          </Button>
+          </button>
         </div>
       </motion.div>
     </AnimatePresence>

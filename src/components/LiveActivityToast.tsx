@@ -44,7 +44,7 @@ export const LiveActivityToast = () => {
   return (
     <aside 
       aria-label="Live activity notification"
-      className="fixed bottom-3 left-3 right-3 sm:right-auto sm:left-6 sm:bottom-6 z-[80] pointer-events-none animate-in slide-in-from-bottom-4 fade-in duration-300 ease-out fill-mode-both"
+      data-dash-float className="fixed bottom-3 left-3 right-3 sm:right-auto sm:left-6 sm:bottom-6 z-[80] pointer-events-none animate-in slide-in-from-bottom-4 fade-in duration-300 ease-out fill-mode-both"
     >
       <div className="bg-[#0d140d]/95 backdrop-blur-xl border border-white/10 rounded-2xl p-3 sm:p-3.5 flex items-center gap-3 shadow-2xl max-w-xs sm:max-w-sm pointer-events-auto">
         <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-amber-400/10 border border-amber-400/20 flex items-center justify-center shrink-0 relative">

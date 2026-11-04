@@ -166,25 +166,28 @@ export default function LastMtnOrderWidget({ variant = "pill", className }: Last
   // PILL VARIANT (Compact header / nav badge)
   if (variant === "pill") {
     return (
-      <div 
-        className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-400/10 dark:bg-amber-400/5 border border-amber-400/25 dark:border-amber-400/15 text-amber-500 dark:text-amber-400 text-xs font-medium backdrop-blur-md transition-transform duration-200 hover:scale-[1.01] hover:border-amber-400/45 group ${className}`}
-        title="Live MTN delivery speed validation"
+      <div
+        className={`inline-flex items-center gap-2 h-9 pl-3 pr-1.5 rounded-xl border text-[12.5px] ${
+          isBusy
+            ? "border-amber-500/30 bg-amber-500/[0.07] text-amber-800 dark:text-amber-300"
+            : "border-border/80 bg-card text-muted-foreground dark:border-white/[0.08] dark:bg-white/[0.03]"
+        } ${className || ""}`}
+        title="How long the latest MTN order took to arrive"
       >
-        <span className="relative flex h-2 w-2">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-          <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+        <span className="relative flex h-2 w-2 shrink-0">
+          <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-60 ${isBusy ? "bg-amber-400" : "bg-emerald-400"}`}></span>
+          <span className={`relative inline-flex rounded-full h-2 w-2 ${isBusy ? "bg-amber-500" : "bg-emerald-500"}`}></span>
         </span>
-        <Zap className="w-3.5 h-3.5 text-amber-500 animate-pulse shrink-0" />
-        <span className="tracking-tight truncate max-w-[280px] sm:max-w-none">
-          Latest MTN: Delivered in <span className="font-black font-mono">{durationHeadingText}</span> ⚡
+        <span className="truncate max-w-[240px] sm:max-w-none">
+          MTN delivering in <span className="font-semibold text-foreground tabular-nums">{durationHeadingText}</span>
         </span>
-        <button 
+        <button
           onClick={() => fetchStatus(true)}
           disabled={refreshing}
-          className="p-0.5 rounded-full hover:bg-amber-400/20 text-amber-500/70 hover:text-amber-500 transition-colors active:scale-90 shrink-0"
-          aria-label="Refresh status"
+          className="h-6 w-6 rounded-md flex items-center justify-center hover:bg-muted transition-colors shrink-0"
+          aria-label="Refresh delivery speed"
         >
-          <RefreshCw className={`w-2.5 h-2.5 ${refreshing ? "animate-spin" : ""}`} />
+          <RefreshCw className={`w-3 h-3 ${refreshing ? "animate-spin" : ""}`} />
         </button>
       </div>
     );

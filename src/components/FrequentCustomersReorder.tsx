@@ -84,63 +84,49 @@ export default function FrequentCustomersReorder() {
     return null;
   }
 
-  const getNetworkBadge = (network: string) => {
-    const net = (network || "").toUpperCase();
-    if (net.includes("MTN")) return "bg-amber-500/15 text-amber-400 border-amber-500/30";
-    if (net.includes("TELECEL") || net.includes("VODA")) return "bg-red-500/15 text-red-400 border-red-500/30";
-    if (net.includes("AIRTEL") || net.includes("TIGO") || net.includes("AT")) return "bg-blue-500/15 text-blue-400 border-blue-500/30";
-    return "bg-slate-500/15 text-slate-300 border-slate-500/30";
-  };
-
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
-            <Zap className="w-4 h-4 text-amber-400 fill-amber-400" />
-          </div>
-          <div>
-            <h3 className="text-sm font-black text-foreground">Frequent Customers & Quick Re-Order</h3>
-            <p className="text-[11px] text-muted-foreground">1-click repurchase for your most frequent buyers</p>
-          </div>
+    <section className="rounded-2xl border border-border/70 bg-card dark:border-white/[0.07] dark:bg-white/[0.025] overflow-hidden">
+      <header className="flex items-start justify-between gap-3 px-4 sm:px-5 pt-4 sm:pt-5">
+        <div>
+          <h2 className="text-[15px] font-semibold text-foreground leading-snug">Top customers</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">Re-order their usual bundle in one tap</p>
         </div>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+        <button
+          type="button"
+          onClick={() => navigate("/dashboard/customers")}
+          className="inline-flex items-center rounded-lg px-2 py-1 text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-muted"
+        >
+          All customers
+        </button>
+      </header>
+      <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 p-3 sm:p-4">
         {customers.map((c) => (
-          <div
+          <li
             key={c.phone}
-            className="p-3 rounded-2xl bg-card border border-border/80 hover:border-amber-500/40 hover:bg-muted/40 transition-all flex items-center justify-between gap-3 group"
+            className="flex items-center gap-3 rounded-xl border border-border/60 px-3 py-2.5 hover:bg-muted/40 transition-colors dark:border-white/[0.06] dark:hover:bg-white/[0.03]"
           >
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center shrink-0 font-black text-xs text-amber-400">
-                {c.name ? c.name.slice(0, 2).toUpperCase() : c.phone.slice(-2)}
-              </div>
-              <div className="min-w-0">
-                <p className="font-bold text-xs text-foreground truncate flex items-center gap-1.5">
-                  <span>{c.name || c.phone}</span>
-                  <Badge className={cn("text-[9px] px-1.5 py-0 font-bold border", getNetworkBadge(c.network))}>
-                    {c.network}
-                  </Badge>
-                </p>
-                <p className="text-[10px] text-muted-foreground font-mono truncate">
-                  {c.phone} · <span className="text-foreground/80 font-bold">{c.package_size}</span>
-                </p>
-              </div>
+            <span className="h-9 w-9 shrink-0 rounded-full bg-muted text-foreground/80 flex items-center justify-center text-[12px] font-semibold dark:bg-white/[0.06]">
+              {c.name ? c.name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase() : c.phone.slice(-2)}
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-[13.5px] font-semibold text-foreground truncate">{c.name || c.phone}</p>
+              <p className="text-[11.5px] text-muted-foreground truncate tabular-nums">
+                {c.network} · {c.package_size}
+                {c.name ? ` · ${c.phone}` : ""}
+              </p>
             </div>
-
-            <Button
-              size="sm"
+            <button
+              type="button"
               onClick={() => {
                 navigate(`/dashboard/buy-data?phone=${encodeURIComponent(c.phone)}&network=${encodeURIComponent(c.network)}&package=${encodeURIComponent(c.package_size)}`);
               }}
-              className="h-8 px-3 rounded-xl bg-amber-500/15 hover:bg-amber-500 text-amber-400 hover:text-slate-950 font-black text-xs shrink-0 border border-amber-500/30 transition-all"
+              className="h-8 shrink-0 rounded-lg border border-border px-3 text-[12.5px] font-semibold text-foreground hover:bg-foreground hover:text-background transition-colors dark:border-white/10"
             >
-              Re-Order
-            </Button>
-          </div>
+              Re-order
+            </button>
+          </li>
         ))}
-      </div>
-    </div>
+      </ul>
+    </section>
   );
 }

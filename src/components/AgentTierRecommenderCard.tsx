@@ -92,104 +92,67 @@ export const AgentTierRecommenderCard: React.FC<AgentTierRecommenderCardProps> =
   }
 
   const IconComponent = currentTier.icon;
+  const tierLabel = currentTier.badge.replace(/^[^A-Za-z]+/, "");
 
   return (
-    <div className={cn(
-      "relative overflow-hidden rounded-3xl border p-5 sm:p-6 backdrop-blur-2xl transition-all shadow-2xl hover:shadow-[0_0_30px_rgba(245,158,11,0.15)]",
-      currentTier.bgGrad,
-      currentTier.borderColor,
-      "bg-card/80"
-    )}>
-      {/* Decorative ambient gold glow */}
-      <div className="absolute top-0 right-0 -mt-10 -mr-10 w-56 h-56 bg-amber-500/15 rounded-full blur-3xl pointer-events-none animate-pulse" />
-      <div className="absolute bottom-0 left-0 -mb-10 -ml-10 w-40 h-40 bg-orange-500/10 rounded-full blur-2xl pointer-events-none" />
-
-      <div className="relative z-10 space-y-4">
-        {/* Top Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className={cn("p-3 rounded-2xl border bg-black/50 shadow-inner drop-shadow-md", currentTier.borderColor)}>
-              <IconComponent className={cn("w-6 h-6", currentTier.color)} />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className={cn("text-xs font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full border bg-black/50 shadow-xs", currentTier.borderColor, currentTier.color)}>
-                  {currentTier.badge}
-                </span>
-                <span className="text-[11px] text-muted-foreground font-mono font-bold">
-                  {totalOrders} Order{totalOrders !== 1 ? "s" : ""} Completed
-                </span>
-              </div>
-              <h3 className="text-lg font-black text-foreground tracking-tight mt-0.5">
-                {currentTier.name} Status
-              </h3>
-            </div>
+    <section className="rounded-2xl border border-border/70 bg-card p-4 sm:p-5 dark:border-white/[0.07] dark:bg-white/[0.025]">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+        <div className="flex items-center gap-3 sm:w-72 shrink-0">
+          <span className="h-11 w-11 shrink-0 rounded-xl bg-muted flex items-center justify-center dark:bg-white/[0.06]">
+            <IconComponent className={cn("h-5 w-5", currentTier.color)} />
+          </span>
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold text-muted-foreground">{tierLabel}</p>
+            <p className="text-[16px] font-semibold text-foreground leading-snug">{currentTier.name}</p>
+            <p className="text-[11.5px] text-muted-foreground tabular-nums">
+              {totalOrders.toLocaleString()} order{totalOrders !== 1 ? "s" : ""} · GH₵{totalSales.toFixed(2)} sold
+            </p>
           </div>
-
-          <Link to="/dashboard/agent-prices">
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-9 text-xs font-extrabold rounded-xl border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 gap-1.5 shadow-sm"
-            >
-              View Tier Discounts <ChevronRight className="w-3.5 h-3.5" />
-            </Button>
-          </Link>
         </div>
 
-        {/* Progress Bar Section */}
-        {nextTier ? (
-          <div className="space-y-2.5 bg-black/30 p-4 rounded-2xl border border-white/10 shadow-inner">
-            <div className="flex items-center justify-between text-xs font-bold">
-              <span className="text-muted-foreground flex items-center gap-1.5">
-                <TrendingUp className="w-3.5 h-3.5 text-amber-400" />
-                Progress to <strong className={nextTier.color}>{nextTier.name}</strong>
-              </span>
-              <span className="text-amber-400 font-mono font-black">{Math.round(progressPercent)}%</span>
-            </div>
-
-            <div className="relative w-full h-3.5 bg-black/60 rounded-full overflow-hidden p-0.5 border border-amber-500/20">
-              <div
-                className="h-full rounded-full bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-300 transition-all duration-500 shadow-[0_0_12px_rgba(245,158,11,0.5)]"
-                style={{ width: `${progressPercent}%` }}
-              />
-            </div>
-
-            {/* Smart Recommendation Tip */}
-            <div className="flex items-start gap-2 pt-1">
-              <Sparkles className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-              <p className="text-xs text-foreground/90 font-medium leading-snug">
-                <strong className="text-amber-400">AI Tier Recommendation:</strong> Sell{" "}
-                <span className="font-extrabold underline text-amber-400">{remainingOrders} more bundle{remainingOrders !== 1 ? "s" : ""}</span> to unlock{" "}
-                <strong className={nextTier.color}>{nextTier.name} Status</strong> ({nextTier.bonus}).
+        <div className="flex-1 min-w-0">
+          {nextTier ? (
+            <>
+              <div className="flex items-center justify-between text-[12px]">
+                <span className="text-muted-foreground">
+                  Next: <span className="font-semibold text-foreground">{nextTier.name}</span>
+                </span>
+                <span className="font-semibold tabular-nums text-foreground">{Math.round(progressPercent)}%</span>
+              </div>
+              <div className="mt-1.5 h-2 w-full rounded-full bg-muted overflow-hidden dark:bg-white/[0.06]">
+                <div className="h-full rounded-full bg-primary transition-[width] duration-500" style={{ width: `${progressPercent}%` }} />
+              </div>
+              <p className="mt-2 text-[12px] text-muted-foreground flex items-start gap-1.5">
+                <Sparkles className="h-3.5 w-3.5 text-primary shrink-0 mt-0.5" />
+                <span>
+                  Sell <span className="font-semibold text-foreground">{remainingOrders} more</span> to unlock {nextTier.name} ({nextTier.bonus}).
+                </span>
               </p>
-            </div>
-          </div>
-        ) : (
-          <div className="flex items-center gap-2 bg-cyan-500/10 p-3.5 rounded-2xl border border-cyan-500/20 text-cyan-300 text-xs font-bold">
-            <CheckCircle2 className="w-4 h-4 text-cyan-400 shrink-0" />
-            <span>Highest VIP Tier Achieved! You are earning maximum agent margins (+6% profit bonus).</span>
-          </div>
-        )}
+            </>
+          ) : (
+            <p className="text-[13px] text-foreground flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+              Top tier reached. You’re earning the highest agent margins.
+            </p>
+          )}
+        </div>
 
-        {/* Quick Action CTA Row */}
-        <div className="flex items-center justify-between gap-3 pt-1">
-          <div className="text-xs text-muted-foreground font-medium flex items-center gap-1">
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Total Sales Volume: <strong className="text-foreground font-mono font-bold">GH₵{totalSales.toFixed(2)}</strong></span>
-          </div>
-
-          <Link to="/dashboard/buy-data/mtn">
-            <Button
-              size="sm"
-              className="h-9 px-4 rounded-xl bg-gradient-to-r from-amber-500 via-amber-400 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-xs shadow-lg border border-amber-300/50 gap-1.5 active:scale-95 transition-all"
-            >
-              <Zap className="w-3.5 h-3.5 fill-current" /> Sell Data & Level Up
-            </Button>
+        <div className="flex gap-2 sm:flex-col shrink-0">
+          <Link
+            to="/dashboard/buy-data/mtn"
+            className="flex-1 inline-flex items-center justify-center gap-1.5 h-9 px-3.5 rounded-xl bg-primary text-primary-foreground text-[13px] font-semibold hover:brightness-105"
+          >
+            <Zap className="h-4 w-4" /> Sell & level up
+          </Link>
+          <Link
+            to="/dashboard/agent-prices"
+            className="flex-1 inline-flex items-center justify-center gap-1 h-9 px-3.5 rounded-xl border border-border text-[13px] font-semibold text-foreground hover:bg-muted dark:border-white/10"
+          >
+            Tier prices <ChevronRight className="h-4 w-4" />
           </Link>
         </div>
       </div>
-    </div>
+    </section>
   );
 };
 

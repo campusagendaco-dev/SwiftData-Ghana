@@ -1,14 +1,11 @@
 import { useState, useEffect } from "react";
-import { Gift, Sparkles, Calendar, CheckCircle2, Trophy } from "lucide-react";
+import { Gift, Calendar, CheckCircle2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
-import { motion, AnimatePresence } from "framer-motion";
-import { useAppTheme } from "@/contexts/ThemeContext";
 
 const DailyCheckIn = () => {
   const { user, profile } = useAuth();
-  const { isDark } = useAppTheme();
   const [loading, setLoading] = useState(false);
   const [hasCheckedIn, setHasCheckedIn] = useState(false);
   const [streak, setStreak] = useState(0);
@@ -58,78 +55,56 @@ const DailyCheckIn = () => {
 
   if (!user) return null;
 
+  const filled = hasCheckedIn ? ((streak - 1) % 7) + 1 : streak % 7;
+
   return (
-    <motion.div 
-      initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ opacity: 1, scale: 1 }}
-      whileHover={{ y: -2 }}
-      className={`relative overflow-hidden rounded-3xl border ${isDark ? 'border-amber-400/20 bg-white/5' : 'border-amber-100 bg-amber-50/50'} p-4 mb-4 group shadow-sm transition-all`}
-    >
-      {/* Tiny decorative sparkle */}
-      <div className="absolute -top-1 -right-1 p-2 opacity-20">
-        <Sparkles className="w-8 h-8 text-amber-500" />
-      </div>
-
-      <div className="relative flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className={`w-10 h-10 rounded-2xl ${isDark ? 'bg-amber-400/20' : 'bg-amber-400/10'} flex items-center justify-center shrink-0`}>
-            <Gift className="w-5 h-5 text-amber-500" />
-          </div>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <h3 className={`text-sm font-black ${isDark ? 'text-white' : 'text-gray-900'}`}>Daily Reward</h3>
-              <span className="px-2 py-0.5 rounded-full bg-amber-400 text-black text-[9px] font-black uppercase tracking-tighter">
-                Day {streak}
-              </span>
-            </div>
-            <p className={`text-[11px] ${isDark ? 'text-white/40' : 'text-gray-500'} truncate`}>
-              Claim <span className="text-amber-500 font-bold">SwiftPoints</span> every day!
-            </p>
-          </div>
+    <div className="rounded-2xl border border-border/70 bg-card p-4 dark:border-white/[0.07] dark:bg-white/[0.025]">
+      <div className="flex items-center gap-3">
+        <span className="h-10 w-10 shrink-0 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+          <Gift className="h-5 w-5" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-[15px] font-semibold text-foreground leading-snug">Daily reward</p>
+          <p className="text-xs text-muted-foreground">
+            {hasCheckedIn ? "Claimed today. Come back tomorrow." : "Check in to earn SwiftPoints."}
+          </p>
         </div>
-
         <button
           onClick={handleCheckIn}
           disabled={loading || hasCheckedIn}
-          className={`
-            relative inline-flex items-center justify-center gap-1.5 rounded-xl px-4 py-2 text-[11px] font-black transition-all duration-300 shrink-0
-            ${hasCheckedIn 
-              ? (isDark ? 'bg-emerald-500/10 text-emerald-500' : 'bg-emerald-50 text-emerald-600') + ' cursor-default' 
-              : 'bg-amber-400 hover:bg-amber-300 text-black shadow-md shadow-amber-400/10'
-            }
-          `}
+          className={
+            "inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-xl px-3.5 text-[13px] font-semibold transition " +
+            (hasCheckedIn
+              ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 cursor-default"
+              : "bg-primary text-primary-foreground hover:brightness-105 active:scale-[0.98]")
+          }
         >
           {loading ? (
-            <span className="w-3.5 h-3.5 border-2 border-black/20 border-t-black rounded-full animate-spin" />
+            <span className="h-3.5 w-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" />
           ) : hasCheckedIn ? (
             <>
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              Claimed
+              <CheckCircle2 className="h-4 w-4" /> Claimed
             </>
           ) : (
             <>
-              <Calendar className="w-3.5 h-3.5" />
-              Claim
+              <Calendar className="h-4 w-4" /> Claim
             </>
           )}
         </button>
       </div>
-
-      {/* Mini Streak Tracker */}
-      <div className="mt-3 pt-3 border-t border-amber-400/10 flex items-center justify-between">
-        <div className="flex gap-1">
-          {[1, 2, 3, 4, 5, 6, 7].map((day) => (
-            <div 
-              key={day}
-              className={`w-1 h-1 rounded-full ${day <= (streak % 8) ? 'bg-amber-400' : (isDark ? 'bg-white/10' : 'bg-gray-200')}`}
-            />
-          ))}
-        </div>
-        <span className={`text-[9px] font-bold uppercase tracking-widest ${isDark ? 'text-white/20' : 'text-gray-400'}`}>
-          {hasCheckedIn ? 'See you tomorrow! ✨' : `Streak Bonus: +${(streak-1)*5} pts`}
-        </span>
+      <div className="mt-4 grid grid-cols-7 gap-1.5" aria-label={`${streak} day streak`}>
+        {[1, 2, 3, 4, 5, 6, 7].map((day) => (
+          <div key={day} className="flex flex-col items-center gap-1">
+            <span className={"h-1.5 w-full rounded-full " + (day <= filled ? "bg-amber-500" : "bg-muted dark:bg-white/[0.08]")} />
+            <span className="text-[10px] text-muted-foreground tabular-nums">D{day}</span>
+          </div>
+        ))}
       </div>
-    </motion.div>
+      <p className="mt-2 text-[11px] text-muted-foreground">
+        {streak > 0 ? `${streak}-day streak` : "Start a streak today"}
+        {streak > 0 ? " · longer streaks earn bigger bonuses" : ""}
+      </p>
+    </div>
   );
 };
 
