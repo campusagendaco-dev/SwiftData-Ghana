@@ -106,9 +106,10 @@ serve(async (req: Request) => {
           // Guest or expired token — allow anonymous device registration
         }
       }
-      if (!resolvedUserId && isValidUuid(user_id)) {
-        resolvedUserId = user_id.trim();
-      }
+      // Security: the owner of a device subscription comes ONLY from a verified session token.
+      // Trusting a user_id from the request body let anyone bind their own browser to another
+      // user's account and receive that user's wallet/order alerts. Guests register anonymously
+      // and the app re-registers with a token after sign-in.
 
       const cleanEndpoint = endpoint.trim();
       const { data: existingRows } = await supabaseAdmin
@@ -119,7 +120,10 @@ serve(async (req: Request) => {
 
       let dbErr: { message: string } | null = null;
 
-      if (existingRows && existingRows.length > 0) {
+      if (existingRows && existingRows.length > 0 && existingRows[0].user_id && !resolvedUserId) {
+        // An anonymous caller may not modify a device already linked to an account.
+        dbErr = null;
+      } else if (existingRows && existingRows.length > 0) {
         const existing = existingRows[0];
         const { error: updateErr } = await supabaseAdmin
           .from("push_subscriptions")

@@ -369,6 +369,8 @@ const AppContent = () => {
   const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
   const isDashboard = location.pathname.startsWith("/dashboard");
   const isAdmin = location.pathname.startsWith("/admin");
+  // Never interrupt a customer who has just paid with the welcome tutorial.
+  const isPaymentFlow = location.pathname.startsWith("/purchase-success") || location.pathname.includes("/order-status");
   const isChallengeArenaPage =
     location.pathname.startsWith("/challenges") ||
     location.pathname.startsWith("/dashboard/challenges") ||
@@ -594,12 +596,12 @@ const AppContent = () => {
         </ChunkErrorBoundary>
       {!isDashboard && !isAgentStore && !isAdmin && !isChallengeArenaPage && <Footer />}
         <Suspense fallback={null}>
-          {!isDashboard && !isAdmin && !isChallengeArenaPage && <TutorialModal />}
+          {!isDashboard && !isAdmin && !isChallengeArenaPage && !isPaymentFlow && <TutorialModal />}
           <AudioUnlocker />
           <NotificationPopup />
           <ChallengeLiveNotifier />
           {!isChallengeArenaPage && <AIConcierge />}
-          {!isChallengeArenaPage && <PushNotificationPrompt variant="floating" />}
+          {!isChallengeArenaPage && !isPaymentFlow && <PushNotificationPrompt variant="floating" />}
           <AccountSwitcherModal />
           {!isAgentStore && !isChallengeArenaPage && <FreeDataButton />}
           {!isAgentStore && !isChallengeArenaPage && <DataPromoPopupModal />}

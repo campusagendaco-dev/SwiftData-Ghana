@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Loader2, KeyRound, AlertTriangle, ShieldCheck, RefreshCw, CheckCircle2, ArrowRight, Zap } from "lucide-react";
+import { X, Loader2, KeyRound, AlertTriangle, ShieldCheck, RefreshCw, CheckCircle2, ArrowRight } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAppTheme } from "@/contexts/ThemeContext";
@@ -738,544 +738,408 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
 
   if (!isOpen) return null;
 
-  const getNetworkGlow = () => {
-    const net = (paymentNetwork || recipientNetwork || "").toUpperCase();
-    if (net.includes("VODA") || net.includes("TELECEL")) return "from-red-600/30 via-red-900/20 to-transparent";
-    if (net.includes("AIRTEL") || net.includes("TIGO") || net.includes("AT")) return "from-blue-600/30 via-blue-900/20 to-transparent";
-    return "from-amber-500/30 via-yellow-600/20 to-transparent";
+  const NETWORKS = [
+    { id: "MTN", label: "MTN", short: "M", mark: "bg-[#FFCC00] text-[#1a1a1a]" },
+    { id: "Telecel", label: "Telecel", short: "T", mark: "bg-[#E60000] text-white" },
+    { id: "AirtelTigo", label: "AirtelTigo", short: "AT", mark: "bg-[#0047BA] text-white" },
+  ];
+  const busy = step === "initiating" || step === "otp_verifying";
+  const stageIndex = step === "payment_number" ? 0 : step === "success" ? 2 : 1;
+  const stages = ["Details", "Verify", "Approve"];
+  const itemLabel =
+    metadata?.package_size || metadata?.description || (metadata?.order_type === "wallet_topup" ? "Wallet top-up" : "Purchase");
+  const itemNetwork = metadata?.network || recipientNetwork;
+  const digits = paymentPhone.replace(/\D/g, "");
+  const prettyPhone = (p: string) => {
+    const d = (p || "").replace(/\D/g, "");
+    return d.length >= 10 ? `${d.slice(0, 3)} ${d.slice(3, 6)} ${d.slice(6)}` : p;
   };
+  const gatewayName = activeGateway === "korba" ? "Korba" : "Paystack";
+
+  const errorNote = (msg: React.ReactNode) => (
+    <div role="alert" className="flex items-start gap-2 rounded-xl border border-rose-500/25 bg-rose-500/[0.08] px-3 py-2.5 text-[12.5px] leading-snug text-rose-700 dark:text-rose-300">
+      <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+      <span>{msg}</span>
+    </div>
+  );
+
+  const spinner = (title: string, sub: string) => (
+    <div className="py-10 flex flex-col items-center text-center gap-4" aria-live="polite">
+      <div className="relative h-20 w-20">
+        <span className="absolute inset-0 rounded-full border-[3px] border-muted" />
+        <span className="absolute inset-0 rounded-full border-[3px] border-transparent border-t-primary animate-spin" />
+        <img src="/assets/golden_ghana_coin.png" alt="" className="absolute inset-3 h-14 w-14 object-contain rounded-full" />
+      </div>
+      <div>
+        <p className="text-[15px] font-semibold text-foreground">{title}</p>
+        <p className="mt-1 text-[13px] text-muted-foreground max-w-[260px]">{sub}</p>
+      </div>
+    </div>
+  );
+
+  const primaryBtn =
+    "w-full h-12 rounded-xl bg-primary text-primary-foreground text-[15px] font-semibold flex items-center justify-center gap-2 shadow-sm hover:brightness-105 active:scale-[0.99] transition disabled:opacity-40";
+  const secondaryBtn =
+    "h-11 rounded-xl border border-input bg-background text-[13px] font-semibold text-foreground hover:bg-muted transition";
 
   return createPortal(
-    <div className="fixed inset-0 z-[99999] flex items-center justify-center p-3 sm:p-4 pointer-events-none">
-      {/* High Definition Backdrop with deep blur */}
-      <motion.div 
+    <div className="fixed inset-0 z-[99999] flex items-end sm:items-center justify-center sm:p-4 pointer-events-none" role="dialog" aria-modal="true" aria-label="Checkout">
+      <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        onClick={step !== 'initiating' && step !== 'otp_verifying' && step !== 'success' ? onClose : undefined}
-        className="fixed inset-0 bg-black/70 backdrop-blur-sm cursor-pointer pointer-events-auto"
+        onClick={step !== "initiating" && step !== "otp_verifying" && step !== "success" ? onClose : undefined}
+        className="fixed inset-0 bg-black/55 backdrop-blur-[3px] pointer-events-auto"
       />
-      
-      {/* Premium Glassmorphic Checkout Modal enclosure */}
+
       <motion.div
         onClick={(e) => e.stopPropagation()}
-        initial={{ opacity: 0, scale: 0.95, y: 15 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.97, y: 15 }}
-        className="relative w-full max-w-[360px] max-h-[92dvh] bg-[#0b0c12]/95 border border-slate-800/80 shadow-[0_32px_90px_-15px_rgba(0,0,0,0.95)] rounded-[2.25rem] overflow-hidden flex flex-col select-none text-white backdrop-blur-3xl z-10 text-left pointer-events-auto"
+        initial={{ opacity: 0, y: 40 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: 40 }}
+        transition={{ type: "spring", damping: 28, stiffness: 320 }}
+        className="relative w-full sm:max-w-[420px] max-h-[94dvh] flex flex-col overflow-hidden rounded-t-[28px] sm:rounded-[28px] border border-border bg-popover text-popover-foreground shadow-[0_30px_80px_-20px_rgba(0,0,0,0.55)] pointer-events-auto text-left"
+        style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
       >
-        {/* Dynamic Carrier Ambient Header */}
-        <div className="shrink-0 relative w-full pt-5 pb-3 text-center rounded-b-[2rem] overflow-hidden border-b border-slate-800/60">
-          <div 
-            className="absolute inset-0 opacity-[0.16] pointer-events-none mix-blend-overlay"
-            style={{ 
-              backgroundImage: "url('/assets/adinkra_pattern.webp')",
-              backgroundSize: "120px"
-            }}
-          />
-          <div 
-            className={`absolute inset-0 bg-gradient-to-b ${getNetworkGlow()} opacity-80 blur-2xl`}
-          />
-          
-          <button 
-            disabled={step === 'initiating' || step === 'otp_verifying'}
-            onClick={onClose}
-            className="absolute top-3.5 right-3.5 w-8 h-8 rounded-full bg-slate-800/60 hover:bg-slate-700/80 border border-slate-700/60 text-slate-400 hover:text-white transition-all flex items-center justify-center disabled:opacity-20 active:scale-90 z-20"
-          >
-            <X className="w-4 h-4" />
-          </button>
-
-          <div className="relative z-10 flex flex-col items-center px-4">
-            <span className="text-[9px] font-black uppercase tracking-[0.25em] text-amber-400/90 mb-1">
-              {activeGateway === "korba" ? "Secure Checkout" : "MoMo Direct Pay"}
-            </span>
-            <h3 className="text-3xl sm:text-4xl font-black font-mono tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-yellow-400 to-amber-500 drop-shadow-md">
-              GH₵{amount.toFixed(2)}
-            </h3>
-            {(metadata?.package_size || recipientNetwork) && (
-              <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-900/80 border border-amber-500/30 text-amber-300 text-[10px] font-black uppercase tracking-wider font-mono shadow-md backdrop-blur-md">
-                <span>{metadata?.package_size || "Bundle"}</span>
-                <span className="text-amber-500/60">&bull;</span>
-                <span>{metadata?.network || recipientNetwork}</span>
-              </div>
-            )}
-          </div>
+        <div className="sm:hidden pt-2.5 flex justify-center">
+          <span className="h-1 w-10 rounded-full bg-muted-foreground/25" />
         </div>
 
-        {/* Modal content viewport */}
-        <div className="p-4 sm:p-5 space-y-4 relative bg-[#0b0c12]/90 overflow-y-auto flex-1 overscroll-contain">
-          {step === 'payment_number' && (
-            <div className="grid grid-cols-2 gap-1.5 bg-slate-900/90 p-1 rounded-2xl border border-slate-800/80">
-              <button
-                type="button"
-                onClick={() => setSelectedMethod('momo')}
-                className={`py-2 text-[11px] font-black uppercase tracking-wider rounded-xl transition-all ${
-                  selectedMethod === 'momo'
-                    ? 'bg-amber-400 text-black shadow-md'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                Mobile Money
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedMethod('card')}
-                className={`py-2 text-[11px] font-black uppercase tracking-wider rounded-xl transition-all ${
-                  selectedMethod === 'card'
-                    ? 'bg-amber-400 text-black shadow-md'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                Card Payment
-              </button>
+        {/* Header + order summary */}
+        <div className="shrink-0 px-5 pt-3 sm:pt-5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <img src="/logo.png" alt="" className="h-7 w-7 rounded-lg bg-white object-contain ring-1 ring-black/5" />
+              <div className="leading-tight">
+                <p className="text-[13px] font-semibold text-foreground">SwiftData checkout</p>
+                <p className="text-[11px] text-muted-foreground flex items-center gap-1">
+                  <ShieldCheck className="h-3 w-3 text-emerald-500" /> Secured by {gatewayName}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onClose}
+              aria-label="Close checkout"
+              className="h-9 w-9 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-30"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+
+          <div className="mt-4 rounded-2xl border border-border bg-muted/40 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[12px] text-muted-foreground">You’re paying</p>
+                <p className="mt-0.5 text-[32px] font-bold tracking-[-0.03em] leading-none tabular-nums text-foreground">
+                  <span className="text-[0.5em] font-semibold text-muted-foreground align-[0.45em] mr-1">GH₵</span>
+                  {amount.toFixed(2)}
+                </p>
+              </div>
+              {itemNetwork ? (
+                <span className="shrink-0 rounded-full border border-border bg-background px-2.5 py-1 text-[11.5px] font-semibold text-foreground">{itemNetwork}</span>
+              ) : null}
+            </div>
+            <dl className="mt-3 pt-3 border-t border-border/70 grid grid-cols-2 gap-2 text-[12.5px]">
+              <div className="min-w-0">
+                <dt className="text-muted-foreground">Item</dt>
+                <dd className="font-semibold text-foreground truncate">{itemLabel}</dd>
+              </div>
+              {recipientPhone ? (
+                <div className="min-w-0">
+                  <dt className="text-muted-foreground">For</dt>
+                  <dd className="font-semibold text-foreground tabular-nums truncate">{prettyPhone(recipientPhone)}</dd>
+                </div>
+              ) : null}
+            </dl>
+          </div>
+
+          <ol className="mt-4 grid grid-cols-3 gap-2" aria-label="Checkout progress">
+            {stages.map((label, i) => (
+              <li key={label} className="flex flex-col gap-1.5">
+                <span className={`h-1 rounded-full transition-colors duration-300 ${i <= stageIndex ? "bg-primary" : "bg-muted"}`} />
+                <span className={`text-[11px] font-medium ${i === stageIndex ? "text-foreground" : "text-muted-foreground"}`}>{label}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+
+        {/* Body */}
+        <div className="px-5 pt-4 pb-5 overflow-y-auto overscroll-contain flex-1">
+          {step === "payment_number" && (
+            <div className="grid grid-cols-2 gap-1 rounded-xl bg-muted p-1 mb-4" role="tablist" aria-label="Payment method">
+              {([
+                ["momo", "Mobile Money"],
+                ["card", "Card"],
+              ] as const).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  role="tab"
+                  aria-selected={selectedMethod === id}
+                  onClick={() => setSelectedMethod(id)}
+                  className={`h-9 rounded-lg text-[13px] font-semibold transition-colors ${selectedMethod === id ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
           )}
 
           <AnimatePresence mode="wait">
-            
-            {/* STEP 1: payment_number selection */}
-            {selectedMethod === 'momo' && step === 'payment_number' && (
-              <motion.div
-                key="payment_number"
-                initial={{ opacity: 0, x: -15 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 15 }}
-                className="space-y-4"
-              >
-                <div className="space-y-0.5">
-                  <h4 className="text-xs font-black text-white uppercase tracking-wide">Enter Payment Number</h4>
-                  <p className="text-[11px] text-slate-400 leading-tight">Receive instant Mobile Money PIN prompt on your phone.</p>
+            {selectedMethod === "momo" && step === "payment_number" && (
+              <motion.div key="payment_number" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} className="space-y-4">
+                <div>
+                  <label htmlFor="momo-number" className="text-[12.5px] font-semibold text-foreground">
+                    Mobile Money number
+                  </label>
+                  <p className="text-[12px] text-muted-foreground">We’ll send a PIN prompt to this phone.</p>
+                  <input
+                    id="momo-number"
+                    type="tel"
+                    inputMode="numeric"
+                    autoComplete="tel"
+                    value={paymentPhone}
+                    onChange={(e) => setPaymentPhone(e.target.value.replace(/\D/g, ""))}
+                    placeholder="024 123 4567"
+                    maxLength={12}
+                    className="mt-2 w-full h-12 rounded-xl border border-input bg-background px-4 text-[17px] font-semibold tracking-wide tabular-nums text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-primary focus:ring-4 focus:ring-primary/15 transition"
+                  />
+                  {/* Invisible bot honeypot */}
+                  <input
+                    type="text"
+                    name="company_tax_id"
+                    value={honeypot}
+                    onChange={(e) => setHoneypot(e.target.value)}
+                    tabIndex={-1}
+                    autoComplete="off"
+                    style={{ display: "none", opacity: 0, position: "absolute", left: "-9999px" }}
+                    aria-hidden="true"
+                  />
                 </div>
 
-                <div className="space-y-3.5 pt-1">
-                  {/* Phone input */}
-                  <div className="space-y-1">
-                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 block px-0.5 font-mono">MoMo Number</label>
+                <div>
+                  <p className="text-[12.5px] font-semibold text-foreground mb-2">Network</p>
+                  <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="Mobile Money network">
+                    {NETWORKS.map((net) => {
+                      const active = paymentNetwork === net.id;
+                      return (
+                        <button
+                          key={net.id}
+                          type="button"
+                          role="radio"
+                          aria-checked={active}
+                          onClick={() => setPaymentNetwork(net.id)}
+                          className={`h-11 rounded-xl border px-2 flex items-center justify-center gap-1.5 text-[12.5px] font-semibold transition ${
+                            active
+                              ? "border-primary bg-primary/[0.07] text-foreground ring-2 ring-primary/20"
+                              : "border-input bg-background text-muted-foreground hover:text-foreground hover:border-foreground/25"
+                          }`}
+                        >
+                          <span className={`h-5 min-w-5 px-0.5 rounded-md text-[8px] font-bold flex items-center justify-center ${net.mark}`}>{net.short}</span>
+                          {net.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {(isVerifyingName || verifiedName || nameResolveError) && digits.length >= 9 && (
+                  <div
+                    aria-live="polite"
+                    className={`flex items-center gap-2 rounded-xl px-3 py-2.5 text-[12.5px] border ${
+                      isVerifyingName
+                        ? "border-border bg-muted/50 text-muted-foreground"
+                        : verifiedName
+                        ? "border-emerald-500/25 bg-emerald-500/[0.08] text-emerald-700 dark:text-emerald-300"
+                        : "border-rose-500/25 bg-rose-500/[0.08] text-rose-700 dark:text-rose-300"
+                    }`}
+                  >
+                    {isVerifyingName ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" /> Checking account name…
+                      </>
+                    ) : verifiedName ? (
+                      <>
+                        <CheckCircle2 className="h-4 w-4" /> Account name: <span className="font-semibold text-foreground">{verifiedName}</span>
+                      </>
+                    ) : (
+                      <>
+                        <AlertTriangle className="h-4 w-4" /> {nameResolveError || "We couldn’t find that account"}
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {!isBeneficiaryVerified && errorNote(`${recipientPhone} isn’t on the beneficiary list yet.`)}
+                {errorMessage && errorNote(errorMessage)}
+
+                <button type="button" onClick={initiatePayment} className={primaryBtn}>
+                  Pay GH₵{amount.toFixed(2)}
+                  <ArrowRight className="h-4 w-4" />
+                </button>
+                <button type="button" onClick={handleFallbackCheckout} className={`w-full ${secondaryBtn}`}>
+                  Pay on the {gatewayName} page instead
+                </button>
+              </motion.div>
+            )}
+
+            {selectedMethod === "card" && step === "payment_number" && (
+              <motion.div key="card_checkout" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} className="space-y-4">
+                <div className="rounded-2xl border border-border p-4 flex items-start gap-3">
+                  <span className="h-10 w-10 shrink-0 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
+                    <ShieldCheck className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <p className="text-[14px] font-semibold text-foreground">Pay with a debit or credit card</p>
+                    <p className="mt-0.5 text-[12.5px] text-muted-foreground">
+                      You’ll enter your card on Paystack’s secure page. SwiftData never sees or stores your card number.
+                    </p>
+                  </div>
+                </div>
+                {errorMessage && errorNote(errorMessage)}
+                <button type="button" onClick={initiatePaystackCardPay} className={primaryBtn}>
+                  Continue to card payment
+                  <ArrowRight className="h-4 w-4" />
+                </button>
+              </motion.div>
+            )}
+
+            {step === "initiating" && (
+              <motion.div key="initiating" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                {spinner("Sending the payment prompt…", digits ? `Contacting your network for ${prettyPhone(paymentPhone)}.` : "Connecting to the payment provider.")}
+              </motion.div>
+            )}
+
+            {step === "otp_entry" && (
+              <motion.div key="otp_entry" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} className="space-y-4">
+                <div className="flex items-start gap-3">
+                  <span className="h-10 w-10 shrink-0 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
+                    <KeyRound className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <p className="text-[15px] font-semibold text-foreground">Enter the 6-digit code</p>
+                    <p className="text-[12.5px] text-muted-foreground">Sent by SMS to {prettyPhone(paymentPhone)}.</p>
+                  </div>
+                </div>
+                <div className="flex justify-between gap-2" aria-label="One-time code">
+                  {otp.map((digit, idx) => (
                     <input
-                      type="tel"
-                      inputMode="numeric"
-                      value={paymentPhone}
-                      onChange={(e) => setPaymentPhone(e.target.value.replace(/\D/g, ""))}
-                      placeholder="0XX XXXXXXX"
-                      maxLength={12}
-                      className="w-full h-12 bg-slate-900/90 border border-slate-800 rounded-2xl px-4 text-white text-base font-bold tracking-wider font-mono focus:outline-none focus:border-amber-400/80 transition-all shadow-inner"
-                    />
-                    {/* Invisible Bot Honeypot Trap */}
-                    <input
+                      key={idx}
+                      ref={(el) => (otpRefs.current[idx] = el)}
                       type="text"
-                      name="company_tax_id"
-                      value={honeypot}
-                      onChange={(e) => setHoneypot(e.target.value)}
-                      tabIndex={-1}
-                      autoComplete="off"
-                      style={{ display: "none", opacity: 0, position: "absolute", left: "-9999px" }}
-                      aria-hidden="true"
+                      inputMode="numeric"
+                      autoComplete={idx === 0 ? "one-time-code" : "off"}
+                      maxLength={1}
+                      value={digit}
+                      aria-label={`Digit ${idx + 1}`}
+                      onChange={(e) => handleOtpChange(e.target.value, idx)}
+                      onKeyDown={(e) => handleKeyDown(e, idx)}
+                      onPaste={idx === 0 ? handlePaste : undefined}
+                      className="w-full max-w-[52px] h-14 rounded-xl border border-input bg-background text-center text-2xl font-semibold tabular-nums text-foreground outline-none focus:border-primary focus:ring-4 focus:ring-primary/15 transition"
                     />
-                  </div>
-
-                  {/* Network selection with Carrier Branded Active Pills */}
-                  <div className="space-y-1">
-                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 block px-0.5 font-mono">MoMo Provider</label>
-                    <div className="grid grid-cols-3 gap-2">
-                      {[
-                        { id: "MTN", label: "MTN", activeClass: "bg-[#FFCC00] text-black font-black shadow-[0_0_15px_rgba(255,204,0,0.4)] border-amber-300" },
-                        { id: "Telecel", label: "Telecel", activeClass: "bg-[#DC2626] text-white font-black shadow-[0_0_15px_rgba(220,38,38,0.4)] border-red-400" },
-                        { id: "AirtelTigo", label: "AirtelTigo", activeClass: "bg-[#00529B] text-white font-black shadow-[0_0_15px_rgba(0,82,155,0.4)] border-blue-400" }
-                      ].map((net) => {
-                        const active = paymentNetwork === net.id;
-                        return (
-                          <button
-                            key={net.id}
-                            type="button"
-                            onClick={() => setPaymentNetwork(net.id)}
-                            className={`h-10 rounded-2xl border text-xs font-extrabold transition-all duration-200 ${
-                              active
-                                ? net.activeClass
-                                : "border-slate-800 bg-slate-900/60 text-slate-400 hover:border-slate-700 hover:text-white"
-                            }`}
-                          >
-                            {net.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Account Name resolution indicator */}
-                  {(isVerifyingName || verifiedName || nameResolveError) && paymentPhone.replace(/\D/g, "").length >= 9 && (
-                    <motion.div 
-                      initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }}
-                      className={`flex items-center gap-2 p-3 rounded-2xl text-xs font-bold leading-snug border ${
-                        isVerifyingName 
-                          ? "bg-amber-500/10 border-amber-500/20 text-amber-300" 
-                          : verifiedName 
-                            ? "bg-emerald-500/10 border-emerald-500/25 text-emerald-400" 
-                            : "bg-red-500/10 border-red-500/25 text-red-400"
-                      }`}
-                    >
-                      {isVerifyingName ? (
-                        <>
-                          <Loader2 className="w-4 h-4 shrink-0 animate-spin text-amber-400" />
-                          <span>Verifying account...</span>
-                        </>
-                      ) : verifiedName ? (
-                        <>
-                          <div className="w-5 h-5 rounded-full bg-emerald-500 text-black flex items-center justify-center shrink-0">
-                            <CheckCircle2 className="w-3.5 h-3.5 stroke-[3]" />
-                          </div>
-                          <span>Verified: <span className="font-black uppercase tracking-wide text-white">{verifiedName}</span></span>
-                        </>
-                      ) : (
-                        <>
-                          <AlertTriangle className="w-4 h-4 shrink-0 text-red-400" />
-                          <span>{nameResolveError || "Account not found"}</span>
-                        </>
-                      )}
-                    </motion.div>
-                  )}
-
-                  {/* Beneficiary Warning Alert */}
-                  {!isBeneficiaryVerified && (
-                    <motion.div
-                      initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }}
-                      className="flex items-start gap-2 bg-red-500/10 border border-red-500/20 text-red-400 p-3 rounded-2xl text-xs font-semibold leading-snug"
-                    >
-                      <AlertTriangle className="w-4 h-4 shrink-0 text-red-400 mt-0.5" />
-                      <span>{recipientPhone} is not in beneficiary list</span>
-                    </motion.div>
-                  )}
-
-                  {errorMessage && (
-                    <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/20 text-red-400 p-3 rounded-2xl text-xs font-semibold leading-snug">
-                      <AlertTriangle className="w-4 h-4 shrink-0 text-red-400 mt-0.5" />
-                      <span>{errorMessage}</span>
-                    </div>
-                  )}
-
-                  {/* Submit trigger button */}
-                  <button
-                    onClick={initiatePayment}
-                    className="w-full h-12 mt-2 relative overflow-hidden rounded-2xl shadow-[0_8px_30px_rgba(251,191,36,0.35)] transition-all active:scale-[0.98] hover:brightness-110 flex items-center justify-center gap-2 text-xs font-black uppercase tracking-wider text-black bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500"
-                  >
-                    <span>Send MoMo Prompt</span>
-                    <ArrowRight className="w-4 h-4 stroke-[3]" />
-                  </button>
-
-                  {/* Fallback Checkout Button */}
-                  <div className="pt-1 text-center">
-                    <button
-                      onClick={handleFallbackCheckout}
-                      className="w-full h-10 bg-slate-900/60 border border-slate-800 hover:border-slate-700 rounded-2xl transition-all active:scale-[0.98] flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-300"
-                    >
-                      <ShieldCheck className="w-3.5 h-3.5 text-amber-400" /> Standard Checkout
+                  ))}
+                </div>
+                {otpError && errorNote(otpError)}
+                <div className="flex items-center justify-between text-[12.5px]">
+                  {countdown > 0 ? (
+                    <span className="text-muted-foreground">
+                      Resend code in <span className="font-semibold text-foreground tabular-nums">{countdown}s</span>
+                    </span>
+                  ) : (
+                    <button type="button" onClick={handleResendOtp} className="inline-flex items-center gap-1 font-semibold text-primary hover:underline">
+                      <RefreshCw className="h-3.5 w-3.5" /> Resend code
                     </button>
-                  </div>
-                </div>
-              </motion.div>
-            )}
-
-            {selectedMethod === 'card' && step === 'payment_number' && (
-              <motion.div
-                key="card_checkout"
-                initial={{ opacity: 0, x: 15 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -15 }}
-                className="space-y-4 py-1"
-              >
-                <div className="space-y-0.5 text-center">
-                  <h4 className="text-xs font-black text-white uppercase tracking-wide">Pay with Card</h4>
-                  <p className="text-[11px] text-slate-400">Local &amp; international cards via Paystack.</p>
-                </div>
-
-                {/* Styled Card Graphic */}
-                <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-amber-400 via-amber-500 to-yellow-600 p-5 text-black shadow-xl border border-amber-300/30 select-none">
-                  <div className="flex items-start justify-between relative z-10 mb-6">
-                    <div>
-                      <p className="text-[8px] font-black uppercase tracking-widest opacity-80">Partner Wallet</p>
-                      <h4 className="text-xs font-black uppercase tracking-wider">SwiftData Collections</h4>
-                    </div>
-                    <div className="w-8 h-6 bg-black/80 rounded-md border border-white/20 shadow-xs flex items-center justify-center text-[8px] font-bold text-amber-400">
-                      VISA
-                    </div>
-                  </div>
-
-                  <div className="space-y-2 relative z-10">
-                    <p className="font-mono text-lg tracking-[0.2em] font-black">•••• •••• •••• ••••</p>
-                    <div className="flex justify-between items-end text-[10px]">
-                      <div>
-                        <p className="opacity-70 text-[7px] font-black uppercase">Card Holder</p>
-                        <p className="font-black uppercase tracking-wider">{email ? email.split('@')[0] : "CUSTOMER"}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="opacity-70 text-[7px] font-black uppercase">Expires</p>
-                        <p className="font-black font-mono">12/29</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-2.5 pt-1">
-                  <button
-                    type="button"
-                    onClick={initiatePaystackCardPay}
-                    className="w-full h-12 bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 text-black font-black rounded-2xl transition-all shadow-[0_8px_25px_rgba(251,191,36,0.35)] flex items-center justify-center gap-2 text-xs uppercase active:scale-[0.98]"
-                  >
-                    <span>Proceed with Card (GH₵{amount.toFixed(2)})</span>
-                    <ArrowRight className="w-4 h-4 stroke-[3]" />
-                  </button>
-
-                  {errorMessage && (
-                    <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/20 text-red-400 p-3 rounded-2xl text-xs font-semibold leading-snug text-left">
-                      <AlertTriangle className="w-4 h-4 shrink-0 text-red-400 mt-0.5" />
-                      <span>{errorMessage}</span>
-                    </div>
                   )}
+                  <button type="button" onClick={() => setStep("payment_number")} className="font-semibold text-muted-foreground hover:text-foreground">
+                    Change number
+                  </button>
                 </div>
+                <button type="button" onClick={() => verifyOtp()} disabled={otp.join("").length < 6} className={primaryBtn}>
+                  Confirm code
+                </button>
               </motion.div>
             )}
 
-            {/* STEP 2: initiating state */}
-            {step === 'initiating' && (
-              <motion.div
-                key="initiating"
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 1.05 }}
-                className="py-8 flex flex-col items-center justify-center text-center space-y-4"
-              >
-                <div className="relative">
-                  <div className="absolute inset-0 bg-amber-500/30 rounded-full blur-2xl animate-pulse" />
-                  <motion.img
-                    src="/assets/golden_ghana_coin.png"
-                    alt="Golden Ghanaian Coin"
-                    className="w-14 h-14 object-contain select-none inline-block relative z-10 rounded-full drop-shadow-[0_0_20px_rgba(245,158,11,0.6)]"
-                    animate={{ rotateY: 360 }}
-                    transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
-                  />
-                </div>
-                <div className="space-y-1 px-3">
-                  <h4 className="text-sm font-black text-amber-400 uppercase tracking-wider animate-pulse">Contacting Operator</h4>
-                  <p className="text-xs text-slate-400">Requesting direct payment prompt for {paymentPhone}...</p>
-                </div>
+            {step === "otp_verifying" && (
+              <motion.div key="otp_verifying" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                {spinner("Checking your code…", "This only takes a moment.")}
               </motion.div>
             )}
 
-            {/* STEP 3: otp_entry page */}
-            {step === 'otp_entry' && (
-              <motion.div
-                key="otp_entry"
-                initial={{ opacity: 0, x: 15 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -15 }}
-                className="space-y-4"
-              >
-                <div className="space-y-1">
-                  <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-amber-400">
-                    <KeyRound className="w-3.5 h-3.5" /> Security Code
+            {step === "success" && (
+              <motion.div key="success" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
+                <div className="flex flex-col items-center text-center pt-1">
+                  <div className="relative h-20 w-20">
+                    <span className="absolute inset-0 rounded-full bg-primary/15 animate-ping" style={{ animationDuration: "2s" }} />
+                    <span className="absolute inset-2 rounded-full bg-primary/15" />
+                    <span className="absolute inset-0 flex items-center justify-center">
+                      <svg viewBox="0 0 24 24" className="h-9 w-9 text-primary" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                        <rect x="6" y="2" width="12" height="20" rx="2.5" />
+                        <path d="M10.5 18.5h3" />
+                      </svg>
+                    </span>
                   </div>
-                  <h4 className="text-sm font-black text-white uppercase tracking-wide">Enter OTP Code</h4>
-                  <p className="text-xs text-slate-400">Enter the 6-digit code sent to your wallet phone.</p>
+                  <p className="mt-3 text-[18px] font-semibold text-foreground">Approve on your phone</p>
+                  <p className="mt-1 text-[13px] text-muted-foreground max-w-[290px]">
+                    Enter your Mobile Money PIN in the prompt on {digits ? prettyPhone(paymentPhone) : "your phone"}. We’ll confirm automatically.
+                  </p>
+                  <div aria-live="polite" className="mt-3 inline-flex items-center gap-2 rounded-full bg-muted px-3 py-1.5 text-[12px] font-medium text-muted-foreground">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Waiting for approval
+                  </div>
                 </div>
 
-                <div className="space-y-4 pt-1">
-                  <div className="flex justify-between gap-1.5">
-                    {otp.map((digit, idx) => (
-                      <input
-                        key={idx}
-                        ref={(el) => (otpRefs.current[idx] = el)}
-                        type="text"
-                        inputMode="numeric"
-                        maxLength={1}
-                        value={digit}
-                        onChange={(e) => handleOtpChange(e.target.value, idx)}
-                        onKeyDown={(e) => handleKeyDown(e, idx)}
-                        onPaste={idx === 0 ? handlePaste : undefined}
-                        className="w-11 h-12 bg-slate-900 border border-slate-800 rounded-2xl text-center text-xl font-black text-white focus:outline-none focus:border-amber-400 transition-all shadow-inner"
-                      />
-                    ))}
+                <details className="group rounded-xl border border-border bg-muted/30 px-3.5 py-2.5">
+                  <summary className="cursor-pointer list-none flex items-center justify-between text-[13px] font-semibold text-foreground">
+                    No prompt on your phone?
+                    <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform group-open:rotate-90" />
+                  </summary>
+                  <div className="mt-2 space-y-1.5 text-[12.5px] text-muted-foreground">
+                    <p>
+                      <span className="font-semibold text-foreground">MTN:</span> dial <span className="font-mono font-semibold text-foreground">*170#</span> → 6 My Wallet → 3 My Approvals → enter PIN.
+                    </p>
+                    <p>
+                      <span className="font-semibold text-foreground">Telecel:</span> dial <span className="font-mono font-semibold text-foreground">*110#</span> → 4 Make Payments → Approvals.
+                    </p>
                   </div>
+                </details>
 
-                  {otpError && (
-                    <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/20 text-red-400 p-3 rounded-2xl text-xs font-semibold leading-snug">
-                      <AlertTriangle className="w-4 h-4 shrink-0 text-red-400 mt-0.5" />
-                      <span>{otpError}</span>
-                    </div>
+                <button type="button" onClick={handleManualVerify} disabled={isManualVerifying} className={primaryBtn}>
+                  {isManualVerifying ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" /> Checking payment…
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="h-4 w-4" /> I’ve approved it
+                    </>
                   )}
-
-                  <div className="flex items-center justify-between px-1 text-xs">
-                    {countdown > 0 ? (
-                      <span className="text-slate-400 font-medium">
-                        Resend in <span className="text-amber-400 font-mono font-black">{countdown}s</span>
-                      </span>
-                    ) : (
-                      <button
-                        onClick={handleResendOtp}
-                        className="text-amber-400 hover:text-amber-300 font-black uppercase tracking-wider flex items-center gap-1 select-none cursor-pointer"
-                      >
-                        <RefreshCw className="w-3.5 h-3.5 animate-spin-reverse" /> Resend Code
-                      </button>
-                    )}
-                    <button
-                      onClick={() => setStep('payment_number')}
-                      className="text-slate-400 hover:text-white font-bold tracking-wide select-none"
-                    >
-                      Change Number
-                    </button>
-                  </div>
-
-                  <button
-                    onClick={() => verifyOtp()}
-                    disabled={otp.join("").length < 6}
-                    className="w-full h-12 relative overflow-hidden rounded-2xl shadow-md transition-all active:scale-[0.98] flex items-center justify-center gap-2 text-xs font-black uppercase tracking-wider text-black bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 disabled:opacity-30"
-                  >
-                    <span>Verify and Approve</span>
+                </button>
+                <div className="grid grid-cols-2 gap-2">
+                  <button type="button" onClick={handleFallbackCheckout} className={secondaryBtn}>
+                    Pay on {gatewayName} page
                   </button>
-                </div>
-              </motion.div>
-            )}
-
-            {/* STEP 4: otp_verifying state */}
-            {step === 'otp_verifying' && (
-              <motion.div
-                key="otp_verifying"
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 1.05 }}
-                className="py-8 flex flex-col items-center justify-center text-center space-y-4"
-              >
-                <div className="relative">
-                  <div className="absolute inset-0 bg-amber-500/30 rounded-full blur-2xl animate-pulse" />
-                  <motion.img
-                    src="/assets/golden_ghana_coin.png"
-                    alt="Golden Ghanaian Coin"
-                    className="w-14 h-14 object-contain select-none inline-block relative z-10 rounded-full drop-shadow-[0_0_20px_rgba(245,158,11,0.6)]"
-                    animate={{ rotateY: 360 }}
-                    transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
-                  />
-                </div>
-                <div className="space-y-1 px-3">
-                  <h4 className="text-sm font-black text-amber-400 uppercase tracking-wider animate-pulse">Securing Verification</h4>
-                  <p className="text-xs text-slate-400">Confirming OTP signature...</p>
-                </div>
-              </motion.div>
-            )}
-
-            {/* STEP 5: success / approval waiting state */}
-            {step === 'success' && (
-              <motion.div
-                key="success"
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="py-4 flex flex-col items-center text-center space-y-4"
-              >
-                {/* 3D Ghana Gold Coin with Aura */}
-                <div className="relative">
-                  <div className="absolute inset-0 rounded-full blur-2xl opacity-40 animate-pulse bg-amber-500/40" />
-                  <motion.img
-                    src="/assets/golden_ghana_coin.png"
-                    alt="Golden Ghanaian Coin"
-                    className="w-14 h-14 object-contain select-none inline-block relative z-10 rounded-full drop-shadow-[0_0_22px_rgba(245,158,11,0.75)]"
-                    animate={{ rotateY: 360 }}
-                    transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <h4 className="text-xl font-black text-white uppercase tracking-wide drop-shadow-md">AUTHORIZE PAYMENT</h4>
-                  <p className="text-xs text-emerald-400 font-black max-w-[240px] mx-auto leading-relaxed px-1">
-                    Please check your phone now and enter your Mobile Money PIN to approve.
-                  </p>
-                </div>
-
-                {/* Sleek Golden Cedi Progress Track */}
-                <div className="w-full max-w-[220px] h-2.5 bg-slate-900 border border-slate-800 rounded-full mt-1 relative overflow-visible shadow-inner">
-                  <div className="absolute inset-0 bg-gradient-to-r from-amber-500/20 via-yellow-500/30 to-emerald-500/30 rounded-full" />
-                  <motion.div 
-                    className="absolute inset-y-0 left-0 bg-gradient-to-r from-amber-500 via-yellow-400 to-emerald-400 rounded-full shadow-[0_0_10px_rgba(245,158,11,0.5)]"
-                    initial={{ width: "0%" }}
-                    animate={{ width: "100%" }}
-                    transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
-                  />
-                  <motion.img 
-                    src="/assets/golden_ghana_coin.png"
-                    alt="Golden Ghanaian Coin"
-                    className="absolute -top-2 w-6 h-6 object-contain select-none rounded-full drop-shadow-[0_2px_10px_rgba(245,158,11,0.9)]"
-                    initial={{ left: "0%", rotate: 0 }}
-                    animate={{ left: "100%", rotate: 720 }}
-                    style={{ transform: "translateX(-50%)" }}
-                    transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
-                  />
-                </div>
-
-                <p className="text-[11px] font-black text-amber-400 uppercase tracking-widest animate-pulse my-0.5">WAITING FOR APPROVAL...</p>
-                
-                <div className="p-3.5 rounded-2xl bg-slate-900/90 border border-slate-800/90 text-left space-y-1.5 w-full max-w-[290px] shadow-md">
-                  <p className="text-[10px] font-black uppercase tracking-wider text-amber-400">If no popup on your screen:</p>
-                  <p className="text-[11px] text-slate-300 leading-snug">
-                    <span className="font-bold text-white">MTN:</span> Dial <span className="font-mono font-black text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">*170#</span> &rarr; 6 (My Wallet) &rarr; 3 (My Approvals) &rarr; Enter PIN.
-                  </p>
-                  <p className="text-[11px] text-slate-300 leading-snug">
-                    <span className="font-bold text-white">Telecel:</span> Dial <span className="font-mono font-black text-red-400 bg-red-500/10 px-1.5 py-0.5 rounded border border-red-500/20">*110#</span> &rarr; 4 (Make Payments) &rarr; Approvals.
-                  </p>
-                </div>
-
-                <div className="w-full max-w-[290px] text-left">
-                  <PushNotificationPrompt
-                    variant="inline"
-                    title="Lock-Screen Delivery Alert 🔔"
-                    description="Get an alert directly on your phone the instant your bundle is delivered."
-                    buttonText="Alert Me"
-                  />
-                </div>
-
-                <div className="flex flex-col w-full gap-2 mt-2">
-                  <button
-                    type="button"
-                    onClick={handleManualVerify}
-                    disabled={isManualVerifying}
-                    className="w-full h-12 bg-emerald-500 hover:bg-emerald-400 text-black rounded-2xl text-xs font-black uppercase tracking-wider transition-all active:scale-[0.98] shadow-[0_8px_25px_rgba(16,185,129,0.35)] flex items-center justify-center gap-2 disabled:opacity-50"
-                  >
-                    {isManualVerifying ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin shrink-0" />
-                        <span>Verifying Gateway...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Zap className="w-4 h-4 shrink-0 text-black stroke-[3]" />
-                        <span>Instant Verify (I Entered PIN)</span>
-                      </>
-                    )}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleFallbackCheckout}
-                    className="w-full h-11 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-2xl text-[11px] font-black uppercase tracking-wider transition-all active:scale-[0.98]"
-                  >
-                    🌐 Open Online Payment Page
-                  </button>
-
                   <button
                     type="button"
                     onClick={() => {
-                      setStep('payment_number');
+                      setStep("payment_number");
                       setErrorMessage(null);
                     }}
-                    className="w-full h-10 bg-slate-900/60 hover:bg-slate-800/80 border border-slate-800 rounded-2xl text-[10px] font-black uppercase tracking-wider text-slate-400 hover:text-white transition-all active:scale-[0.98]"
+                    className={secondaryBtn}
                   >
-                    Change Payment Phone Number
+                    Use another number
                   </button>
                 </div>
+
+                <PushNotificationPrompt variant="inline" title="Get a delivery alert" description="We’ll ping your lock screen the moment it’s delivered." buttonText="Alert me" />
               </motion.div>
             )}
-
           </AnimatePresence>
         </div>
 
-        {/* Secure transaction lock footer */}
-        <div className="shrink-0 py-2.5 bg-[#05060a] border-t border-slate-800/60 flex items-center justify-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-amber-400/80">
-          <ShieldCheck className="w-3.5 h-3.5 text-amber-400" /> Secure 256-Bit SSL Payment &bull; SwiftData
+        <div className="shrink-0 border-t border-border/70 px-5 py-2.5 flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground">
+          <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" /> Encrypted payment · your PIN never reaches SwiftData
         </div>
       </motion.div>
     </div>,
