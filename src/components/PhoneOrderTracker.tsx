@@ -11,6 +11,8 @@ interface PhoneOrderTrackerProps {
   subtitle?: string;
   className?: string;
   defaultPhone?: string;
+  /** "embedded" drops the dark card frame and uses theme colours, for use inside another panel. */
+  variant?: "card" | "embedded";
 }
 
 const PhoneOrderTracker = ({
@@ -18,6 +20,7 @@ const PhoneOrderTracker = ({
   subtitle = "Instant real-time tracking for your data bundles.",
   className = "",
   defaultPhone,
+  variant = "card",
 }: PhoneOrderTrackerProps) => {
   const [phone, setPhone] = useState(defaultPhone || "");
   const [loading, setLoading] = useState(false);
@@ -82,6 +85,46 @@ const PhoneOrderTracker = ({
   };
 
   const handleKey = (e: React.KeyboardEvent) => { if (e.key === "Enter" && isValid) handleTrack(); };
+
+  if (variant === "embedded") {
+    return (
+      <div className={className}>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h3 className="text-[15px] font-semibold text-foreground">{title}</h3>
+            <p className="text-xs text-muted-foreground">{subtitle}</p>
+          </div>
+        </div>
+        <div className="mt-3 space-y-2">
+          <label className="relative block">
+            <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <input
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              onKeyDown={handleKey}
+              placeholder="Phone number or reference"
+              aria-label="Phone number or order reference"
+              className="h-11 w-full rounded-xl border border-input bg-background pl-9 pr-3 text-[14px] text-foreground placeholder:text-muted-foreground/70 outline-none focus:border-primary focus:ring-4 focus:ring-primary/15"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={handleTrack}
+            disabled={!isValid || loading}
+            className="h-10 w-full rounded-xl bg-foreground text-background text-[13.5px] font-semibold inline-flex items-center justify-center gap-1.5 hover:opacity-90 disabled:opacity-40"
+          >
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />} Look up
+          </button>
+          {error && (
+            <p className="flex items-center gap-1.5 text-[12.5px] text-rose-600 dark:text-rose-400">
+              <AlertTriangle className="h-3.5 w-3.5" /> {error}
+            </p>
+          )}
+          <LastMtnOrderWidget variant="pill" className="w-full justify-center" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`relative group ${className}`}>

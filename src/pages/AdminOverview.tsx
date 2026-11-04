@@ -12,8 +12,9 @@ import {
   Users, ShoppingCart, DollarSign, ShieldCheck,
   Package, Wallet, ArrowUpRight, RefreshCw,
   CheckCircle2, Clock, XCircle, Activity, ChevronRight, TrendingUp,
-  MessageCircle, Zap, AlertTriangle, Layers, Cpu, Server, Lock, Filter
+  MessageCircle, Zap, AlertTriangle, Layers, Cpu, Server, Lock, Filter, Sparkles
 } from "lucide-react";
+import { NetworkMark, StatusBadge } from "@/components/dashboard/ui";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend,
@@ -584,534 +585,471 @@ const AdminOverview = () => {
     setApprovingPending(false);
   };
 
-  const statCards = [
-    { title: "Net Admin Profit", value: `GH₵ ${(stats.totalNetAdminProfit || 0).toFixed(2)}`, icon: TrendingUp, color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/30", description: "Verified net profit after costs & fees" },
-    { title: "Total Inflow", value: `GH₵ ${(stats.totalRevenue || 0).toFixed(2)}`, icon: DollarSign, color: "text-sky-400", bg: "bg-sky-500/10 border-sky-500/30" },
-    { title: "Total Data Sold", value: `${(stats.totalGb || 0).toFixed(2)} GB`, icon: Package, color: "text-purple-400", bg: "bg-purple-500/10 border-purple-500/30" },
-    { title: "Agent Profits", value: `GH₵ ${(Number(stats.totalAgentProfit || 0) + Number(stats.totalSubAgentProfit || 0)).toFixed(2)}`, icon: DollarSign, color: "text-amber-400", bg: "bg-amber-500/10 border-amber-500/30" },
-    { title: "Provider Wallet", value: providerBalance !== null ? `GH₵ ${providerBalance.toFixed(2)}` : "...", icon: Server, color: providerBalance !== null && providerBalance < 50 ? "text-rose-400" : "text-cyan-400", bg: providerBalance !== null && providerBalance < 50 ? "bg-rose-500/10 border-rose-500/30" : "bg-cyan-500/10 border-cyan-500/30" },
-    { title: "User Balances", value: `GH₵ ${(stats.totalSystemBalance || 0).toFixed(2)}`, icon: Wallet, color: "text-rose-400", bg: "bg-rose-500/10 border-rose-500/30" },
-    { title: "Active Users", value: stats.totalUsers.toLocaleString(), icon: Users, color: "text-indigo-400", bg: "bg-indigo-500/10 border-indigo-500/30" },
-    { title: "Pending Agents", value: stats.pendingAgents, icon: ShieldCheck, color: stats.pendingAgents > 0 ? "text-rose-400" : "text-emerald-400", bg: stats.pendingAgents > 0 ? "bg-rose-500/10 border-rose-500/30" : "bg-emerald-500/10 border-emerald-500/30" },
-  ];
+  const [maintenanceDirty, setMaintenanceDirty] = useState(false);
+  const [confirmApprove, setConfirmApprove] = useState(false);
+  const [auditSyncing, setAuditSyncing] = useState(false);
 
-  const axisColor = isDark ? "rgba(255,255,255,0.4)" : "rgba(0,0,0,0.4)";
-  const gridColor = isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)";
+  const refreshProviders = async () => {
+    setSyncingProviders(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token || "";
+      const res = await supabase.functions.invoke("system-payout-v1", {
+        body: { action: "get_provider_balance" },
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      if (res.data?.success && Array.isArray(res.data.results)) {
+        setProviderBalancesList(res.data.results);
+        setProviderBalance(Number(res.data.balance ?? 0));
+        toast({ title: "Provider balances refreshed" });
+      }
+    } catch (err: any) {
+      toast({ title: "Couldn't refresh providers", description: err?.message || "Error", variant: "destructive" });
+    } finally {
+      setSyncingProviders(false);
+    }
+  };
+
+  const runAuditSync = async () => {
+    setAuditSyncing(true);
+    toast({ title: "Audit sync started", description: "Checking telecom orders with DataMart…" });
+    try {
+      await supabase.functions.invoke("datamart-sync");
+      toast({ title: "Audit sync complete" });
+      safeFetchData();
+    } catch {
+      toast({ title: "Audit sync failed", variant: "destructive" });
+    } finally {
+      setAuditSyncing(false);
+    }
+  };
+
+  const ced = (n: number) => `GH₵${Number(n || 0).toLocaleString("en-GH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const rangeLabel = { "7d": "last 7 days", "30d": "last 30 days", "1y": "last 12 months", all: "all time" }[timeRange];
+  const providerLow = providerBalance !== null && providerBalance < 50;
+  const degradedProviders = providerBalancesList.filter((p: any) => Number(p.consecutive_failures || 0) >= 3);
+  const todayAttempted = todaySales.successCount + todaySales.failedCount;
+  const successRate = todayAttempted > 0 ? Math.round((todaySales.successCount / todayAttempted) * 100) : null;
+
+  type ActionItem = { key: string; tone: "rose" | "amber" | "sky" | "violet"; icon: any; title: string; detail: string; cta?: { label: string; onClick: () => void }; extra?: React.ReactNode };
+  const actions: ActionItem[] = [];
+  if (stats.pendingAgents > 0)
+    actions.push({
+      key: "agents",
+      tone: "amber",
+      icon: ShieldCheck,
+      title: `${stats.pendingAgents} agent${stats.pendingAgents === 1 ? "" : "s"} waiting for approval`,
+      detail: "Review applications, or approve everyone at once.",
+      cta: { label: "Review", onClick: () => navigate("/admin/agents") },
+      extra: confirmApprove ? (
+        <span className="flex items-center gap-1.5">
+          <button type="button" onClick={async () => { setConfirmApprove(false); await approveAllPending(); }} disabled={approvingPending} className="h-8 px-3 rounded-lg bg-emerald-600 text-white text-[12.5px] font-semibold hover:bg-emerald-500 disabled:opacity-60">
+            {approvingPending ? "Approving…" : `Yes, approve ${stats.pendingAgents}`}
+          </button>
+          <button type="button" onClick={() => setConfirmApprove(false)} className="h-8 px-2.5 rounded-lg text-[12.5px] font-semibold text-muted-foreground hover:text-foreground hover:bg-muted">Cancel</button>
+        </span>
+      ) : (
+        <button type="button" onClick={() => setConfirmApprove(true)} className="h-8 px-3 rounded-lg border border-border text-[12.5px] font-semibold text-foreground hover:bg-muted">Approve all</button>
+      ),
+    });
+  if (stats.pendingWithdrawals > 0)
+    actions.push({ key: "wd", tone: "amber", icon: Wallet, title: `${stats.pendingWithdrawals} withdrawal${stats.pendingWithdrawals === 1 ? "" : "s"} to process`, detail: "Agents are waiting for payouts.", cta: { label: "Open", onClick: () => navigate("/admin/withdrawals") } });
+  if (todaySales.failedCount > 0)
+    actions.push({ key: "failed", tone: "rose", icon: XCircle, title: `${todaySales.failedCount} failed order${todaySales.failedCount === 1 ? "" : "s"} today`, detail: "Retry or refund so customers aren't left waiting.", cta: { label: "View orders", onClick: () => navigate("/admin/orders") } });
+  if (providerLow)
+    actions.push({
+      key: "prov",
+      tone: "rose",
+      icon: Server,
+      title: `Provider wallet is low (${ced(providerBalance || 0)})`,
+      detail: "Orders will start failing when it runs out.",
+      cta: providerDiagnostics?.baseUrl ? { label: "Top up", onClick: () => window.open(providerDiagnostics.baseUrl, "_blank", "noopener,noreferrer") } : undefined,
+    });
+  if (degradedProviders.length > 0)
+    actions.push({ key: "deg", tone: "amber", icon: AlertTriangle, title: `${degradedProviders.map((p: any) => p.name).join(", ")} failing repeatedly`, detail: "3 or more failures in a row. Check the provider or lower its priority.", cta: { label: "Providers", onClick: () => navigate("/admin/packages") } });
+  if (stats.unreadTickets > 0)
+    actions.push({ key: "tickets", tone: "sky", icon: MessageCircle, title: `${stats.unreadTickets} open support ticket${stats.unreadTickets === 1 ? "" : "s"}`, detail: "Customers are waiting on a reply.", cta: { label: "Reply", onClick: () => navigate("/admin/tickets") } });
+  if (maintenanceEnabled && !maintenanceDirty)
+    actions.push({ key: "maint", tone: "violet", icon: Lock, title: "Maintenance mode is on", detail: "Customers can't check out until you turn it off." });
+  aiRecommendations.forEach((rec) =>
+    actions.push({
+      key: `ai-${rec.id}`,
+      tone: "violet",
+      icon: Sparkles,
+      title: rec.title || "Recommendation",
+      detail: rec.message,
+      cta: {
+        label: "Dismiss",
+        onClick: async () => {
+          await (supabase.from("ai_recommendations") as any).update({ is_acted_upon: true }).eq("id", rec.id);
+          setAiRecommendations((prev) => prev.filter((r) => r.id !== rec.id));
+        },
+      },
+    })
+  );
+
+  const toneCls: Record<ActionItem["tone"], string> = {
+    rose: "bg-rose-500/10 text-rose-600 dark:text-rose-400",
+    amber: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+    sky: "bg-sky-500/10 text-sky-600 dark:text-sky-400",
+    violet: "bg-violet-500/10 text-violet-600 dark:text-violet-400",
+  };
+
+  const kpis = [
+    { label: "Net admin profit", value: ced(stats.totalNetAdminProfit), icon: TrendingUp, hint: "After costs & fees" },
+    { label: "Total inflow", value: ced(stats.totalRevenue), icon: DollarSign, hint: "All payments in" },
+    { label: "Data sold", value: `${(stats.totalGb || 0).toLocaleString("en-GH", { maximumFractionDigits: 2 })} GB`, icon: Package, hint: `${(stats.rangeGb || 0).toFixed(1)} GB in ${rangeLabel}` },
+    { label: "Agent profits", value: ced(Number(stats.totalAgentProfit || 0) + Number(stats.totalSubAgentProfit || 0)), icon: Users, hint: "Agents + sub-agents" },
+    { label: "Provider wallet", value: providerBalance !== null ? ced(providerBalance) : "—", icon: Server, hint: providerLow ? "Low, top up soon" : "Main provider balance", warn: providerLow },
+    { label: "User wallet balances", value: ced(stats.totalSystemBalance), icon: Wallet, hint: "Owed to users (liability)" },
+    { label: "Users", value: stats.totalUsers.toLocaleString(), icon: Users, hint: `${stats.todaySignups || todaySales.newUsers || 0} joined today` },
+    { label: "Sales today", value: ced(todaySales.total), icon: Activity, hint: successRate === null ? "No completed orders yet" : `${successRate}% delivered · ${todaySales.count || todayAttempted} orders` },
+  ];
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
-        <div className="relative">
-          <div className="w-12 h-12 rounded-full border-2 border-amber-500/20 border-t-amber-500 animate-spin" />
-          <Cpu className="w-5 h-5 text-amber-400 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 animate-pulse" />
+      <div className="space-y-6">
+        <div className="h-9 w-56 rounded-lg bg-muted animate-pulse" />
+        <div className="h-40 rounded-2xl bg-muted/70 animate-pulse" />
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} className="h-28 rounded-2xl bg-muted/70 animate-pulse" />
+          ))}
         </div>
-        <p className="font-mono text-xs text-muted-foreground uppercase tracking-widest animate-pulse">Initializing Admin Command Center...</p>
       </div>
     );
   }
 
+  const axisColor = isDark ? "rgba(255,255,255,0.45)" : "rgba(0,0,0,0.45)";
+  const gridColor = isDark ? "rgba(255,255,255,0.07)" : "rgba(0,0,0,0.07)";
+  const card = "rounded-2xl border border-border/70 bg-card/85 dark:border-white/[0.08] dark:bg-black/30";
+
   return (
-    <div className="space-y-6 pb-16">
-      {/* ── LIVE MARQUEE TICKER ── */}
-      <div className="relative flex items-center h-10 overflow-hidden rounded-2xl border border-emerald-500/30 bg-emerald-500/5 text-emerald-400 backdrop-blur-xl shadow-inner">
-        <div className="absolute left-0 z-10 h-full flex items-center px-4 rounded-l-2xl bg-emerald-500/10 border-r border-emerald-500/30 backdrop-blur-md">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_10px_rgba(16,185,129,0.8)] mr-2" />
-          <span className="text-[10px] font-black uppercase tracking-widest font-mono">Live Feed</span>
+    <div className="space-y-6 pb-12">
+      {/* Header */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            {lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "Live"}
+          </p>
+          <h1 className="text-[22px] sm:text-[28px] font-bold tracking-[-0.02em] text-foreground leading-tight">Overview</h1>
+          <p className="text-sm text-muted-foreground">How SwiftData is doing, and what needs you.</p>
         </div>
-        
-        <div className="flex whitespace-nowrap pl-36 animate-[marquee_30s_linear_infinite] items-center text-xs font-bold font-mono tracking-tight gap-8">
-          <style>{`@keyframes marquee { 0% { transform: translateX(100%); } 100% { transform: translateX(-100%); } }`}</style>
-          {recentOrders.slice(0, 6).map((o, i) => (
-            <div key={`${o.id}-${i}`} className="flex items-center gap-2">
-              <span className="text-muted-foreground text-[11px]">{new Date(o.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
-              <span className="text-emerald-400 font-extrabold">[GH₵ {Number(o.amount).toFixed(2)}]</span>
-              <span className="text-foreground font-semibold">{o.network ? `${o.network} ${o.package_size}` : "Order"}</span>
-              <span className="text-muted-foreground">via {o.customer_phone || "API"}</span>
-            </div>
-          ))}
-          {recentOrders.length === 0 && <span>Waiting for live order stream...</span>}
-        </div>
-      </div>
-
-      {/* ── COMMAND CENTER HEADER ── */}
-      <div className="glass-card-neo p-5 sm:p-6 rounded-3xl border border-white/10 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <span className="px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 text-xs font-black uppercase tracking-wider flex items-center gap-1.5">
-              <Cpu className="w-3.5 h-3.5 text-amber-400" /> Admin Command Center
-            </span>
-            {lastUpdated && (
-              <span className="text-[10px] font-mono text-muted-foreground">
-                Sync: {lastUpdated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-              </span>
-            )}
-          </div>
-          <h1 className="text-2xl sm:text-3xl font-black text-foreground tracking-tight">System Overview & Analytics</h1>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2.5">
-          {/* Time Range Selector */}
-          <div className="flex p-1 rounded-xl border border-border bg-background/80">
+        <div className="flex items-center gap-2">
+          <div className="inline-flex rounded-xl border border-border/80 bg-card p-0.5 dark:bg-white/[0.03] dark:border-white/10" role="tablist" aria-label="Date range">
             {(["7d", "30d", "1y", "all"] as const).map((r) => (
               <button
                 key={r}
+                type="button"
+                role="tab"
+                aria-selected={timeRange === r}
                 onClick={() => setTimeRange(r)}
-                className={`px-3 py-1.5 rounded-lg text-[10px] font-black tracking-wider uppercase transition-all ${
-                  timeRange === r
-                    ? "bg-amber-500 text-slate-950 shadow-md font-mono"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
+                className={cn("h-8 px-3 rounded-lg text-[12.5px] font-semibold transition-colors", timeRange === r ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground")}
               >
-                {r.toUpperCase()}
+                {r === "all" ? "All" : r.toUpperCase()}
               </button>
             ))}
           </div>
-
-          <Button
-            onClick={safeFetchData}
-            variant="outline"
-            className="h-9 px-4 rounded-xl border-border bg-background/80 font-extrabold text-xs uppercase tracking-wider gap-2"
-          >
-            <RefreshCw className="w-3.5 h-3.5 text-amber-400" /> Sync
-          </Button>
+          <button type="button" onClick={safeFetchData} aria-label="Refresh" className="h-9 w-9 rounded-xl border border-border/80 bg-card flex items-center justify-center text-muted-foreground hover:text-foreground dark:bg-white/[0.03] dark:border-white/10">
+            <RefreshCw className="h-4 w-4" />
+          </button>
         </div>
       </div>
 
-      {/* ── AI CRITICAL ALERTS BANNER ── */}
-      {aiRecommendations.length > 0 && (
-        <div className="space-y-3">
-          {aiRecommendations.map((rec) => (
-            <div key={rec.id} className="p-4 rounded-2xl border border-rose-500/30 bg-rose-500/10 backdrop-blur-md flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-              <div className="flex items-start gap-3">
-                <div className="w-10 h-10 rounded-xl bg-rose-500/20 flex items-center justify-center shrink-0 border border-rose-500/40">
-                  <AlertTriangle className="w-5 h-5 text-rose-400" />
-                </div>
-                <div>
-                  <h3 className="font-black text-rose-400 text-sm">{rec.title}</h3>
-                  <p className="text-xs text-muted-foreground mt-0.5">{rec.message}</p>
-                </div>
-              </div>
-              <Button 
-                onClick={async () => {
-                  await (supabase.from("ai_recommendations") as any).update({ is_acted_upon: true }).eq("id", rec.id);
-                  setAiRecommendations(prev => prev.filter(r => r.id !== rec.id));
-                }}
-                variant="destructive"
-                size="sm"
-                className="rounded-xl font-bold shrink-0"
-              >
-                Dismiss
-              </Button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* ── PRIMARY KPI CARDS GRID ── */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {statCards.map((c) => {
-          const isFlashing = updatedKeys.has(c.title);
-          return (
-            <CardTilt key={c.title} className="rounded-2xl w-full">
-              <div className={cn("glass-card-neo p-4 rounded-2xl border flex flex-col justify-between gap-3 h-full relative overflow-hidden", c.bg)}>
-                <div className="flex items-center justify-between z-10">
-                  <div className="w-8 h-8 rounded-xl bg-background/50 border border-white/10 flex items-center justify-center">
-                    <c.icon className={cn("w-4 h-4", c.color)} />
+      {/* Needs attention */}
+      <section className={card} aria-label="Needs your attention">
+        <header className="flex items-center justify-between px-4 sm:px-5 pt-4">
+          <div>
+            <h2 className="text-[15px] font-semibold text-foreground">Needs your attention</h2>
+            <p className="text-xs text-muted-foreground">{actions.length ? `${actions.length} item${actions.length === 1 ? "" : "s"}` : "Nothing urgent right now"}</p>
+          </div>
+        </header>
+        {actions.length === 0 ? (
+          <div className="flex items-center gap-3 px-4 sm:px-5 py-5">
+            <span className="h-10 w-10 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+              <CheckCircle2 className="h-5 w-5" />
+            </span>
+            <p className="text-[13.5px] text-foreground">All clear. No pending agents, payouts, failed orders or provider issues.</p>
+          </div>
+        ) : (
+          <ul className="mt-2 divide-y divide-border/60 dark:divide-white/[0.06]">
+            {actions.map((a) => (
+              <li key={a.key} className="flex flex-col sm:flex-row sm:items-center gap-3 px-4 sm:px-5 py-3">
+                <div className="flex items-start gap-3 flex-1 min-w-0">
+                  <span className={cn("h-9 w-9 shrink-0 rounded-xl flex items-center justify-center", toneCls[a.tone])}>
+                    <a.icon className="h-[18px] w-[18px]" />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-[13.5px] font-semibold text-foreground">{a.title}</p>
+                    <p className="text-[12.5px] text-muted-foreground line-clamp-2">{a.detail}</p>
                   </div>
-                  <span className="text-[10px] font-mono font-bold text-muted-foreground uppercase">{c.title}</span>
                 </div>
-                
-                <div className="z-10">
-                  <div className="flex items-baseline gap-1.5">
-                    <p className={cn("text-xl sm:text-2xl font-black font-mono tracking-tight", c.color)}>{c.value}</p>
-                    {isFlashing && <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />}
-                  </div>
-                  {c.description && (
-                    <p className="text-[10px] text-muted-foreground font-medium mt-1">{c.description}</p>
+                <div className="flex items-center gap-1.5 shrink-0 pl-12 sm:pl-0">
+                  {a.extra}
+                  {a.cta && (
+                    <button type="button" onClick={a.cta.onClick} className="h-8 px-3 rounded-lg bg-foreground text-background text-[12.5px] font-semibold hover:opacity-90 inline-flex items-center gap-1">
+                      {a.cta.label} <ChevronRight className="h-3.5 w-3.5" />
+                    </button>
                   )}
                 </div>
-              </div>
-            </CardTilt>
-          );
-        })}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {/* KPIs */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {kpis.map((k) => (
+          <div key={k.label} className={cn(card, "p-4 flex flex-col gap-2.5 min-w-0", k.warn && "border-rose-500/40 dark:border-rose-500/40")}>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs font-semibold text-muted-foreground truncate">{k.label}</p>
+              <k.icon className={cn("h-4 w-4 shrink-0", k.warn ? "text-rose-500" : "text-muted-foreground/70")} />
+            </div>
+            <p className={cn("text-[20px] sm:text-[22px] font-bold tracking-[-0.02em] tabular-nums leading-none truncate", k.warn ? "text-rose-600 dark:text-rose-400" : "text-foreground")}>
+              {k.value}
+              {updatedKeys.has(k.label) && <span className="ml-1.5 inline-block h-2 w-2 rounded-full bg-primary animate-ping align-middle" />}
+            </p>
+            <p className="text-[11.5px] text-muted-foreground truncate">{k.hint}</p>
+          </div>
+        ))}
       </div>
 
-      {/* ── LIVE MULTI-PROVIDER TELEMETRY & WALLETS STRIP ── */}
-      {providerBalancesList.length > 0 && (
-        <div className="glass-card-neo p-5 rounded-3xl border border-white/10 space-y-3.5">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center">
-                <Server className="w-4 h-4 text-cyan-400" />
+      {/* Chart + today */}
+      <div className="grid gap-4 lg:grid-cols-12">
+        <section className={cn(card, "lg:col-span-8 p-4 sm:p-5")}>
+          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+            <div>
+              <h2 className="text-[15px] font-semibold text-foreground">Sales by customer type</h2>
+              <p className="text-xs text-muted-foreground">
+                {ced(dailySales.reduce((s, d) => s + (d.Customers || 0) + (d.Agents || 0) + (d["Sub-Agents"] || 0), 0))} · {rangeLabel}
+              </p>
+            </div>
+            <div className="flex items-center gap-3 text-[12px] text-muted-foreground">
+              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-sky-500" />Customers</span>
+              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-amber-500" />Agents</span>
+              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-violet-500" />Sub-agents</span>
+            </div>
+          </div>
+          <div className="mt-4 h-[260px] -ml-2">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={dailySales} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barCategoryGap="28%">
+                <CartesianGrid strokeDasharray="3 4" stroke={gridColor} vertical={false} />
+                <XAxis dataKey="date" tick={{ fill: axisColor, fontSize: 11 }} axisLine={false} tickLine={false} tickMargin={8} />
+                <YAxis tick={{ fill: axisColor, fontSize: 11 }} axisLine={false} tickLine={false} width={48} tickFormatter={(v) => (v >= 1000 ? `₵${(v / 1000).toFixed(1)}k` : `₵${v}`)} />
+                <Tooltip cursor={{ fill: isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)" }} content={(props: any) => <DailySalesTooltip {...props} isDark={isDark} />} />
+                <Bar dataKey="Customers" stackId="seg" fill="#0ea5e9" />
+                <Bar dataKey="Agents" stackId="seg" fill="#f59e0b" />
+                <Bar dataKey="Sub-Agents" stackId="seg" fill="#8b5cf6" radius={[5, 5, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </section>
+
+        <section className={cn(card, "lg:col-span-4 p-4 sm:p-5")}>
+          <h2 className="text-[15px] font-semibold text-foreground">Today</h2>
+          <p className="mt-2 text-[30px] font-bold tracking-[-0.03em] tabular-nums text-foreground leading-none">{ced(todaySales.total)}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{(todaySales.gb || 0).toFixed(2)} GB · {todaySales.newUsers || stats.todaySignups || 0} new users</p>
+          <dl className="mt-4 space-y-2.5 text-[13px]">
+            {[
+              { k: "Delivered", v: todaySales.successCount, dot: "bg-emerald-500" },
+              { k: "In progress", v: todaySales.pendingCount, dot: "bg-sky-500" },
+              { k: "Failed", v: todaySales.failedCount, dot: "bg-rose-500" },
+            ].map((r) => (
+              <div key={r.k} className="flex items-center justify-between">
+                <dt className="flex items-center gap-2 text-muted-foreground"><span className={cn("h-2 w-2 rounded-full", r.dot)} />{r.k}</dt>
+                <dd className="font-semibold tabular-nums text-foreground">{r.v}</dd>
               </div>
-              <div>
-                <h2 className="text-sm sm:text-base font-black text-foreground tracking-tight flex items-center gap-2">
-                  Live Provider Wallets & Gateway Health
-                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-[9px] font-mono uppercase">
-                    {providerBalancesList.length} Active
-                  </span>
-                </h2>
-                <p className="text-[11px] text-muted-foreground">
-                  Real-time balances across BundleZone (MTN Express), DataMart, DataHub, SKPlug, mNotify &amp; Korba
-                </p>
+            ))}
+          </dl>
+          {successRate !== null && (
+            <div className="mt-4">
+              <div className="flex justify-between text-[12px] text-muted-foreground"><span>Delivery rate</span><span className="font-semibold text-foreground">{successRate}%</span></div>
+              <div className="mt-1.5 h-2 rounded-full bg-muted overflow-hidden dark:bg-white/[0.06]">
+                <div className={cn("h-full rounded-full", successRate >= 90 ? "bg-emerald-500" : successRate >= 70 ? "bg-amber-500" : "bg-rose-500")} style={{ width: `${successRate}%` }} />
               </div>
             </div>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={syncingProviders}
-              onClick={async () => {
-                setSyncingProviders(true);
-                try {
-                  const { data: sessionData } = await supabase.auth.getSession();
-                  const token = sessionData?.session?.access_token || "";
-                  const res = await supabase.functions.invoke("system-payout-v1", {
-                    body: { action: "get_provider_balance" },
-                    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-                  });
-                  if (res.data?.success && Array.isArray(res.data.results)) {
-                    setProviderBalancesList(res.data.results);
-                    setProviderBalance(Number(res.data.balance ?? 0));
-                    toast({ title: "Provider balances synced", description: "All active provider wallets refreshed." });
-                  }
-                } catch (err: any) {
-                  toast({ title: "Provider sync failed", description: err?.message || "Error", variant: "destructive" });
-                } finally {
-                  setSyncingProviders(false);
-                }
-              }}
-              className="h-8 px-3 rounded-xl text-[11px] font-black uppercase tracking-wider gap-1.5 border-cyan-500/30 bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20"
-            >
-              <RefreshCw className={cn("w-3.5 h-3.5", syncingProviders && "animate-spin")} />
-              {syncingProviders ? "Refreshing..." : "Refresh Balances"}
-            </Button>
-          </div>
+          )}
+          <dl className="mt-4 pt-4 border-t border-border/60 grid grid-cols-3 gap-2 text-[12px]">
+            <div><dt className="text-muted-foreground">Customers</dt><dd className="font-semibold tabular-nums">{ced(todaySales.customers)}</dd></div>
+            <div><dt className="text-muted-foreground">Agents</dt><dd className="font-semibold tabular-nums">{ced(todaySales.agents)}</dd></div>
+            <div><dt className="text-muted-foreground">Sub-agents</dt><dd className="font-semibold tabular-nums">{ced(todaySales.subAgents)}</dd></div>
+          </dl>
+        </section>
+      </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+      {/* Providers */}
+      {providerBalancesList.length > 0 && (
+        <section className={cn(card, "p-4 sm:p-5")}>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-[15px] font-semibold text-foreground">Providers</h2>
+              <p className="text-xs text-muted-foreground">{providerBalancesList.length} active · balances and health</p>
+            </div>
+            <button type="button" onClick={refreshProviders} disabled={syncingProviders} className="h-8 px-3 rounded-lg border border-border text-[12.5px] font-semibold text-foreground hover:bg-muted inline-flex items-center gap-1.5 disabled:opacity-60">
+              <RefreshCw className={cn("h-3.5 w-3.5", syncingProviders && "animate-spin")} /> {syncingProviders ? "Refreshing…" : "Refresh"}
+            </button>
+          </div>
+          <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
             {providerBalancesList.map((prov: any) => {
               const bal = Number(prov.balance ?? 0);
               const isSms = prov.unit === "SMS" || String(prov.handler_type || "").toLowerCase() === "mnotify";
-              const isDegraded = Number(prov.consecutive_failures || 0) >= 3;
+              const degraded = Number(prov.consecutive_failures || 0) >= 3;
               const isExpress = String(prov.handler_type || "").toLowerCase() === "bundlezone";
+              const low = !isSms && bal < 50;
               return (
-                <div
-                  key={prov.id || prov.name}
-                  className={cn(
-                    "p-3 rounded-2xl border transition-all flex flex-col justify-between gap-2",
-                    isDegraded
-                      ? "bg-amber-500/10 border-amber-500/30"
-                      : isExpress
-                        ? "bg-amber-400/5 border-amber-400/25"
-                        : "bg-background/40 border-white/10"
-                  )}
-                >
-                  <div className="flex items-center justify-between gap-1">
-                    <span className="text-xs font-black truncate text-foreground">{prov.name}</span>
-                    <span
-                      className={cn(
-                        "w-2 h-2 rounded-full shrink-0",
-                        isDegraded ? "bg-amber-400 animate-pulse" : "bg-emerald-400 shadow-[0_0_6px_rgba(16,185,129,0.8)]"
-                      )}
-                      title={isDegraded ? `${prov.consecutive_failures} recent failures` : "Healthy"}
-                    />
+                <div key={prov.id || prov.name} className={cn("rounded-xl border p-3", degraded ? "border-amber-500/40 bg-amber-500/[0.06]" : "border-border/70 dark:border-white/[0.07]")}>
+                  <div className="flex items-center justify-between gap-1.5">
+                    <span className="text-[12.5px] font-semibold truncate text-foreground">{prov.name}</span>
+                    <span className={cn("h-2 w-2 rounded-full shrink-0", degraded ? "bg-amber-500 animate-pulse" : "bg-emerald-500")} title={degraded ? `${prov.consecutive_failures} failures in a row` : "Healthy"} />
                   </div>
-                  <div>
-                    <p className={cn("text-base sm:text-lg font-black font-mono tracking-tight", isSms ? "text-amber-400" : bal > 50 ? "text-emerald-400" : "text-cyan-400")}>
-                      {isSms ? `${bal.toLocaleString()} SMS` : `GH₵ ${bal.toFixed(2)}`}
-                    </p>
-                    <div className="flex items-center justify-between mt-1">
-                      <span className="text-[9px] font-mono uppercase tracking-wider text-muted-foreground">
-                        {isExpress ? "MTN EXPRESS" : prov.is_default ? "PRIMARY" : String(prov.handler_type || "API").toUpperCase()}
-                      </span>
-                      {prov.status === "synced" && (
-                        <span className="text-[9px] font-mono text-emerald-400/80">LIVE</span>
-                      )}
-                    </div>
-                  </div>
+                  <p className={cn("mt-1.5 text-[16px] font-bold tabular-nums", low ? "text-rose-600 dark:text-rose-400" : "text-foreground")}>
+                    {isSms ? `${bal.toLocaleString()} SMS` : ced(bal)}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground truncate">{isExpress ? "MTN Express" : prov.is_default ? "Primary" : String(prov.handler_type || "API")}</p>
                 </div>
               );
             })}
           </div>
-        </div>
+        </section>
       )}
 
-      {/* ── GLOBAL CONTROL HUB & MAINTENANCE ── */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* Actions Card */}
-        <div className="md:col-span-2 glass-card-neo p-6 rounded-3xl border border-white/10 space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Zap className="w-5 h-5 text-amber-400 fill-current" />
-              <h2 className="text-lg font-black text-foreground">Global Administrative Actions</h2>
-            </div>
-            <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 text-[9px] font-mono uppercase">System Controls</Badge>
+      {/* Recent orders + tracker */}
+      <div className="grid gap-4 lg:grid-cols-12">
+        <section className={cn(card, "lg:col-span-8 p-2 sm:p-3")}>
+          <div className="flex items-center justify-between px-2 pt-2">
+            <h2 className="text-[15px] font-semibold text-foreground">Latest orders</h2>
+            <button type="button" onClick={() => navigate("/admin/orders")} className="inline-flex items-center gap-0.5 rounded-lg px-2 py-1 text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-muted">
+              All orders <ChevronRight className="h-3.5 w-3.5" />
+            </button>
           </div>
-          <p className="text-xs text-muted-foreground">
-            Execute global platform syncs, batch audit order statuses, and approve onboarding reseller agents.
-          </p>
-
-          <div className="flex flex-wrap gap-3 pt-2">
-            <Button
-              onClick={async () => {
-                toast({ title: "Global Audit Sync Started", description: "Syncing telecom orders with Datamart..." });
-                try {
-                  await supabase.functions.invoke("datamart-sync");
-                  toast({ title: "Sync Complete", description: "Orders successfully audited." });
-                  safeFetchData();
-                } catch (e) {
-                  toast({ title: "Sync Failed", variant: "destructive" });
-                }
-              }}
-              className="h-11 px-5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 font-black text-xs shadow-md gap-2"
-            >
-              <RefreshCw className="w-4 h-4" /> Global Audit Sync
-            </Button>
-
-            <Button
-              onClick={approveAllPending}
-              disabled={approvingPending || stats.pendingAgents === 0}
-              className="h-11 px-5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs shadow-md gap-2"
-            >
-              <ShieldCheck className="w-4 h-4" /> Approve {stats.pendingAgents} Pending Agents
-            </Button>
-          </div>
-        </div>
-
-        {/* Safe Mode / Maintenance */}
-        <div className="glass-card-neo p-6 rounded-3xl border border-white/10 space-y-3 flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Lock className="w-4 h-4 text-rose-400" />
-              <span className="text-xs font-black uppercase text-foreground">Maintenance Mode</span>
-            </div>
-            <Switch
-              checked={maintenanceEnabled}
-              onCheckedChange={setMaintenanceEnabled}
-            />
-          </div>
-          
-          <p className="text-xs text-muted-foreground">
-            Instantly restrict checkout paths during carrier upgrades.
-          </p>
-
-          <Button
-            onClick={saveMaintenance}
-            disabled={savingMaintenance}
-            variant="outline"
-            size="sm"
-            className="w-full rounded-xl font-bold border-dashed text-xs"
-          >
-            {savingMaintenance ? "Saving Config..." : "Save Maintenance Config"}
-          </Button>
-        </div>
-      </div>
-
-      {/* ── FINANCIAL RECONCILIATION & LIQUIDITY ── */}
-      <div className="glass-card-neo p-6 rounded-3xl border border-white/10 space-y-5">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-black text-foreground">Financial Reconciliation & Liquidity</h2>
-            <p className="text-xs text-muted-foreground">Audited settlement amounts vs platform wallet liabilities.</p>
-          </div>
-          <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/30 text-[10px] font-mono uppercase w-fit">
-            Range: {timeRange.toUpperCase()}
-          </Badge>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20">
-            <p className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-400">Settled Inflow</p>
-            <p className="text-xl sm:text-2xl font-black font-mono text-emerald-400 mt-1">GH₵ {(stats.rangeVerifiedInflow || 0).toFixed(2)}</p>
-            <p className="text-[10px] text-muted-foreground mt-1">Paystack confirmed settlements</p>
-          </div>
-
-          <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/20">
-            <p className="text-[10px] font-extrabold uppercase tracking-wider text-rose-400">Wallet Liability</p>
-            <p className="text-xl sm:text-2xl font-black font-mono text-rose-400 mt-1">GH₵ {(stats.totalSystemBalance || 0).toFixed(2)}</p>
-            <p className="text-[10px] text-muted-foreground mt-1">Unspent balance in user wallets</p>
-          </div>
-
-          <div className="p-4 rounded-2xl bg-sky-500/10 border border-sky-500/20">
-            <p className="text-[10px] font-extrabold uppercase tracking-wider text-sky-400">Consumed Volume</p>
-            <p className="text-xl sm:text-2xl font-black font-mono text-sky-400 mt-1">GH₵ {(stats.rangePurchases || 0).toFixed(2)}</p>
-            <p className="text-[10px] text-muted-foreground mt-1">Gross bundle & service sales</p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-          <div className="p-4 rounded-2xl bg-background/50 border border-border">
-            <p className="text-[10px] font-bold text-muted-foreground uppercase">API Volume (All-time)</p>
-            <p className="text-lg font-black font-mono text-foreground mt-0.5">GH₵ {(stats.apiVolume || 0).toFixed(2)}</p>
-            <p className="text-[10px] text-muted-foreground mt-0.5">Developer API orders (no Paystack fee)</p>
-          </div>
-
-          <div className="p-4 rounded-2xl bg-background/50 border border-border">
-            <p className="text-[10px] font-bold text-muted-foreground uppercase">Paystack Volume (All-time)</p>
-            <p className="text-lg font-black font-mono text-foreground mt-0.5">GH₵ {(stats.paystackVolume || 0).toFixed(2)}</p>
-            <p className="text-[10px] text-muted-foreground mt-0.5">Direct Paystack verified settlements</p>
-          </div>
-        </div>
-      </div>
-
-      {/* ── PROVIDER HEALTH & DIAGNOSTICS ── */}
-      {providerDiagnostics && (
-        <div className="glass-card-neo p-5 rounded-3xl border border-white/10 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
-              <Server className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="font-black text-sm text-foreground">Datamart Carrier Bridge Health</h3>
-                <span className={cn("w-2 h-2 rounded-full animate-pulse", providerBalance !== null && providerBalance < 50 ? "bg-rose-500" : "bg-emerald-500")} />
-              </div>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {(providerDiagnostics?.baseUrl || "").replace(/https?:\/\//, "")} · Balance:{" "}
-                <span className={cn("font-bold font-mono", providerBalance !== null && providerBalance < 50 ? "text-rose-400" : "text-emerald-400")}>
-                  {providerBalance !== null ? `GH₵ ${providerBalance.toFixed(2)}` : "..."}
-                </span>
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            {providerBalance !== null && providerBalance < 50 && (
-              <a
-                href={providerDiagnostics?.baseUrl || "#"}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="px-4 py-2 rounded-xl bg-rose-500 hover:bg-rose-400 text-slate-950 text-xs font-black uppercase tracking-wider"
-              >
-                Top Up Provider
-              </a>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ── SALES ANALYTICS CHART ── */}
-      {(() => {
-        const periodCustomers  = dailySales.reduce((s, d) => s + (d.Customers  || 0), 0);
-        const periodAgents     = dailySales.reduce((s, d) => s + (d.Agents     || 0), 0);
-        const periodSubAgents  = dailySales.reduce((s, d) => s + (d["Sub-Agents"] || 0), 0);
-        const periodTotal      = periodCustomers + periodAgents + periodSubAgents;
-        const todayTotal       = todaySales.total;
-        const todayAttempted   = todaySales.successCount + todaySales.failedCount;
-        const successRate      = todayAttempted > 0 ? Math.round((todaySales.successCount / todayAttempted) * 100) : 100;
-
-        return (
-          <div className="glass-card-neo p-6 rounded-3xl border border-white/10 space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
-                <h2 className="text-xl font-black text-foreground">Network Sales Analytics</h2>
-                <p className="text-xs text-muted-foreground">Daily sales breakdown across Customers, Agents & Sub-agents.</p>
-              </div>
-
-              <div className="flex items-center gap-4 flex-wrap text-xs">
-                <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-md bg-sky-500" /><span className="font-bold text-muted-foreground">Customers</span></div>
-                <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-md bg-amber-500" /><span className="font-bold text-muted-foreground">Agents</span></div>
-                <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-md bg-purple-500" /><span className="font-bold text-muted-foreground">Sub-Agents</span></div>
-              </div>
-            </div>
-
-            {/* Recharts Bar Chart */}
-            <div className="h-[300px] w-full pt-4">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={dailySales} margin={{ top: 10, right: 10, left: -10, bottom: 0 }} barCategoryGap="25%">
-                  <defs>
-                    <linearGradient id="colorCust" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#0ea5e9" stopOpacity={1}/>
-                      <stop offset="95%" stopColor="#0284c7" stopOpacity={0.8}/>
-                    </linearGradient>
-                    <linearGradient id="colorAgent" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#f59e0b" stopOpacity={1}/>
-                      <stop offset="95%" stopColor="#d97706" stopOpacity={0.8}/>
-                    </linearGradient>
-                    <linearGradient id="colorSub" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#a855f7" stopOpacity={1}/>
-                      <stop offset="95%" stopColor="#7e22ce" stopOpacity={0.8}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
-                  <XAxis dataKey="date" tick={{ fill: axisColor, fontSize: 10, fontWeight: "bold" }} axisLine={false} tickLine={false} dy={10} />
-                  <YAxis tick={{ fill: axisColor, fontSize: 10, fontWeight: "bold" }} axisLine={false} tickLine={false} dx={-10} tickFormatter={(val) => `₵${val}`} />
-                  <Tooltip cursor={{ fill: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)" }} content={(props: any) => <DailySalesTooltip {...props} isDark={isDark} />} />
-                  <Bar dataKey="Customers" stackId="seg" fill="url(#colorCust)" radius={[0, 0, 0, 0]} />
-                  <Bar dataKey="Agents" stackId="seg" fill="url(#colorAgent)" radius={[0, 0, 0, 0]} />
-                  <Bar dataKey="Sub-Agents" stackId="seg" fill="url(#colorSub)" radius={[6, 6, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* ── RECENT TRANSACTIONS & ORDER TRACKER ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 glass-card-neo p-6 rounded-3xl border border-white/10 space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="font-black text-base text-foreground">Recent Network Orders</h3>
-            <Button variant="ghost" size="sm" onClick={() => navigate("/admin/orders")} className="text-xs font-bold text-amber-400">
-              View All <ChevronRight className="w-3.5 h-3.5 ml-1" />
-            </Button>
-          </div>
-
-          <div className="space-y-2">
-            {recentOrders.map((o) => (
-              <div key={o.id} className="p-3 rounded-2xl border border-border bg-background/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  {statusIcon(o.status)}
-                  <div>
-                    <p className="text-xs font-black text-foreground">
-                      {o.network && o.package_size ? `${o.network} ${o.package_size}` : "Order"}
+          {recentOrders.length === 0 ? (
+            <p className="px-2 py-8 text-center text-sm text-muted-foreground">No orders yet.</p>
+          ) : (
+            <ul className="mt-1 divide-y divide-border/60 dark:divide-white/[0.05]">
+              {recentOrders.map((o) => (
+                <li key={o.id} className="flex items-center gap-3 px-2 py-2.5">
+                  <NetworkMark network={o.network} />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[13.5px] font-semibold text-foreground truncate">
+                      {o.package_size || "Order"} <span className="font-normal text-muted-foreground">· {o.customer_phone || "API"}</span>
                     </p>
-                    <p className="text-[10px] text-muted-foreground font-mono">
-                      {o.customer_phone || "API"} · {new Date(o.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                    </p>
+                    <p className="text-[11.5px] text-muted-foreground">{new Date(o.created_at).toLocaleString([], { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" })}</p>
                   </div>
-                </div>
-                <div className="flex items-center justify-between sm:justify-end gap-3">
-                  <span className="text-sm font-black font-mono text-amber-400">GH₵ {Number(o.amount).toFixed(2)}</span>
-                  <Badge variant="outline" className="text-[9px] uppercase font-black">
-                    {o.status.replace("_", " ")}
-                  </Badge>
-                </div>
+                  <StatusBadge status={o.status} className="hidden sm:inline-flex" />
+                  <span className="text-[13.5px] font-semibold tabular-nums text-foreground w-20 text-right">{ced(o.amount)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+        <section className={cn(card, "lg:col-span-4 p-4 sm:p-5")}>
+          <PhoneOrderTracker variant="embedded" title="Find an order" subtitle="Look up delivery status by phone number or reference." />
+        </section>
+      </div>
+
+      {/* Money + controls */}
+      <div className="grid gap-4 lg:grid-cols-12">
+        <section className={cn(card, "lg:col-span-8 p-4 sm:p-5")}>
+          <h2 className="text-[15px] font-semibold text-foreground">Money</h2>
+          <p className="text-xs text-muted-foreground">Settled payments vs what’s owed to users · {rangeLabel}</p>
+          <dl className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {[
+              { k: "Settled inflow", v: stats.rangeVerifiedInflow, sub: "Confirmed by Paystack", c: "text-emerald-600 dark:text-emerald-400" },
+              { k: "Wallet liability", v: stats.totalSystemBalance, sub: "Unspent user balances", c: "text-rose-600 dark:text-rose-400" },
+              { k: "Sales volume", v: stats.rangePurchases, sub: "Bundles & services sold", c: "text-foreground" },
+            ].map((m) => (
+              <div key={m.k} className="rounded-xl bg-muted/50 p-3.5 dark:bg-white/[0.04]">
+                <dt className="text-[12px] text-muted-foreground">{m.k}</dt>
+                <dd className={cn("mt-1 text-[19px] font-bold tabular-nums", m.c)}>{ced(m.v)}</dd>
+                <p className="text-[11px] text-muted-foreground">{m.sub}</p>
               </div>
             ))}
-          </div>
-        </div>
+          </dl>
+          <dl className="mt-3 grid grid-cols-2 gap-3 text-[12.5px]">
+            <div className="rounded-xl border border-border/70 p-3 dark:border-white/[0.07]">
+              <dt className="text-muted-foreground">API volume (all time)</dt>
+              <dd className="mt-0.5 font-semibold tabular-nums text-foreground">{ced(stats.apiVolume)}</dd>
+            </div>
+            <div className="rounded-xl border border-border/70 p-3 dark:border-white/[0.07]">
+              <dt className="text-muted-foreground">Paystack volume (all time)</dt>
+              <dd className="mt-0.5 font-semibold tabular-nums text-foreground">{ced(stats.paystackVolume)}</dd>
+            </div>
+          </dl>
+        </section>
 
-        <div className="glass-card-neo p-6 rounded-3xl border border-white/10">
-          <PhoneOrderTracker
-            title="Manual Order Tracker"
-            subtitle="Lookup status using customer phone number."
-          />
-        </div>
-      </div>
+        <section className={cn(card, "lg:col-span-4 p-4 sm:p-5 space-y-4")}>
+          <h2 className="text-[15px] font-semibold text-foreground">Platform controls</h2>
 
-      {/* ── QUICK TOOLS SHORTCUTS GRID ── */}
-      <div className="space-y-3">
-        <p className="text-xs font-black uppercase tracking-wider text-muted-foreground">Admin Quick Shortcuts</p>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {[
-            { label: "Agents", icon: Users, path: "/admin/agents", color: "text-blue-400", bg: "bg-blue-500/10" },
-            { label: "Orders", icon: ShoppingCart, path: "/admin/orders", color: "text-emerald-400", bg: "bg-emerald-500/10" },
-            { label: "Packages", icon: Package, path: "/admin/packages", color: "text-purple-400", bg: "bg-purple-500/10" },
-            { label: "Withdrawals", icon: Wallet, path: "/admin/withdrawals", color: "text-amber-400", bg: "bg-amber-500/10" },
-          ].map((a) => (
-            <button
-              key={a.label}
-              onClick={() => navigate(a.path)}
-              className="glass-card-neo p-4 rounded-2xl border border-white/10 hover:border-amber-500/40 flex flex-col items-center justify-center gap-2 transition-all group"
-            >
-              <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center border border-white/10", a.bg)}>
-                <a.icon className={cn("w-5 h-5", a.color)} />
+          <div className={cn("rounded-xl border p-3.5", maintenanceEnabled ? "border-violet-500/40 bg-violet-500/[0.06]" : "border-border/70 dark:border-white/[0.07]")}>
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[13.5px] font-semibold text-foreground flex items-center gap-1.5">
+                  <Lock className="h-4 w-4 text-muted-foreground" /> Maintenance mode
+                </p>
+                <p className="text-[12px] text-muted-foreground">Pauses checkout for customers.</p>
               </div>
-              <span className="text-xs font-black text-foreground group-hover:text-amber-400">{a.label}</span>
+              <Switch
+                checked={maintenanceEnabled}
+                onCheckedChange={(v) => {
+                  setMaintenanceEnabled(v);
+                  setMaintenanceDirty(true);
+                }}
+                aria-label="Maintenance mode"
+              />
+            </div>
+            {maintenanceDirty && (
+              <div className="mt-3 flex items-center justify-between gap-2 rounded-lg bg-amber-500/10 px-3 py-2">
+                <p className="text-[12px] text-amber-800 dark:text-amber-300">Not applied yet. Save to {maintenanceEnabled ? "turn it on" : "turn it off"}.</p>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await saveMaintenance();
+                    setMaintenanceDirty(false);
+                  }}
+                  disabled={savingMaintenance}
+                  className="h-8 px-3 rounded-lg bg-foreground text-background text-[12.5px] font-semibold disabled:opacity-60 shrink-0"
+                >
+                  {savingMaintenance ? "Saving…" : "Save"}
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-border/70 p-3.5 dark:border-white/[0.07]">
+            <p className="text-[13.5px] font-semibold text-foreground">Audit sync</p>
+            <p className="text-[12px] text-muted-foreground">Re-check telecom order statuses with DataMart.</p>
+            <button type="button" onClick={runAuditSync} disabled={auditSyncing} className="mt-3 h-9 w-full rounded-lg border border-border text-[13px] font-semibold text-foreground hover:bg-muted inline-flex items-center justify-center gap-1.5 disabled:opacity-60">
+              <RefreshCw className={cn("h-4 w-4", auditSyncing && "animate-spin")} /> {auditSyncing ? "Syncing…" : "Run audit sync"}
             </button>
-          ))}
-        </div>
+          </div>
+        </section>
       </div>
+
+      {/* Admin activity */}
+      {auditLogs.length > 0 && (
+        <section className={cn(card, "p-4 sm:p-5")}>
+          <div className="flex items-center justify-between">
+            <h2 className="text-[15px] font-semibold text-foreground">Recent admin activity</h2>
+            <button type="button" onClick={() => navigate("/admin/audit-logs")} className="inline-flex items-center gap-0.5 rounded-lg px-2 py-1 text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-muted">
+              Audit log <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <ul className="mt-3 space-y-2.5">
+            {auditLogs.map((l: any) => (
+              <li key={l.id} className="flex items-start gap-3 text-[13px]">
+                <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-muted-foreground/50 shrink-0" />
+                <p className="flex-1 min-w-0">
+                  <span className="font-semibold text-foreground">{l.profiles?.full_name || "System"}</span>{" "}
+                  <span className="text-muted-foreground">{String(l.action || "").replace(/_/g, " ")}</span>
+                </p>
+                <span className="text-[11.5px] text-muted-foreground whitespace-nowrap">{new Date(l.created_at).toLocaleString([], { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" })}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </div>
   );
 };
