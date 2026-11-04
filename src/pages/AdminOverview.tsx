@@ -194,8 +194,13 @@ const AdminOverview = () => {
     const { data: sessionData } = await supabase.auth.getSession();
     const accessToken = sessionData?.session?.access_token || "";
 
+    // Exact totals from the database when the RPC exists; the browser-side paging below is only a fallback.
+    const serverTotalsRes: any = await Promise.resolve((supabase.rpc as any)("get_admin_overview_totals")).catch(() => ({ data: null }));
+    const haveServerTotals = Boolean(serverTotalsRes?.data?.success);
+    const skip = Promise.resolve({ data: [], error: null, total: null, partial: false });
+
     const settled = await Promise.allSettled([
-      fetchAllRows((f, t) => supabase.from("orders").select("id, amount, status, order_type, profit, parent_profit, cost_price, paystack_fee, paystack_verified_amount, package_size", { count: "exact" }).order("id", { ascending: true }).range(f, t), 30_000),
+      haveServerTotals ? skip : fetchAllRows((f, t) => supabase.from("orders").select("id, amount, status, order_type, profit, parent_profit, cost_price, paystack_fee, paystack_verified_amount, package_size", { count: "exact" }).order("id", { ascending: true }).range(f, t), 30_000),
       supabase.from("profiles").select("user_id, is_agent, is_sub_agent, agent_approved, sub_agent_approved, onboarding_complete, created_at").order("created_at", { ascending: false }).limit(5000),
       supabase.functions.invoke("maintenance-mode", { body: { action: "get" } }),
       supabase.from("orders").select("id, network, package_size, customer_phone, amount, status, created_at").order("created_at", { ascending: false }).limit(8),
@@ -208,8 +213,8 @@ const AdminOverview = () => {
       supabase.from("support_tickets").select("id", { count: "exact", head: true }).eq("status", "open"),
       supabase.from("orders").select("id, order_type, amount, status, created_at, network, package_size, customer_phone").eq("status", "fulfilled").order("created_at", { ascending: false }).limit(15),
       supabase.from("audit_logs").select("id, action, details, created_at, profiles(full_name)").order("created_at", { ascending: false }).limit(6),
-      fetchAllRows((f, t) => supabase.from("wallets").select("balance", { count: "exact" }).order("agent_id", { ascending: true }).range(f, t)),
-      fetchAllRows((f, t) => supabase.from("user_sales_stats").select("total_sales_volume, total_own_profit, total_commissions_paid", { count: "exact" }).range(f, t)),
+      haveServerTotals ? skip : fetchAllRows((f, t) => supabase.from("wallets").select("balance", { count: "exact" }).order("agent_id", { ascending: true }).range(f, t)),
+      haveServerTotals ? skip : fetchAllRows((f, t) => supabase.from("user_sales_stats").select("total_sales_volume, total_own_profit, total_commissions_paid", { count: "exact" }).range(f, t)),
       (supabase.rpc as any)("get_admin_sales_stats_v2", { p_start_date: startDate.toISOString() }),
       supabase.from("ai_recommendations").select("*").is("user_id", null).eq("is_acted_upon", false).order("created_at", { ascending: false }),
       supabase.from("profiles").select("id", { count: "exact", head: true }),
@@ -413,6 +418,26 @@ const AdminOverview = () => {
       rangeGb: rangePurchaseOrders.reduce((s: number, o: any) => s + parseCapacity(o.package_size), 0),
       rangeCount: rangePurchaseOrders.length,
     });
+
+    // Exact database totals (get_admin_overview_totals) replace the browser sums when available.
+    const st: any = (serverTotalsRes as any)?.data;
+    if (st && st.success) {
+      setStats((prev) => ({
+        ...prev,
+        totalSystemBalance: Number(st.wallet_balance_total) || 0,
+        totalRevenue: Number(st.total_revenue) || 0,
+        totalPurchases: Number(st.total_purchases) || 0,
+        apiVolume: Number(st.api_volume) || 0,
+        paystackVolume: Number(st.paystack_volume) || 0,
+        totalNetAdminProfit: Number(st.net_admin_profit) || 0,
+        totalGb: Number(st.total_gb) || 0,
+        totalAgentProfit: Number(st.agent_profit_total) || 0,
+        totalSubAgentProfit: Number(st.sub_agent_profit_total) || 0,
+        totalOrders: Number(st.fulfilled_count) || 0,
+        swiftDataSubAgentShare: (Number(st.sales_volume_total) || 0) - (Number(st.agent_profit_total) || 0),
+      }));
+      setTotalsPartial((prev) => ({ ...prev, orders: Boolean((rangeOrdersRes as any)?.partial), wallets: false }));
+    }
     setRecentOrders((recentRes.data || []) as RecentOrder[]);
     setVerifiedLogs(topupsRes.data || []);
     setAuditLogs(auditRes.data || []);

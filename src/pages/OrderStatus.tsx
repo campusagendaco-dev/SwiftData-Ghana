@@ -2047,7 +2047,7 @@ const OrderStatus = () => {
                 <div className="flex items-center justify-between mb-6">
                    <div className="flex items-center gap-3">
                       <div className="w-11 h-11 rounded-2xl flex items-center justify-center border bg-amber-500/15 border-amber-500/30">
-                         <Activity className={cn("w-5 h-5 text-amber-400", trackerData?.data.scanner.active && "animate-pulse")} />
+                         <Activity className={cn("w-5 h-5 text-amber-400", trackerData?.data?.scanner?.active && "animate-pulse")} />
                       </div>
                       <div>
                          <h3 className="font-extrabold text-sm text-white">Network Telemetry Scanner</h3>
@@ -2062,8 +2062,8 @@ const OrderStatus = () => {
 
                 <div className="relative h-16 flex items-center justify-center mb-6">
                    <AnimatePresence mode="wait">
-                      <motion.div key={trackerData?.data.checkingNow.summary} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="relative z-10 px-5 py-2.5 rounded-2xl bg-slate-950/80 border border-slate-800 text-center shadow-inner">
-                         <p className="text-xs font-extrabold text-amber-300 mb-0.5">{trackerData?.data.checkingNow.summary}</p>
+                      <motion.div key={trackerData?.data?.checkingNow?.summary} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="relative z-10 px-5 py-2.5 rounded-2xl bg-slate-950/80 border border-slate-800 text-center shadow-inner">
+                         <p className="text-xs font-extrabold text-amber-300 mb-0.5">{trackerData?.data?.checkingNow?.summary}</p>
                          <p className="text-[8px] font-black uppercase tracking-[0.2em] text-slate-400 font-mono">Encryption Protocol Active</p>
                       </motion.div>
                    </AnimatePresence>
@@ -2071,10 +2071,10 @@ const OrderStatus = () => {
 
                 <div className="grid grid-cols-4 gap-2">
                    {[
-                     { label: "Check", val: trackerData?.data.stats.checked, color: "text-slate-300" },
-                     { label: "Sent", val: trackerData?.data.stats.delivered, color: "text-emerald-400" },
-                     { label: "Wait", val: trackerData?.data.stats.pending, color: "text-amber-400" },
-                     { label: "Fail", val: trackerData?.data.stats.failed, color: "text-red-400" },
+                     { label: "Check", val: trackerData?.data?.stats?.checked, color: "text-slate-300" },
+                     { label: "Sent", val: trackerData?.data?.stats?.delivered, color: "text-emerald-400" },
+                     { label: "Wait", val: trackerData?.data?.stats?.pending, color: "text-amber-400" },
+                     { label: "Fail", val: trackerData?.data?.stats?.failed, color: "text-red-400" },
                    ].map(s => (
                      <div key={s.label} className="p-3 rounded-2xl bg-slate-950/90 border border-slate-800/80 text-center shadow-inner">
                         <p className="text-[8px] font-black uppercase tracking-widest text-slate-400 mb-1 font-mono">{s.label}</p>
@@ -2086,7 +2086,7 @@ const OrderStatus = () => {
               <div className="px-6 py-3.5 bg-slate-950/90 flex items-center justify-between border-t border-slate-800/80">
                  <div className="flex items-center gap-2">
                     <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                    <p className="text-[9px] font-medium text-slate-300 italic">{trackerData?.data.lastDelivered?.summary || "Scanner warming up..."}</p>
+                    <p className="text-[9px] font-medium text-slate-300 italic">{trackerData?.data?.lastDelivered?.summary || "Scanner warming up..."}</p>
                  </div>
               </div>
             </div>
@@ -2104,7 +2104,7 @@ const OrderStatus = () => {
               </div>
 
               <div className="space-y-2">
-                {trackerData?.data.yourOrders.inCurrentBatch.map((o, i) => (
+                {trackerData?.data?.yourOrders?.inCurrentBatch?.map((o, i) => (
                   <div key={i} className="flex items-center justify-between p-3.5 rounded-2xl bg-[#0a0b12]/80 border border-slate-800/80 shadow-md">
                     <div className="flex items-center gap-3">
                        <div className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center font-mono text-[9px] font-black text-amber-300">{o.network.slice(0, 3)}</div>
@@ -2117,7 +2117,7 @@ const OrderStatus = () => {
                   </div>
                 ))}
 
-                {trackerData?.data.yourOrders.inLastDeliveredBatch.map((o, i) => (
+                {trackerData?.data?.yourOrders?.inLastDeliveredBatch?.map((o, i) => (
                   <div key={`del-${i}`} className="flex items-center justify-between p-3.5 rounded-2xl bg-[#08090e]/60 border border-slate-800/50 shadow-xs">
                     <div className="flex items-center gap-3">
                        <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center font-mono text-[9px] font-black text-emerald-400">{o.network.slice(0, 3)}</div>
