@@ -174,6 +174,7 @@ const AdminOverview = () => {
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState<"topups" | "audit">("topups");
   const [aiRecommendations, setAiRecommendations] = useState<any[]>([]);
+  const [walletSplit, setWalletSplit] = useState<{ main: number; api: number }>({ main: 0, api: 0 });
   const [totalsPartial, setTotalsPartial] = useState<{ orders: boolean; wallets: boolean; orderTotal: number | null }>({ orders: false, wallets: false, orderTotal: null });
 
   const fetchData = useCallback(async () => {
@@ -213,7 +214,7 @@ const AdminOverview = () => {
       supabase.from("support_tickets").select("id", { count: "exact", head: true }).eq("status", "open"),
       supabase.from("orders").select("id, order_type, amount, status, created_at, network, package_size, customer_phone").eq("status", "fulfilled").order("created_at", { ascending: false }).limit(15),
       supabase.from("audit_logs").select("id, action, details, created_at, profiles(full_name)").order("created_at", { ascending: false }).limit(6),
-      haveServerTotals ? skip : fetchAllRows((f, t) => supabase.from("wallets").select("balance", { count: "exact" }).order("agent_id", { ascending: true }).range(f, t)),
+      haveServerTotals ? skip : fetchAllRows((f, t) => supabase.from("wallets").select("balance, api_balance", { count: "exact" }).order("agent_id", { ascending: true }).range(f, t)),
       haveServerTotals ? skip : fetchAllRows((f, t) => supabase.from("user_sales_stats").select("total_sales_volume, total_own_profit, total_commissions_paid", { count: "exact" }).range(f, t)),
       (supabase.rpc as any)("get_admin_sales_stats_v2", { p_start_date: startDate.toISOString() }),
       supabase.from("ai_recommendations").select("*").is("user_id", null).eq("is_acted_upon", false).order("created_at", { ascending: false }),
@@ -239,7 +240,11 @@ const AdminOverview = () => {
     const wallets = walletsRes?.data || [];
     const salesStats = salesStatsRes?.data || [];
 
-    const totalSystemBalance = Array.isArray(wallets) ? wallets.reduce((s, w) => s + (Number(w?.balance) || 0), 0) : 0;
+    const walletMainTotal = Array.isArray(wallets) ? wallets.reduce((s, w) => s + (Number(w?.balance) || 0), 0) : 0;
+    const walletApiTotal = Array.isArray(wallets) ? wallets.reduce((s, w) => s + (Number(w?.api_balance) || 0), 0) : 0;
+    // Owed to users = main wallets + API wallets
+    const totalSystemBalance = walletMainTotal + walletApiTotal;
+    setWalletSplit({ main: walletMainTotal, api: walletApiTotal });
     const totalVolumeAllTime = Array.isArray(salesStats) ? salesStats.reduce((s, st) => s + (Number(st?.total_sales_volume) || 0), 0) : 0;
     const totalAgentProfitsAllTime = Array.isArray(salesStats) ? salesStats.reduce((s, st) => s + (Number(st?.total_own_profit) || 0), 0) : 0;
     const totalSubAgentProfitsAllTime = Array.isArray(salesStats) ? salesStats.reduce((s, st) => s + (Number(st?.total_commissions_paid) || 0), 0) : 0;
@@ -422,6 +427,10 @@ const AdminOverview = () => {
     // Exact database totals (get_admin_overview_totals) replace the browser sums when available.
     const st: any = (serverTotalsRes as any)?.data;
     if (st && st.success) {
+      setWalletSplit({
+        main: Number(st.wallet_main_total ?? st.wallet_balance_total) || 0,
+        api: Number(st.wallet_api_total) || 0,
+      });
       setStats((prev) => ({
         ...prev,
         totalSystemBalance: Number(st.wallet_balance_total) || 0,
@@ -752,7 +761,7 @@ const AdminOverview = () => {
     { label: "Data sold", value: `${(stats.totalGb || 0).toLocaleString("en-GH", { maximumFractionDigits: 2 })} GB`, icon: Package, hint: `${(stats.rangeGb || 0).toFixed(1)} GB in ${rangeLabel}` },
     { label: "Agent profits", value: ced(Number(stats.totalAgentProfit || 0) + Number(stats.totalSubAgentProfit || 0)), icon: Users, hint: "Agents + sub-agents" },
     { label: "Provider wallet", value: providerBalance !== null ? ced(providerBalance) : "—", icon: Server, hint: providerLow ? "Low, top up soon" : "Main provider balance", warn: providerLow },
-    { label: "User wallet balances", value: ced(stats.totalSystemBalance), icon: Wallet, hint: totalsPartial.wallets ? "Partial: couldn't load every wallet" : "All wallets · owed to users" },
+    { label: "User wallet balances", value: ced(stats.totalSystemBalance), icon: Wallet, hint: totalsPartial.wallets ? "Partial: couldn't load every wallet" : `Main ${ced(walletSplit.main)} · API ${ced(walletSplit.api)}` },
     { label: "Users", value: stats.totalUsers.toLocaleString(), icon: Users, hint: `${stats.todaySignups || todaySales.newUsers || 0} joined today` },
     { label: "Sales today", value: ced(todaySales.total), icon: Activity, hint: successRate === null ? "No completed orders yet" : `${successRate}% delivered · ${todaySales.count || todayAttempted} orders` },
   ];
@@ -1008,7 +1017,7 @@ const AdminOverview = () => {
           <dl className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
             {[
               { k: "Settled inflow", v: stats.rangeVerifiedInflow, sub: "Confirmed by Paystack", c: "text-emerald-600 dark:text-emerald-400" },
-              { k: "Wallet liability", v: stats.totalSystemBalance, sub: "Unspent user balances", c: "text-rose-600 dark:text-rose-400" },
+              { k: "Wallet liability", v: stats.totalSystemBalance, sub: "Main + API wallets", c: "text-rose-600 dark:text-rose-400" },
               { k: "Sales volume", v: stats.rangePurchases, sub: "Bundles & services sold", c: "text-foreground" },
             ].map((m) => (
               <div key={m.k} className="rounded-xl bg-muted/50 p-3.5 dark:bg-white/[0.04]">
