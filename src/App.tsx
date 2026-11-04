@@ -398,7 +398,7 @@ const AppContent = () => {
 
   return (
     <>
-      <TraditionalBackground className={`fixed inset-0 z-0 pointer-events-none ${isDashboard ? "opacity-[0.6] dark:opacity-[0.55]" : "opacity-[0.35] dark:opacity-[0.45]"}`} />
+      <TraditionalBackground className={`fixed inset-0 z-0 pointer-events-none ${isDashboard || isAdmin ? "opacity-[0.6] dark:opacity-[0.55]" : "opacity-[0.35] dark:opacity-[0.45]"}`} />
       <div className="relative z-10 min-h-screen flex flex-col">
         {!isDashboard && !isAgentStore && !isAdmin && !isChallengeArenaPage && <Navbar />}
         <ChunkErrorBoundary>
@@ -598,15 +598,15 @@ const AppContent = () => {
         <Suspense fallback={null}>
           {!isDashboard && !isAdmin && !isChallengeArenaPage && !isPaymentFlow && <TutorialModal />}
           <AudioUnlocker />
-          <NotificationPopup />
-          <ChallengeLiveNotifier />
-          {!isChallengeArenaPage && <AIConcierge />}
-          {!isChallengeArenaPage && !isPaymentFlow && <PushNotificationPrompt variant="floating" />}
+          {!isAdmin && <NotificationPopup />}
+          {!isAdmin && <ChallengeLiveNotifier />}
+          {!isChallengeArenaPage && !isAdmin && <AIConcierge />}
+          {!isChallengeArenaPage && !isPaymentFlow && !isAdmin && <PushNotificationPrompt variant="floating" />}
           <AccountSwitcherModal />
-          {!isAgentStore && !isChallengeArenaPage && <FreeDataButton />}
-          {!isAgentStore && !isChallengeArenaPage && <DataPromoPopupModal />}
+          {!isAgentStore && !isChallengeArenaPage && !isAdmin && <FreeDataButton />}
+          {!isAgentStore && !isChallengeArenaPage && !isAdmin && <DataPromoPopupModal />}
         </Suspense>
-        {!isAgentStore && !isChallengeArenaPage && <WhatsAppButton />}
+        {!isAgentStore && !isChallengeArenaPage && !isAdmin && <WhatsAppButton />}
       </div>
     </>
   );
