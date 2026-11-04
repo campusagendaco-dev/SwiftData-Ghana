@@ -38,6 +38,7 @@ const MyOrders = () => {
   const [loading, setLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showReceipt, setShowReceipt] = useState<Order | null>(null);
+  const [orderFilter, setOrderFilter] = useState<"all" | "delivered" | "progress" | "failed" | "refunded">("all");
 
   const { slug: routeSlug } = useParams<{ slug?: string }>();
   const storeParam = searchParams.get("store") || searchParams.get("slug") || routeSlug || "";
@@ -233,164 +234,198 @@ const MyOrders = () => {
     }
   };
 
+  const bucketOf = (order: Order) =>
+    isBeneficiaryOrder(order)
+      ? "progress"
+      : order.status === "fulfilled"
+      ? "delivered"
+      : order.status === "fulfillment_failed" || order.status === "error"
+      ? "failed"
+      : order.status === "refunded"
+      ? "refunded"
+      : "progress";
+  const counts = orders.reduce(
+    (acc, o) => {
+      acc[bucketOf(o)] = (acc[bucketOf(o)] || 0) + 1;
+      return acc;
+    },
+    {} as Record<string, number>
+  );
+  const shown = orderFilter === "all" ? orders : orders.filter((o) => bucketOf(o) === orderFilter);
+  const statusPill = (order: Order) => {
+    const b = bucketOf(order);
+    if (isBeneficiaryOrder(order)) return { label: "Waiting for MTN", cls: "bg-amber-500/10 text-amber-700 dark:text-amber-400" };
+    if (b === "delivered") return { label: "Delivered", cls: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" };
+    if (b === "failed") return { label: "Failed", cls: "bg-rose-500/10 text-rose-700 dark:text-rose-400" };
+    if (b === "refunded") return { label: "Refunded", cls: "bg-violet-500/10 text-violet-700 dark:text-violet-400" };
+    return { label: order.status === "paid" ? "Paid · queued" : "On the way", cls: "bg-sky-500/10 text-sky-700 dark:text-sky-400" };
+  };
+  const goTo = (order: Order) =>
+    navigate(isStoreRoute && storeInfo?.slug ? `/store/${storeInfo.slug}/order-status?reference=${order.id}` : `/order-status?reference=${order.id}`);
+
   return (
-    <div className="min-h-screen bg-black text-white p-6 font-sans antialiased">
-      <div className="max-w-md mx-auto space-y-8 pt-12 pb-24">
-        
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <button 
+    <div className="min-h-[100dvh] text-foreground px-4 sm:px-6 pt-20 sm:pt-24 pb-24">
+      <div className="mx-auto w-full max-w-[480px] space-y-4">
+        <div className="flex items-center gap-3">
+          <button
             onClick={() => {
-              if (activeDomain) {
-                navigate("/");
-              } else if (storeInfo?.slug) {
-                navigate(`/store/${storeInfo.slug}`);
-              } else {
-                navigate("/");
-              }
+              if (activeDomain) navigate("/");
+              else if (storeInfo?.slug) navigate(`/store/${storeInfo.slug}`);
+              else navigate("/");
             }}
-            className="w-10 h-10 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center hover:bg-white/10 transition-all"
+            aria-label="Back"
+            className="h-10 w-10 shrink-0 rounded-xl border border-border/70 bg-card/80 flex items-center justify-center hover:bg-muted"
           >
-            <ArrowLeft className="w-5 h-5 text-white/60" />
+            <ArrowLeft className="h-5 w-5" />
           </button>
-          <div className="text-center">
-            <h1 className="text-xl font-black uppercase tracking-widest text-white/90">My Orders</h1>
-            <p className="text-[10px] font-bold text-white/30 uppercase tracking-tighter">Guest Tracking Portal</p>
+          <div className="min-w-0">
+            <h1 className="text-[22px] font-bold tracking-[-0.02em] leading-tight">My orders</h1>
+            <p className="text-[12.5px] text-muted-foreground truncate">{storeName} · no account needed</p>
           </div>
-          <div className="w-10" /> {/* Spacer */}
         </div>
 
-        {/* Search Bar */}
-        <form onSubmit={handleSearch} className="relative group">
-          <input 
-            type="tel"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            placeholder="Search by phone number..."
-            className="w-full py-4 px-6 rounded-[2rem] bg-white/[0.03] border border-white/10 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-primary/50 transition-all shadow-2xl"
-          />
-          <button 
-            type="submit"
-            className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-xl flex items-center justify-center active:scale-95 transition-all"
-            style={{ backgroundColor: brandColor, boxShadow: `0 10px 15px -3px ${brandColor}33` }}
-          >
-            <Search className="w-4 h-4 text-black" />
+        <form onSubmit={handleSearch} className="flex gap-2">
+          <label className="relative flex-1">
+            <Search className="pointer-events-none absolute z-10 left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <input
+              type="tel"
+              inputMode="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="Phone number the bundle was sent to"
+              aria-label="Phone number"
+              className="h-12 w-full rounded-xl border border-input bg-card pl-9 pr-3 text-[15px] tabular-nums placeholder:text-muted-foreground/60 outline-none focus:border-primary focus:ring-4 focus:ring-primary/15"
+            />
+          </label>
+          <button type="submit" className="h-12 px-5 rounded-xl text-[14px] font-semibold shadow-sm hover:brightness-105 shrink-0" style={{ backgroundColor: brandColor, color: "#111" }}>
+            Search
           </button>
         </form>
 
-        {/* Orders List */}
-        <div className="space-y-4">
-          {loading ? (
-            <div className="flex flex-col items-center justify-center py-20 gap-4">
-              <Loader2 className="w-8 h-8 animate-spin" style={{ color: brandColor }} />
-              <p className="text-[10px] font-black uppercase tracking-widest text-white/20">Scanning Records...</p>
+        {orders.length > 0 && (
+          <div className="-mx-4 px-4 overflow-x-auto no-scrollbar">
+            <div className="inline-flex gap-1.5 min-w-max" role="tablist" aria-label="Filter orders">
+              {([
+                ["all", "All", orders.length],
+                ["delivered", "Delivered", counts.delivered || 0],
+                ["progress", "In progress", counts.progress || 0],
+                ["failed", "Failed", counts.failed || 0],
+                ["refunded", "Refunded", counts.refunded || 0],
+              ] as const)
+                .filter(([id, , n]) => id === "all" || n > 0)
+                .map(([id, label, n]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    role="tab"
+                    aria-selected={orderFilter === id}
+                    onClick={() => setOrderFilter(id)}
+                    className={cn(
+                      "h-8 px-3 rounded-full text-[12.5px] font-semibold border transition-colors",
+                      orderFilter === id ? "bg-foreground text-background border-foreground" : "bg-card border-border text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    {label} <span className="tabular-nums opacity-70">{n}</span>
+                  </button>
+                ))}
             </div>
-          ) : orders.length > 0 ? (
-            orders.map((order) => (
-              <div 
-                key={order.id}
-                onClick={() => navigate(isStoreRoute && storeInfo?.slug ? `/store/${storeInfo.slug}/order-status?reference=${order.id}` : `/order-status?reference=${order.id}`)}
-                className="group relative overflow-hidden rounded-[2rem] bg-white/[0.03] border border-white/10 p-5 hover:bg-white/[0.05] transition-all cursor-pointer active:scale-[0.98]"
-              >
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/5 flex items-center justify-center">
-                      <Package className="w-5 h-5 text-white/40" />
-                    </div>
-                    <div>
-                      <p className="text-xs font-black text-white/90">{order.package_size || 'Bundle'}</p>
-                      <p className="text-[10px] font-bold text-white/30 uppercase tracking-tighter">{order.network} • {order.order_type || 'Data'}</p>
-                    </div>
-                  </div>
-                  {(() => {
-                    const badge = getStatusBadge(order);
-                    return (
-                      <div className={cn("px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest", badge.className)}>
-                        {badge.label}
-                      </div>
-                    );
-                  })()}
-                </div>
+          </div>
+        )}
 
-                {isBeneficiaryOrder(order) && (
-                  <div className="mb-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/25 flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <Clock className="w-3.5 h-3.5 text-amber-400 shrink-0 animate-pulse" />
-                      <p className="text-[10px] text-amber-200 truncate font-semibold">Queued for MTN Whitelist Verification</p>
+        <div className="space-y-2.5">
+          {loading ? (
+            [0, 1, 2].map((i) => <div key={i} className="h-24 rounded-2xl bg-muted animate-pulse" />)
+          ) : shown.length > 0 ? (
+            shown.map((order) => {
+              const pill = statusPill(order);
+              return (
+                <article
+                  key={order.id}
+                  onClick={() => goTo(order)}
+                  className="rounded-2xl border border-border/70 bg-card/90 p-4 cursor-pointer hover:border-foreground/20 transition-colors dark:border-white/[0.08] dark:bg-black/40"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-[15px] font-semibold leading-snug">
+                        {order.package_size || "Bundle"} <span className="font-normal text-muted-foreground">· {order.network}</span>
+                      </p>
+                      <p className="text-[12px] text-muted-foreground">
+                        {new Date(order.created_at).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                        {order.amount ? ` · GH₵${Number(order.amount).toFixed(2)}` : ""}
+                      </p>
                     </div>
+                    <span className={cn("shrink-0 rounded-full px-2.5 py-1 text-[11.5px] font-semibold", pill.cls)}>{pill.label}</span>
+                  </div>
+
+                  {isBeneficiaryOrder(order) && (
+                    <div className="mt-3 flex items-center justify-between gap-2 rounded-xl bg-amber-500/[0.08] px-3 py-2">
+                      <p className="text-[12px] text-foreground">MTN needs to approve this number first.</p>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/submit-numbers?phone=${encodeURIComponent(order.customer_phone || "")}`);
+                        }}
+                        className="shrink-0 h-8 px-3 rounded-lg bg-amber-500 text-slate-950 text-[12px] font-semibold"
+                      >
+                        Verify number
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="mt-3 flex items-center gap-2">
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        navigate(`/submit-numbers?phone=${encodeURIComponent(order.customer_phone || "")}`);
+                        setShowReceipt(order);
                       }}
-                      className="shrink-0 px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-[9px] uppercase tracking-wider transition-all active:scale-95 flex items-center gap-1 shadow-sm"
+                      className="h-9 px-3 rounded-lg border border-border bg-background text-[12.5px] font-semibold inline-flex items-center gap-1.5 hover:bg-muted"
                     >
-                      <Zap className="w-3 h-3 fill-black" />
-                      Verify 🚀
+                      <ReceiptText className="h-4 w-4" /> Receipt
                     </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDispute(order);
+                      }}
+                      className="h-9 px-3 rounded-lg border border-border bg-background text-[12.5px] font-semibold text-muted-foreground inline-flex items-center gap-1.5 hover:text-foreground hover:bg-muted"
+                    >
+                      <AlertTriangle className="h-4 w-4" /> Report a problem
+                    </button>
+                    <span className="ml-auto inline-flex items-center gap-0.5 text-[12.5px] font-semibold text-muted-foreground">
+                      Details <ArrowRight className="h-3.5 w-3.5" />
+                    </span>
                   </div>
-                )}
-
-                <div className="flex items-center justify-between mt-4 pt-4 border-t border-white/5">
-                  <div className="flex items-center gap-2 text-[9px] font-bold text-white/20 uppercase tracking-widest">
-                    <Clock className="w-3 h-3" />
-                    {new Date(order.created_at).toLocaleDateString()} • {new Date(order.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </div>
-                  <div className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest" style={{ color: `${brandColor}99` }}>
-                    View Details
-                    <ArrowRight className="w-3 h-3" />
-                  </div>
-                </div>
-
-                <div className="mt-4 flex gap-2">
-                   <button 
-                    onClick={(e) => { e.stopPropagation(); setShowReceipt(order); }}
-                    className="flex-1 h-9 rounded-xl bg-white/5 border border-white/5 hover:bg-white/10 text-[9px] font-black uppercase tracking-widest text-white/40 flex items-center justify-center gap-2 transition-all"
-                   >
-                     <ReceiptText className="w-3 h-3" />
-                     Receipt
-                   </button>
-                   <button 
-                    onClick={(e) => { e.stopPropagation(); handleDispute(order); }}
-                    className="flex-1 h-9 rounded-xl bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 text-[9px] font-black uppercase tracking-widest text-red-400 flex items-center justify-center gap-2 transition-all"
-                   >
-                     <AlertTriangle className="w-3 h-3" />
-                     Dispute
-                   </button>
-                   <button 
-                    onClick={(e) => { e.stopPropagation(); navigate(isStoreRoute && storeInfo?.slug ? `/store/${storeInfo.slug}/order-status?reference=${order.id}` : `/order-status?reference=${order.id}`); }}
-                    className="w-9 h-9 rounded-xl bg-white/5 border border-white/5 hover:bg-white/10 flex items-center justify-center text-white/40 transition-all"
-                   >
-                     <ExternalLink className="w-3 h-3" />
-                   </button>
-                </div>
-              </div>
-            ))
+                </article>
+              );
+            })
           ) : phoneParam ? (
-            <div className="text-center py-20 space-y-4">
-              <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mx-auto border border-white/5">
-                <Search className="w-6 h-6 text-white/10" />
-              </div>
-              <p className="text-sm font-bold text-white/20">No orders found for this number</p>
+            <div className="rounded-2xl border border-border/70 bg-card/90 py-12 px-6 text-center dark:border-white/[0.08] dark:bg-black/40">
+              <span className="mx-auto h-12 w-12 rounded-full bg-muted flex items-center justify-center">
+                <Search className="h-5 w-5 text-muted-foreground" />
+              </span>
+              <p className="mt-3 text-[15px] font-semibold">No orders for this number</p>
+              <p className="mt-1 text-[13px] text-muted-foreground">Check the number, or search with the reference on your receipt from the Track order page.</p>
             </div>
           ) : (
-            <div className="text-center py-20 space-y-4">
-              <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mx-auto border border-white/5">
-                <Activity className="w-6 h-6 text-white/10" />
-              </div>
-              <p className="text-[10px] font-black uppercase tracking-widest text-white/20">Enter your number to track orders</p>
+            <div className="rounded-2xl border border-border/70 bg-card/90 py-12 px-6 text-center dark:border-white/[0.08] dark:bg-black/40">
+              <span className="mx-auto h-12 w-12 rounded-full bg-muted flex items-center justify-center">
+                <Activity className="h-5 w-5 text-muted-foreground" />
+              </span>
+              <p className="mt-3 text-[15px] font-semibold">Find your orders</p>
+              <p className="mt-1 text-[13px] text-muted-foreground">Enter the phone number your bundles were sent to.</p>
             </div>
           )}
         </div>
 
-        {/* Bottom Actions */}
         {orders.length > 0 && (
-          <button 
-            onClick={() => { setIsRefreshing(true); fetchOrders(phoneParam); }}
-            className="w-full h-14 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center gap-3 active:scale-95 transition-all"
+          <button
+            onClick={() => {
+              setIsRefreshing(true);
+              fetchOrders(phoneParam);
+            }}
+            className="w-full h-12 rounded-xl border border-border bg-card text-[13.5px] font-semibold inline-flex items-center justify-center gap-2 hover:bg-muted"
           >
-            <RefreshCw className={cn("w-4 h-4 text-white/40", isRefreshing && "animate-spin")} />
-            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40">Refresh Status</span>
+            <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} /> Refresh statuses
           </button>
         )}
 

@@ -8,7 +8,7 @@ import {
   Search, SignalHigh, Server,
   Clock, Package, ReceiptText, Store,
   Share2, Sparkles, Cpu, Terminal, RotateCcw,
-  MessageCircle, Headphones, ChevronDown, ChevronUp, Radio
+  MessageCircle, Headphones, ChevronDown, ChevronUp, ChevronRight, Radio
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { safeRemoveChannel } from "@/lib/safe-realtime";
@@ -205,6 +205,7 @@ const OrderStatus = () => {
   const [searchPhone, setSearchPhone] = useState("");
   const [showReceipt, setShowReceipt] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [confirmRefund, setConfirmRefund] = useState(false);
   const receiptRef = useRef<HTMLDivElement>(null);
   const inFlightRef = useRef<boolean>(false);
 
@@ -1036,725 +1037,338 @@ const OrderStatus = () => {
     const displayPhone = phoneParam || orderPhone || orderData?.customer_phone || "—";
     const displayAmount = orderData?.amount ? `GH₵${Number(orderData.amount).toFixed(2)}` : null;
 
+    const isActive = ["pending", "paid", "processing"].includes(orderStatus) && !failed;
+    const isDelivered = orderStatus === "fulfilled";
+    const isRefunded = orderStatus === "refunded";
+    const isFailed = (failed || orderStatus === "fulfillment_failed" || orderStatus === "error") && !isBeneficiaryOrder;
+    const canRefund = !isDelivered && !isRefunded && !isBeneficiaryOrder && !hasEnteredProvider && (isFailed || ["paid", "processing"].includes(orderStatus));
+    const tone = isDelivered
+      ? { ring: "bg-emerald-500", soft: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400", bar: "bg-emerald-500" }
+      : isRefunded
+      ? { ring: "bg-violet-500", soft: "bg-violet-500/10 text-violet-600 dark:text-violet-400", bar: "bg-violet-500" }
+      : isFailed
+      ? { ring: "bg-rose-500", soft: "bg-rose-500/10 text-rose-600 dark:text-rose-400", bar: "bg-rose-500" }
+      : { ring: "bg-amber-500", soft: "bg-amber-500/10 text-amber-700 dark:text-amber-400", bar: "bg-amber-500" };
+    const StatusIcon = isDelivered ? CheckCircle2 : isRefunded ? RotateCcw : isFailed ? XCircle : isBeneficiaryOrder ? Clock : Loader2;
+    const createdLabel = createdAt ? new Date(createdAt).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : null;
+    const steps = [
+      { label: "Paid", done: activeStep >= 1 || isDelivered, current: activeStep <= 1 && isActive },
+      { label: isBeneficiaryOrder ? "In carrier queue" : "Sent to network", done: activeStep >= 2 || isDelivered, current: activeStep === 2 && isActive },
+      { label: isFailed ? "Not delivered" : "Delivered", done: isDelivered, current: false, failed: isFailed },
+    ];
+    const surface = "rounded-2xl border border-border/70 bg-card/90 backdrop-blur-xl dark:border-white/[0.08] dark:bg-black/40";
+    const secondaryBtn = "h-11 rounded-xl border border-input bg-background text-[13px] font-semibold text-foreground hover:bg-muted transition inline-flex items-center justify-center gap-1.5";
+
     return (
-      <div className="min-h-screen bg-[#040509] text-slate-100 flex flex-col items-center justify-center p-2.5 sm:p-6 font-sans antialiased selection:bg-amber-500/30 pt-11 sm:pt-20 pb-16 sm:pb-20 relative overflow-hidden">
-        <SEO 
+      <div className="min-h-[100dvh] text-foreground px-3 sm:px-6 pt-20 sm:pt-24 pb-16 relative">
+        <SEO
           title={`Track Order Status — ${storeName}`}
           description={`Track the real-time delivery status of your data bundle purchase on ${storeName}.`}
           keywords="track data order Ghana, order status, data delivery status"
           canonical={`https://${brandDomain}/order-status?reference=${reference}`}
         />
 
-        {/* Ambient Mesh & Grid Backdrop */}
-        <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
-          <div 
-            className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[380px] sm:w-[540px] h-[380px] sm:h-[540px] rounded-full blur-[140px] sm:blur-[170px] opacity-20 transition-all duration-1000"
-            style={{ backgroundColor: meta.color }} 
-          />
-          <div className="absolute top-[-10%] right-[-10%] w-[260px] sm:w-[360px] h-[260px] sm:h-[360px] bg-amber-500/8 rounded-full blur-[130px]" />
-          <div className="absolute bottom-[-10%] left-[-10%] w-[260px] sm:w-[360px] h-[260px] sm:h-[360px] bg-indigo-500/8 rounded-full blur-[130px]" />
-        </div>
-
-        <div className="w-full max-w-[420px] sm:max-w-[450px] relative z-10 space-y-2.5 sm:space-y-3.5">
-          {/* Top Navigation Bar */}
-          <div className="flex items-center justify-between px-1">
+        <div className="mx-auto w-full max-w-[460px] space-y-3">
+          {/* Top bar */}
+          <div className="flex items-center justify-between">
             <button
-              onClick={() => navigate(isStoreRoute && storeInfo?.slug ? `/store/${storeInfo.slug}` : '/')}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-[11px] sm:text-xs font-bold text-slate-300 hover:text-white transition-all active:scale-95 cursor-pointer"
+              onClick={() => navigate(isStoreRoute && storeInfo?.slug ? `/store/${storeInfo.slug}` : "/")}
+              className="inline-flex items-center gap-1.5 h-9 px-3 rounded-full border border-border/70 bg-card/80 text-[13px] font-semibold text-foreground hover:bg-muted"
             >
-              <ArrowLeft className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-400" />
-              <span className="truncate max-w-[135px] sm:max-w-[160px]">{storeName}</span>
+              <ArrowLeft className="h-4 w-4" />
+              <span className="truncate max-w-[170px]">{storeName}</span>
             </button>
-
-            <div className="flex items-center gap-1.5 sm:gap-2">
-              <button
-                onClick={() => setShowReceipt(true)}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full bg-amber-500/12 hover:bg-amber-500/20 border border-amber-500/30 text-[10px] sm:text-[11px] font-extrabold text-amber-300 transition-all active:scale-95 cursor-pointer"
-                title="View Digital E-Receipt"
-              >
-                <ReceiptText className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-400" />
-                <span>Receipt</span>
-              </button>
-
-              <div className="flex items-center gap-1.5 px-2.5 py-1 sm:py-1.5 rounded-full bg-slate-900/90 border border-slate-800/90 text-[9px] sm:text-[10px] font-bold font-mono text-slate-400">
-                <Radio className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-emerald-400 animate-pulse" />
-                <span className="hidden xs:inline">UPLINK-01</span>
-                <span className="xs:hidden">LIVE</span>
-              </div>
-            </div>
+            <button
+              type="button"
+              onClick={() => pollStatus(true)}
+              disabled={isRefreshing}
+              className="inline-flex items-center gap-1.5 h-9 px-3 rounded-full border border-border/70 bg-card/80 text-[12.5px] font-semibold text-muted-foreground hover:text-foreground disabled:opacity-60"
+              aria-label="Refresh status"
+            >
+              <RefreshCw className={cn("h-3.5 w-3.5", isRefreshing && "animate-spin")} />
+              {isRefreshing ? "Checking…" : "Refresh"}
+            </button>
           </div>
 
-          {/* Primary Command Card */}
-          <div
-            aria-live="polite"
-            className={cn(
-              "relative overflow-hidden rounded-[24px] sm:rounded-[28px] bg-[#0a0b12]/95 border backdrop-blur-2xl shadow-[0_20px_60px_rgba(0,0,0,0.85)] transition-all duration-500",
-              meta.accentBorder || "border-slate-800/80"
-            )}
-          >
-            {/* Subtle Top Ambient Wash */}
-            <div className={cn("absolute inset-x-0 top-0 h-36 sm:h-44 bg-gradient-to-b pointer-events-none", meta.accentBg)} />
-
-            {/* Top Status & Reference Header */}
-            <div className="px-3.5 pt-3.5 sm:px-5 sm:pt-5 flex items-center justify-between relative z-10">
-              <div className="inline-flex items-center gap-1.5 sm:gap-2 px-2.5 py-1 rounded-full bg-black/50 border border-white/[0.07]">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ backgroundColor: meta.color }} />
-                  <span className="relative inline-flex rounded-full h-2 w-2" style={{ backgroundColor: meta.color }} />
-                </span>
-                <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-[0.14em] text-slate-200 font-mono">
-                  {meta.badge} STATUS
+          {/* Status card */}
+          <section aria-live="polite" className={cn(surface, "overflow-hidden")}>
+            <div className="px-5 pt-6 pb-5 text-center">
+              <div className="relative mx-auto h-16 w-16">
+                {isActive && <span className={cn("absolute inset-0 rounded-full opacity-25 animate-ping", tone.ring)} style={{ animationDuration: "2.2s" }} />}
+                <span className={cn("absolute inset-0 rounded-full flex items-center justify-center text-white shadow-lg", tone.ring)}>
+                  <StatusIcon className={cn("h-8 w-8", StatusIcon === Loader2 && "animate-spin")} />
                 </span>
               </div>
-
-              <button 
-                type="button"
-                onClick={handleCopyRef}
-                className="cursor-pointer group flex items-center gap-1.5 text-[9px] sm:text-[10px] font-mono text-slate-300 bg-black/50 hover:bg-slate-800/90 px-2.5 py-1 rounded-full border border-white/[0.08] transition-all active:scale-95"
-                title="Click to copy order reference"
-                aria-label="Copy order reference"
-              >
-                <span>REF: {reference.slice(0, 10).toUpperCase()}</span>
-                {copiedRef ? (
-                  <Check className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-emerald-400" />
-                ) : (
-                  <Copy className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-slate-500 group-hover:text-amber-400 transition-colors" />
-                )}
-              </button>
-            </div>
-
-            {/* Orbital Status Hero */}
-            <div className="px-4 pt-3.5 pb-3 sm:px-5 sm:pt-5 sm:pb-4 flex flex-col items-center text-center relative z-10">
-              <div className="relative mb-2.5 sm:mb-3.5 flex items-center justify-center">
-                {orderStatus === "fulfilled" ? (
-                  <motion.div
-                    initial={{ scale: 0.85, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    className="relative w-16 h-16 sm:w-22 sm:h-22 flex items-center justify-center"
-                  >
-                    <div className="absolute inset-0 bg-emerald-500 rounded-full blur-xl opacity-30 animate-pulse" />
-                    <div className="absolute inset-0.5 rounded-full border border-emerald-400/30 animate-ping opacity-20" />
-                    <div className="relative z-10 w-14 h-14 sm:w-18 sm:h-18 rounded-[18px] sm:rounded-[22px] bg-gradient-to-b from-emerald-500/25 via-emerald-950/70 to-[#07080d] border border-emerald-400/45 flex items-center justify-center shadow-[0_0_30px_rgba(16,185,129,0.3)]">
-                      <CheckCircle2 className="w-7 h-7 sm:w-9 sm:h-9 text-emerald-400 drop-shadow-[0_0_12px_rgba(16,185,129,0.6)]" />
-                    </div>
-                  </motion.div>
-                ) : (
-                  <div className="relative w-16 h-16 sm:w-22 sm:h-22 flex items-center justify-center">
-                    <div className="absolute inset-0 rounded-full blur-xl opacity-25 animate-pulse" style={{ backgroundColor: meta.color }} />
-                    {/* Outer Orbital Ring */}
-                    <div
-                      className="absolute inset-0 rounded-full border border-dashed opacity-35 animate-spin"
-                      style={{ borderColor: meta.color, animationDuration: "10s" }}
-                    />
-                    <div className="relative z-10 w-14 h-14 sm:w-18 sm:h-18 rounded-[18px] sm:rounded-[22px] bg-gradient-to-b from-white/[0.07] to-[#07080d] border border-white/[0.12] flex items-center justify-center shadow-2xl">
-                      {isBeneficiaryOrder ? (
-                        <Clock className="w-7 h-7 sm:w-8 sm:h-8 text-amber-400 animate-pulse drop-shadow-[0_0_12px_rgba(245,158,11,0.5)]" />
-                      ) : orderStatus === "refunded" ? (
-                        <RotateCcw className="w-7 h-7 sm:w-8 sm:h-8 text-purple-400 drop-shadow-[0_0_12px_rgba(168,85,247,0.5)]" />
-                      ) : failed ? (
-                        <XCircle className="w-7 h-7 sm:w-8 sm:h-8 text-red-400 drop-shadow-[0_0_12px_rgba(239,68,68,0.4)]" />
-                      ) : (
-                        <div className="relative flex items-center justify-center">
-                          <Loader2 className="w-8 h-8 sm:w-9 sm:h-9 animate-spin text-amber-400/90" />
-                          <Activity className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-300 absolute" />
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <h1 className="text-[17px] sm:text-[21px] font-black text-white tracking-tight leading-snug">
-                {meta.label}
-              </h1>
-              <p className="mt-0.5 text-[11px] sm:text-xs text-slate-300/90 font-medium max-w-[290px] sm:max-w-[330px] leading-relaxed">
-                {meta.sub}
-              </p>
-
-              {/* Live ETA & Instant Sync Pill */}
-              {createdAt && ["pending", "paid", "processing"].includes(orderStatus) && (
-                <div className="mt-2.5 sm:mt-3 inline-flex items-center gap-1.5 sm:gap-2 pl-3 pr-1.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[10px] sm:text-[11px] font-bold font-mono shadow-inner">
-                  <Clock className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-400 animate-spin" style={{ animationDuration: "4s" }} />
-                  <span>
-                    {getRemainingTimeStr().includes("Arriving")
-                      ? getRemainingTimeStr()
-                      : `Est. delivery: ~${getRemainingTimeStr()}`}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => pollStatus(true)}
-                    disabled={isRefreshing}
-                    className="ml-0.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-400/15 hover:bg-amber-400/25 border border-amber-400/30 text-[9px] sm:text-[10px] font-black text-amber-200 transition-all cursor-pointer disabled:opacity-50"
-                    title="Refresh live carrier status"
-                  >
-                    <RefreshCw className={cn("w-2.5 h-2.5", isRefreshing && "animate-spin")} />
-                    <span>{isRefreshing ? "Syncing" : "Sync"}</span>
-                  </button>
-                </div>
+              <h1 className="mt-4 text-[22px] font-bold tracking-[-0.02em] leading-tight">{meta.label}</h1>
+              <p className="mt-1 text-[13.5px] text-muted-foreground max-w-[340px] mx-auto">{meta.sub}</p>
+              {createdAt && isActive && (
+                <p className={cn("mt-3 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[12.5px] font-semibold", tone.soft)}>
+                  <Clock className="h-3.5 w-3.5" />
+                  {getRemainingTimeStr().includes("Arriving") ? getRemainingTimeStr() : `Expected in about ${getRemainingTimeStr()}`}
+                </p>
               )}
             </div>
 
-            {/* 3-Node Visual Pipeline Stepper (Segmented Bridge Architecture — Zero Bleed) */}
-            <div className="px-3.5 pb-3 sm:px-5 sm:pb-4 relative z-10">
-              {(() => {
-                const rawPct = getProgressPercentage();
-                const seg1Pct =
-                  orderStatus === "fulfilled" || activeStep >= 2
-                    ? 100
-                    : activeStep === 1
-                    ? Math.min(85, Math.max(30, rawPct))
-                    : 0;
-                const seg2Pct =
-                  orderStatus === "fulfilled"
-                    ? 100
-                    : activeStep >= 2
-                    ? Math.min(92, Math.max(24, Math.round(((rawPct - 18) / 77) * 100)))
-                    : 0;
+            {/* Timeline */}
+            <ol className="mx-5 mb-5 grid grid-cols-3 gap-2" aria-label="Delivery progress">
+              {steps.map((s) => (
+                <li key={s.label} className="flex flex-col gap-1.5">
+                  <span className={cn("h-1.5 rounded-full transition-colors duration-500", s.failed ? "bg-rose-500" : s.done ? tone.bar : s.current ? cn(tone.bar, "opacity-50 animate-pulse") : "bg-muted dark:bg-white/[0.08]")} />
+                  <span className={cn("text-[11.5px] leading-tight", s.done || s.current || s.failed ? "font-semibold text-foreground" : "text-muted-foreground")}>{s.label}</span>
+                </li>
+              ))}
+            </ol>
 
+            {/* Details */}
+            <dl className="mx-5 mb-5 rounded-xl bg-muted/50 dark:bg-white/[0.04] divide-y divide-border/60 dark:divide-white/[0.06] text-[13px]">
+              <div className="flex items-center justify-between gap-3 px-3.5 py-2.5">
+                <dt className="text-muted-foreground">Bundle</dt>
+                <dd className="font-semibold text-right">{displayNetwork.replace(" Bundle", "")} · {displayPackage}</dd>
+              </div>
+              <div className="flex items-center justify-between gap-3 px-3.5 py-2.5">
+                <dt className="text-muted-foreground">Recipient</dt>
+                <dd>
+                  <button type="button" onClick={handleCopyPhone} className="inline-flex items-center gap-1.5 font-semibold tabular-nums" title="Copy number">
+                    {displayPhone}
+                    {copiedPhone ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5 text-muted-foreground" />}
+                  </button>
+                </dd>
+              </div>
+              {displayAmount && (
+                <div className="flex items-center justify-between gap-3 px-3.5 py-2.5">
+                  <dt className="text-muted-foreground">Paid</dt>
+                  <dd className="font-semibold tabular-nums">{displayAmount}</dd>
+                </div>
+              )}
+              <div className="flex items-center justify-between gap-3 px-3.5 py-2.5">
+                <dt className="text-muted-foreground">Reference</dt>
+                <dd>
+                  <button type="button" onClick={handleCopyRef} className="inline-flex items-center gap-1.5 font-mono text-[12.5px] font-semibold" title="Copy reference" aria-label="Copy order reference">
+                    {reference.slice(0, 14).toUpperCase()}
+                    {copiedRef ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5 text-muted-foreground" />}
+                  </button>
+                </dd>
+              </div>
+              {createdLabel && (
+                <div className="flex items-center justify-between gap-3 px-3.5 py-2.5">
+                  <dt className="text-muted-foreground">Ordered</dt>
+                  <dd className="font-semibold">{createdLabel}</dd>
+                </div>
+              )}
+            </dl>
+
+            {/* Prepaid meter token (ECG / utility) */}
+            {isDelivered &&
+              ((statusMessage && /token/i.test(statusMessage)) || Boolean((orderData as any)?.metadata?.prepaid_token)) &&
+              (() => {
+                const rawToken = (orderData as any)?.metadata?.prepaid_token || statusMessage?.replace(/^.*(?:Token|token):?/i, "").trim();
+                if (!rawToken) return null;
                 return (
-                  <div className="p-3 sm:p-3.5 rounded-2xl bg-gradient-to-b from-[#080a12] to-[#05060b] border border-white/[0.07] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] space-y-2.5 sm:space-y-3">
-                    {/* Pipeline Top Meta Header */}
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5">
-                        <span
-                          className="w-1.5 h-1.5 rounded-full animate-pulse"
-                          style={{ backgroundColor: meta.color }}
-                        />
-                        <span className="text-[8.5px] sm:text-[9px] font-black uppercase tracking-[0.16em] text-slate-400 font-mono">
-                          Delivery Pipeline
-                        </span>
-                      </div>
-                      <span
-                        className={cn(
-                          "px-2 py-0.5 rounded-md text-[8.5px] sm:text-[9px] font-mono font-black uppercase tracking-wider border",
-                          orderStatus === "fulfilled"
-                            ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
-                            : "bg-amber-500/10 text-amber-300 border-amber-500/25"
-                        )}
+                  <div className="mx-5 mb-5 rounded-xl border border-emerald-500/30 bg-emerald-500/[0.07] p-4 text-center">
+                    <p className="text-[12px] font-semibold text-emerald-700 dark:text-emerald-400">Your meter token</p>
+                    <div className="mt-2 flex items-center justify-center gap-2">
+                      <span className="font-mono text-[18px] font-bold tracking-wider">{rawToken}</span>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(rawToken);
+                          toast.success("Token copied");
+                        }}
+                        className="h-8 w-8 rounded-lg bg-background border border-border flex items-center justify-center"
+                        aria-label="Copy meter token"
                       >
-                        {orderStatus === "fulfilled"
-                          ? "100% • Delivered"
-                          : `Stage ${Math.max(1, activeStep)}/3 • ${rawPct}%`}
-                      </span>
+                        <Copy className="h-4 w-4" />
+                      </button>
                     </div>
-
-                    {/* Connected Nodes & Segmented Bridges */}
-                    <div className="px-1.5 sm:px-2 pt-0.5">
-                      <div className="flex items-center">
-                        {STEPS.map((s, i) => {
-                          const stepNum = i + 1;
-                          const isCompleted = activeStep > stepNum || orderStatus === "fulfilled";
-                          const isCurrent = activeStep === stepNum && orderStatus !== "fulfilled";
-                          const StepIcon = s.icon;
-
-                          return (
-                            <div key={s.key} className="contents">
-                              {/* Step Icon Node (Solid Dark Core so no track ever bleeds through) */}
-                              <div className="relative flex items-center justify-center shrink-0">
-                                {isCurrent && (
-                                  <span className="absolute -inset-1 rounded-xl sm:rounded-2xl bg-amber-500/20 blur-md animate-pulse pointer-events-none" />
-                                )}
-                                {isCompleted && (
-                                  <span className="absolute -inset-1 rounded-xl sm:rounded-2xl bg-emerald-500/15 blur-sm pointer-events-none" />
-                                )}
-                                <div
-                                  className={cn(
-                                    "relative z-10 w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl flex items-center justify-center border transition-all duration-500",
-                                    isCompleted
-                                      ? "bg-[#071914] border-emerald-400/60 text-emerald-400 shadow-[0_0_16px_rgba(16,185,129,0.28)]"
-                                      : isCurrent
-                                      ? "bg-[#191307] border-amber-400 text-amber-300 ring-3 sm:ring-4 ring-amber-500/15 shadow-[0_0_18px_rgba(245,158,11,0.3)]"
-                                      : "bg-[#0b0d16] border-slate-800/90 text-slate-600"
-                                  )}
-                                >
-                                  <StepIcon className={cn("w-3.5 h-3.5 sm:w-4 sm:h-4", isCurrent && "animate-pulse")} />
-                                  {isCompleted && (
-                                    <span className="absolute -top-1 -right-1 w-3 h-3 sm:w-3.5 sm:h-3.5 rounded-full bg-emerald-500 border-2 border-[#06070c] flex items-center justify-center shadow-sm">
-                                      <Check className="w-1.5 h-1.5 sm:w-2 sm:h-2 text-slate-950 stroke-[3.5]" />
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-
-                              {/* Segmented Connector Bridge strictly between nodes */}
-                              {i < STEPS.length - 1 && (
-                                <div className="flex-1 mx-2 sm:mx-2.5 h-1 sm:h-1.5 rounded-full bg-slate-900 border border-white/[0.05] overflow-hidden relative shadow-inner">
-                                  <div
-                                    className={cn(
-                                      "h-full rounded-full transition-all duration-1000 ease-out relative",
-                                      i === 0
-                                        ? seg1Pct >= 100
-                                          ? "bg-gradient-to-r from-emerald-500 via-emerald-400 to-amber-400 shadow-[0_0_10px_rgba(16,185,129,0.5)]"
-                                          : "bg-gradient-to-r from-emerald-500 to-amber-400"
-                                        : orderStatus === "fulfilled"
-                                        ? "bg-gradient-to-r from-emerald-400 to-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]"
-                                        : "bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-300 shadow-[0_0_10px_rgba(245,158,11,0.45)]"
-                                    )}
-                                    style={{ width: `${i === 0 ? seg1Pct : seg2Pct}%` }}
-                                  />
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-
-                      {/* Step Labels Aligned Under Each Node */}
-                      <div className="grid grid-cols-3 gap-1 mt-2">
-                        {STEPS.map((s, i) => {
-                          const stepNum = i + 1;
-                          const isCompleted = activeStep > stepNum || orderStatus === "fulfilled";
-                          const isCurrent = activeStep === stepNum && orderStatus !== "fulfilled";
-                          const stepLabel = i === 2 && isBeneficiaryOrder ? "In Queue" : s.label;
-
-                          return (
-                            <div
-                              key={s.key}
-                              className={cn(
-                                "flex flex-col",
-                                i === 0 ? "items-start text-left" : i === 1 ? "items-center text-center" : "items-end text-right"
-                              )}
-                            >
-                              <span
-                                className={cn(
-                                  "text-[9px] sm:text-[10px] font-black uppercase tracking-wider font-mono leading-tight",
-                                  isCompleted
-                                    ? "text-emerald-400"
-                                    : isCurrent
-                                    ? "text-amber-300"
-                                    : "text-slate-500"
-                                )}
-                              >
-                                {stepLabel}
-                              </span>
-                              <span
-                                className={cn(
-                                  "text-[8px] sm:text-[9px] font-medium mt-0.5 leading-tight",
-                                  isCompleted
-                                    ? "text-emerald-400/70"
-                                    : isCurrent
-                                    ? "text-amber-200/75"
-                                    : "text-slate-600"
-                                )}
-                              >
-                                {s.sub}
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
+                    <p className="mt-1.5 text-[12px] text-muted-foreground">Type this code into your prepaid meter to load the electricity.</p>
                   </div>
                 );
               })()}
-            </div>
 
-            {/* 3-Tile Bento Order Spec Grid */}
-            <div className="px-3.5 pb-3 sm:px-5 sm:pb-4 relative z-10">
-              <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
-                {/* Tile 1: Carrier & Plan */}
-                <div className="p-2.5 sm:p-3 rounded-xl sm:rounded-2xl bg-white/[0.025] border border-white/[0.07] flex flex-col justify-between min-w-0">
-                  <span className="text-[8px] sm:text-[9px] font-bold uppercase tracking-wider text-slate-400 font-mono truncate">
-                    Plan & Net
-                  </span>
-                  <div className="mt-1 sm:mt-1.5 flex items-center gap-1 flex-wrap">
-                    <Badge
-                      variant="outline"
-                      className={cn(
-                        "text-[8.5px] sm:text-[9px] font-black uppercase tracking-wider px-1.5 py-0 border rounded-md leading-4",
-                        displayNetwork.toUpperCase().includes("MTN") && "border-amber-500/40 text-amber-300 bg-amber-500/15",
-                        displayNetwork.toUpperCase().includes("TELECEL") && "border-red-500/40 text-red-300 bg-red-500/15",
-                        (displayNetwork.toUpperCase().includes("AIRTEL") || displayNetwork.toUpperCase().includes("AT")) && "border-blue-500/40 text-blue-300 bg-blue-500/15"
-                      )}
-                    >
-                      {displayNetwork.replace(" Bundle", "")}
-                    </Badge>
-                    <span className="text-[11px] sm:text-xs font-black text-white font-mono truncate">
-                      {displayPackage}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Tile 2: Recipient Phone */}
-                <button
-                  type="button"
-                  onClick={handleCopyPhone}
-                  className="p-2.5 sm:p-3 rounded-xl sm:rounded-2xl bg-white/[0.025] hover:bg-white/[0.05] border border-white/[0.07] flex flex-col justify-between text-left transition-colors group cursor-pointer min-w-0"
-                  title="Click to copy recipient number"
-                >
-                  <div className="flex items-center justify-between w-full gap-1">
-                    <span className="text-[8px] sm:text-[9px] font-bold uppercase tracking-wider text-slate-400 font-mono truncate">
-                      Recipient
-                    </span>
-                    {copiedPhone ? (
-                      <Check className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-emerald-400 shrink-0" />
-                    ) : (
-                      <Copy className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-slate-500 group-hover:text-emerald-400 transition-colors shrink-0" />
-                    )}
-                  </div>
-                  <span className="mt-1 sm:mt-1.5 text-[11px] sm:text-xs font-mono font-black text-emerald-400 tracking-tight sm:tracking-wide truncate block w-full">
-                    {displayPhone}
-                  </span>
-                </button>
-
-                {/* Tile 3: Verified Amount / Route */}
-                <div className="p-2.5 sm:p-3 rounded-xl sm:rounded-2xl bg-white/[0.025] border border-white/[0.07] flex flex-col justify-between min-w-0">
-                  <span className="text-[8px] sm:text-[9px] font-bold uppercase tracking-wider text-slate-400 font-mono truncate">
-                    {displayAmount ? "Verified Paid" : "Gateway"}
-                  </span>
-                  <div className="mt-1 sm:mt-1.5 flex items-center justify-between gap-1">
-                    <span className="text-[11px] sm:text-xs font-black text-white font-mono truncate">
-                      {displayAmount || "Auto-Router"}
-                    </span>
-                    <ShieldCheck className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-400 shrink-0" />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Prepaid Meter Token Callout (For ECG / Utility Orders) */}
-            {orderStatus === "fulfilled" && (
-              (statusMessage && (statusMessage.includes("Token") || statusMessage.includes("token"))) || 
-              Boolean((orderData as any)?.metadata?.prepaid_token)
-            ) && (() => {
-              const rawToken = (orderData as any)?.metadata?.prepaid_token || statusMessage?.replace(/^.*(?:Token|token):?/i, "").trim();
-              if (!rawToken) return null;
-              return (
-                <div className="mx-3.5 sm:mx-5 mb-3 sm:mb-4 p-3.5 sm:p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-center space-y-2 animate-in zoom-in-95 duration-200 relative z-10">
-                  <p className="text-[10px] font-extrabold uppercase tracking-widest text-emerald-400 flex items-center justify-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-                    Prepaid Meter Token Code
-                  </p>
-                  <div className="flex items-center justify-center gap-2">
-                    <span className="text-base sm:text-lg font-black tracking-wider text-white font-mono bg-black/60 px-3 py-1 rounded-xl border border-emerald-500/40">
-                      {rawToken}
-                    </span>
-                    <button 
-                      onClick={() => {
-                        navigator.clipboard.writeText(rawToken);
-                        toast.success("Token copied to clipboard!");
-                      }}
-                      className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 transition-all cursor-pointer"
-                      title="Copy Token"
-                      aria-label="Copy prepaid meter token"
-                    >
-                      <Copy className="w-4 h-4" />
-                    </button>
-                  </div>
-                  <p className="text-[10px] text-slate-400 font-medium">Key this code into your prepaid meter keypad to credit electricity.</p>
-                </div>
-              );
-            })()}
-
-            {/* Whitelist In-Queue Callout Card */}
+            {/* MTN whitelist queue */}
             {isBeneficiaryOrder && (
-              <div className="mx-3.5 sm:mx-5 mb-3 sm:mb-4 p-3.5 sm:p-4 rounded-2xl bg-gradient-to-b from-amber-500/15 via-amber-950/20 to-black border border-amber-500/40 text-center space-y-2.5 shadow-lg shadow-amber-950/40 relative z-10">
-                <div className="flex items-center justify-center gap-2">
-                  <Clock className="w-4 h-4 text-amber-400 animate-pulse" />
-                  <span className="text-xs font-black uppercase tracking-wider text-amber-300 font-mono">
-                    MTN Carrier Whitelist Queue
-                  </span>
-                </div>
-                <p className="text-[11px] sm:text-xs text-slate-300 font-medium leading-relaxed">
-                  Recipient line <span className="text-amber-300 font-bold font-mono">{displayPhone}</span> is queued for carrier beneficiary verification. The bundle will deliver automatically once approved.
+              <div className="mx-5 mb-5 rounded-xl border border-amber-500/30 bg-amber-500/[0.07] p-4">
+                <p className="text-[13.5px] font-semibold flex items-center gap-1.5">
+                  <Clock className="h-4 w-4 text-amber-600 dark:text-amber-400" /> Waiting for MTN to approve this number
                 </p>
-                <div className="pt-1 flex flex-col gap-2">
+                <p className="mt-1 text-[12.5px] text-muted-foreground">
+                  <span className="font-semibold text-foreground tabular-nums">{displayPhone}</span> is in MTN’s approval queue. Your bundle will be sent automatically once it’s approved.
+                </p>
+                <div className="mt-3 grid gap-2">
                   <button
                     onClick={() => navigate(`/submit-numbers?phone=${encodeURIComponent(phoneParam || orderPhone || "")}`)}
-                    className="w-full py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[11px] sm:text-xs uppercase tracking-wider transition-all shadow-md active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+                    className="h-11 rounded-xl bg-amber-500 text-slate-950 text-[13.5px] font-semibold inline-flex items-center justify-center gap-1.5 hover:brightness-105"
                   >
-                    <Zap className="w-4 h-4 fill-slate-950" />
-                    Expedite / Verify Number Now 🚀
+                    <Zap className="h-4 w-4" /> Speed up: verify this number
                   </button>
-
                   {(orderData as any)?.metadata?.guest_refund_status === "needs_manual_payout" ? (
                     <a
                       href={getWhatsAppUrl(`Hello SwiftData support, my refund request for order ${resolvedOrderId || reference} is pending manual payout. Please assist me.`)}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="w-full py-2.5 px-4 rounded-xl bg-amber-600/25 hover:bg-amber-600/40 border border-amber-500/40 text-amber-200 font-black text-[11px] sm:text-xs uppercase tracking-wider transition-all shadow-md active:scale-95 flex items-center justify-center gap-2"
+                      className={secondaryBtn}
                     >
-                      <MessageCircle className="w-4 h-4 text-amber-400 fill-amber-400/20" />
-                      Refund Under Review (Chat Support) ⏳
+                      <MessageCircle className="h-4 w-4" /> Refund under review, chat with us
                     </a>
+                  ) : confirmRefund ? (
+                    <div className="rounded-xl border border-border bg-background p-3">
+                      <p className="text-[12.5px]">Cancel this order and refund your Mobile Money?</p>
+                      <div className="mt-2 grid grid-cols-2 gap-2">
+                        <button onClick={() => { setConfirmRefund(false); handleInstantRefund(); }} disabled={isClaimingRefund} className="h-9 rounded-lg bg-foreground text-background text-[12.5px] font-semibold disabled:opacity-60">
+                          {isClaimingRefund ? "Requesting…" : "Yes, refund me"}
+                        </button>
+                        <button onClick={() => setConfirmRefund(false)} className="h-9 rounded-lg border border-border text-[12.5px] font-semibold">Keep waiting</button>
+                      </div>
+                    </div>
                   ) : (
-                    <button
-                      onClick={handleInstantRefund}
-                      disabled={isClaimingRefund}
-                      className="w-full py-2.5 px-4 rounded-xl bg-purple-600/25 hover:bg-purple-600/40 border border-purple-500/40 text-purple-200 font-black text-[11px] sm:text-xs uppercase tracking-wider transition-all shadow-md active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
-                    >
-                      {isClaimingRefund ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4 text-purple-400" />}
-                      Request Refund to Mobile Money 💰
+                    <button onClick={() => setConfirmRefund(true)} className={secondaryBtn}>
+                      <RotateCcw className="h-4 w-4" /> Request a refund instead
                     </button>
                   )}
                 </div>
               </div>
             )}
 
-            {/* 1. Verified Completed Paystack Mobile Money Refund */}
-            {orderStatus === "refunded" && (orderData as any)?.metadata?.guest_refund_gateway === "paystack" && (orderData as any)?.metadata?.guest_refund_status === "completed" && (
-              <div className="mx-3.5 sm:mx-5 mb-3 sm:mb-4 p-3.5 sm:p-4 rounded-2xl bg-gradient-to-b from-purple-500/15 via-purple-950/20 to-black border border-purple-500/40 text-center space-y-2 shadow-lg shadow-purple-950/40 relative z-10">
-                <div className="flex items-center justify-center gap-2">
-                  <RotateCcw className="w-4 h-4 text-purple-400" />
-                  <span className="text-xs font-black uppercase tracking-wider text-purple-300 font-mono">
-                    Refund Sent to Mobile Money 💰
-                  </span>
-                </div>
-                <p className="text-[11px] sm:text-xs text-slate-300 font-medium leading-relaxed">
-                  Your payment of <strong className="text-emerald-400 font-black">GH₵ {Number((orderData as any)?.refund_amount || (orderData as any)?.amount || 0).toFixed(2)}</strong> for <span className="text-amber-300 font-bold font-mono">{displayPhone}</span> has been refunded to your Mobile Money account via Paystack.
+            {/* Refund outcomes */}
+            {isRefunded && (orderData as any)?.metadata?.guest_refund_gateway === "paystack" && (orderData as any)?.metadata?.guest_refund_status === "completed" && (
+              <div className="mx-5 mb-5 rounded-xl border border-violet-500/30 bg-violet-500/[0.07] p-4">
+                <p className="text-[13.5px] font-semibold">Refund sent to your Mobile Money</p>
+                <p className="mt-1 text-[12.5px] text-muted-foreground">
+                  <span className="font-semibold text-foreground">GH₵{Number((orderData as any)?.refund_amount || (orderData as any)?.amount || 0).toFixed(2)}</span> was refunded via Paystack.
+                  {(orderData as any)?.metadata?.guest_refund_id ? <> Refund ID: <span className="font-mono">{(orderData as any).metadata.guest_refund_id}</span></> : null}
                 </p>
-                {(orderData as any)?.metadata?.guest_refund_id && (
-                  <div className="text-[10px] text-purple-300/80 font-mono bg-purple-500/10 py-1 px-3 rounded-lg border border-purple-500/20 inline-block">
-                    Paystack Refund ID: <span className="font-bold text-purple-200">{(orderData as any)?.metadata?.guest_refund_id}</span>
-                  </div>
-                )}
               </div>
             )}
-
-            {/* 2. Refund Under Manual Review */}
-            {(orderData as any)?.metadata?.guest_refund_status === "needs_manual_payout" && orderStatus !== "refunded" && (
-              <div className="mx-3.5 sm:mx-5 mb-3 sm:mb-4 p-3.5 sm:p-4 rounded-2xl bg-gradient-to-b from-amber-500/15 via-amber-950/20 to-black border border-amber-500/40 text-center space-y-2 shadow-lg shadow-amber-950/40 relative z-10">
-                <div className="flex items-center justify-center gap-2">
-                  <Clock className="w-4 h-4 text-amber-400 animate-pulse" />
-                  <span className="text-xs font-black uppercase tracking-wider text-amber-300 font-mono">
-                    Refund Request Under Review ⏳
-                  </span>
-                </div>
-                <p className="text-[11px] sm:text-xs text-slate-300 font-medium leading-relaxed">
-                  Your refund request for <strong className="text-amber-300 font-bold">GH₵ {Number((orderData as any)?.amount || 0).toFixed(2)}</strong> is queued for manual Mobile Money payout by our support team.
+            {(orderData as any)?.metadata?.guest_refund_status === "needs_manual_payout" && !isRefunded && !isBeneficiaryOrder && (
+              <div className="mx-5 mb-5 rounded-xl border border-amber-500/30 bg-amber-500/[0.07] p-4">
+                <p className="text-[13.5px] font-semibold">Refund is being reviewed</p>
+                <p className="mt-1 text-[12.5px] text-muted-foreground">
+                  Our team will pay <span className="font-semibold text-foreground">GH₵{Number((orderData as any)?.amount || 0).toFixed(2)}</span> back to your Mobile Money.
                 </p>
                 <a
                   href={getWhatsAppUrl(`Hello SwiftData support, my order ${resolvedOrderId || reference} is pending manual refund payout. Please assist me.`)}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[11px] sm:text-xs uppercase tracking-wider transition-all shadow-md active:scale-95 flex items-center justify-center gap-2"
+                  className="mt-3 h-10 w-full rounded-xl bg-emerald-600 text-white text-[13px] font-semibold inline-flex items-center justify-center gap-1.5 hover:bg-emerald-500"
                 >
-                  <MessageCircle className="w-4 h-4 fill-white" />
-                  Chat Support for Instant Payout 🚀
+                  <MessageCircle className="h-4 w-4" /> Chat with support
                 </a>
               </div>
             )}
-
-            {/* 3. Refunded to Agent Wallet Balance */}
-            {orderStatus === "refunded" && (orderData as any)?.metadata?.guest_refund_gateway !== "paystack" && (
-              <div className="mx-3.5 sm:mx-5 mb-3 sm:mb-4 p-3.5 sm:p-4 rounded-2xl bg-gradient-to-b from-blue-500/15 via-blue-950/20 to-black border border-blue-500/40 text-center space-y-2 shadow-lg shadow-blue-950/40 relative z-10">
-                <div className="flex items-center justify-center gap-2">
-                  <RotateCcw className="w-4 h-4 text-blue-400" />
-                  <span className="text-xs font-black uppercase tracking-wider text-blue-300 font-mono">
-                    Refunded to Wallet Balance 💳
-                  </span>
-                </div>
-                <p className="text-[11px] sm:text-xs text-slate-300 font-medium leading-relaxed">
-                  <strong className="text-emerald-400 font-black">GH₵ {Number((orderData as any)?.refund_amount || (orderData as any)?.amount || 0).toFixed(2)}</strong> has been credited back to your wallet balance.
+            {isRefunded && (orderData as any)?.metadata?.guest_refund_gateway !== "paystack" && (
+              <div className="mx-5 mb-5 rounded-xl border border-sky-500/30 bg-sky-500/[0.07] p-4">
+                <p className="text-[13.5px] font-semibold">Refunded to your wallet</p>
+                <p className="mt-1 text-[12.5px] text-muted-foreground">
+                  <span className="font-semibold text-foreground">GH₵{Number((orderData as any)?.refund_amount || (orderData as any)?.amount || 0).toFixed(2)}</span> is back in your SwiftData wallet.
                 </p>
               </div>
             )}
 
-            {/* Unified Smart Action & Resolution Dock */}
-            <div className="mx-3.5 mb-3 p-3 sm:mx-5 sm:mb-4 sm:p-4 rounded-2xl bg-gradient-to-b from-white/[0.04] to-[#06070c] border border-white/[0.08] space-y-2.5 sm:space-y-3 relative z-10">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5 sm:gap-2">
-                  <Headphones className="w-3.5 h-3.5 text-amber-400" />
-                  <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-wider text-slate-200 font-mono">
-                    {orderStatus === "fulfilled" ? "Order Actions & Receipt" : "Smart Resolution Dock"}
-                  </span>
-                </div>
-                <span className="px-2 py-0.5 rounded-full text-[8.5px] sm:text-[9px] font-black uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-mono flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                  Agents Online
-                </span>
-              </div>
-
-              {/* Primary CTA when order is active / not yet delivered */}
-              {orderStatus !== "fulfilled" && orderStatus !== "refunded" && (
+            {/* Actions */}
+            <div className="px-5 pb-5 space-y-2">
+              {isActive && (
                 <button
                   onClick={handleExpediteDelivery}
                   disabled={isExpediting}
-                  className="w-full py-2.5 sm:py-3 px-3.5 sm:px-4 rounded-xl bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-500 hover:brightness-110 text-slate-950 font-black text-[11px] sm:text-xs uppercase tracking-wider transition-all shadow-[0_8px_25px_rgba(245,158,11,0.28)] active:scale-[0.98] flex items-center justify-center gap-1.5 sm:gap-2 disabled:opacity-50 cursor-pointer"
+                  className="w-full h-12 rounded-xl bg-primary text-primary-foreground text-[14.5px] font-semibold inline-flex items-center justify-center gap-2 shadow-sm hover:brightness-105 disabled:opacity-60"
                 >
-                  {isExpediting ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-spin text-slate-950" />
-                      <span>Syncing Carrier Gateway...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Zap className="w-3.5 h-3.5 sm:w-4 sm:h-4 fill-slate-950 text-slate-950" />
-                      <span>Expedite Delivery / Force Dispatch</span>
-                    </>
-                  )}
+                  {isExpediting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
+                  {isExpediting ? "Checking with the network…" : "Check & push delivery"}
+                </button>
+              )}
+              {isDelivered && (
+                <button
+                  onClick={() => navigate(isStoreRoute && storeInfo?.slug ? `/store/${storeInfo.slug}` : "/")}
+                  className="w-full h-12 rounded-xl bg-primary text-primary-foreground text-[14.5px] font-semibold inline-flex items-center justify-center gap-2 shadow-sm hover:brightness-105"
+                >
+                  Buy again
                 </button>
               )}
 
-              {/* 2x2 Quick Action Grid */}
-              <div className="grid grid-cols-2 gap-1.5 sm:gap-2">
-                <button
-                  onClick={() => setShowReceipt(true)}
-                  className="py-2 sm:py-2.5 px-2.5 sm:px-3 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-slate-200 font-bold text-[11px] sm:text-xs flex items-center justify-center gap-1.5 sm:gap-2 transition-all active:scale-95 cursor-pointer"
-                >
-                  <ReceiptText className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                  <span>Digital Receipt</span>
-                </button>
+              {canRefund &&
+                (confirmRefund ? (
+                  <div className="rounded-xl border border-border bg-background p-3">
+                    <p className="text-[12.5px]">Cancel this order and refund your Mobile Money? This can’t be undone.</p>
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      <button onClick={() => { setConfirmRefund(false); handleInstantRefund(); }} disabled={isClaimingRefund} className="h-9 rounded-lg bg-foreground text-background text-[12.5px] font-semibold disabled:opacity-60">
+                        {isClaimingRefund ? "Requesting…" : "Yes, refund me"}
+                      </button>
+                      <button onClick={() => setConfirmRefund(false)} className="h-9 rounded-lg border border-border text-[12.5px] font-semibold">Keep order</button>
+                    </div>
+                  </div>
+                ) : (
+                  <button onClick={() => setConfirmRefund(true)} disabled={isClaimingRefund} className={cn(secondaryBtn, "w-full")}>
+                    {isClaimingRefund ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />} Get a refund
+                  </button>
+                ))}
 
-                <button
-                  onClick={handleWhatsAppSupport}
-                  className="py-2 sm:py-2.5 px-2.5 sm:px-3 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 font-bold text-[11px] sm:text-xs flex items-center justify-center gap-1.5 sm:gap-2 transition-all active:scale-95 cursor-pointer"
-                >
-                  <MessageCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                  <span>WhatsApp Help</span>
-                </button>
+              {!isDelivered && !isRefunded && !isBeneficiaryOrder && hasEnteredProvider && (
+                <p className="text-center text-[12px] text-muted-foreground flex items-center justify-center gap-1.5">
+                  <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" /> Your order is with the network. If it fails, you’ll be refunded.
+                </p>
+              )}
 
-                <button
-                  onClick={handleShareWhatsApp}
-                  className="py-2 sm:py-2.5 px-2.5 sm:px-3 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-slate-300 font-bold text-[11px] sm:text-xs flex items-center justify-center gap-1.5 sm:gap-2 transition-all active:scale-95 cursor-pointer"
-                >
-                  <Share2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                  <span>Share Status</span>
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <button onClick={handleWhatsAppSupport} className={secondaryBtn}>
+                  <MessageCircle className="h-4 w-4 text-emerald-600" /> WhatsApp help
                 </button>
-
-                <button
-                  onClick={handleCopyTrackingLink}
-                  className="py-2 sm:py-2.5 px-2.5 sm:px-3 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-slate-300 font-bold text-[11px] sm:text-xs flex items-center justify-center gap-1.5 sm:gap-2 transition-all active:scale-95 cursor-pointer"
-                >
-                  {copiedLink ? (
-                    <>
-                      <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                      <span className="text-emerald-400">Link Copied</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      <span>Copy Link</span>
-                    </>
-                  )}
+                <button onClick={() => setShowReceipt(true)} className={secondaryBtn}>
+                  <ReceiptText className="h-4 w-4" /> Receipt
+                </button>
+                <button onClick={handleShareWhatsApp} className={secondaryBtn}>
+                  <Share2 className="h-4 w-4" /> Share
+                </button>
+                <button onClick={handleCopyTrackingLink} className={secondaryBtn}>
+                  {copiedLink ? <Check className="h-4 w-4 text-emerald-500" /> : <Copy className="h-4 w-4" />} {copiedLink ? "Copied" : "Copy link"}
                 </button>
               </div>
-
-              {/* Refund or Carrier Gateway Guarantee Strip */}
-              {orderStatus !== "fulfilled" && orderStatus !== "refunded" && !isBeneficiaryOrder && (
-                <div className="pt-0.5">
-                  {!hasEnteredProvider ? (
-                    <button
-                      onClick={handleInstantRefund}
-                      disabled={isClaimingRefund}
-                      className="w-full py-2 sm:py-2.5 px-3 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 text-purple-200 font-bold text-[11px] sm:text-xs uppercase tracking-wider transition-all active:scale-95 flex items-center justify-center gap-1.5 sm:gap-2 disabled:opacity-50 cursor-pointer"
-                    >
-                      {isClaimingRefund ? (
-                        <>
-                          <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-300" />
-                          <span>Processing Instant Refund...</span>
-                        </>
-                      ) : (
-                        <>
-                          <RotateCcw className="w-3.5 h-3.5 text-purple-400" />
-                          <span>Claim Instant Refund to MoMo 💰</span>
-                        </>
-                      )}
-                    </button>
-                  ) : (
-                    <div className="px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl bg-emerald-500/[0.08] border border-emerald-500/25 flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                        <span className="text-[9.5px] sm:text-[10px] text-slate-300 font-medium truncate">
-                          <strong className="text-emerald-300">Carrier Gateway Locked:</strong> 100% Guaranteed
-                        </span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => pollStatus(true)}
-                        disabled={isRefreshing}
-                        className="text-[9.5px] sm:text-[10px] font-mono font-bold text-emerald-400 hover:text-emerald-300 shrink-0 underline cursor-pointer"
-                      >
-                        {isRefreshing ? "Checking..." : "Verify"}
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
             </div>
 
-            {/* Lock-Screen Delivery Alert Prompt */}
-            {orderStatus !== "fulfilled" && orderStatus !== "fulfillment_failed" && (
-              <div className="mx-3.5 mb-3 sm:mx-5 sm:mb-4 relative z-10">
-                <PushNotificationPrompt 
-                  variant="inline"
-                  title="Get Lock-Screen Delivery Alerts 🔔"
-                  description="Get notified on your lock screen the exact second your bundle delivers."
-                  buttonText="Alert Me When Delivered"
-                />
+            {isActive && (
+              <div className="px-5 pb-5">
+                <PushNotificationPrompt variant="inline" title="Get a delivery alert" description="We’ll ping your lock screen the moment it arrives." buttonText="Alert me" />
               </div>
             )}
 
-            {/* Collapsible Live Carrier Telemetry Drawer */}
+            {/* Technical details */}
             {createdAt && terminalLogs.length > 0 && (
-              <div className="mx-3.5 mb-3.5 sm:mx-5 sm:mb-4 rounded-xl sm:rounded-2xl bg-[#05060a] border border-white/[0.07] overflow-hidden relative z-10">
+              <div className="border-t border-border/60 dark:border-white/[0.06]">
                 <button
                   type="button"
                   onClick={() => setShowTelemetry((prev) => !prev)}
-                  className="w-full px-3 py-2 sm:px-3.5 sm:py-2.5 flex items-center justify-between gap-2 text-left hover:bg-white/[0.02] transition-colors cursor-pointer"
+                  className="w-full px-5 py-3 flex items-center justify-between text-[12.5px] font-semibold text-muted-foreground hover:text-foreground"
+                  aria-expanded={showTelemetry}
                 >
-                  <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
-                    <Terminal className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-400 shrink-0" />
-                    <span className="text-[9px] sm:text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 shrink-0">
-                      Telemetry
-                    </span>
-                    <span className="text-[9.5px] sm:text-[10px] font-mono text-slate-300 truncate">
-                      {latestLog?.text}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    {showTelemetry ? (
-                      <ChevronUp className="w-3.5 h-3.5 text-slate-400" />
-                    ) : (
-                      <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
-                    )}
-                  </div>
+                  Technical details
+                  {showTelemetry ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                 </button>
-
                 <AnimatePresence initial={false}>
                   {showTelemetry && (
-                    <motion.div
+                    <motion.ol
                       initial={{ height: 0, opacity: 0 }}
                       animate={{ height: "auto", opacity: 1 }}
                       exit={{ height: 0, opacity: 0 }}
-                      className="border-t border-slate-800/80 px-3 py-2 sm:px-3.5 sm:py-2.5 font-mono text-[9.5px] sm:text-[10px] space-y-1.5 max-h-[140px] overflow-y-auto"
+                      className="px-5 pb-4 space-y-1.5 max-h-[180px] overflow-y-auto font-mono text-[11.5px]"
                     >
                       {terminalLogs.map((log, i) => (
-                        <div key={i} className="flex gap-2 leading-relaxed">
-                          <span className="text-slate-500 shrink-0">{log.time}</span>
-                          <span
-                            className={cn(
-                              log.status === "success" && "text-emerald-400 font-semibold",
-                              log.status === "warn" && "text-amber-400 font-semibold",
-                              log.status === "info" && "text-slate-300"
-                            )}
-                          >
-                            {log.text}
-                          </span>
-                        </div>
+                        <li key={i} className="flex gap-2">
+                          <span className="text-muted-foreground shrink-0">{log.time}</span>
+                          <span className={cn(log.status === "success" && "text-emerald-600 dark:text-emerald-400", log.status === "warn" && "text-amber-600 dark:text-amber-400")}>{log.text}</span>
+                        </li>
                       ))}
-                    </motion.div>
+                    </motion.ol>
                   )}
                 </AnimatePresence>
               </div>
             )}
+          </section>
 
-            {/* Subtle Bottom Security Footer */}
-            <div className="bg-black/60 px-3.5 py-2.5 sm:px-5 sm:py-3 flex items-center justify-between border-t border-white/[0.06] relative z-10">
-              <div className="flex items-center gap-1.5 text-[9.5px] sm:text-[10px] font-mono text-slate-400">
-                <ShieldCheck className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-400 shrink-0" />
-                <span className="truncate">256-Bit Encrypted Uplink</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => navigate(isStoreRoute && storeInfo?.slug ? `/store/${storeInfo.slug}/order-status` : '/order-status')}
-                className="text-[9.5px] sm:text-[10px] font-mono font-bold text-amber-400 hover:text-amber-300 transition-colors cursor-pointer shrink-0"
-              >
-                Lookup Another →
-              </button>
-            </div>
-          </div>
+          <button
+            type="button"
+            onClick={() => navigate(isStoreRoute && storeInfo?.slug ? `/store/${storeInfo.slug}/order-status` : "/order-status")}
+            className="mx-auto flex items-center gap-1 text-[13px] font-semibold text-muted-foreground hover:text-foreground"
+          >
+            Track another order <ChevronRight className="h-4 w-4" />
+          </button>
 
           {/* Receipt Modal (Portal to document.body) */}
           {createPortal(
@@ -1918,228 +1532,143 @@ const OrderStatus = () => {
   }
 
   // --- RENDER GLOBAL SYSTEM TRACKER OR STORE LOOKUP ---
-  if (isStoreRoute) {
-    return (
-      <div className="min-h-screen bg-[#040509] text-white selection:bg-amber-500/30 font-sans antialiased flex flex-col items-center justify-center p-6 relative overflow-hidden">
-        <SEO 
-          title={`Track Order Status — ${storeName}`}
-          description={`Track the real-time delivery status of your purchases on ${storeName}.`}
-          keywords="track data order Ghana, order status, data delivery status"
-          canonical={`https://${brandDomain}/order-status`}
-        />
-
-        <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
-          <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-amber-500/10 rounded-full blur-[160px]" />
-        </div>
-
-        <div className="w-full max-w-md space-y-8 relative z-10">
-          <div className="flex flex-col items-center text-center space-y-3">
-            <div className="w-16 h-16 rounded-[1.5rem] flex items-center justify-center overflow-hidden border bg-slate-900 border-amber-500/30 shadow-xl" style={{ borderColor: `${brandColor}40` }}>
-              {brandLogoUrl ? (
-                <img src={brandLogoUrl} alt={storeName} className="w-full h-full object-contain" />
-              ) : (
-                <Store className="w-8 h-8" style={{ color: brandColor }} />
-              )}
-            </div>
-            <div>
-              <h1 className="text-xl font-black uppercase tracking-widest text-white/90">{storeName}</h1>
-              <p className="text-[10px] font-bold text-amber-400/90 uppercase tracking-widest font-mono">Order Tracking Portal</p>
-            </div>
-          </div>
-
-          <div className="relative overflow-hidden rounded-3xl bg-[#0a0b12]/95 border border-white/[0.08] p-8 backdrop-blur-2xl shadow-2xl">
-            <div className="absolute inset-0 bg-gradient-to-br from-white/[0.03] to-transparent pointer-events-none" />
-            <h3 className="font-extrabold text-base text-center mb-1 text-white">Lookup Order Status</h3>
-            <p className="text-xs text-slate-400 font-medium text-center mb-6">Enter recipient phone number or order reference ID to fetch all recent purchase records.</p>
-            
-            <form onSubmit={handleSearch} className="relative group">
-              <input 
-                type="text"
-                value={searchPhone}
-                onChange={(e) => setSearchPhone(e.target.value)}
-                placeholder="Phone number or order reference..."
-                aria-label="Phone number or order reference"
-                className="w-full py-4 pl-5 pr-14 rounded-2xl bg-slate-950 border border-slate-800 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-amber-500/50 transition-all shadow-inner font-mono"
-              />
-              <button type="submit" aria-label="Search order status" className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-xl flex items-center justify-center active:scale-95 transition-all shadow-md cursor-pointer" style={{ backgroundColor: brandColor }}>
-                <Search className="w-4 h-4 text-black font-bold" />
-              </button>
-            </form>
-          </div>
-
-          <div className="flex justify-center">
-            <button 
-              onClick={() => {
-                if (activeDomain) {
-                  navigate("/");
-                } else if (storeInfo?.slug) {
-                  navigate(`/store/${storeInfo.slug}`);
-                } else {
-                  navigate("/");
-                }
-              }}
-              className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-slate-900/80 border border-slate-800 text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-white transition-all hover:scale-105 active:scale-95 shadow-md cursor-pointer"
-            >
-              <ArrowLeft className="w-3.5 h-3.5 text-amber-400" /> Back to Store
-            </button>
-          </div>
-        </div>
-
-        {renderFloatingSupport()}
-      </div>
-    );
+  const RECENT_KEY = "swift_recent_lookups_v1";
+  let recentLookups: string[] = [];
+  try {
+    recentLookups = JSON.parse(localStorage.getItem(RECENT_KEY) || "[]").filter((x: unknown) => typeof x === "string").slice(0, 4);
+  } catch {
+    recentLookups = [];
   }
+  const rememberLookup = (value: string) => {
+    const v = value.trim();
+    if (!v) return;
+    try {
+      const next = [v, ...recentLookups.filter((x) => x !== v)].slice(0, 4);
+      localStorage.setItem(RECENT_KEY, JSON.stringify(next));
+    } catch {
+      /* storage unavailable */
+    }
+  };
+  const stats = trackerData?.data?.stats;
+  const liveSummary = trackerData?.data?.lastDelivered?.summary || trackerData?.data?.checkingNow?.summary;
 
   return (
-    <div className="min-h-screen bg-[#040509] text-white selection:bg-amber-500/30 font-sans antialiased relative overflow-hidden">
-      <SEO 
-        title={`Live Delivery Scanner — ${storeName}`}
-        description={`Track your purchases and view live data bundle deliveries in real-time on ${storeName}.`}
-        keywords="live data scanner, track data delivery Ghana, real-time data tracking"
+    <div className="min-h-[100dvh] text-foreground px-4 sm:px-6 pt-20 sm:pt-24 pb-20 relative">
+      <SEO
+        title={`Track Your Order — ${storeName}`}
+        description={`Track the delivery status of your data bundle, airtime or bill payment on ${storeName}.`}
+        keywords="track data order Ghana, order status, data delivery status"
         canonical={`https://${brandDomain}/order-status`}
       />
-      <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
-        <div className="absolute top-[-10%] left-[-10%] w-[450px] h-[450px] rounded-full blur-[160px]" style={{ backgroundColor: `${brandColor}12` }} />
-        <div className="absolute bottom-[-10%] right-[-10%] w-[450px] h-[450px] bg-blue-500/10 rounded-full blur-[160px]" />
-      </div>
 
-      <div className="relative max-w-lg mx-auto px-4 sm:px-6 pt-12 md:pt-20 pb-20 z-10">
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-2xl font-black tracking-tight mb-1">Live Delivery Scanner</h1>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2 font-mono">
-              <Server className="w-3 h-3 text-amber-400" /> System Node 01 • Ghana Carrier Network
-            </p>
-          </div>
-          <div className="flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-slate-900/90 border border-slate-800">
-            <div className="relative">
-              <div className="w-2 h-2 rounded-full bg-emerald-500 animate-ping absolute inset-0" />
-              <div className="w-2 h-2 rounded-full bg-emerald-500 relative" />
-            </div>
-            <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400 font-mono">Live</span>
-          </div>
+      <div className="mx-auto w-full max-w-[460px] space-y-4">
+        <div className="text-center">
+          {isStoreRoute ? (
+            <span className="mx-auto mb-3 h-14 w-14 rounded-2xl overflow-hidden border border-border bg-card flex items-center justify-center">
+              {brandLogoUrl ? <img src={brandLogoUrl} alt={storeName} className="h-full w-full object-contain" /> : <Store className="h-7 w-7" style={{ color: brandColor }} />}
+            </span>
+          ) : null}
+          <h1 className="text-[26px] font-bold tracking-[-0.02em] leading-tight">Track your order</h1>
+          <p className="mt-1 text-[14px] text-muted-foreground">{isStoreRoute ? storeName : "Data, airtime, bills and AFA"}: see where your order is.</p>
         </div>
 
-        {/* Global Search Bar */}
-        <form onSubmit={handleSearch} className="relative group mb-8">
-          <input 
-            type="text"
-            value={searchPhone}
-            onChange={(e) => setSearchPhone(e.target.value)}
-            placeholder="Track order by phone number or reference..."
-            aria-label="Track order by phone number or reference"
-            className="w-full py-4 pl-6 pr-14 rounded-2xl bg-[#0a0b12]/90 border border-white/[0.08] text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-amber-500/50 transition-all shadow-2xl font-mono"
-          />
-          <button type="submit" aria-label="Search order status" className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-xl flex items-center justify-center active:scale-95 transition-all shadow-md cursor-pointer" style={{ backgroundColor: brandColor }}>
-            <Search className="w-4 h-4 text-black font-bold" />
+        <section className="rounded-2xl border border-border/70 bg-card/90 backdrop-blur-xl p-4 sm:p-5 dark:border-white/[0.08] dark:bg-black/40">
+          <form
+            onSubmit={(e) => {
+              rememberLookup(searchPhone);
+              handleSearch(e);
+            }}
+          >
+            <label htmlFor="track-input" className="text-[13px] font-semibold">
+              Phone number or order reference
+            </label>
+            <div className="mt-2 flex gap-2">
+              <div className="relative flex-1">
+                <Search className="pointer-events-none absolute z-10 left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <input
+                  id="track-input"
+                  type="text"
+                  inputMode="text"
+                  autoComplete="off"
+                  value={searchPhone}
+                  onChange={(e) => setSearchPhone(e.target.value)}
+                  placeholder="e.g. 024 123 4567"
+                  className="h-12 w-full rounded-xl border border-input bg-background pl-9 pr-3 text-[15px] tabular-nums placeholder:text-muted-foreground/60 outline-none focus:border-primary focus:ring-4 focus:ring-primary/15"
+                />
+              </div>
+              <button
+                type="submit"
+                className="h-12 px-5 rounded-xl text-[14px] font-semibold shadow-sm hover:brightness-105 shrink-0"
+                style={{ backgroundColor: brandColor, color: "#111" }}
+              >
+                Track
+              </button>
+            </div>
+            <p className="mt-2 text-[12px] text-muted-foreground">Use the number the bundle was sent to, or the reference on your receipt.</p>
+          </form>
+
+          {recentLookups.length > 0 && (
+            <div className="mt-4">
+              <p className="text-[11.5px] font-semibold text-muted-foreground">Recent</p>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {recentLookups.map((v) => (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => setSearchPhone(v)}
+                    className="h-8 px-3 rounded-full border border-border bg-background text-[12.5px] font-medium tabular-nums hover:bg-muted"
+                  >
+                    {v}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+
+        <section className="rounded-2xl border border-border/70 bg-card/90 backdrop-blur-xl p-4 sm:p-5 dark:border-white/[0.08] dark:bg-black/40" aria-live="polite">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-[15px] font-semibold">Delivery status right now</h2>
+              <p className="text-[12px] text-muted-foreground">Updated {lastUpdate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>
+            </div>
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-1 text-[11.5px] font-semibold text-emerald-700 dark:text-emerald-400">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" /> Live
+            </span>
+          </div>
+          {loadingTracker && !trackerData ? (
+            <div className="mt-4 grid grid-cols-3 gap-2">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="h-16 rounded-xl bg-muted animate-pulse" />
+              ))}
+            </div>
+          ) : (
+            <>
+              <dl className="mt-4 grid grid-cols-3 gap-2 text-center">
+                {[
+                  { k: "Delivered", v: stats?.delivered, c: "text-emerald-600 dark:text-emerald-400" },
+                  { k: "On the way", v: stats?.pending, c: "text-amber-600 dark:text-amber-400" },
+                  { k: "Retrying", v: stats?.failed, c: "text-rose-600 dark:text-rose-400" },
+                ].map((s) => (
+                  <div key={s.k} className="rounded-xl bg-muted/50 py-3 dark:bg-white/[0.04]">
+                    <dd className={cn("text-[18px] font-bold tabular-nums", s.c)}>{typeof s.v === "number" ? s.v : "—"}</dd>
+                    <dt className="text-[11px] text-muted-foreground">{s.k}</dt>
+                  </div>
+                ))}
+              </dl>
+              {liveSummary && <p className="mt-3 text-[12.5px] text-muted-foreground flex items-start gap-1.5"><ShieldCheck className="h-3.5 w-3.5 mt-0.5 text-emerald-500 shrink-0" />{liveSummary}</p>}
+            </>
+          )}
+        </section>
+
+        {isStoreRoute && (
+          <button
+            onClick={() => navigate(activeDomain ? "/" : storeInfo?.slug ? `/store/${storeInfo.slug}` : "/")}
+            className="mx-auto flex items-center gap-1.5 text-[13px] font-semibold text-muted-foreground hover:text-foreground"
+          >
+            <ArrowLeft className="h-4 w-4" /> Back to {storeName}
           </button>
-        </form>
-
-        {loadingTracker && !trackerData ? (
-          <div aria-live="polite" className="py-20 flex flex-col items-center gap-4">
-             <Loader2 className="w-8 h-8 animate-spin text-amber-400" />
-             <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 font-mono">Connecting Telemetry Gateway...</p>
-          </div>
-        ) : (
-          <div aria-live="polite" className="space-y-6">
-            <div className="relative rounded-3xl border border-white/[0.08] bg-[#0a0b12]/90 backdrop-blur-2xl overflow-hidden shadow-2xl">
-              <div className="p-6 pb-4">
-                <div className="flex items-center justify-between mb-6">
-                   <div className="flex items-center gap-3">
-                      <div className="w-11 h-11 rounded-2xl flex items-center justify-center border bg-amber-500/15 border-amber-500/30">
-                         <Activity className={cn("w-5 h-5 text-amber-400", trackerData?.data?.scanner?.active && "animate-pulse")} />
-                      </div>
-                      <div>
-                         <h3 className="font-extrabold text-sm text-white">Network Telemetry Scanner</h3>
-                         <p className="text-[10px] text-slate-400 font-medium">Verifying global delivery pipeline</p>
-                      </div>
-                   </div>
-                   <div className="text-right">
-                      <p className="text-[9px] font-bold text-slate-500 uppercase tracking-tighter">Last Sync</p>
-                      <p className="text-[10px] font-mono text-slate-300 font-bold">{lastUpdate.toLocaleTimeString([], { hour12: false })}</p>
-                   </div>
-                </div>
-
-                <div className="relative h-16 flex items-center justify-center mb-6">
-                   <AnimatePresence mode="wait">
-                      <motion.div key={trackerData?.data?.checkingNow?.summary} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="relative z-10 px-5 py-2.5 rounded-2xl bg-slate-950/80 border border-slate-800 text-center shadow-inner">
-                         <p className="text-xs font-extrabold text-amber-300 mb-0.5">{trackerData?.data?.checkingNow?.summary}</p>
-                         <p className="text-[8px] font-black uppercase tracking-[0.2em] text-slate-400 font-mono">Encryption Protocol Active</p>
-                      </motion.div>
-                   </AnimatePresence>
-                </div>
-
-                <div className="grid grid-cols-4 gap-2">
-                   {[
-                     { label: "Check", val: trackerData?.data?.stats?.checked, color: "text-slate-300" },
-                     { label: "Sent", val: trackerData?.data?.stats?.delivered, color: "text-emerald-400" },
-                     { label: "Wait", val: trackerData?.data?.stats?.pending, color: "text-amber-400" },
-                     { label: "Fail", val: trackerData?.data?.stats?.failed, color: "text-red-400" },
-                   ].map(s => (
-                     <div key={s.label} className="p-3 rounded-2xl bg-slate-950/90 border border-slate-800/80 text-center shadow-inner">
-                        <p className="text-[8px] font-black uppercase tracking-widest text-slate-400 mb-1 font-mono">{s.label}</p>
-                        <p className={cn("text-sm font-black tracking-tight font-mono", s.color)}>{s.val}</p>
-                     </div>
-                   ))}
-                </div>
-              </div>
-              <div className="px-6 py-3.5 bg-slate-950/90 flex items-center justify-between border-t border-slate-800/80">
-                 <div className="flex items-center gap-2">
-                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                    <p className="text-[9px] font-medium text-slate-300 italic">{trackerData?.data?.lastDelivered?.summary || "Scanner warming up..."}</p>
-                 </div>
-              </div>
-            </div>
-
-            {/* Live Feed */}
-            <div className="space-y-4 pt-2">
-              <div className="flex items-center justify-between px-1">
-                 <div className="flex items-center gap-2">
-                   <Clock className="w-4 h-4 text-amber-400" />
-                   <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-300 font-mono">Realtime Dispatch Stream</h4>
-                 </div>
-                 <span className="text-[9px] font-mono text-emerald-400 font-bold flex items-center gap-1">
-                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" /> LIVE BATCH
-                 </span>
-              </div>
-
-              <div className="space-y-2">
-                {trackerData?.data?.yourOrders?.inCurrentBatch?.map((o, i) => (
-                  <div key={i} className="flex items-center justify-between p-3.5 rounded-2xl bg-[#0a0b12]/80 border border-slate-800/80 shadow-md">
-                    <div className="flex items-center gap-3">
-                       <div className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center font-mono text-[9px] font-black text-amber-300">{o.network.slice(0, 3)}</div>
-                       <div>
-                          <p className="text-[11px] font-mono font-bold text-white tracking-wider">{o.phone}</p>
-                          <p className="text-[8px] font-bold text-slate-400">{o.capacity} • {o.deliveryStatus}</p>
-                       </div>
-                    </div>
-                    <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-                  </div>
-                ))}
-
-                {trackerData?.data?.yourOrders?.inLastDeliveredBatch?.map((o, i) => (
-                  <div key={`del-${i}`} className="flex items-center justify-between p-3.5 rounded-2xl bg-[#08090e]/60 border border-slate-800/50 shadow-xs">
-                    <div className="flex items-center gap-3">
-                       <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center font-mono text-[9px] font-black text-emerald-400">{o.network.slice(0, 3)}</div>
-                       <div>
-                          <p className="text-[11px] font-mono font-bold text-slate-300 tracking-wider">{o.phone}</p>
-                          <p className="text-[8px] font-bold text-slate-500">{o.capacity} • Verified Delivered</p>
-                       </div>
-                    </div>
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400/80" />
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
         )}
-
-        <div className="mt-12 text-center">
-           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-slate-900/90 border border-slate-800 shadow-md">
-              <SignalHigh className="w-3.5 h-3.5 text-emerald-400" />
-              <p className="text-[9px] font-bold text-slate-400 tracking-wider uppercase font-mono">Ghana Carrier Direct Dispatch • 256-Bit SSL Secured</p>
-           </div>
-        </div>
       </div>
 
       {renderFloatingSupport()}

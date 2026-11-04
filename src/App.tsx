@@ -596,7 +596,7 @@ const AppContent = () => {
         </ChunkErrorBoundary>
       {!isDashboard && !isAgentStore && !isAdmin && !isChallengeArenaPage && <Footer />}
         <Suspense fallback={null}>
-          {!isDashboard && !isAdmin && !isChallengeArenaPage && !isPaymentFlow && <TutorialModal />}
+          {!isDashboard && !isAdmin && !isChallengeArenaPage && !isPaymentFlow && !location.pathname.includes("/my-orders") && !location.pathname.startsWith("/agent-program") && <TutorialModal />}
           <AudioUnlocker />
           {!isAdmin && <NotificationPopup />}
           {!isAdmin && <ChallengeLiveNotifier />}
