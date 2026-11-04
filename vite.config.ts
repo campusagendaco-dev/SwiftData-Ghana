@@ -19,6 +19,10 @@ export default defineConfig(({ mode }) => ({
     chunkSizeWarningLimit: 500,
     rollupOptions: {
       output: {
+        // Hash-only file names: don't advertise which libraries/pages a bundle contains.
+        entryFileNames: "assets/[hash].js",
+        chunkFileNames: "assets/[hash].js",
+        assetFileNames: "assets/[hash][extname]",
         manualChunks(id) {
           if (!id.includes("node_modules")) return undefined;
           if (id.includes("xlsx")) return "vendor-xlsx";
@@ -49,6 +53,7 @@ export default defineConfig(({ mode }) => ({
   },
   esbuild: {
     drop: ["console", "debugger"], // Removes all console.logs to prevent leaking sensitive info
+    legalComments: "none", // No library licence banners revealing the stack
   },
   plugins: [
     react(),

@@ -222,7 +222,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
     if (!document.getElementById("korba-xcheckout-script")) {
       const script = document.createElement("script");
       script.id = "korba-xcheckout-script";
-      script.src = "https://paywithkorba.s3-eu-west-1.amazonaws.com/checkout.js";
+      script.src = "/vendor/korba-checkout.js"; // self-hosted copy (CSP: own scripts only)
       script.async = true;
       document.body.appendChild(script);
     }
