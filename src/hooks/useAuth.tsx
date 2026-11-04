@@ -475,6 +475,24 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       supabase.functions.invoke("failed-login-tracker", {
         body: { email: normalizedEmail }
       }).catch(err => console.warn("Failed to log failed login attempt:", err));
+
+      // Supabase answers a wrong password with a bare 400 "Invalid login credentials".
+      // Give people something they can act on.
+      const raw = String(finalError.message || "").toLowerCase();
+      const code = String((finalError as any).code || "").toLowerCase();
+      const friendly =
+        code === "invalid_credentials" || raw.includes("invalid login credentials")
+          ? "That email and password don't match. Check for typos (and Caps Lock), or tap \"Forgot password\" to reset it."
+          : code === "email_not_confirmed" || raw.includes("email not confirmed")
+          ? "Please confirm your email first. Check your inbox (and spam) for the confirmation link."
+          : code === "user_banned" || raw.includes("banned")
+          ? "This account has been suspended. Please contact support."
+          : code === "over_request_rate_limit" || raw.includes("rate limit") || raw.includes("too many")
+          ? "Too many sign-in attempts. Please wait a few minutes and try again."
+          : null;
+      if (friendly) {
+        try { finalError.message = friendly; } catch { /* read-only message: keep original */ }
+      }
     }
 
     return { error: finalError };
