@@ -449,17 +449,24 @@ serve(async (req: Request) => {
     // 2. Fulfill based on order type
     if (orderType === "wallet_topup") {
       const walletType = existingOrder.metadata?.wallet_type === "api" ? "api" : "main";
-      if (walletType === "api") {
-        await supabaseAdmin.schema("api").rpc("credit_api_wallet", { p_user_id: existingOrder.agent_id, p_amount: verifiedAmount });
-      } else {
-        await supabaseAdmin.rpc("repay_credit", { p_agent_id: existingOrder.agent_id, p_amount: verifiedAmount });
+      // Atomic, once-only credit through the wallet ledger (also marks the order fulfilled).
+      // Credits the order's top-up amount, never more than what was paid.
+      const { data: credit, error: creditErr } = await supabaseAdmin.rpc("credit_topup_order", {
+        p_order_id: cleanedTransactionId,
+        p_paid_amount: verifiedAmount,
+      });
+      if (creditErr || !(credit as any)?.success) {
+        console.error("[korba-webhook] top-up credit failed:", creditErr || (credit as any)?.error);
+        return json({ error: "credit_failed" }, 500);
       }
-      
-      await supabaseAdmin.from("orders").update({ status: "fulfilled", failure_reason: null }).eq("id", cleanedTransactionId);
-      
+      if ((credit as any)?.duplicate) {
+        return json({ received: true, already_processed: true });
+      }
+      const creditedAmount = Number((credit as any)?.amount ?? verifiedAmount);
+
       // Notify API client and SMS
-      await notifyWalletCredit(supabaseAdmin, existingOrder.agent_id, verifiedAmount, walletType);
-      await sendWalletTopupSms(supabaseAdmin, existingOrder.agent_id, verifiedAmount);
+      await notifyWalletCredit(supabaseAdmin, existingOrder.agent_id, creditedAmount, walletType);
+      await sendWalletTopupSms(supabaseAdmin, existingOrder.agent_id, creditedAmount);
 
       // Trigger Push Notification for Wallet Top-up
       await triggerPushNotification(supabaseAdmin, {

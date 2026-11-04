@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRealtimeRefresh } from "@/hooks/useRealtimeRefresh";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import LedgerStatement from "@/components/wallet/WalletStatement";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
@@ -80,7 +81,7 @@ const DashboardWallet = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
   
-  const [activeTab, setActiveTab] = useState<"overview" | "buy" | "history">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "buy" | "history" | "ledger">("overview");
   const [balance, setBalance] = useState(0);
   const [apiBalance, setApiBalance] = useState(0);
   const [availableProfit, setAvailableProfit] = useState(0);
@@ -672,7 +673,20 @@ const DashboardWallet = () => {
         >
           <History className="w-3.5 h-3.5" /> Wallet Statement & Deposits
         </button>
+        <button
+          onClick={() => setActiveTab("ledger" as any)}
+          className={cn(
+            "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all",
+            (activeTab as string) === "ledger"
+              ? "bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 shadow-md"
+              : "text-muted-foreground hover:text-white"
+          )}
+        >
+          <ShieldCheck className="w-3.5 h-3.5" /> Bank Statement
+        </button>
       </div>
+
+      {(activeTab as string) === "ledger" && <LedgerStatement />}
 
       {/* ── Tab Content 1: Overview & Recent Deposits ── */}
       {activeTab === "overview" && (

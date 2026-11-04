@@ -62,6 +62,7 @@ const AdminWalletTopup = () => {
   const [apiBalance, setApiBalance] = useState<number>(0);
   const [walletType, setWalletType] = useState<"main" | "api">("main");
   const [creditAmount, setCreditAmount] = useState("");
+  const [creditReason, setCreditReason] = useState("");
   const [crediting, setCrediting] = useState(false);
 
   // Incoming Deposits State
@@ -126,11 +127,24 @@ const AdminWalletTopup = () => {
       return;
     }
 
+    if (creditReason.trim().length < 5) {
+      toast({ title: "Add a reason", description: "Write why this credit is being made (at least 5 characters). It is saved in the wallet ledger.", variant: "destructive" });
+      return;
+    }
+
     setCrediting(true);
     const action = walletType === "api" ? "manual_api_topup" : "manual_topup";
     const { data, error } = await supabase.functions.invoke("system-payout-v1", {
-      body: { action, user_id: agent.user_id, amount },
+      body: { action, user_id: agent.user_id, amount, reason: creditReason.trim() },
     });
+
+    if (!error && data?.pending) {
+      toast({ title: "Sent for approval", description: data?.message || "A second admin must approve this credit in Wallet Ledger." });
+      setCreditAmount("");
+      setCreditReason("");
+      setCrediting(false);
+      return;
+    }
 
     if (error || data?.error) {
       toast({ title: `Failed to credit ${walletType === "api" ? "API " : ""}wallet`, description: data?.error || error?.message, variant: "destructive" });
@@ -151,6 +165,7 @@ const AdminWalletTopup = () => {
         setWalletBalance(data.new_balance);
       }
       setCreditAmount("");
+      setCreditReason("");
     }
     setCrediting(false);
   };
@@ -563,6 +578,14 @@ const AdminWalletTopup = () => {
                                  onChange={(e) => setCreditAmount(e.target.value)}
                                  className="bg-background border-border h-14 pl-14 text-lg font-black text-foreground rounded-2xl focus:border-amber-500/40 shadow-sm"
                                />
+                               <Input
+                                 placeholder="Reason (required, saved in the ledger), e.g. MoMo deposit ref 123456"
+                                 value={creditReason}
+                                 onChange={(e) => setCreditReason(e.target.value)}
+                                 maxLength={200}
+                                 className="mt-2 bg-background border-border h-11 text-sm text-foreground rounded-xl"
+                               />
+                               <p className="mt-1 text-[11px] text-muted-foreground">Credits above GH₵200 need a second admin to approve in Wallet Ledger.</p>
                             </div>
                             <Button 
                               onClick={() => handleCredit()} 

@@ -76,6 +76,7 @@ async function sendWithdrawalCompletedSms(userId: string, amount: number) {
 }
 
 type AdminUserAction = 
+  | "decide_wallet_adjustment"
   | "get_api_users" 
   | "send_reset_link" 
   | "reset_password" 
@@ -659,6 +660,45 @@ serve(async (req: Request) => {
         });
       }
 
+      case "decide_wallet_adjustment": {
+        const requestId = String(body.request_id || "");
+        if (!isValidUuid(requestId)) throw new Error("Invalid or missing request_id");
+        const approve = body.approve === true;
+        const { data: dec, error: decErr } = await supabaseAdmin.rpc("admin_wallet_decide", {
+          p_admin_id: actor.id,
+          p_request_id: requestId,
+          p_approve: approve,
+          p_note: typeof body.note === "string" ? body.note : null,
+        });
+        if (decErr) throw decErr;
+        if ((dec as any)?.success === false) {
+          return new Response(JSON.stringify({ error: (dec as any)?.error || "Decision failed" }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        if ((dec as any)?.executed) {
+          const d = dec as any;
+          await supabaseAdmin.from("orders").insert({
+            agent_id: d.agent_id,
+            order_type: "wallet_topup",
+            amount: Number(d.amount),
+            profit: 0,
+            status: "fulfilled",
+            payment_method: "admin",
+            package_size: d.account === "api" ? "Admin Credit (API)" : "Admin Credit",
+            metadata: { source: "admin", payment_method: "admin", method: "admin_manual_credit", wallet_type: d.account, adjustment_request_id: d.request_id },
+          });
+          if (Number(d.amount) > 0) {
+            (d.account === "api" ? sendManualApiCreditSms(d.agent_id, Number(d.amount)) : sendManualCreditSms(d.agent_id, Number(d.amount))).catch(console.error);
+          }
+        }
+        return new Response(JSON.stringify(dec), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
       case "manual_topup": {
         if (!isValidUuid(user_id)) throw new Error("Invalid or missing user_id");
         const { amount } = body;
@@ -669,20 +709,28 @@ serve(async (req: Request) => {
           });
         }
 
-        const isDeduction = amount < 0;
-        const rpcName = isDeduction ? "debit_wallet" : "credit_wallet";
-        const rpcParams = {
+        // Every manual adjustment goes through the ledgered four-eyes rule.
+        const { data: adj, error: adjErr } = await supabaseAdmin.rpc("admin_wallet_adjust", {
+          p_admin_id: actor.id,
           p_agent_id: user_id,
-          p_amount: Math.abs(amount),
-        };
-
-        const { data: result, error: rpcError } = await supabaseAdmin.rpc(rpcName, rpcParams);
-
-        if (rpcError) throw rpcError;
-        if (result?.success === false) {
-          throw new Error(result.error || "Transaction failed");
+          p_account: "main",
+          p_amount: amount,
+          p_reason: typeof body.reason === "string" ? body.reason : null,
+        });
+        if (adjErr) throw adjErr;
+        if ((adj as any)?.success === false) {
+          return new Response(JSON.stringify({ error: (adj as any)?.error || "Adjustment failed" }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
         }
-        const newBalance = result?.new_balance ?? 0;
+        if ((adj as any)?.pending) {
+          return new Response(JSON.stringify({ success: true, pending: true, request_id: (adj as any).request_id, message: (adj as any).message }), {
+            status: 200,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        const newBalance = (adj as any)?.balance ?? 0;
 
         const { error: orderError } = await supabaseAdmin
           .from("orders")
@@ -721,13 +769,28 @@ serve(async (req: Request) => {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
-        const { data: result, error: rpcError } = await supabaseAdmin.schema("api").rpc("credit_api_wallet", {
-          p_user_id: user_id,
+        // Every manual adjustment goes through the ledgered four-eyes rule.
+        const { data: adj, error: adjErr } = await supabaseAdmin.rpc("admin_wallet_adjust", {
+          p_admin_id: actor.id,
+          p_agent_id: user_id,
+          p_account: "api",
           p_amount: amount,
+          p_reason: typeof body.reason === "string" ? body.reason : null,
         });
-
-        if (rpcError) throw rpcError;
-        const newBalance = result?.new_balance || 0;
+        if (adjErr) throw adjErr;
+        if ((adj as any)?.success === false) {
+          return new Response(JSON.stringify({ error: (adj as any)?.error || "Adjustment failed" }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        if ((adj as any)?.pending) {
+          return new Response(JSON.stringify({ success: true, pending: true, request_id: (adj as any).request_id, message: (adj as any).message }), {
+            status: 200,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        const newBalance = (adj as any)?.balance ?? 0;
 
         const { error: orderError } = await supabaseAdmin
           .from("orders")

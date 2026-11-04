@@ -207,3 +207,6 @@ verify_jwt = false
 [functions.android-sms-bot]
 verify_jwt = false
 
+
+[functions.wallet-reconcile]
+verify_jwt = false

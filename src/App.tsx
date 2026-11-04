@@ -28,6 +28,7 @@ import { SpeedInsights } from "@vercel/speed-insights/react";
 // Code-split heavy dashboard/admin shells and non-critical modals
 const DashboardLayout = lazy(() => import("@/components/DashboardLayout"));
 const AdminLayout = lazy(() => import("@/components/AdminLayout"));
+const AdminWalletLedger = lazy(() => import("./pages/AdminWalletLedger"));
 const TutorialModal = lazy(() => import("@/components/TutorialModal"));
 const DataPromoPopupModal = lazy(() => import("@/components/DataPromoPopupModal").then(m => ({ default: m.DataPromoPopupModal })));
 const AccountSwitcherModal = lazy(() => import("@/components/AccountSwitcherModal").then(m => ({ default: m.AccountSwitcherModal })));
@@ -537,6 +538,7 @@ const AppContent = () => {
           <Route path="agents" element={<AdminAgents />} />
           <Route path="sub-agents" element={<AdminSubAgents />} />
           <Route path="orders" element={<AdminOrders />} />
+          <Route path="wallet-ledger" element={<AdminWalletLedger />} />
           <Route path="refunded-orders" element={<AdminRefundedOrders />} />
           <Route path="refunds" element={<AdminRefundedOrders />} />
           <Route path="beneficiary-orders" element={<AdminBeneficiaryOrders />} />

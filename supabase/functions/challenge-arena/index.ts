@@ -1082,14 +1082,25 @@ serve(async (req: Request) => {
             }, 400);
           }
 
-          const newBal = Number((currentBal - rawStake).toFixed(2));
-          const { error: deductErr } = await supabaseAdmin
-            .from("wallets")
-            .update({ balance: newBal, updated_at: new Date().toISOString() })
-            .eq("agent_id", authUser.id);
-
-          if (deductErr) {
-            return jsonResponse({ success: false, error: "Failed to lock stake from wallet" }, 500);
+          // Ledgered, locked debit (wallet_post refuses to overdraw and records the entry).
+          const { data: stakePost, error: deductErr } = await supabaseAdmin.rpc("wallet_post", {
+            p_agent_id: authUser.id,
+            p_account: "main",
+            p_amount: -rawStake,
+            p_reason: "game_stake",
+            p_reference_type: "game_challenge_create",
+            p_reference_id: null,
+            p_idempotency_key: null,
+            p_note: "Stake for a new arena challenge",
+          });
+          if (deductErr || !(stakePost as any)?.success) {
+            const insufficient = (stakePost as any)?.error === "Insufficient wallet balance";
+            return jsonResponse({
+              success: false,
+              error: insufficient
+                ? "Insufficient wallet balance. Top up your wallet or use Mobile Money (MoMo) to stake."
+                : "Failed to lock stake from wallet",
+            }, insufficient ? 400 : 500);
           }
         } else if (paymentSource === "momo") {
           const ref = String(body.paystack_reference || "").trim();
@@ -1519,14 +1530,25 @@ serve(async (req: Request) => {
             }, 400);
           }
 
-          const newBal = Number((currentBal - stake).toFixed(2));
-          const { error: deductErr } = await supabaseAdmin
-            .from("wallets")
-            .update({ balance: newBal, updated_at: new Date().toISOString() })
-            .eq("agent_id", authUser.id);
-
-          if (deductErr) {
-            return jsonResponse({ success: false, error: "Could not deduct stake from wallet" }, 500);
+          // Ledgered, locked debit; one stake per player per challenge (idempotency key).
+          const { data: stakePost, error: deductErr } = await supabaseAdmin.rpc("wallet_post", {
+            p_agent_id: authUser.id,
+            p_account: "main",
+            p_amount: -stake,
+            p_reason: "game_stake",
+            p_reference_type: "game_challenge",
+            p_reference_id: String(challenge.id),
+            p_idempotency_key: `game_stake_join:${challenge.id}:${authUser.id}`,
+            p_note: "Stake to join an arena challenge",
+          });
+          if (deductErr || !(stakePost as any)?.success) {
+            const insufficient = (stakePost as any)?.error === "Insufficient wallet balance";
+            return jsonResponse({
+              success: false,
+              error: insufficient
+                ? `Insufficient wallet balance. Required stake: GH₵ ${stake.toFixed(2)}`
+                : "Could not deduct stake from wallet",
+            }, insufficient ? 400 : 500);
           }
         } else if (paymentSource === "momo") {
           const ref = String(body.paystack_reference || "").trim();
@@ -1644,17 +1666,20 @@ serve(async (req: Request) => {
 
       const stake = Number(challenge.stake_amount || 0);
       if (stake > 0 && challenge.creator_payment_source === "wallet" && challenge.creator_id) {
-        const { data: wallet } = await supabaseAdmin
-          .from("wallets")
-          .select("balance")
-          .eq("agent_id", challenge.creator_id)
-          .maybeSingle();
-
-        const restoredBal = Number((Number(wallet?.balance || 0) + stake).toFixed(2));
-        await supabaseAdmin
-          .from("wallets")
-          .update({ balance: restoredBal, updated_at: new Date().toISOString() })
-          .eq("agent_id", challenge.creator_id);
+        // Ledgered refund; the idempotency key makes a double refund impossible.
+        const { error: refundErr } = await supabaseAdmin.rpc("wallet_post", {
+          p_agent_id: challenge.creator_id,
+          p_account: "main",
+          p_amount: stake,
+          p_reason: "game_stake_refund",
+          p_reference_type: "game_challenge",
+          p_reference_id: String(challenge.id),
+          p_idempotency_key: `game_stake_refund:${challenge.id}`,
+          p_note: "Stake returned for a cancelled arena challenge",
+        });
+        if (refundErr) {
+          return jsonResponse({ success: false, error: "Could not return your stake. Please try again." }, 500);
+        }
       }
 
       const { data: cancelled } = await supabaseAdmin

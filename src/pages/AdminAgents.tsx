@@ -356,6 +356,10 @@ const AdminAgents = () => {
       headers: { Authorization: `Bearer ${session?.access_token}` },
     });
 
+    if (!error && data?.pending) {
+      toast({ title: "Sent for approval", description: data?.message || "A second admin must approve this in Wallet Ledger." });
+      return;
+    }
     if (error || data?.error) {
       toast({ title: "Failed to top up", description: data?.error || error?.message, variant: "destructive" });
     } else {

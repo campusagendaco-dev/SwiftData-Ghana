@@ -1536,12 +1536,24 @@ serve(async (req: Request) => {
       const { data: order } = await supabaseAdmin.from("orders").select("amount, agent_id, metadata").eq("id", orderId).maybeSingle();
       if (order) {
         const walletType = order.metadata?.wallet_type === "api" ? "api" : "main";
-        if (walletType === "api") {
-          await supabaseAdmin.schema("api").rpc("credit_api_wallet", { p_user_id: order.agent_id, p_amount: order.amount });
-        } else {
-          await supabaseAdmin.rpc("repay_credit", { p_agent_id: order.agent_id, p_amount: order.amount });
+        // Atomic, once-only credit through the wallet ledger (also marks the order fulfilled).
+        const { data: credit, error: creditErr } = await supabaseAdmin.rpc("credit_topup_order", {
+          p_order_id: orderId,
+          p_paid_amount: null,
+        });
+        if (creditErr || !(credit as any)?.success) {
+          console.error("[paystack-webhook] top-up credit failed:", creditErr || (credit as any)?.error);
+          return new Response(JSON.stringify({ received: true, fulfilled: false, error: "credit_failed" }), {
+            status: 500,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
         }
-        await supabaseAdmin.from("orders").update({ status: "fulfilled", failure_reason: null }).eq("id", orderId);
+        if ((credit as any)?.duplicate) {
+          return new Response(JSON.stringify({ received: true, already_processed: true }), {
+            status: 200,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
 
         // Notify API client about wallet funding
         await notifyWalletCredit(supabaseAdmin, order.agent_id, order.amount, walletType);

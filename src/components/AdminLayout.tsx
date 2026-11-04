@@ -91,6 +91,7 @@ export const NAV_SECTIONS: NavSection[] = [
     permKey: "finance",
     items: [
       { label: "Wallet Top-Up",icon: CreditCard,   path: "/admin/wallet-topup", permKey: "finance" },
+      { label: "Wallet Ledger", icon: ShieldCheck,  path: "/admin/wallet-ledger", permKey: "finance" },
       { label: "Withdrawals",  icon: Wallet,        path: "/admin/withdrawals", permKey: "finance" },
       { label: "Reconciliation", icon: CreditCard,   path: "/admin/reconciliation", permKey: "finance" },
       { label: "Profits",          icon: TrendingUp,  path: "/admin/profits", permKey: "finance" },
@@ -241,6 +242,7 @@ export const ROUTE_PERM_MAP: Record<string, string> = {
   "/admin/promotions": "packages",
   "/admin/wallet-topup": "finance",
   "/admin/withdrawals": "finance",
+  "/admin/wallet-ledger": "finance",
   "/admin/reconciliation": "finance",
   "/admin/profits": "finance",
   "/admin/pnl": "finance",

@@ -497,6 +497,10 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
         body: { action: action, user_id: user.user_id, amount: amount },
         headers: { Authorization: `Bearer ${session?.access_token}` },
       });
+      if (!error && res?.pending) {
+        toast({ title: "Sent for approval", description: res?.message || "A second admin must approve this in Wallet Ledger." });
+        return;
+      }
       if (error || res?.error) {
         throw new Error(await parseEdgeError(error, res));
       }
