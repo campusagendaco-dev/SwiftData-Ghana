@@ -122,6 +122,8 @@ export function parseProviderResponse(body: string, contentType: string | null):
       parsed?.order?.reference ??
       parsed?.order?.id ??
       data?.order?.reference ??
+      data?.orderReference ??
+      data?.reference ??
       data?.orderId ??
       data?.order_id ??
       data?.order?.order_id ??
@@ -135,9 +137,7 @@ export function parseProviderResponse(body: string, contentType: string | null):
       parsed?.korba_trans_id ??
       parsed?.transaction?.reference ?? 
       data?.orderNumber ?? 
-      data?.reference ?? 
       data?.purchaseId ?? 
-      data?.orderReference ?? 
       data?.transactionId ?? 
       data?.transaction_id ?? 
       parsed?.transaction_id ?? 
@@ -185,8 +185,11 @@ export function parseProviderResponse(body: string, contentType: string | null):
                      technicalStatus === "error" || 
                      technicalStatus === "failed" || 
                      technicalStatus === "failure" ||
+                     technicalStatus === "cancelled" ||
                      deliveryStatus === "failed" ||
+                     deliveryStatus === "cancelled" ||
                      effectiveStatus === "failed" ||
+                     effectiveStatus === "cancelled" ||
                      message === "FAILED";
 
     if (isFailed) {
@@ -220,12 +223,14 @@ export function parseProviderResponse(body: string, contentType: string | null):
                technicalStatus === "delivered" || 
                technicalStatus === "processing" || 
                technicalStatus === "pending" || 
+               technicalStatus === "waiting" || 
                parsed?.success === true || 
                parsed?.status === true || 
                parsed?.status === 200 || 
                parsed?.code === 200 || 
                data?.order?.success === true ||
                data?.order?.status === "processing" ||
+               data?.order?.status === "waiting" ||
                data?.order?.status === "completed" ||
                parsed?.ok === true;
 
@@ -234,7 +239,7 @@ export function parseProviderResponse(body: string, contentType: string | null):
       // unless `deliveryStatus` explicitly confirms completion (`completed` / `delivered` / `fulfilled`).
       const normalizedTopStatus = ["completed", "delivered", "fulfilled"].includes(effectiveStatus)
         ? "fulfilled"
-        : (["pending", "processing", "queued", "ongoing", "submitted", "accepted"].includes(effectiveStatus)
+        : (["pending", "processing", "waiting", "queued", "ongoing", "submitted", "accepted"].includes(effectiveStatus)
           ? "processing"
           : (effectiveStatus || "processing"));
       const resolvedOkStatus = (parsed?.order || data?.order || data?.result)
@@ -251,7 +256,7 @@ export function parseProviderResponse(body: string, contentType: string | null):
     if (orderId && orderId !== "undefined" && orderId !== "") {
       const normalizedTopFallback = ["completed", "delivered", "fulfilled"].includes(effectiveStatus)
         ? "fulfilled"
-        : (["pending", "processing", "queued", "ongoing", "submitted", "accepted"].includes(effectiveStatus)
+        : (["pending", "processing", "waiting", "queued", "ongoing", "submitted", "accepted"].includes(effectiveStatus)
           ? "processing"
           : (effectiveStatus || "processing"));
       const fallbackStatus = (parsed?.order || data?.order || data?.result)

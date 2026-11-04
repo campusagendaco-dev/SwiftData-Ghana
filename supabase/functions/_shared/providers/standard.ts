@@ -98,6 +98,12 @@ export class StandardAdapter implements ProviderAdapter {
         ].filter(Boolean)));
         return candidates.map(cand => `${clean}/order-status/${cand}`);
       }
+      if (endpoint === "cancel" || endpoint === "cancel-order") {
+        const ref = String(data?.reference || data?.orderReference || data?.transaction_id || data?.order_id || "").trim();
+        return ref
+          ? [`${clean}/cancel-order`, `${clean}/orders/${encodeURIComponent(ref)}/cancel`]
+          : [`${clean}/cancel-order`];
+      }
       const rawNet = String(data.networkKey || data.networkRaw || data.network || "").toUpperCase();
       const pkgUpper = String(data.package_size || data.package_name || data.bundle || data.plan || data.capacity || "").toUpperCase();
       const isMashUp = 
@@ -1387,14 +1393,352 @@ export class StandardAdapter implements ProviderAdapter {
     };
   }
 
+  async cancelDataMartOrder(
+    supabaseAdmin: any,
+    provider: any,
+    params: {
+      reference?: string;
+      orderNumber?: string | number;
+      providerOrderId?: string;
+      clientReference?: string;
+      reason?: string;
+    }
+  ): Promise<ProviderResponse> {
+    const rawBaseUrl =
+      Deno.env.get("DATAMART_BASE_URL") ||
+      Deno.env.get("DATAMARTGH_BASE_URL") ||
+      provider?.base_url ||
+      "https://api.datamartgh.shop/api/developer";
+    const cleanUrl = rawBaseUrl.trim().replace(/\/+$/, "");
+    const apiKey =
+      Deno.env.get("DATAMART_API_KEY") ||
+      Deno.env.get("DATAMARTGH_API_KEY") ||
+      provider?.api_key ||
+      "";
+
+    if (!apiKey) {
+      return {
+        ok: false,
+        status: "unauthorized",
+        reason: "The X-API-Key header is missing.",
+        raw: { status: "error", code: "API_KEY_REQUIRED", message: "The X-API-Key header is missing." },
+      };
+    }
+
+    const isSentinel = (val?: string | number | null) => {
+      if (val === undefined || val === null) return true;
+      const s = String(val).trim();
+      return (
+        !s ||
+        s === "dispatching" ||
+        s === "timeout" ||
+        s === "routed" ||
+        s === "duplicate_cooldown" ||
+        s === "manual_fulfillment_mode" ||
+        s === "paused_by_admin" ||
+        s === "refunded" ||
+        s === "fulfilled_manually" ||
+        s === "resolved_on_provider" ||
+        s.startsWith("failed_api_call")
+      );
+    };
+
+    const rawProvOrderId = params.providerOrderId ?? params.orderNumber;
+    const cleanProvOrderId = !isSentinel(rawProvOrderId) ? String(rawProvOrderId).trim() : "";
+    const cleanRef = !isSentinel(params.reference) ? String(params.reference).trim() : "";
+    const cleanClientRef = !isSentinel(params.clientReference) ? String(params.clientReference).trim() : "";
+    const cleanReason = params.reason ? String(params.reason).trim().slice(0, 240) : "";
+
+    // Prefer non-Mongo orderReference (e.g. "GN-..." or our UUID reference) before a 24-hex Mongo orderId
+    const isMongoHexId = (v: string) => /^[0-9a-f]{24}$/i.test(v);
+    const orderedCandidates: string[] = [];
+    const addCandidate = (v: string) => {
+      if (v && !orderedCandidates.includes(v)) orderedCandidates.push(v);
+    };
+
+    if (cleanProvOrderId && !isMongoHexId(cleanProvOrderId)) addCandidate(cleanProvOrderId);
+    if (cleanRef) addCandidate(cleanRef);
+    if (cleanClientRef) addCandidate(cleanClientRef);
+    if (cleanProvOrderId && isMongoHexId(cleanProvOrderId)) addCandidate(cleanProvOrderId);
+
+    if (orderedCandidates.length === 0) {
+      return {
+        ok: false,
+        status: "bad_request",
+        reason: "Order reference is required to cancel a DataMart order.",
+      };
+    }
+
+    let lastStatus = "not_eligible";
+    let lastReason = "Order can be cancelled only while its status is pending or waiting.";
+    let lastRaw: any = null;
+
+    const executeCancelForReference = async (candRef: string): Promise<{ done: boolean; response?: ProviderResponse }> => {
+      const endpoints = [
+        {
+          url: `${cleanUrl}/cancel-order`,
+          body: JSON.stringify({
+            reference: candRef,
+            ...(cleanReason ? { reason: cleanReason } : {}),
+          }),
+          hasBody: true,
+        },
+        {
+          url: `${cleanUrl}/orders/${encodeURIComponent(candRef)}/cancel`,
+          body: undefined,
+          hasBody: false,
+        },
+      ];
+
+      for (const ep of endpoints) {
+        try {
+          const headers: Record<string, string> = {
+            "Accept": "application/json",
+            "X-API-Key": apiKey,
+            "User-Agent": "SwiftDataGH/2.0",
+          };
+          if (ep.hasBody) {
+            headers["Content-Type"] = "application/json";
+          }
+
+          console.log(`[DataMart-Cancel-Order] Calling POST ${ep.url} for reference=${candRef}`);
+          const res = await fetchViaDb(
+            supabaseAdmin,
+            ep.url,
+            {
+              method: "POST",
+              headers,
+              body: ep.body,
+              disableFallback: false,
+              allowMutationFallback: true,
+            },
+            20
+          );
+
+          const text = await res.text();
+          let parsed: any = {};
+          try {
+            parsed = JSON.parse(text);
+          } catch {
+            parsed = { rawText: text };
+          }
+          lastRaw = parsed;
+
+          const dataObj = parsed?.data || {};
+          const orderStatus = String(dataObj.orderStatus || parsed?.orderStatus || "").toLowerCase().trim();
+          const alreadyCancelled = Boolean(dataObj.alreadyCancelled || parsed?.alreadyCancelled);
+
+          if (
+            res.ok &&
+            (String(parsed?.status || "").toLowerCase() === "success" ||
+              parsed?.success === true ||
+              orderStatus === "cancelled" ||
+              alreadyCancelled)
+          ) {
+            const newBal = Number(dataObj.balanceAfter ?? dataObj.newBalance);
+            if (Number.isFinite(newBal) && provider?.id && supabaseAdmin) {
+              await Promise.resolve(
+                supabaseAdmin
+                  .from("providers")
+                  .update({
+                    balance: newBal,
+                    last_synced_at: new Date().toISOString(),
+                  })
+                  .eq("id", provider.id)
+              ).catch((e: any) => console.warn("[DataMart-Cancel-Order] Balance sync warning:", e?.message));
+            }
+
+            return {
+              done: true,
+              response: {
+                ok: true,
+                status: "cancelled",
+                id: String(dataObj.reference || dataObj.orderId || candRef),
+                reason:
+                  parsed?.message ||
+                  (alreadyCancelled
+                    ? "Order was already cancelled on DataMart."
+                    : "Order cancelled on DataMart and refunded to wallet."),
+                rawBody: text,
+                raw: {
+                  ...dataObj,
+                  alreadyCancelled,
+                  code: parsed?.code || dataObj.code,
+                  message: parsed?.message,
+                },
+              },
+            };
+          }
+
+          const code = String(parsed?.code || dataObj.code || "").toUpperCase().trim();
+          const errMessage =
+            parsed?.message ||
+            parsed?.error ||
+            dataObj?.message ||
+            (res.status === 404
+              ? "No order of yours has that reference."
+              : res.status === 401
+              ? "The X-API-Key header is missing."
+              : "Order can be cancelled only while its status is pending or waiting.");
+
+          lastReason = String(errMessage);
+
+          if (res.status === 401 || code === "API_KEY_REQUIRED") {
+            return {
+              done: true,
+              response: {
+                ok: false,
+                status: "unauthorized",
+                reason: lastReason,
+                rawBody: text,
+                raw: parsed,
+              },
+            };
+          }
+
+          if (code === "ORDER_IN_PROGRESS") {
+            return {
+              done: true,
+              response: {
+                ok: false,
+                status: "order_in_progress",
+                reason: lastReason,
+                rawBody: text,
+                raw: parsed,
+              },
+            };
+          }
+
+          if (code === "ORDER_NOT_CANCELLABLE") {
+            return {
+              done: true,
+              response: {
+                ok: false,
+                status: "order_not_cancellable",
+                reason: lastReason,
+                rawBody: text,
+                raw: parsed,
+              },
+            };
+          }
+
+          if (code === "ORDER_NOT_REFUNDABLE_HERE") {
+            return {
+              done: true,
+              response: {
+                ok: false,
+                status: "not_refundable_here",
+                reason: lastReason,
+                rawBody: text,
+                raw: parsed,
+              },
+            };
+          }
+
+          if (res.status === 404 || code === "ORDER_NOT_FOUND") {
+            lastStatus = "not_found";
+            // If /cancel-order returned JSON ORDER_NOT_FOUND, the endpoint works; move to next candidate reference
+            if (code === "ORDER_NOT_FOUND") {
+              break;
+            }
+            // Otherwise try fallback /orders/:reference/cancel
+            continue;
+          }
+
+          lastStatus = res.status === 409 ? "order_not_cancellable" : "not_eligible";
+          return {
+            done: true,
+            response: {
+              ok: false,
+              status: lastStatus,
+              reason: lastReason,
+              rawBody: text,
+              raw: parsed,
+            },
+          };
+        } catch (err: any) {
+          console.error(`[DataMart-Cancel-Order] Error for ${ep.url}:`, err?.message || err);
+          lastReason = err?.message || "Failed to communicate with DataMart cancel endpoint";
+          lastStatus = "error";
+        }
+      }
+
+      return { done: false };
+    };
+
+    for (const cand of orderedCandidates) {
+      const attempt = await executeCancelForReference(cand);
+      if (attempt.done && attempt.response) {
+        return attempt.response;
+      }
+    }
+
+    // Fallback: if all direct candidate references returned 404 ORDER_NOT_FOUND, query /order-status/:cand
+    // in case DataMart stored a generated "GN-..." orderReference for our orderId/reference.
+    for (const cand of orderedCandidates) {
+      try {
+        const statusRes = await fetchViaDb(
+          supabaseAdmin,
+          `${cleanUrl}/order-status/${encodeURIComponent(cand)}`,
+          {
+            method: "GET",
+            headers: {
+              "Accept": "application/json",
+              "X-API-Key": apiKey,
+              "User-Agent": "SwiftDataGH/2.0",
+            },
+            disableFallback: false,
+            allowMutationFallback: true,
+          },
+          15
+        );
+        if (statusRes.ok) {
+          const statusJson = await statusRes.json().catch(() => ({}));
+          const resolvedDmRef = String(
+            statusJson?.data?.orderReference ||
+            statusJson?.data?.reference ||
+            statusJson?.orderReference ||
+            statusJson?.reference ||
+            ""
+          ).trim();
+          if (resolvedDmRef && !orderedCandidates.includes(resolvedDmRef)) {
+            const retryAttempt = await executeCancelForReference(resolvedDmRef);
+            if (retryAttempt.done && retryAttempt.response) {
+              return retryAttempt.response;
+            }
+          }
+        }
+      } catch {
+        // ignore status lookup fallback errors
+      }
+    }
+
+    return {
+      ok: false,
+      status: lastStatus,
+      reason: lastReason,
+      raw: lastRaw,
+    };
+  }
+
   async refundOrder(
     supabaseAdmin: any,
     provider: any,
-    params: { reference?: string; orderNumber?: string | number; method?: "GET" | "POST" }
+    params: {
+      reference?: string;
+      orderNumber?: string | number;
+      providerOrderId?: string;
+      clientReference?: string;
+      reason?: string;
+      method?: "GET" | "POST";
+    }
   ): Promise<ProviderResponse> {
     const handlerType = String(provider?.handler_type || "").toLowerCase();
     if (handlerType === "datahub") {
       return this.refundDataHubOrder(supabaseAdmin, provider, params);
+    }
+    if (handlerType === "datamart") {
+      return this.cancelDataMartOrder(supabaseAdmin, provider, params);
     }
     return {
       ok: false,

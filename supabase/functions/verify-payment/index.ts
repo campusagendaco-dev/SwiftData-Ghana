@@ -9,6 +9,7 @@ import { getActiveProviders, getPausedTargetProvider, isOrderPausedFromApi, logP
 import { log, notifyAdmins } from "../_shared/logger.ts";
 import { notifyApiClient } from "../_shared/webhooks.ts";
 import { getProviderAdapter } from "../_shared/providers/registry.ts";
+import { StandardAdapter } from "../_shared/providers/standard.ts";
 import { executeGuestBeneficiaryRefund, handleGuestBeneficiaryFailure, isGuestOrder } from "../_shared/guest-refund.ts";
 import { sendWhatsAppOrderReceipt, checkAndTriggerDeliveryOnFire } from "../_shared/whatsapp.ts";
 import { isDuplicateOrderError, isBeneficiaryFailure } from "../_shared/providers/utils.ts";
@@ -538,14 +539,89 @@ serve(async (req: any) => {
       );
 
       if (hasEnteredProvider) {
-        return new Response(JSON.stringify({
-          success: false,
-          refunded: false,
-          has_entered_provider: true,
-          error: "This order has already entered the carrier network provider API and delivery is 100% guaranteed. Orders that have entered a provider cannot be cancelled or refunded."
-        }), {
-          status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" }
-        });
+        let cancelledUpstream = false;
+        if (ord.provider_id) {
+          const { data: assignedProv } = await supabaseAdmin
+            .from("providers")
+            .select("*")
+            .eq("id", ord.provider_id)
+            .maybeSingle();
+
+          const hType = String(assignedProv?.handler_type || "").toLowerCase();
+          const isDm = hType === "datamart" || String(assignedProv?.name || "").toLowerCase().includes("datamart");
+          const isDh = hType === "datahub" || String(assignedProv?.name || "").toLowerCase().includes("datahub");
+
+          if (assignedProv && (isDm || isDh)) {
+            const standardAdapter = new StandardAdapter();
+            const cancelRes = isDm
+              ? await standardAdapter.cancelDataMartOrder(supabaseAdmin, assignedProv, {
+                  reference: ord.id,
+                  providerOrderId: ord.provider_order_id,
+                  clientReference: ord.metadata?.client_reference,
+                  reason: body.reason || "Customer requested order cancellation",
+                })
+              : await standardAdapter.refundDataHubOrder(supabaseAdmin, assignedProv, {
+                  reference: ord.id,
+                  orderNumber: ord.provider_order_id,
+                  method: "POST",
+                });
+
+            if (cancelRes.ok) {
+              cancelledUpstream = true;
+              const nextMeta = {
+                ...(ord.metadata || {}),
+                ...(isDm
+                  ? {
+                      datamart_cancelled_at: cancelRes.raw?.cancelledAt || new Date().toISOString(),
+                      datamart_cancel_data: cancelRes.raw || null,
+                    }
+                  : {
+                      datahub_refunded_at: new Date().toISOString(),
+                      datahub_refund_data: cancelRes.raw || null,
+                    }),
+              };
+              await supabaseAdmin
+                .from("orders")
+                .update({
+                  status: "fulfillment_failed",
+                  provider_id: null,
+                  provider_order_id: "refunded",
+                  failure_reason: cancelRes.reason || (isDm ? "Cancelled via DataMart /cancel-order" : "Refunded via DataHub /order-refund"),
+                  metadata: nextMeta,
+                  updated_at: new Date().toISOString(),
+                })
+                .eq("id", ord.id);
+              ord = {
+                ...ord,
+                status: "fulfillment_failed",
+                provider_id: null,
+                provider_order_id: "refunded",
+                metadata: nextMeta,
+              };
+            } else {
+              return new Response(JSON.stringify({
+                success: false,
+                refunded: false,
+                has_entered_provider: true,
+                code: cancelRes.raw?.code || (cancelRes.status === "order_in_progress" ? "ORDER_IN_PROGRESS" : "ORDER_NOT_CANCELLABLE"),
+                error: cancelRes.reason || "This order has already been picked up for delivery and can no longer be cancelled. Check its status again shortly.",
+              }), {
+                status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" }
+              });
+            }
+          }
+        }
+
+        if (!cancelledUpstream) {
+          return new Response(JSON.stringify({
+            success: false,
+            refunded: false,
+            has_entered_provider: true,
+            error: "This order has already entered the carrier network provider API and delivery is 100% guaranteed. Orders that have entered a provider cannot be cancelled or refunded."
+          }), {
+            status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" }
+          });
+        }
       }
 
       const refundRes = await executeGuestBeneficiaryRefund(supabaseAdmin, ord, body.reason || "Customer requested guest refund");

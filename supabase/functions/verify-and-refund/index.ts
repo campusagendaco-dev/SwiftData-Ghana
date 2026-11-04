@@ -176,6 +176,8 @@ serve(async (req) => {
 
     const handlerType = String(assignedProvider?.handler_type || "").toLowerCase();
     const isDataHub = handlerType === "datahub" || String(assignedProvider?.name || "").toLowerCase().includes("datahub");
+    const isDataMart = handlerType === "datamart" || String(assignedProvider?.name || "").toLowerCase().includes("datamart");
+    const cancelReason = String(body.reason || url.searchParams.get("reason") || "").trim();
 
     // 4A. UNIVERSAL REROUTE FLOW (Works for SKPlug, DataHub, DataMart, Spendless, BundleZone, HySpeedData, or stuck #dispatching orders)
     if (isRerouteMode) {
@@ -210,12 +212,42 @@ serve(async (req) => {
           });
         }
 
-        // 2. If DataHub and order is still active on DataHub, attempt DataHub /order-refund first
+        // 2. If DataHub or DataMart and order is still active, attempt upstream refund/cancel first
         const isConfirmedFailedOrMissingOnProvider =
           !hasProviderRef ||
           ["failed", "fulfillment_failed", "refunded", "reversed", "rejected", "cancelled", "not_found"].includes(liveStatus);
 
-        if (isDataHub && hasProviderRef && !isConfirmedFailedOrMissingOnProvider) {
+        if (isDataMart && hasProviderRef && !isConfirmedFailedOrMissingOnProvider) {
+          const dmCancel = await standardAdapter.cancelDataMartOrder(supabaseAdmin, assignedProvider, {
+            reference: order.id,
+            providerOrderId: order.provider_order_id,
+            orderNumber: cleanOrderNumber || order.provider_order_id,
+            clientReference: order.metadata?.client_reference,
+            reason: cancelReason || "Order rerouted to alternative provider",
+          });
+          if (dmCancel.ok) {
+            upstreamRefundData = dmCancel.raw || null;
+          } else {
+            const dmReason = String(dmCancel.reason || "").toLowerCase();
+            const isAlreadyCancelledOrGone =
+              dmCancel.status === "not_found" ||
+              dmReason.includes("already cancelled") ||
+              dmReason.includes("cancelled") ||
+              dmReason.includes("refunded") ||
+              dmReason.includes("failed");
+            // Never reroute if DataMart reports ORDER_IN_PROGRESS or ORDER_NOT_CANCELLABLE while active
+            if (dmCancel.status === "order_in_progress" || dmCancel.status === "order_not_cancellable" || (!isAlreadyCancelledOrGone && !isCallerAdmin)) {
+              return new Response(JSON.stringify({
+                success: false,
+                code: dmCancel.raw?.code || (dmCancel.status === "order_in_progress" ? "ORDER_IN_PROGRESS" : "ORDER_NOT_CANCELLABLE"),
+                error: dmCancel.reason || "Order has already been picked up by DataMart and can no longer be cancelled for rerouting.",
+              }), {
+                status: errStatus(409),
+                headers: { ...corsHeaders, "Content-Type": "application/json" },
+              });
+            }
+          }
+        } else if (isDataHub && hasProviderRef && !isConfirmedFailedOrMissingOnProvider) {
           const dhMethod = req.method === "GET" ? "GET" : "POST";
           const dhRefund = await standardAdapter.refundDataHubOrder(supabaseAdmin, assignedProvider, {
             reference: order.id,
@@ -254,7 +286,7 @@ serve(async (req) => {
         }
       }
 
-      // 3. Exclude the previous provider (e.g. SKPlug) and dispatch immediately to the next active provider
+      // 3. Exclude the previous provider (e.g. SKPlug / DataMart) and dispatch immediately to the next active provider
       const prevFailed = Array.isArray(order.metadata?.failed_provider_ids)
         ? order.metadata.failed_provider_ids
         : [];
@@ -271,7 +303,11 @@ serve(async (req) => {
           ? `Rerouted away from ${assignedProvider.name} to alternative provider`
           : "Rerouted stuck dispatching order to active provider",
         rerouted_at: new Date().toISOString(),
-        ...(upstreamRefundData ? { datahub_refunded_at: new Date().toISOString(), datahub_refund_data: upstreamRefundData } : {}),
+        ...(upstreamRefundData && isDataMart
+          ? { datamart_cancelled_at: new Date().toISOString(), datamart_cancel_data: upstreamRefundData }
+          : upstreamRefundData
+          ? { datahub_refunded_at: new Date().toISOString(), datahub_refund_data: upstreamRefundData }
+          : {}),
       };
 
       await supabaseAdmin
@@ -361,9 +397,109 @@ serve(async (req) => {
       });
     }
 
-    // 4B. SERVER-SIDE CHECK 3 (Wallet Refund Mode): If processing, verify provider status before refunding wallet
-    if (order.status === "processing") {
-      if (isDataHub && assignedProvider) {
+    // 4B. SERVER-SIDE CHECK 3 (Wallet Refund / Cancel Mode): If processing or routed to DataMart, verify/cancel on provider before refunding wallet
+    if (order.status === "processing" || (isDataMart && assignedProvider && hasProviderRef)) {
+      if (isDataMart && assignedProvider) {
+        const standardAdapter = new StandardAdapter();
+        const dmCancel = await standardAdapter.cancelDataMartOrder(supabaseAdmin, assignedProvider, {
+          reference: order.id,
+          providerOrderId: order.provider_order_id,
+          orderNumber: cleanOrderNumber || order.provider_order_id,
+          clientReference: order.metadata?.client_reference,
+          reason: cancelReason || "Customer requested order cancellation",
+        });
+
+        if (!dmCancel.ok) {
+          // Check if DataMart completed or already failed the order in the meantime
+          const liveCheck = await standardAdapter.checkStatus(
+            supabaseAdmin,
+            assignedProvider,
+            String(order.provider_order_id || order.id),
+            order.id
+          );
+          const liveStatus = String(liveCheck.status || "").toLowerCase();
+          if (liveCheck.ok && ["fulfilled", "completed", "delivered", "success", "successful"].includes(liveStatus)) {
+            await supabaseAdmin
+              .from("orders")
+              .update({
+                status: "fulfilled",
+                failure_reason: null,
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", order.id);
+            await Promise.resolve(supabaseAdmin.rpc("credit_order_profits", { p_order_id: order.id })).catch(() => {});
+
+            return new Response(JSON.stringify({
+              success: false,
+              status: "error",
+              code: "ORDER_NOT_CANCELLABLE",
+              error: "Order is not eligible for cancellation",
+              details: "DataMart confirmed order was DELIVERED. Order marked as fulfilled instead of cancelling."
+            }), {
+              status: errStatus(409),
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
+
+          const isConfirmedFailedOnDataMart =
+            !hasProviderRef ||
+            ["failed", "fulfillment_failed", "refunded", "reversed", "rejected", "cancelled"].includes(liveStatus);
+
+          if (!isConfirmedFailedOnDataMart) {
+            const httpStatus =
+              dmCancel.status === "not_found"
+                ? 404
+                : dmCancel.status === "unauthorized"
+                ? 401
+                : 409;
+            const refusalCode =
+              dmCancel.raw?.code ||
+              (dmCancel.status === "order_in_progress"
+                ? "ORDER_IN_PROGRESS"
+                : dmCancel.status === "not_refundable_here"
+                ? "ORDER_NOT_REFUNDABLE_HERE"
+                : dmCancel.status === "not_found"
+                ? "ORDER_NOT_FOUND"
+                : dmCancel.status === "unauthorized"
+                ? "API_KEY_REQUIRED"
+                : "ORDER_NOT_CANCELLABLE");
+
+            return new Response(JSON.stringify({
+              success: false,
+              status: "error",
+              code: refusalCode,
+              error: dmCancel.reason || "Order can be cancelled only while its status is pending or waiting.",
+              message: dmCancel.reason || "Order can be cancelled only while its status is pending or waiting.",
+              data: dmCancel.raw?.data || {
+                reference: String(order.provider_order_id || order.id),
+                orderStatus: liveStatus || "pending",
+              },
+            }), {
+              status: isBrowserInvoke ? 200 : httpStatus,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
+        } else {
+          upstreamRefundData = dmCancel.raw || null;
+        }
+
+        await supabaseAdmin
+          .from("orders")
+          .update({
+            provider_order_id: "refunded",
+            failure_reason: dmCancel.ok
+              ? (dmCancel.reason || "Cancelled via DataMart /cancel-order")
+              : "Refunded after DataMart failure confirmation",
+            metadata: {
+              ...(order.metadata || {}),
+              datamart_cancelled_at: dmCancel.raw?.cancelledAt || new Date().toISOString(),
+              ...(dmCancel.raw?.refundReference ? { datamart_refund_reference: dmCancel.raw.refundReference } : {}),
+              ...(upstreamRefundData ? { datamart_cancel_data: upstreamRefundData } : {}),
+            },
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", order.id);
+      } else if (isDataHub && assignedProvider) {
         const standardAdapter = new StandardAdapter();
         const dhMethod = req.method === "GET" ? "GET" : "POST";
         const dhRefund = await standardAdapter.refundDataHubOrder(supabaseAdmin, assignedProvider, {
@@ -523,10 +659,18 @@ serve(async (req) => {
       }
     } else if (hasRealAgent && isCallerAdmin) {
       // Agent order paid via Paystack/MoMo: credit the agent's wallet and mark order refunded
-      const { error: creditErr } = await supabaseAdmin.rpc("credit_wallet", {
+      // Ledgered, once-only refund credit (the idempotency key blocks a second refund).
+      const { data: refundPost, error: postErr } = await supabaseAdmin.rpc("wallet_post", {
         p_agent_id: order.agent_id,
+        p_account: "main",
         p_amount: Number(order.amount || 0),
+        p_reason: "order_refund",
+        p_reference_type: "order",
+        p_reference_id: String(order.id),
+        p_idempotency_key: `refund:${order.id}`,
+        p_note: "Refund for a Paystack/MoMo order (admin)",
       });
+      const creditErr = postErr || ((refundPost as any)?.success ? null : { message: (refundPost as any)?.error || "Refund credit failed" });
       if (creditErr) {
         return new Response(JSON.stringify({
           success: false,
@@ -633,17 +777,32 @@ serve(async (req) => {
 
     const nowIso = new Date().toISOString();
     const orderNumVal = upstreamRefundData?.orderNumber
+      ?? upstreamRefundData?.orderId
       ?? (/^\d+$/.test(String(order.provider_order_id || "")) ? Number(order.provider_order_id) : order.id);
-    const refVal = String(order.metadata?.client_reference || order.id);
+    const refVal = String(upstreamRefundData?.reference || order.metadata?.client_reference || order.id);
     const paidAmt = Number(order.amount || 0);
 
     return new Response(JSON.stringify({
       success: true,
-      message: "Refund credited to your wallet",
+      status: "success",
+      message: isDataMart
+        ? `Order cancelled. GHS ${paidAmt.toFixed(2)} has been returned to your wallet.`
+        : "Refund credited to your wallet",
       data: {
         orderNumber: orderNumVal,
+        orderId: upstreamRefundData?.orderId || order.provider_order_id || order.id,
         reference: refVal,
         status: "REFUNDED",
+        orderStatus: "cancelled",
+        previousStatus: upstreamRefundData?.previousStatus || order.status || "pending",
+        refunded: true,
+        alreadyCancelled: Boolean(upstreamRefundData?.alreadyCancelled),
+        refundAmount: paidAmt,
+        refundedAmount: paidAmt,
+        refundReference: upstreamRefundData?.refundReference || `API-CANCEL-${order.id}`,
+        balanceAfter: newBalance,
+        newBalance,
+        cancelledAt: upstreamRefundData?.cancelledAt || nowIso,
         network: String(order.network || "").toUpperCase(),
         recipient: String(order.customer_phone || ""),
         dataAmount: String(order.package_size || ""),
@@ -651,8 +810,6 @@ serve(async (req) => {
         orderDate: order.created_at,
         updatedAt: nowIso,
         completedAt: null,
-        refundedAmount: paidAmt,
-        newBalance,
       }
     }), {
       status: 200,

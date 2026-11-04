@@ -80,33 +80,85 @@ serve(async (req) => {
 
     const payload = JSON.parse(rawBody);
     const { event, data } = payload;
-    const reference = data?.orderReference || data?.reference || data?.orderId;
-    const status = (data?.status || "").toLowerCase();
+    const reference = String(data?.orderReference || data?.reference || data?.orderId || "").trim();
+    const status = String(data?.status || data?.orderStatus || "").toLowerCase().trim();
+    const eventLower = String(event || "").toLowerCase().trim();
 
     if (!reference) {
       return new Response(JSON.stringify({ error: "No reference found" }), { status: 400 });
     }
 
-    const isSuccess = ["completed", "success", "successful", "delivered", "fulfilled"].includes(status);
-    const isFailed = ["failed", "rejected", "refunded"].includes(status);
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(reference);
+    let orderQuery = supabaseAdmin.from("orders").select("*");
+    if (isUuid) {
+      orderQuery = orderQuery.or(`id.eq.${reference},provider_order_id.eq.${reference},metadata->>client_reference.eq.${reference}`);
+    } else {
+      orderQuery = orderQuery.or(`provider_order_id.eq.${reference},metadata->>client_reference.eq.${reference}`);
+    }
+    const { data: order } = await orderQuery.limit(1).maybeSingle();
 
-    if (isSuccess) {
-      const { data: order } = await supabaseAdmin.from("orders").select("status").eq("id", reference).maybeSingle();
-      if (order && order.status !== "fulfilled") {
-        await supabaseAdmin.from("orders").update({ 
-          status: "fulfilled",
-          updated_at: new Date().toISOString()
-        }).eq("id", reference);
-        await supabaseAdmin.rpc("credit_order_profits", { p_order_id: reference });
-        await notifyApiClient(supabaseAdmin, reference, "fulfilled");
+    const newBal = Number(data?.balanceAfter ?? data?.newBalance);
+    if (Number.isFinite(newBal)) {
+      await Promise.resolve(
+        supabaseAdmin
+          .from("providers")
+          .update({ balance: newBal, last_synced_at: new Date().toISOString() })
+          .eq("handler_type", "datamart")
+      ).catch(() => {});
+    }
+
+    const isSuccess = ["completed", "success", "successful", "delivered", "fulfilled"].includes(status);
+    const isCancelledOrRefunded =
+      eventLower === "order.refunded" ||
+      status === "cancelled" ||
+      status === "refunded" ||
+      data?.refunded === true;
+    const isFailed = ["failed", "rejected"].includes(status);
+
+    if (order) {
+      if (isSuccess) {
+        if (order.status !== "fulfilled") {
+          await supabaseAdmin.from("orders").update({ 
+            status: "fulfilled",
+            failure_reason: null,
+            updated_at: new Date().toISOString()
+          }).eq("id", order.id);
+          await supabaseAdmin.rpc("credit_order_profits", { p_order_id: order.id });
+          await notifyApiClient(supabaseAdmin, order.id, "fulfilled");
+        }
+      } else if (isCancelledOrRefunded) {
+        if (order.status !== "fulfilled" && order.status !== "refunded" && !order.auto_refunded) {
+          await supabaseAdmin.from("orders").update({
+            status: "fulfillment_failed",
+            provider_order_id: "refunded",
+            failure_reason: "Order cancelled and refunded on DataMart",
+            metadata: {
+              ...(order.metadata || {}),
+              datamart_webhook_event: event || "order.refunded",
+              datamart_cancelled_at: data?.cancelledAt || new Date().toISOString(),
+              datamart_cancel_data: data,
+            },
+            updated_at: new Date().toISOString(),
+          }).eq("id", order.id);
+
+          const pmLower = String(order.payment_method || "").toLowerCase().trim();
+          if (pmLower === "wallet" || pmLower === "balance") {
+            await Promise.resolve(
+              supabaseAdmin.rpc("refund_failed_order", { p_order_id: order.id })
+            ).catch((e) => console.error("[DataMart Webhook] Wallet refund RPC error:", e));
+          }
+          await notifyApiClient(supabaseAdmin, order.id, "refunded");
+        }
+      } else if (isFailed) {
+        if (order.status !== "fulfilled" && order.status !== "refunded") {
+          await supabaseAdmin.from("orders").update({ 
+            status: "fulfillment_failed",
+            failure_reason: `Provider reported failure: ${status}`,
+            updated_at: new Date().toISOString()
+          }).eq("id", order.id);
+          await notifyApiClient(supabaseAdmin, order.id, "fulfillment_failed");
+        }
       }
-    } else if (isFailed) {
-      await supabaseAdmin.from("orders").update({ 
-        status: "fulfillment_failed",
-        failure_reason: `Provider reported failure: ${status}`,
-        updated_at: new Date().toISOString()
-      }).eq("id", reference);
-      await notifyApiClient(supabaseAdmin, reference, "fulfillment_failed");
     }
 
     return new Response(JSON.stringify({ received: true }), {

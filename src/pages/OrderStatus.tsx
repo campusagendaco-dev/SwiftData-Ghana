@@ -628,59 +628,83 @@ const OrderStatus = () => {
     }
   };
 
-  const handleInstantRefund = async () => {
+  const handleInstantRefund = async (skipConfirm = false) => {
     const targetId = orderData?.id || resolvedOrderId || reference;
     if (!targetId) return;
 
     const currentDbStatus = String((orderData as any)?.status || orderStatus);
     if (currentDbStatus === "fulfilled" || currentDbStatus === "completed") {
-      toast.error("Order has already been delivered. It cannot be refunded.");
+      toast.error("Order has already been delivered. It cannot be cancelled or refunded.");
       return;
     }
     if (currentDbStatus === "refunded") {
-      toast.error("Order has already been refunded.");
-      return;
-    }
-
-    // If order is in processing, check if eligible via /order-refund (verify-and-refund) first
-    if (hasEnteredProvider && currentDbStatus === "processing") {
-      setIsClaimingRefund(true);
-      try {
-        const { data: sessionData } = await supabase.auth.getSession();
-        if (sessionData?.session) {
-          const { data: refundRes, error: refundErr } = await supabase.functions.invoke("verify-and-refund", {
-            body: { reference: targetId, mode: "refund_only" }
-          });
-          if (!refundErr && refundRes?.success) {
-            toast.success(refundRes.message || "Refund credited to your wallet!");
-            setOrderStatus("refunded");
-            await pollStatus(true);
-            return;
-          }
-        }
-        toast.info("This order has entered the carrier network gateway. Delivery is 100% guaranteed once in provider transmission.");
-      } catch {
-        toast.info("This order has entered the carrier network gateway. Delivery is 100% guaranteed.");
-      } finally {
-        setIsClaimingRefund(false);
-      }
-      return;
-    }
-
-    if (hasEnteredProvider) {
-      toast.info("This order has already entered the carrier network provider gateway. Delivery is 100% guaranteed, so it cannot be refunded.");
+      toast.error("Order has already been cancelled and refunded.");
       return;
     }
 
     const amt = Number(orderData?.amount || 0);
     const amtStr = amt > 0 ? `GH₵ ${amt.toFixed(2)}` : "your payment";
-    const confirmed = window.confirm(`Request an immediate refund of ${amtStr} to your Mobile Money account?`);
-    if (!confirmed) return;
+    if (!skipConfirm) {
+      const confirmed = window.confirm(`Cancel this order and refund ${amtStr}? An order can only be cancelled while its status is pending or waiting.`);
+      if (!confirmed) return;
+    }
+
+    // If order is in processing/pending with a provider, check if eligible via /cancel-order or /order-refund first
+    if (hasEnteredProvider && (currentDbStatus === "processing" || currentDbStatus === "pending" || currentDbStatus === "paid")) {
+      setIsClaimingRefund(true);
+      try {
+        const isGuestOrder = Boolean((orderData as any)?.metadata?.is_guest_order) ||
+          !(orderData as any)?.agent_id ||
+          (orderData as any)?.agent_id === "00000000-0000-0000-0000-000000000000";
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (sessionData?.session && !isGuestOrder) {
+          const { data: refundRes, error: refundErr } = await supabase.functions.invoke("verify-and-refund", {
+            body: {
+              order_id: targetId,
+              reference: targetId,
+              mode: "cancel",
+              reason: "customer changed mind"
+            }
+          });
+          if (!refundErr && refundRes?.success) {
+            toast.success(refundRes.message || "Order cancelled! Refund credited to your wallet.");
+            setOrderStatus("refunded");
+            setOrderData((prev: any) => ({
+              ...prev,
+              status: "refunded",
+              refund_amount: refundRes?.data?.refundAmount ?? refundRes?.data?.refundedAmount ?? prev?.amount ?? amt,
+            }));
+            await pollStatus(true);
+            return;
+          }
+          let errMessage = refundRes?.error || "";
+          if (!errMessage && refundErr) {
+            try {
+              if ((refundErr as any).context?.json) {
+                const errJson = await (refundErr as any).context.json();
+                errMessage = errJson?.error || errJson?.message || "";
+              }
+            } catch {
+              // ignore
+            }
+          }
+          if (errMessage) {
+            toast.error(errMessage);
+            return;
+          }
+        }
+        // For guest orders (or unauthenticated sessions), verify-payment guest_refund handles upstream DataMart /cancel-order
+      } catch {
+        // Fall through to verify-payment guest_refund
+      } finally {
+        setIsClaimingRefund(false);
+      }
+    }
 
     setIsClaimingRefund(true);
     try {
       const { data, error } = await supabase.functions.invoke("verify-payment", {
-        body: { action: "guest_refund", order_id: targetId, reason: "Customer requested instant refund on Order Status page" }
+        body: { action: "guest_refund", order_id: targetId, reason: "customer changed mind" }
       });
       if (error) {
         let msg = error.message;
@@ -1041,7 +1065,7 @@ const OrderStatus = () => {
     const isDelivered = orderStatus === "fulfilled";
     const isRefunded = orderStatus === "refunded";
     const isFailed = (failed || orderStatus === "fulfillment_failed" || orderStatus === "error") && !isBeneficiaryOrder;
-    const canRefund = !isDelivered && !isRefunded && !isBeneficiaryOrder && !hasEnteredProvider && (isFailed || ["paid", "processing"].includes(orderStatus));
+    const canRefund = !isDelivered && !isRefunded && !isBeneficiaryOrder && (isFailed || ["pending", "paid", "processing"].includes(orderStatus));
     const tone = isDelivered
       ? { ring: "bg-emerald-500", soft: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400", bar: "bg-emerald-500" }
       : isRefunded
@@ -1213,8 +1237,8 @@ const OrderStatus = () => {
                     <div className="rounded-xl border border-border bg-background p-3">
                       <p className="text-[12.5px]">Cancel this order and refund your Mobile Money?</p>
                       <div className="mt-2 grid grid-cols-2 gap-2">
-                        <button onClick={() => { setConfirmRefund(false); handleInstantRefund(); }} disabled={isClaimingRefund} className="h-9 rounded-lg bg-foreground text-background text-[12.5px] font-semibold disabled:opacity-60">
-                          {isClaimingRefund ? "Requesting…" : "Yes, refund me"}
+                        <button onClick={() => { setConfirmRefund(false); handleInstantRefund(true); }} disabled={isClaimingRefund} className="h-9 rounded-lg bg-foreground text-background text-[12.5px] font-semibold disabled:opacity-60">
+                          {isClaimingRefund ? "Cancelling…" : "Yes, cancel & refund"}
                         </button>
                         <button onClick={() => setConfirmRefund(false)} className="h-9 rounded-lg border border-border text-[12.5px] font-semibold">Keep waiting</button>
                       </div>
@@ -1287,17 +1311,17 @@ const OrderStatus = () => {
               {canRefund &&
                 (confirmRefund ? (
                   <div className="rounded-xl border border-border bg-background p-3">
-                    <p className="text-[12.5px]">Cancel this order and refund your Mobile Money? This can’t be undone.</p>
+                    <p className="text-[12.5px]">Cancel this order and get your full price back? Orders can only be cancelled while pending or waiting.</p>
                     <div className="mt-2 grid grid-cols-2 gap-2">
-                      <button onClick={() => { setConfirmRefund(false); handleInstantRefund(); }} disabled={isClaimingRefund} className="h-9 rounded-lg bg-foreground text-background text-[12.5px] font-semibold disabled:opacity-60">
-                        {isClaimingRefund ? "Requesting…" : "Yes, refund me"}
+                      <button onClick={() => { setConfirmRefund(false); handleInstantRefund(true); }} disabled={isClaimingRefund} className="h-9 rounded-lg bg-foreground text-background text-[12.5px] font-semibold disabled:opacity-60">
+                        {isClaimingRefund ? "Cancelling…" : "Yes, cancel & refund"}
                       </button>
                       <button onClick={() => setConfirmRefund(false)} className="h-9 rounded-lg border border-border text-[12.5px] font-semibold">Keep order</button>
                     </div>
                   </div>
                 ) : (
                   <button onClick={() => setConfirmRefund(true)} disabled={isClaimingRefund} className={cn(secondaryBtn, "w-full")}>
-                    {isClaimingRefund ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />} Get a refund
+                    {isClaimingRefund ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />} {isFailed ? "Get a refund" : "Cancel order & refund"}
                   </button>
                 ))}
 

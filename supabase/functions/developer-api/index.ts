@@ -762,7 +762,16 @@ serve(async (req: Request) => {
     else if (p.endsWith("/payment/ecg/lookup")) finalAction = "ecg_lookup";
     else if (p.endsWith("/payment/ecg")) finalAction = "ecg_pay";
     else if (p.endsWith("/purchases/submit-numbers") || p.endsWith("/submit-numbers")) finalAction = "submit_numbers";
-    else if (p.endsWith("/order-refund") || p.endsWith("/order_refund") || action === "order-refund") finalAction = "order_refund";
+    else if (
+      p.endsWith("/order-refund") ||
+      p.endsWith("/order_refund") ||
+      p.endsWith("/cancel-order") ||
+      p.endsWith("/cancel_order") ||
+      /\/orders\/[^/]+\/cancel$/i.test(path) ||
+      action === "order-refund" ||
+      action === "cancel-order" ||
+      action === "cancel_order"
+    ) finalAction = "order_refund";
     else if (p.endsWith("/service-status")) finalAction = "service_status";
     else if (p === "" || p === "/" || p.endsWith("/developer-api")) finalAction = action || "index";
 
@@ -1853,8 +1862,18 @@ serve(async (req: Request) => {
         return json({ success: false, error: "Method not allowed. Use GET or POST." }, 405);
       }
 
-      let refParam = (url.searchParams.get("reference") || "").trim();
+      const pathCancelMatch = path.match(/\/orders\/([^/]+)\/cancel$/i);
+      const pathReference = pathCancelMatch ? decodeURIComponent(pathCancelMatch[1]).trim() : "";
+      const isCancelEndpoint =
+        p.endsWith("/cancel-order") ||
+        p.endsWith("/cancel_order") ||
+        Boolean(pathCancelMatch) ||
+        action === "cancel-order" ||
+        action === "cancel_order";
+
+      let refParam = (url.searchParams.get("reference") || pathReference || "").trim();
       let orderNumberParam = (url.searchParams.get("orderNumber") || "").trim();
+      let cancelReason = (url.searchParams.get("reason") || "").trim();
 
       if (req.method === "POST") {
         const body = await req.json().catch(() => null);
@@ -1866,6 +1885,9 @@ serve(async (req: Request) => {
           if (body.orderNumber !== undefined && body.orderNumber !== null && String(body.orderNumber).trim() !== "") {
             orderNumberParam = String(body.orderNumber).trim();
           }
+          if (body.reason !== undefined && body.reason !== null && String(body.reason).trim() !== "") {
+            cancelReason = String(body.reason).trim();
+          }
         }
       }
 
@@ -1873,7 +1895,9 @@ serve(async (req: Request) => {
       if (!targetIdentifier) {
         return json({
           success: false,
-          error: "Either 'reference' or 'orderNumber' is required"
+          status: "error",
+          error: "Either 'reference' or 'orderNumber' is required",
+          message: "Either 'reference' or 'orderNumber' is required"
         }, 400);
       }
 
@@ -1892,17 +1916,50 @@ serve(async (req: Request) => {
       if (ordErr || !order) {
         return json({
           success: false,
-          error: "Order not found"
+          status: "error",
+          code: "ORDER_NOT_FOUND",
+          error: "Order not found",
+          message: "No order of yours has that reference."
         }, 404);
       }
 
-      // Only orders owned by the account that are both manual and PROCESSING can be refunded.
-      // Completed, API-provider (unless upstream DataHub confirms self-refund), pending, and already-refunded orders are rejected.
+      // Cancelling the same order twice is safe on /cancel-order: the second call answers success with alreadyCancelled: true and refunds nothing more.
+      if (isCancelEndpoint && (order.status === "refunded" || order.auto_refunded === true)) {
+        const { data: walletRow } = await supabase
+          .from("wallets")
+          .select("balance, api_balance")
+          .eq("agent_id", currentUserId)
+          .maybeSingle();
+        const curBal = Number(walletRow?.balance ?? walletRow?.api_balance ?? 0);
+        const clientReference = String(order.metadata?.client_reference || order.id);
+        return json({
+          success: true,
+          status: "success",
+          alreadyCancelled: true,
+          message: "Order was already cancelled.",
+          data: {
+            reference: clientReference,
+            orderId: order.provider_order_id && order.provider_order_id !== "refunded" ? order.provider_order_id : order.id,
+            orderStatus: "cancelled",
+            previousStatus: "cancelled",
+            alreadyCancelled: true,
+            refunded: false,
+            refundAmount: 0,
+            balanceAfter: curBal,
+            cancelledAt: order.refunded_at || order.metadata?.datamart_cancelled_at || order.updated_at,
+          }
+        }, 200);
+      }
+
+      // Only orders owned by the account that are in PROCESSING / PENDING can be cancelled/refunded.
       if (order.status !== "processing" || order.auto_refunded === true) {
         return json({
           success: false,
-          error: "Order is not eligible for refund"
-        }, 400);
+          status: "error",
+          code: "ORDER_NOT_CANCELLABLE",
+          error: "Order is not eligible for refund",
+          message: "The order is processing, completed, failed or in any status other than pending / waiting."
+        }, isCancelEndpoint ? 409 : 400);
       }
 
       const hasProviderRef = Boolean(
@@ -1915,6 +1972,7 @@ serve(async (req: Request) => {
       );
 
       let upstreamRefundData: any = null;
+      let isDataMartOrder = false;
       if (order.provider_id || hasProviderRef) {
         let assignedProvider: any = null;
         if (order.provider_id) {
@@ -1927,41 +1985,97 @@ serve(async (req: Request) => {
         }
         const handlerType = String(assignedProvider?.handler_type || "").toLowerCase();
         const isDataHub = handlerType === "datahub" || String(assignedProvider?.name || "").toLowerCase().includes("datahub");
+        const isDataMart = handlerType === "datamart" || String(assignedProvider?.name || "").toLowerCase().includes("datamart");
+        isDataMartOrder = isDataMart;
 
-        if (!isDataHub || !assignedProvider) {
+        if ((!isDataHub && !isDataMart) || !assignedProvider) {
           return json({
             success: false,
-            error: "Order is not eligible for refund"
-          }, 400);
+            status: "error",
+            code: "ORDER_NOT_CANCELLABLE",
+            error: "Order is not eligible for refund",
+            message: "This order has already been picked up for delivery and can no longer be cancelled."
+          }, isCancelEndpoint ? 409 : 400);
         }
 
         const standardAdapter = new StandardAdapter();
-        const dhRefund = await standardAdapter.refundDataHubOrder(supabase, assignedProvider, {
-          reference: order.id,
-          orderNumber: orderNumberParam || order.provider_order_id,
-          method: req.method === "GET" ? "GET" : "POST",
-        });
+        if (isDataMart) {
+          const dmCancel = await standardAdapter.cancelDataMartOrder(supabase, assignedProvider, {
+            reference: order.id,
+            providerOrderId: order.provider_order_id,
+            orderNumber: orderNumberParam || order.provider_order_id,
+            clientReference: order.metadata?.client_reference,
+            reason: cancelReason || "Customer requested order cancellation via API",
+          });
 
-        if (!dhRefund.ok) {
-          const status = dhRefund.status === "not_found" ? 404 : dhRefund.status === "unauthorized" ? 401 : 400;
-          return json({
-            success: false,
-            error: dhRefund.reason || "Order is not eligible for refund"
-          }, status);
+          if (!dmCancel.ok) {
+            const httpStatus =
+              dmCancel.status === "not_found"
+                ? 404
+                : dmCancel.status === "unauthorized"
+                ? 401
+                : 409;
+            const refusalCode =
+              dmCancel.raw?.code ||
+              (dmCancel.status === "order_in_progress"
+                ? "ORDER_IN_PROGRESS"
+                : dmCancel.status === "not_refundable_here"
+                ? "ORDER_NOT_REFUNDABLE_HERE"
+                : dmCancel.status === "not_found"
+                ? "ORDER_NOT_FOUND"
+                : dmCancel.status === "unauthorized"
+                ? "API_KEY_REQUIRED"
+                : "ORDER_NOT_CANCELLABLE");
+
+            return json({
+              success: false,
+              status: "error",
+              code: refusalCode,
+              error: dmCancel.reason || "Order is not eligible for cancellation",
+              message: dmCancel.reason || "Order can be cancelled only while its status is pending or waiting.",
+              data: dmCancel.raw?.data || {
+                reference: String(order.metadata?.client_reference || order.id),
+                orderStatus: "pending",
+              }
+            }, httpStatus);
+          }
+
+          upstreamRefundData = dmCancel.raw || null;
+        } else {
+          const dhRefund = await standardAdapter.refundDataHubOrder(supabase, assignedProvider, {
+            reference: order.id,
+            orderNumber: orderNumberParam || order.provider_order_id,
+            method: req.method === "GET" ? "GET" : "POST",
+          });
+
+          if (!dhRefund.ok) {
+            const status = dhRefund.status === "not_found" ? 404 : dhRefund.status === "unauthorized" ? 401 : 400;
+            return json({
+              success: false,
+              error: dhRefund.reason || "Order is not eligible for refund"
+            }, status);
+          }
+
+          upstreamRefundData = dhRefund.raw || null;
         }
-
-        upstreamRefundData = dhRefund.raw || null;
       }
 
       await supabase
         .from("orders")
         .update({
           provider_order_id: "refunded",
-          failure_reason: "Self-refunded via /order-refund",
+          failure_reason: isDataMartOrder ? "Cancelled via DataMart /cancel-order" : "Self-refunded via /order-refund",
           metadata: {
             ...(order.metadata || {}),
             self_refunded_at: new Date().toISOString(),
-            ...(upstreamRefundData ? { datahub_refund_data: upstreamRefundData } : {}),
+            ...(isDataMartOrder && upstreamRefundData
+              ? {
+                  datamart_cancelled_at: upstreamRefundData.cancelledAt || new Date().toISOString(),
+                  datamart_cancel_data: upstreamRefundData,
+                }
+              : upstreamRefundData
+              ? { datahub_refund_data: upstreamRefundData }
+              : {}),
           },
           updated_at: new Date().toISOString(),
         })
@@ -1974,8 +2088,10 @@ serve(async (req: Request) => {
       if (rpcErr || !refundSuccess) {
         return json({
           success: false,
+          status: "error",
+          code: "ORDER_NOT_CANCELLABLE",
           error: "Order is not eligible for refund"
-        }, 400);
+        }, isCancelEndpoint ? 409 : 400);
       }
 
       const { data: walletRow } = await supabase
@@ -1988,16 +2104,30 @@ serve(async (req: Request) => {
       const paidAmt = Number(order.amount || 0);
       const clientReference = String(order.metadata?.client_reference || order.id);
       const resolvedOrderNum = upstreamRefundData?.orderNumber
+        ?? upstreamRefundData?.orderId
         ?? (/^\d+$/.test(String(order.provider_order_id || "")) ? Number(order.provider_order_id) : order.id);
       const newBalanceVal = Number(walletRow?.balance ?? walletRow?.api_balance ?? 0);
 
       return json({
         success: true,
-        message: "Refund credited to your wallet",
+        status: "success",
+        message: isDataMartOrder || isCancelEndpoint
+          ? `Order cancelled. GHS ${paidAmt.toFixed(2)} has been returned to your wallet.`
+          : "Refund credited to your wallet",
         data: {
           orderNumber: resolvedOrderNum,
+          orderId: upstreamRefundData?.orderId || order.provider_order_id || order.id,
           reference: clientReference,
           status: "REFUNDED",
+          orderStatus: "cancelled",
+          previousStatus: upstreamRefundData?.previousStatus || "pending",
+          refunded: true,
+          refundAmount: paidAmt,
+          refundedAmount: paidAmt,
+          refundReference: upstreamRefundData?.refundReference || `API-CANCEL-${order.id}`,
+          balanceAfter: newBalanceVal,
+          newBalance: newBalanceVal,
+          cancelledAt: upstreamRefundData?.cancelledAt || updatedAtIso,
           network: String(order.network || "").toUpperCase(),
           recipient: String(order.customer_phone || ""),
           dataAmount: String(order.package_size || ""),
@@ -2005,8 +2135,6 @@ serve(async (req: Request) => {
           orderDate: order.created_at,
           updatedAt: updatedAtIso,
           completedAt: null,
-          refundedAmount: paidAmt,
-          newBalance: newBalanceVal
         }
       }, 200);
     }

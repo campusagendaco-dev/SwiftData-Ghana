@@ -1018,9 +1018,14 @@ export default function AdminOrders() {
     }
     setRefunding(orderId);
     try {
-      if (targetOrder?.status === "processing" || mode === "refund_and_reroute") {
+      if (targetOrder?.status === "processing" || targetOrder?.status === "pending" || Boolean(targetOrder?.provider_id) || mode === "refund_and_reroute") {
         const { data: edgeData, error: edgeErr } = await supabase.functions.invoke("verify-and-refund", {
-          body: { order_id: orderId, reference: orderId, mode },
+          body: {
+            order_id: orderId,
+            reference: orderId,
+            mode,
+            reason: "Cancelled by administrator"
+          },
         });
         if (edgeErr || !edgeData?.success) {
           const defaultErr = mode === "refund_and_reroute" ? "Could not re-route order to another provider." : "Order is not eligible for self-refund.";
@@ -2358,17 +2363,17 @@ export default function AdminOrders() {
                                 Retry
                               </Button>
                             )}
-                            {(order.status === "fulfillment_failed" || order.status === "processing") && !order.auto_refunded && (
+                            {(order.status === "fulfillment_failed" || order.status === "processing" || order.status === "pending") && !order.auto_refunded && (
                               <Button
                                 size="sm"
                                 variant="destructive"
                                 className="text-[10px] gap-1 h-7 px-2 border-rose-500/30 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 rounded-lg font-bold"
                                 disabled={refunding === order.id}
                                 onClick={() => handleRefund(order.id, order.amount, "refund")}
-                                title={order.status === "processing" ? "Self-refund manual PROCESSING order (/order-refund)" : "Refund failed order to wallet"}
+                                title={order.status === "processing" || order.status === "pending" ? "Cancel order on provider (/cancel-order or /order-refund) & refund to wallet" : "Refund failed order to wallet"}
                               >
                                 {refunding === order.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Coins className="w-3 h-3" />}
-                                Refund
+                                {order.status === "processing" || order.status === "pending" ? "Cancel & Refund" : "Refund"}
                               </Button>
                             )}
                             {(order.status === "processing" || order.status === "fulfillment_failed") && !order.auto_refunded && (Boolean(order.provider_id) || order.provider_order_id === "dispatching") && (

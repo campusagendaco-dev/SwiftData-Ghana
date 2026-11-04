@@ -199,9 +199,14 @@ const DashboardOrders = () => {
       let isRefunded = false;
       let statusMessage = "";
 
-      // Refunds ALWAYS go through verify-and-refund, which checks the provider (/order-refund) before paying out.
+      // Refunds & cancellations go through verify-and-refund, which calls DataMart /cancel-order or DataHub /order-refund before paying out.
       const { data: edgeData, error: edgeErr } = await supabase.functions.invoke("verify-and-refund", {
-        body: { order_id: order.id, reference: order.id }
+        body: {
+          order_id: order.id,
+          reference: order.id,
+          mode: "cancel",
+          reason: "customer changed mind"
+        }
       });
       if (!edgeErr && edgeData?.success) {
         isRefunded = true;
@@ -978,7 +983,9 @@ const DashboardOrders = () => {
                             className="col-span-2 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-extrabold border transition-all bg-purple-500/15 border-purple-500/30 text-purple-300 hover:bg-purple-500/25 active:scale-95 shadow-sm"
                           >
                             {refundingId === order.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
-                            Refund GH₵{Number(order.amount).toFixed(2)} to Wallet Balance
+                            {order.status === "processing" || order.status === "pending"
+                              ? `Cancel Order & Refund GH₵${Number(order.amount).toFixed(2)} to Wallet`
+                              : `Refund GH₵${Number(order.amount).toFixed(2)} to Wallet Balance`}
                           </button>
                         )}
                       </div>

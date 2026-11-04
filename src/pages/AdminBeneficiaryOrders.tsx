@@ -802,17 +802,9 @@ export default function AdminBeneficiaryOrders() {
       return;
     }
 
-    const hasActiveProviderRef = (ord as any).provider_order_id &&
-      !["failed_api_call", "timeout", ""].includes((ord as any).provider_order_id);
-
-    if (ord.status === "processing" && (hasActiveProviderRef || (ord as any).provider_id)) {
-      toast({ title: "Cannot Refund", description: "This order has already gone through the network provider API and is in transit. It cannot be refunded.", variant: "destructive" });
-      return;
-    }
-
     const isGuest = !ord.agent_id || ord.agent_id === "00000000-0000-0000-0000-000000000000" || ord.metadata?.is_guest_order;
 
-    if (!confirm(`Are you sure you want to refund GH₵ ${Number(ord.amount).toFixed(2)} to ${isGuest ? "customer's Mobile Money/payment account" : ord.agent_email}?`)) {
+    if (!confirm(`Are you sure you want to cancel and refund GH₵ ${Number(ord.amount).toFixed(2)} to ${isGuest ? "customer's Mobile Money/payment account" : ord.agent_email}?`)) {
       return;
     }
 
@@ -820,15 +812,15 @@ export default function AdminBeneficiaryOrders() {
     try {
       if (isGuest) {
         const { data: gData, error: gErr } = await supabase.functions.invoke("verify-payment", {
-          body: { action: "guest_refund", order_id: ord.id }
+          body: { action: "guest_refund", order_id: ord.id, reason: "Cancelled by administrator from Beneficiary Queue" }
         });
         if (gErr) {
           toast({ title: "Guest Refund Error", description: gErr.message || "Failed to process gateway refund", variant: "destructive" });
         } else if (gData?.refunded) {
-          toast({ title: "Guest Refund Completed!", description: `GH₵ ${Number(ord.amount).toFixed(2)} refunded directly to Mobile Money via Paystack.` });
+          toast({ title: "Guest Order Cancelled & Refunded!", description: `GH₵ ${Number(ord.amount).toFixed(2)} refunded directly to Mobile Money via Paystack.` });
           await fetchBeneficiaryOrders();
         } else {
-          toast({ title: "Refund Queued", description: gData?.error || "Paystack refund could not be completed automatically. Marked for manual payout.", variant: "destructive" });
+          toast({ title: "Cancel / Refund Refused", description: gData?.error || "Provider refused cancellation or Paystack refund could not be completed automatically.", variant: "destructive" });
           await fetchBeneficiaryOrders();
         }
         setProcessingId(null);
@@ -840,15 +832,33 @@ export default function AdminBeneficiaryOrders() {
 
       try {
         const { data: edgeData, error: edgeErr } = await supabase.functions.invoke("verify-and-refund", {
-          body: { order_id: ord.id }
+          body: { order_id: ord.id, reference: ord.id, mode: "cancel", reason: "Cancelled by administrator from Beneficiary Queue" }
         });
         if (!edgeErr && edgeData?.success) {
           isRefunded = true;
           statusMsg = edgeData.message || `GH₵ ${Number(ord.amount).toFixed(2)} returned to wallet.`;
-        } else if (!edgeErr && edgeData?.error) {
-          toast({ title: "Refund Blocked", description: edgeData.error, variant: "destructive" });
-          setProcessingId(null);
-          return;
+        } else {
+          let errDescription = edgeData?.error || "";
+          if (!errDescription && edgeErr) {
+            try {
+              if ((edgeErr as any).context?.json) {
+                const errJson = await (edgeErr as any).context.json();
+                errDescription = errJson?.error || errJson?.message || "";
+              }
+            } catch {
+              // ignore
+            }
+            if (!errDescription) errDescription = edgeErr.message || "";
+          }
+          if (errDescription || ord.status === "processing") {
+            toast({
+              title: "Cancel / Refund Refused",
+              description: errDescription || "Order cannot be cancelled on the provider at this stage.",
+              variant: "destructive"
+            });
+            setProcessingId(null);
+            return;
+          }
         }
       } catch (e) {
         console.warn("[Admin Refund] Edge function error, falling back to direct server RPC...", e);
