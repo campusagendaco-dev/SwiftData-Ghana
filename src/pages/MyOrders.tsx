@@ -125,8 +125,8 @@ const MyOrders = () => {
         },
       });
 
-      if (fnErr || disputeRes?.error) {
-        // Fallback for authenticated users whose session matches user_id
+      if (fnErr || disputeRes?.error || !disputeRes?.success) {
+        // Fallback for authenticated users: pass their own auth.uid() so RLS (auth.uid() = user_id) succeeds without 403
         const { data: sessionData } = await supabase.auth.getSession();
         const authUserId = sessionData?.session?.user?.id;
         if (authUserId) {
