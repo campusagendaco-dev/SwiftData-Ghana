@@ -112,23 +112,53 @@ const MyOrders = () => {
 
   const handleDispute = async (order: Order) => {
     const reason = prompt("Please describe the issue (e.g., Data not received):");
-    if (!reason) return;
+    if (!reason || !reason.trim()) return;
 
+    const toastId = toast.loading("Awakening AI Judge & checking order status...");
     try {
-      toast.loading("Awakening AI Judge...");
-      const { error } = await supabase
-        .from("order_disputes")
-        .insert({
+      // Submit via list-orders Edge Function (service-role) to avoid client-side 403 RLS errors for guests/customers
+      const { data: disputeRes, error: fnErr } = await supabase.functions.invoke("list-orders", {
+        body: {
+          action: "create_dispute",
           order_id: order.id,
-          user_id: order.agent_id,
-          reason: reason,
-          status: 'pending'
-        });
+          reason: reason.trim(),
+        },
+      });
 
-      if (error) throw error;
-      toast.success("AI Judge activated. Investigation underway.");
+      if (fnErr || disputeRes?.error) {
+        // Fallback for authenticated users whose session matches user_id
+        const { data: sessionData } = await supabase.auth.getSession();
+        const authUserId = sessionData?.session?.user?.id;
+        if (authUserId) {
+          const { error: directErr } = await supabase
+            .from("order_disputes")
+            .insert({
+              order_id: order.id,
+              user_id: authUserId,
+              reason: reason.trim(),
+              status: "pending",
+            });
+          if (directErr) throw directErr;
+        } else if (fnErr) {
+          throw fnErr;
+        }
+      }
+
+      // Actively trigger a live provider status check in the background
+      supabase.functions
+        .invoke("check-order-status", {
+          body: { order_id: order.id, reference: order.id, force: true },
+        })
+        .then(() => {
+          if (phoneParam || phone) {
+            fetchOrders(phoneParam || phone);
+          }
+        })
+        .catch(() => {});
+
+      toast.success("AI Judge activated. Investigation underway.", { id: toastId });
     } catch (err: any) {
-      toast.error("Failed to trigger AI Judge: " + err.message);
+      toast.error("Failed to submit report: " + (err?.message || "Please try again."), { id: toastId });
     }
   };
 

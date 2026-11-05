@@ -39,16 +39,90 @@ serve(async (req: Request) => {
 
   try {
     let phone = "";
+    let bodyObj: Record<string, any> = {};
     if (req.method === "GET") {
       const url = new URL(req.url);
       phone = url.searchParams.get("phone") || "";
     } else {
       try {
-        const body = await req.json();
-        phone = body.phone || "";
+        bodyObj = (await req.json()) || {};
+        phone = bodyObj.phone || "";
       } catch (_e) {
         // Fallback if JSON parsing fails
       }
+    }
+
+    if (bodyObj.action === "create_dispute") {
+      const orderId = String(bodyObj.order_id || "").trim();
+      const reason = String(bodyObj.reason || "").trim();
+      if (!orderId || !reason) {
+        return new Response(JSON.stringify({ error: "order_id and reason are required" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const { data: ord } = await supabaseAdmin
+        .from("orders")
+        .select("id, agent_id, metadata")
+        .eq("id", orderId)
+        .maybeSingle();
+
+      if (!ord) {
+        return new Response(JSON.stringify({ error: "Order not found" }), {
+          status: 404,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Resolve valid auth.users ID if any (avoid guest sentinel 00000000-0000-0000-0000-000000000000 FK violation)
+      let validUserId: string | null = user?.id || null;
+      if (!validUserId && ord.agent_id && ord.agent_id !== "00000000-0000-0000-0000-000000000000") {
+        const { data: agentAuth } = await supabaseAdmin.auth.admin.getUserById(ord.agent_id);
+        if (agentAuth?.user?.id) {
+          validUserId = agentAuth.user.id;
+        }
+      }
+
+      const insertPayload: Record<string, any> = {
+        order_id: orderId,
+        reason,
+        status: "pending",
+      };
+      if (validUserId) {
+        insertPayload.user_id = validUserId;
+      }
+
+      const { data: disputeRow, error: dispErr } = await supabaseAdmin
+        .from("order_disputes")
+        .insert(insertPayload)
+        .select("id, status, created_at")
+        .maybeSingle();
+
+      // Also persist dispute metadata on the order itself so even if order_disputes has a strict FK, the report is saved
+      const nextMeta = {
+        ...(typeof ord.metadata === "object" && ord.metadata ? ord.metadata : {}),
+        dispute_reported: true,
+        dispute_reason: reason,
+        dispute_reported_at: new Date().toISOString(),
+        ...(disputeRow?.id ? { dispute_id: disputeRow.id } : {}),
+      };
+      await supabaseAdmin.from("orders").update({ metadata: nextMeta }).eq("id", orderId);
+
+      if (dispErr) {
+        console.warn("[list-orders] order_disputes insert warning (saved to order.metadata):", dispErr.message);
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          dispute: disputeRow || { order_id: orderId, status: "pending" },
+        }),
+        {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
 
     if (!phone && isGuest) {
@@ -64,7 +138,7 @@ serve(async (req: Request) => {
 
     let query = supabaseAdmin
       .from("orders")
-      .select("id, customer_phone, network, package_size, amount, status, created_at, order_type, metadata")
+      .select("id, agent_id, customer_phone, network, package_size, amount, status, failure_reason, created_at, order_type, metadata")
       .order("created_at", { ascending: false });
 
     if (!rawInput && user) {
