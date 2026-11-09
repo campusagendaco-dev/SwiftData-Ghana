@@ -23,6 +23,8 @@ export interface LocationDeps {
   savePrefs(userId: string, patch: Partial<Prefs> & { consent_at?: string; consent_version?: string }): Promise<void>;
   lookupIp(ip: string): Promise<{ city: string; countryCode: string } | null>;
   getTownRows(userId: string): Promise<KnownTownRow[]>;
+  // Contract: an upsert that must never overwrite sms_sent_at on an existing row and
+  // must never replace a set established_at with null (a concurrent claim may have set them).
   saveTownRow(userId: string, row: KnownTownRow): Promise<void>;
   deleteTownRows(userId: string): Promise<void>;
   claimSms(userId: string, townKey: string, dailyLimit: number): Promise<ClaimResult>;
@@ -65,10 +67,11 @@ export async function runLocationCheck(
   // Find the town: valid GPS first, then IP.
   let town: Town | null = null;
   let source: "gps" | "ip" = "gps";
-  if (isValidGhanaCoords(input.lat, input.lng)) {
+  const hasGps = isValidGhanaCoords(input.lat, input.lng);
+  if (hasGps) {
+    // A usable GPS position that matches no listed town is ignored; IP is not consulted.
     town = matchTownByCoords(input.lat as number, input.lng as number, towns);
-  }
-  if (!town && input.ip) {
+  } else if (input.ip) {
     const hit = await deps.lookupIp(input.ip);
     if (hit) {
       town = matchTownByName(hit.city, hit.countryCode, towns);
