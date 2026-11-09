@@ -534,7 +534,7 @@ Do each step only with the owner's go-ahead. These change the live system.
 - [ ] **Step 1: Add the IP key.** Owner creates a free ipgeolocation.io account. Run: `npx supabase secrets set IPGEOLOCATION_API_KEY=<key>`. Expected: secret listed by `npx supabase secrets list`.
 - [ ] **Step 2: Apply the migration.** Run `npx supabase db push` after confirming with `npx supabase migration list` that only `20261109120000` is pending. The unrelated `20261105100000` file has local edits, so stop and ask if it appears as pending.
 - [ ] **Step 3: Run the smoke test.** Run `supabase/tests/location_welcome_sms_smoke.sql` in the SQL editor. Expected: completes with no exception, and nothing is kept because of the rollback.
-- [ ] **Step 4: Deploy the function.** Run: `npx supabase functions deploy location-check`. With mode `off`, confirm in the app that no popup appears.
+- [ ] **Step 4: Deploy the function.** Run: `npx supabase functions deploy location-check --no-verify-jwt`. With mode `off`, confirm in the app that no popup appears.
 - [ ] **Step 5: Release the frontend.** Merge the branch and deploy through the usual Vercel flow. Confirm sign-in and a purchase work.
 - [ ] **Step 6: Test send.** From Admin Settings, send a test for `Kumasi`. Expected: SMS arrives with correct text and a working link.
 - [ ] **Step 7: Walk through the spec's manual checks 3 to 6** on a test account, after setting the mode to `consent`. To simulate a move, edit the test user's rows in `user_location_towns`.

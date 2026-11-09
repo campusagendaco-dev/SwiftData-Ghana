@@ -32,12 +32,13 @@ function buildDeps(db: any): LocationDeps {
       };
     },
     async isAdmin(userId) {
-      const { data } = await db
+      const { data, error } = await db
         .from("user_roles")
         .select("role")
         .eq("user_id", userId)
         .eq("role", "admin")
         .limit(1);
+      if (error) throw new Error(error.message);
       return !!(data && data.length > 0);
     },
     async getProfile(userId) {
@@ -132,7 +133,9 @@ async function sendWelcome(db: any, phone: string, townName: string): Promise<"s
     const body = cfg.templates?.location_welcome;
     if (!body) return "no_template";
     if (!cfg.apiKey || !cfg.senderId) return "failed";
-    const res = await dispatchUnifiedSms(
+    if (!normalizePhone(phone)) return "failed";
+    // Only a thrown error means failed: a null result can follow a delivered 2xx non-JSON reply.
+    await dispatchUnifiedSms(
       cfg.gateway,
       cfg.apiKey,
       cfg.senderId,
@@ -140,7 +143,7 @@ async function sendWelcome(db: any, phone: string, townName: string): Promise<"s
       formatTemplate(body, { town: townName }),
       "location_welcome",
     );
-    return res == null || res.success === false ? "failed" : "sent";
+    return "sent";
   } catch (err) {
     console.error("[location-check] sms send failed:", (err as Error)?.message);
     return "failed";
@@ -150,6 +153,7 @@ async function sendWelcome(db: any, phone: string, townName: string): Promise<"s
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
+  let reqAction: unknown;
   try {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) return json({ error: "Unauthorized" }, 401);
@@ -177,6 +181,7 @@ serve(async (req: Request) => {
       return json({ error: "Invalid JSON" }, 400);
     }
     const action = body?.action;
+    reqAction = action;
 
     switch (action) {
       case "check": {
@@ -276,6 +281,7 @@ serve(async (req: Request) => {
     }
   } catch (err) {
     console.error("[location-check] failed:", (err as Error)?.message);
-    return json({ needs_consent: false });
+    if (reqAction === "check") return json({ needs_consent: false });
+    return json({ ok: false, error: "failed" }, 500);
   }
 });
