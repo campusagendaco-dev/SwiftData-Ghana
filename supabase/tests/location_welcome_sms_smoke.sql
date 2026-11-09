@@ -9,6 +9,8 @@ DECLARE
   v_ids uuid[];
   v_result text;
   v_count int;
+  v_table text;
+  v_priv text;
 BEGIN
   SELECT array_agg(id) INTO v_ids FROM (SELECT id FROM auth.users LIMIT 2) u;
   IF v_ids IS NULL OR array_length(v_ids, 1) < 2 THEN
@@ -76,6 +78,15 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'public_system_settings must not expose location_sms_* columns';
   END IF;
+
+  -- 7. service_role has table privileges on both new tables
+  FOREACH v_table IN ARRAY ARRAY['public.location_alert_preferences', 'public.user_location_towns'] LOOP
+    FOREACH v_priv IN ARRAY ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE'] LOOP
+      IF NOT has_table_privilege('service_role', v_table, v_priv) THEN
+        RAISE EXCEPTION 'service_role lacks % on %', v_priv, v_table;
+      END IF;
+    END LOOP;
+  END LOOP;
 
   RAISE NOTICE 'location_welcome_sms smoke test passed';
 END;

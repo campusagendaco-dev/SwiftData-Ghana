@@ -36,6 +36,10 @@ ALTER TABLE public.user_location_towns ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.location_alert_preferences FROM anon, authenticated;
 REVOKE ALL ON public.user_location_towns FROM anon, authenticated;
 
+-- service_role bypasses RLS but still needs table privileges (no automatic grants on new tables).
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.location_alert_preferences TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.user_location_towns TO service_role;
+
 -- 3. Settings (system_settings is a single row; public_system_settings has an explicit column list,
 --    so these columns are not exposed to the public view)
 ALTER TABLE public.system_settings
