@@ -315,7 +315,7 @@ serve(async (req: Request) => {
     return json({ error: "Server misconfigured" }, 500);
   }
 
-  const authResult = await verifyAdmin(req, supabaseAdmin, { checkMfa: false, checkIp: false });
+  const authResult = await verifyAdmin(req, supabaseAdmin, { checkMfa: true, checkIp: false });
   if (!authResult.success) {
     return new Response(JSON.stringify({ error: authResult.error }), {
       status: authResult.status,

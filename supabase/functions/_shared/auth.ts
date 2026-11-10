@@ -39,7 +39,7 @@ export async function verifyAdmin(
   supabaseAdmin: any,
   options: { checkMfa?: boolean; checkIp?: boolean } = {}
 ): Promise<VerifyAdminResult> {
-  const { checkMfa = false, checkIp = false } = options;
+  const { checkMfa = true, checkIp = false } = options;
 
   // 1. Extract Authorization or x-user-access-token
   const authHeader = req.headers.get("Authorization");

@@ -1,3 +1,4 @@
+import { computeMfaStatus } from "@/lib/mfaStatus";
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { User, Session, Provider } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
@@ -267,12 +268,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (error) throw error;
       
       const { data: factorsData } = await supabase.auth.mfa.listFactors().catch(() => ({ data: null }));
-      const hasTotpFactor = (factorsData?.totp || []).some((f: any) => f.status === "verified");
-
-      const enabled = data.nextLevel === "aal2" && hasTotpFactor;
-      const challenged = data.currentLevel === "aal1" && enabled;
-      
-      setMfaStatus({ enabled, challenged });
+      setMfaStatus(computeMfaStatus(data, factorsData?.totp));
     } catch (e) {
       console.error("[MFA] Fetch assurance levels error:", e);
     }
