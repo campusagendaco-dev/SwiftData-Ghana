@@ -69,6 +69,11 @@ import {
   isCashPlayBlocked,
   publicResponseBody,
 } from "../_shared/arena_safety.ts";
+import {
+  applyLudoPlay,
+  createServerLudoBoard,
+  secureDieRoll,
+} from "../_shared/games/ludo_turn.ts";
 
 let schemaVerified = false;
 
@@ -1052,6 +1057,8 @@ serve(async (req: Request) => {
           : String(body.reward_data_size || "1GB");
 
       const serverChecked = isServerCheckedOware(gameType, mode);
+      // Only the rebuilt app asks for this; today's board still syncs moves itself.
+      const ludoServerChecked = gameType === "ludo" && mode === "p2p" && body.server_checked === true;
       if (mode === "ai" && rawStake > 0 && !serverChecked) {
         return jsonResponse({ success: false, error: AI_REWARDS_PAUSED_MESSAGE, ai_rewards_paused: true }, 403);
       }
@@ -1194,6 +1201,8 @@ serve(async (req: Request) => {
         // Server-checked Oware starts from the server's own initial board.
         board_state: serverChecked
           ? { ...INITIAL_OWARE_STATE, variant: body.board_state?.variant === "abapa" ? "abapa" : "nam-nam" }
+          : ludoServerChecked
+          ? createServerLudoBoard(creatorName, "Opponent")
           : body.board_state || body.initial_board_state || {},
         current_turn: "creator",
         status: isImmediateStart ? "in_progress" : "open",
@@ -1206,6 +1215,7 @@ serve(async (req: Request) => {
           rematch_of_challenge_id: rematchOfChallengeId,
           seat_token_hashes: { creator: creatorSeatTokenHash },
           ...(serverChecked ? { oware_server_checked: true, oware_moves: [] } : {}),
+          ...(ludoServerChecked ? { ludo_server_checked: true } : {}),
         },
       };
 
@@ -1735,6 +1745,9 @@ serve(async (req: Request) => {
       if (!prevChallenge) {
         return jsonResponse({ success: false, error: "Challenge not found" }, 404);
       }
+      if (prevChallenge.metadata?.ludo_server_checked) {
+        return jsonResponse({ success: false, error: "This match is played through the server." }, 409);
+      }
       const hasSeatTokens = Boolean(prevChallenge.metadata?.seat_token_hashes);
       const syncSide = await resolveCallerSide(prevChallenge, authUser, body.seat_token);
       if (!syncSide && (hasSeatTokens || prevChallenge.creator_id || prevChallenge.opponent_id)) {
@@ -1863,6 +1876,47 @@ serve(async (req: Request) => {
     }
 
     // ── 5B. SERVER-CHECKED OWARE MOVE (player move + server AI reply) ──────────
+    if (action === "play_move") {
+      const challengeId = String(body.challenge_id || "").trim();
+      const { data: challenge } = await supabaseAdmin
+        .from("game_challenges")
+        .select("*")
+        .eq("id", challengeId)
+        .maybeSingle();
+      if (!challenge) return jsonResponse({ success: false, error: "Challenge not found" }, 404);
+      if (!challenge.metadata?.ludo_server_checked) {
+        return jsonResponse({ success: false, error: "This match is not server-checked." }, 400);
+      }
+      const side = await resolveCallerSide(challenge, authUser, body.seat_token);
+      if (!side) return jsonResponse({ success: false, error: "You are not a player in this match." }, 403);
+      if (challenge.status !== "in_progress") {
+        return jsonResponse({ success: false, error: "This match is not active.", board: challenge.board_state }, 409);
+      }
+
+      const result = applyLudoPlay(challenge.board_state, side, body.play, secureDieRoll);
+      if (result.ok === false) {
+        return jsonResponse({ success: false, error: result.error, board: challenge.board_state }, result.status);
+      }
+
+      // Compare-and-swap on updated_at: two taps can't both apply to the same board.
+      const { data: saved } = await supabaseAdmin
+        .from("game_challenges")
+        .update({
+          board_state: result.board,
+          current_turn: result.board.turn,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", challengeId)
+        .eq("updated_at", challenge.updated_at)
+        .select("id");
+      if (!saved || saved.length === 0) {
+        const { data: fresh } = await supabaseAdmin.from("game_challenges").select("board_state").eq("id", challengeId).maybeSingle();
+        return jsonResponse({ success: false, error: "Board changed; re-synced.", board: fresh?.board_state }, 409);
+      }
+
+      return jsonResponse({ success: true, board: result.board, dice: result.dice });
+    }
+
     if (action === "oware_play") {
       const challengeId = String(body.challenge_id || "").trim();
       const pit = Number(body.pit);
@@ -1962,8 +2016,19 @@ serve(async (req: Request) => {
         });
       }
 
+      const serverDecidedLudo = challenge.metadata?.ludo_server_checked === true;
+      if (serverDecidedLudo) {
+        const ludoWinner = challenge.board_state?.winner;
+        if (ludoWinner !== "creator" && ludoWinner !== "opponent") {
+          return jsonResponse({ success: false, error: "The server has not recorded a finished game yet." }, 409);
+        }
+        if (!(await resolveCallerSide(challenge, authUser, body.seat_token))) {
+          return jsonResponse({ success: false, error: "You are not a player in this match." }, 403);
+        }
+        winnerSide = ludoWinner;
+        finalBoardState = challenge.board_state;
       // Server-checked Oware: ignore what the client claims; the server's board decides.
-      if (challenge.metadata?.oware_server_checked) {
+      } else if (challenge.metadata?.oware_server_checked) {
         const serverBoard = challenge.board_state as OwareState;
         if (!serverBoard?.winner) {
           return jsonResponse({ success: false, error: "The server has not recorded a finished game yet." }, 409);
@@ -1990,7 +2055,7 @@ serve(async (req: Request) => {
         return jsonResponse({ success: false, error: "This match has not started yet." }, 409);
       }
 
-      if (challenge.mode === "p2p") {
+      if (challenge.mode === "p2p" && !serverDecidedLudo) {
         const reporterSide = await resolveCallerSide(challenge, authUser, body.seat_token);
         if (!reporterSide) {
           return jsonResponse({ success: false, error: "You are not a player in this match." }, 403);
