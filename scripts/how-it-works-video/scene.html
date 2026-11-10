@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>How It Works video scene</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700;800;900&display=swap" />
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  html, body { width: 1080px; height: 1080px; overflow: hidden; background: #0c0a14; }
+  body { font-family: Poppins, sans-serif; color: #fff; position: relative; }
+  #bg { position: absolute; inset: 0; background: url(../../public/assets/backgrounds/bg_ghana_gold_adinkra.webp) center/cover; }
+  #wash { position: absolute; inset: 0; background: linear-gradient(135deg, rgba(14,11,24,.80), rgba(14,11,24,.90)); }
+  #glow { position: absolute; width: 760px; height: 760px; right: -160px; top: 120px; border-radius: 50%; filter: blur(120px); opacity: .34; }
+  #brand { position: absolute; left: 56px; top: 46px; display: flex; align-items: center; gap: 16px; font-size: 34px; font-weight: 800; }
+  #brand img { width: 68px; height: 68px; border-radius: 50%; }
+  #stage { position: absolute; inset: 0; }
+  .left { position: absolute; left: 56px; top: 182px; width: 486px; }
+  .pill { display: inline-block; padding: 10px 24px; border-radius: 99px; font-size: 26px; font-weight: 800; color: #14100a; }
+  .left h2 { margin-top: 26px; font-size: 68px; line-height: 1.06; font-weight: 900; letter-spacing: -.02em; }
+  .left p { margin-top: 24px; font-size: 35px; line-height: 1.32; font-weight: 500; color: rgba(255,255,255,.86); }
+  .ama { position: absolute; left: 56px; bottom: 76px; width: 236px; height: 236px; border-radius: 50%; background: #fff; overflow: hidden; border: 7px solid; }
+  .ama img, .sticker img { width: 100%; height: 100%; object-fit: cover; object-position: top; display: block; }
+  .sticker { width: 330px; height: 330px; margin: 0 auto 34px; border-radius: 50%; background: #fff; overflow: hidden; border: 9px solid; }
+  .phone { position: absolute; left: 586px; top: 110px; width: 448px; height: 880px; padding: 18px; border-radius: 66px; background: #08070c; box-shadow: 0 30px 80px rgba(0,0,0,.6), 0 0 0 3px rgba(255,255,255,.14); }
+  .screen { position: relative; width: 412px; height: 844px; border-radius: 50px; overflow: hidden; background: #fff8ec; color: #2b1c0e; padding: 62px 26px 26px; }
+  .notch { position: absolute; top: 16px; left: 141px; width: 130px; height: 28px; border-radius: 99px; background: #08070c; }
+  .h { font-size: 36px; font-weight: 900; letter-spacing: -.02em; margin-bottom: 20px; line-height: 1.12; }
+  .sub { font-size: 24px; font-weight: 600; color: #7a6650; margin-bottom: 16px; line-height: 1.25; }
+  .row { display: flex; gap: 10px; }
+  .chip { flex: 1; text-align: center; padding: 16px 2px; border-radius: 18px; background: #fff; border: 3px solid #f0dfc0; font-size: 21px; font-weight: 800; white-space: nowrap; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }
+  .tile { padding: 22px 12px; border-radius: 22px; background: #fff; border: 3px solid #f0dfc0; text-align: center; }
+  .tile b { display: block; font-size: 38px; font-weight: 900; }
+  .tile span { font-size: 24px; font-weight: 700; color: #7a6650; }
+  .field { background: #fff; border: 3px solid #f0dfc0; border-radius: 20px; padding: 20px; font-size: 30px; font-weight: 700; min-height: 84px; margin-bottom: 14px; }
+  .label { font-size: 22px; font-weight: 700; color: #7a6650; margin-bottom: 8px; }
+  .btn { position: absolute; left: 26px; right: 26px; bottom: 34px; padding: 26px 8px; border-radius: 24px; text-align: center; font-size: 32px; font-weight: 900; color: #14100a; }
+  .line { display: flex; justify-content: space-between; align-items: center; font-size: 26px; font-weight: 700; padding: 16px 0; border-bottom: 2px solid #f0dfc0; gap: 10px; }
+  .line b { font-weight: 900; }
+  .note { font-size: 21px; font-weight: 600; color: #7a6650; margin-top: 14px; text-align: center; }
+  .center { text-align: center; }
+  .badge { width: 170px; height: 170px; margin: 50px auto 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 96px; font-weight: 900; color: #fff; }
+  .big { font-size: 46px; font-weight: 900; letter-spacing: -.02em; line-height: 1.15; }
+  .tap { position: absolute; width: 74px; height: 74px; margin: -37px 0 0 -37px; border-radius: 50%; background: rgba(43,28,14,.34); border: 4px solid rgba(43,28,14,.55); }
+  #bar { position: absolute; left: 56px; right: 46px; bottom: 26px; display: flex; gap: 10px; }
+  #bar i { flex: 1; height: 10px; border-radius: 99px; background: rgba(255,255,255,.2); overflow: hidden; display: block; }
+  #bar u { display: block; height: 100%; }
+  .card { position: absolute; left: 90px; right: 90px; top: 210px; text-align: center; }
+  .card h1 { font-size: 92px; line-height: 1.06; font-weight: 900; letter-spacing: -.02em; }
+  .card p { margin-top: 22px; font-size: 42px; font-weight: 600; color: rgba(255,255,255,.88); }
+</style>
+</head>
+<body>
+<div id="bg"></div><div id="wash"></div><div id="glow"></div>
+<div id="stage"></div>
+<div id="brand"><img src="../../public/logo.webp" alt="" /><span>SwiftData Ghana</span></div>
+<div id="bar"></div>
+<img id="preload" src="../../public/assets/ama_avatar.webp" alt="" style="display:none" />
+<script>
+const OUTRO = 4;
+let PATH, INTRO, STEP;
+
+const clamp = (v) => Math.min(1, Math.max(0, v));
+const ramp = (from, to, p) => { const t = clamp((p - from) / (to - from)); return t * t * (3 - 2 * t); };
+const typed = (text, from, to, p) => text.slice(0, Math.round(text.length * clamp((p - from) / (to - from))));
+const tap = (x, y, at, p) => {
+  if (window.soundLog) window.soundLog.taps.push(at);
+  const d = p - at;
+  if (d < -0.07 || d > 0.06) return "";
+  const s = d < 0 ? 1 + (-d / 0.07) * 0.5 : 0.8;
+  return `<div class="tap" style="left:${x}px;top:${y}px;transform:scale(${s});opacity:${clamp(1 - Math.abs(d) * 7)}"></div>`;
+};
+const on = (active, accent) => active ? `background:${accent}2e;border-color:${accent};` : "";
+const button = (label, accent, pressedAt, p) => `<div class="btn" style="background:${accent};transform:scale(${Math.abs(p - pressedAt) < 0.04 ? 0.96 : 1})">${label}</div>`;
+const pop = (from, p) => {
+  if (window.soundLog) window.soundLog.pops.push(from);
+  const t = clamp((p - from) / 0.18);
+  return t < 1 ? t * 1.15 : 1;
+};
+const field = (label, text) => `<div class="label">${label}</div><div class="field">${text || "&nbsp;"}</div>`;
+
+const PAY_OPTIONS = (accent, p) => `<div class="row" style="margin-top:18px"><div class="chip" style="${on(p > 0.25, accent)}">Mobile Money</div><div class="chip">Card</div></div>${tap(120, 500, 0.25, p)}`;
+
+const SCREENS = {
+  buy: [
+    (p, a) => `<div class="h">Buy Data</div><div class="row"><div class="chip" style="${on(p > 0.22, a)}">MTN</div><div class="chip">Telecel</div><div class="chip">AirtelTigo</div></div>
+      <div class="grid">${[["1GB", "4.98"], ["2GB", "9.97"], ["5GB", "23.74"], ["10GB", "47.60"]].map(([g, v], i) => `<div class="tile" style="${on(i === 2 && p > 0.56, a)}"><b>${g}</b><span>GH₵${v}</span></div>`).join("")}</div>
+      <div class="note">Sample prices</div>${tap(90, 150, 0.22, p)}${tap(112, 470, 0.56, p)}`,
+    (p, a) => `<div class="h">Who gets the data?</div>${field("Phone number", typed("024 123 4567", 0.08, 0.55, p))}<div class="sub" style="margin-top:12px">Your own number or someone else's</div>
+      <div class="field" style="display:flex;justify-content:space-between"><span>MTN 5GB</span><span>GH₵23.74</span></div>${button("Continue", a, 0.82, p)}${tap(206, 760, 0.82, p)}`,
+    (p, a) => `<div class="h">Confirm and pay</div><div class="line"><span>Bundle</span><b>MTN 5GB</b></div><div class="line"><span>To</span><b>024 123 4567</b></div><div class="line"><span>Total</span><b>GH₵23.74</b></div>
+      ${PAY_OPTIONS(a, p)}<div class="note">Secured by Paystack</div><div class="note">Sample price</div>${button("Pay now", a, 0.7, p)}${tap(206, 760, 0.7, p)}`,
+    (p, a) => `<div class="center"><div class="badge" style="background:#22c55e;transform:scale(${pop(0.05, p)})">✓</div><div class="big">Order received!</div><div class="sub" style="margin-top:24px">Your data arrives in</div>
+      <div class="big" style="color:${a === "#f59e0b" ? "#c2570c" : a};opacity:${ramp(0.3, 0.5, p)}">10 to 60 minutes</div></div>${button("Track Order", a, 0.85, p)}${tap(206, 760, 0.85, p)}`,
+  ],
+  agent: [
+    (p, a) => `<div class="h">Create your account</div>${field("Full name", typed("Kofi Mensah", 0.08, 0.38, p))}${field("Phone number", typed("024 123 4567", 0.42, 0.7, p))}${button("Continue", a, 0.85, p)}${tap(206, 760, 0.85, p)}`,
+    (p, a) => `<div class="h">Agent Program</div>${["Wholesale prices", "Your own store", "Set your own profit", "Full dashboard"].map((t, i) => `<div class="line" style="opacity:${ramp(0.05 + i * 0.1, 0.2 + i * 0.1, p)}"><span>${t}</span><b style="color:${a}">✓</b></div>`).join("")}${button("Request Approval", a, 0.75, p)}${tap(206, 760, 0.75, p)}`,
+    (p, a) => `<div class="h">Activation fee</div><div class="sub">The current fee is shown here before you pay</div><div class="field center" style="font-size:44px;font-weight:900">GH₵ – –</div>
+      ${PAY_OPTIONS(a, p)}<div class="note">Secured by Paystack</div>${button("Pay and request", a, 0.7, p)}${tap(206, 760, 0.7, p)}`,
+    (p, a) => `<div class="center"><div class="badge" style="background:${a};margin:6px auto 18px;transform:scale(${pop(0.04, p)})">✓</div><div class="big">Approved!</div></div><div style="margin-top:26px;opacity:${ramp(0.3, 0.42, p)}">${field("Your store name", typed("Kofi Data Hub", 0.42, 0.72, p))}</div>${button("Save my store", a, 0.86, p)}${tap(206, 760, 0.86, p)}`,
+    (p, a) => `<div class="h">Your prices</div><div class="line"><span>MTN 5GB</span><b>GH₵26.00</b></div><div class="line"><span>MTN 10GB</span><b>GH₵52.00</b></div><div class="note">Sample figures</div>
+      <div class="field center" style="margin-top:24px;font-size:26px;background:${a}2e;border-color:${a};opacity:${ramp(0.45, 0.6, p)};transform:translateY(${(1 - ramp(0.45, 0.6, p)) * 30}px)">New order: you earned your profit!</div>${button("Share my store", a, 0.3, p)}${tap(206, 760, 0.3, p)}`,
+  ],
+  subagent: [
+    (p, a) => `<div class="h">Kofi Data Hub</div><div class="sub">An agent's store</div><div class="grid" style="margin-bottom:22px"><div class="tile"><b>1GB</b></div><div class="tile"><b>5GB</b></div></div>
+      <div class="field center" style="padding:24px 14px"><div style="font-size:30px;font-weight:900">Become a Sub-Agent</div><div class="sub" style="margin:8px 0 0">Earn under this agent</div></div>${button("Get Started", a, 0.72, p)}${tap(206, 760, 0.72, p)}`,
+    (p, a) => `<div class="h">Your details</div>${field("Full name", typed("Ama Owusu", 0.05, 0.25, p))}${field("Phone number", typed("055 123 4567", 0.28, 0.5, p))}${field("Store name", typed("Ama Data", 0.53, 0.72, p))}${button("Continue", a, 0.87, p)}${tap(206, 760, 0.87, p)}`,
+    (p, a) => `<div class="h">Activation fee</div><div class="sub">Set by your agent and shown before you pay</div><div class="field center" style="font-size:44px;font-weight:900">GH₵ – –</div>
+      ${PAY_OPTIONS(a, p)}<div class="note">Secured by Paystack</div>${button("Pay now", a, 0.7, p)}${tap(206, 760, 0.7, p)}`,
+    (p, a) => `<div class="center"><div class="badge" style="background:${a};transform:scale(${pop(0.05, p)})">✓</div><div class="big">Your store is ready!</div><div class="sub" style="margin-top:22px;opacity:${ramp(0.3, 0.45, p)}">Share your link and earn on every order</div></div>${button("Share my store", a, 0.75, p)}${tap(206, 760, 0.75, p)}`,
+  ],
+};
+
+const INTRO_TITLES = { buy: "How to buy data", agent: "How to become an agent", subagent: "How to become a sub agent" };
+const OUTRO_TEXT = { buy: "Buy your data today", agent: "Start your data business", subagent: "Ask your agent for their link" };
+
+const card = (title, sub, opacity, scale) => `<div class="card" style="opacity:${opacity};transform:scale(${scale})"><div class="sticker" style="border-color:${PATH.accent}"><img src="../../public/assets/ama_avatar.webp" alt="" /></div><h1>${title}</h1><p>${sub}</p></div>`;
+
+window.setup = (path, intro, step) => {
+  PATH = path; INTRO = intro; STEP = step;
+  document.getElementById("glow").style.background = path.accent;
+  document.getElementById("bar").innerHTML = path.steps.map(() => `<i><u style="background:${path.accent}"></u></i>`).join("");
+  return intro + step * path.steps.length + OUTRO;
+};
+
+/** When each tap and success animation happens, so the sound lines up with the picture. */
+window.audioEvents = () => {
+  const events = [];
+  PATH.steps.forEach((_, i) => {
+    window.soundLog = { taps: [], pops: [] };
+    SCREENS[PATH.id][i](0, PATH.accent);
+    const start = INTRO + STEP * i;
+    window.soundLog.taps.forEach((at) => events.push({ t: start + at * STEP, type: "tap" }));
+    window.soundLog.pops.forEach((at) => events.push({ t: start + (at + 0.09) * STEP, type: "success" }));
+  });
+  window.soundLog = null;
+  return events.sort((a, b) => a.t - b.t);
+};
+
+window.seek = (t) => {
+  const stage = document.getElementById("stage");
+  const total = INTRO + STEP * PATH.steps.length + OUTRO;
+  const fills = document.querySelectorAll("#bar u");
+  fills.forEach((u, i) => { u.style.width = `${clamp((t - INTRO - STEP * i) / STEP) * 100}%`; });
+  if (t < INTRO) {
+    const p = t / INTRO;
+    stage.innerHTML = card(INTRO_TITLES[PATH.id], "in a few easy steps", ramp(0, 0.2, p) * (1 - ramp(0.9, 1, p)), 0.96 + ramp(0, 0.3, p) * 0.04);
+    return;
+  }
+  if (t >= total - OUTRO) {
+    const p = (t - (total - OUTRO)) / OUTRO;
+    stage.innerHTML = card(OUTRO_TEXT[PATH.id], "swiftdatagh.shop", ramp(0, 0.15, p), 0.96 + ramp(0, 0.3, p) * 0.04);
+    return;
+  }
+  const i = Math.min(PATH.steps.length - 1, Math.floor((t - INTRO) / STEP));
+  const p = clamp((t - INTRO - STEP * i) / STEP);
+  const fade = ramp(0, 0.06, p) * (1 - ramp(0.96, 1, p));
+  const step = PATH.steps[i];
+  stage.innerHTML = `
+    <div class="left" style="opacity:${fade};transform:translateX(${(1 - ramp(0, 0.08, p)) * -24}px)">
+      <span class="pill" style="background:${PATH.accent}">Step ${i + 1} of ${PATH.steps.length}</span>
+      <h2>${step.title}</h2>
+      <p>${step.detail}</p>
+    </div>
+    <div class="ama" style="opacity:${fade};border-color:${PATH.accent}"><img src="../../public/assets/ama_avatar.webp" alt="" /></div>
+    <div class="phone" style="opacity:${fade};transform:translateY(${(1 - ramp(0, 0.08, p)) * 26}px)">
+      <div class="screen"><div class="notch"></div>${SCREENS[PATH.id][i](p, PATH.accent)}</div>
+    </div>`;
+};
+</script>
+</body>
+</html>
