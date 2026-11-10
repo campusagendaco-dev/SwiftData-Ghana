@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
+import { isSecondFactorMissing } from "../_shared/auth.ts";
 import { normalizePhone, getSmsConfig, sendSmsViaTxtConnect, formatTemplate } from "../_shared/sms.ts";
 
 async function sendWithdrawalSms(supabaseAdmin: any, userId: string, amount: number) {
@@ -74,6 +75,12 @@ serve(async (req: Request) => {
     if (userError || !user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (isSecondFactorMissing(user, authHeader.replace(/^Bearer\s+/i, "").trim())) {
+      return new Response(JSON.stringify({ error: "Please enter your 2FA code before withdrawing." }), {
+        status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 

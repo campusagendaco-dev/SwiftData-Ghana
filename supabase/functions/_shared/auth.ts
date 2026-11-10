@@ -23,6 +23,15 @@ function getJwtClaims(token: string) {
   }
 }
 
+/**
+ * True when the user has 2FA turned on but this session has not completed it.
+ * Call only after the token has been verified with auth.getUser.
+ */
+export function isSecondFactorMissing(user: any, token: string): boolean {
+  const hasVerifiedFactor = (user?.factors || []).some((factor: any) => factor.status === "verified");
+  return hasVerifiedFactor && getJwtClaims(token)?.aal !== "aal2";
+}
+
 export interface VerifyAdminResult {
   success: boolean;
   user?: any;
