@@ -39,12 +39,14 @@ export default function AdminChallengeArena() {
   const [challenges, setChallenges] = useState<any[]>([]);
   const [claims, setClaims] = useState<any[]>([]);
   const [todayFreeCount, setTodayFreeCount] = useState(0);
+  const [closingRooms, setClosingRooms] = useState(false);
+  const [manualRefunds, setManualRefunds] = useState<any[]>([]);
 
   const fetchAdminData = useCallback(async () => {
     setLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke("challenge-arena", {
-        body: { action: "get_lobby" },
+        body: { action: "admin_get_lobby" },
       });
       if (!error && data?.success) {
         if (data.settings) setSettings(data.settings);
@@ -64,6 +66,31 @@ export default function AdminChallengeArena() {
   useEffect(() => {
     fetchAdminData();
   }, [fetchAdminData]);
+
+  const handleCloseStakedRooms = async () => {
+    setClosingRooms(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("challenge-arena", {
+        body: { action: "admin_close_staked_rooms" },
+      });
+      if (error || !data?.success) {
+        throw new Error(data?.error || error?.message || "Could not close staked rooms");
+      }
+      setManualRefunds(data.manual_refunds || []);
+      toast({
+        title: `${data.closed} staked room(s) closed`,
+        description: data.failed?.length
+          ? `Could not refund: ${data.failed.join(", ")}`
+          : "Wallet stakes were returned automatically.",
+        variant: data.failed?.length ? "destructive" : undefined,
+      });
+      fetchAdminData();
+    } catch (err: any) {
+      toast({ title: "Could not close rooms", description: err.message, variant: "destructive" });
+    } finally {
+      setClosingRooms(false);
+    }
+  };
 
   const handleSaveSettings = async () => {
     setSaving(true);
@@ -281,6 +308,25 @@ export default function AdminChallengeArena() {
                 className="h-10 bg-slate-950 border-white/15 font-mono"
               />
             </div>
+          </div>
+
+          <div className="rounded-xl border border-border p-3 space-y-2">
+            <p className="text-sm font-semibold text-foreground">Cash stakes are paused</p>
+            <p className="text-xs text-muted-foreground">
+              New staked matches are blocked. Close any open staked rooms to return wallet stakes. Mobile Money stakes need a manual refund in Paystack.
+            </p>
+            <Button type="button" variant="outline" onClick={handleCloseStakedRooms} disabled={closingRooms}>
+              {closingRooms ? "Closing rooms..." : "Close open staked rooms"}
+            </Button>
+            {manualRefunds.length > 0 && (
+              <ul className="text-xs text-foreground space-y-1">
+                {manualRefunds.map((room) => (
+                  <li key={room.room_code}>
+                    Refund GH₵{Number(room.amount).toFixed(2)} for room #{room.room_code}: {room.phone || "no phone"}, ref {room.paystack_ref || "none"}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
 
           <Button

@@ -1748,9 +1748,8 @@ const PRO_STEPS = [
     description:
       "Compete live against another player, or take on our Ghanaian AI champions right away.",
     bullets: [
-      "Open 1v1 Lobby: Post a challenge room (auto-notifies all users) or invite a friend. Both players' games must agree on the winner before any payout.",
-      "Cash vs AI (1.8×): available on Ghana Oware, where the server checks every move and plays the AI itself.",
-      "Free play vs AI: every other game earns Arena Points while its cash and free-data rewards are being upgraded.",
+      "Open 1v1 Lobby: Post a challenge room (auto-notifies all users) or invite a friend. Matches are free while we upgrade fairness checks.",
+      "Free play vs AI: every game earns Arena Points.",
     ],
     icon: Users,
     accent: "emerald",
@@ -1777,13 +1776,12 @@ const PRO_STEPS = [
   {
     id: 3,
     num: "04",
-    shortTitle: "Claim Prize",
-    title: "Win Instant Cash or Target Free Data Bundles",
+    shortTitle: "Earn Points",
+    title: "Earn Arena Points",
     description:
-      "As soon as your match ends or your target points bar hits 100%, claim your reward with zero manual delay.",
+      "Every match you finish adds to your Arena Points.",
     bullets: [
-      "Cash Payout: credited to your SwiftData Wallet when you win a verified Oware match or a 1v1 both players confirm.",
-      "Free Data: win a verified Oware match in Free Data mode and send the bundle to any Ghanaian number.",
+      "Cash stakes are paused while we upgrade fairness checks.",
       "Arena Points: keep stacking them. Redeeming points for data returns once every game is verified.",
     ],
     icon: Trophy,

@@ -101,7 +101,7 @@ export function ChallengeLiveNotifier() {
         const twelveHoursAgo = new Date(Date.now() - 12 * 3600 * 1000).toISOString();
         const { data: rows } = await (supabase as any)
           .from("game_challenges")
-          .select("*")
+          .select("id,room_code,game_type,mode,creator_id,creator_name,opponent_id,opponent_name,stake_amount,prize_pool,status,current_turn,metadata,created_at,updated_at")
           .eq("mode", "p2p")
           .in("status", ["open", "in_progress"])
           .gte("updated_at", twelveHoursAgo)
