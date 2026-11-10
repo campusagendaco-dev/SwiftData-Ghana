@@ -127,7 +127,7 @@ export const ArenaLobby = memo(function ArenaLobby(props: ArenaLobbyProps) {
             </h1>
 
             <p className="text-base sm:text-lg text-slate-400 max-w-xl leading-relaxed">
-              Ghana&apos;s skill-gaming arena. Beat the AI or a friend in Oware, Dame, Pool and more, and turn every win into data bundles and cash.
+              Ghana&apos;s skill-gaming arena. Beat the AI or a friend in Oware, Dame, Pool and more, and earn Arena Points with every win.
             </p>
 
             <div className="flex flex-col sm:flex-row gap-3">

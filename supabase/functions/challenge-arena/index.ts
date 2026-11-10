@@ -63,6 +63,12 @@ import {
   dispatchUnifiedSms,
   dispatchUnifiedBulkSms,
 } from "../_shared/sms.ts";
+import {
+  CASH_STAKES_PAUSED_MESSAGE,
+  canClaimDataReward,
+  isCashPlayBlocked,
+  publicResponseBody,
+} from "../_shared/arena_safety.ts";
 
 let schemaVerified = false;
 
@@ -178,14 +184,7 @@ async function ensureChallengeSchema(supabaseAdmin: any) {
         USING (true);
 
       DROP POLICY IF EXISTS "Anyone can update active game challenges" ON public.game_challenges;
-      CREATE POLICY "Anyone can update active game challenges"
-        ON public.game_challenges FOR UPDATE
-        USING (status IN ('open', 'in_progress'));
-
       DROP POLICY IF EXISTS "Anyone can view game reward claims" ON public.game_reward_claims;
-      CREATE POLICY "Anyone can view game reward claims"
-        ON public.game_reward_claims FOR SELECT
-        USING (true);
 
       CREATE TABLE IF NOT EXISTS public.game_community_messages (
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -340,8 +339,22 @@ async function ensureChallengeSchema(supabaseAdmin: any) {
   }
 }
 
-function jsonResponse(body: Record<string, unknown>, status = 200) {
-  return new Response(JSON.stringify(body), {
+/** Refunds a wallet-paid creator's stake. The idempotency key makes a double refund impossible. */
+function refundCreatorStake(supabaseAdmin: any, challenge: any) {
+  return supabaseAdmin.rpc("wallet_post", {
+    p_agent_id: challenge.creator_id,
+    p_account: "main",
+    p_amount: Number(challenge.stake_amount || 0),
+    p_reason: "game_stake_refund",
+    p_reference_type: "game_challenge",
+    p_reference_id: String(challenge.id),
+    p_idempotency_key: `game_stake_refund:${challenge.id}`,
+    p_note: "Stake returned for a cancelled arena challenge",
+  });
+}
+
+function jsonResponse(body: Record<string, unknown>, status = 200, includePrivateFields = false) {
+  return new Response(JSON.stringify(includePrivateFields ? body : publicResponseBody(body)), {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
@@ -901,11 +914,12 @@ serve(async (req: Request) => {
       house_commission_percent: 10,
       min_stake_ghs: 2,
       max_stake_ghs: 200,
+      cash_stakes_enabled: false,
       enabled_games: { oware: true, ludo: true, dame: true },
     };
 
     // ── 1. GET LOBBY DATA ───────────────────────────────────────────────────────
-    if (action === "get_lobby") {
+    if (action === "get_lobby" || action === "admin_get_lobby") {
       const todayStart = new Date();
       todayStart.setUTCHours(0, 0, 0, 0);
 
@@ -931,9 +945,17 @@ serve(async (req: Request) => {
           .gte("created_at", todayStart.toISOString()),
       ]);
 
-      const normalizedChallenges = (challenges || []).map((c: any) =>
-        c?.metadata?.actual_game_type ? { ...c, game_type: c.metadata.actual_game_type } : c
-      );
+      let myPhoneTail = "";
+      if (authUser?.id) {
+        const { data: me } = await supabaseAdmin.from("profiles").select("phone").eq("user_id", authUser.id).maybeSingle();
+        myPhoneTail = String(me?.phone || "").replace(/\D/g, "").slice(-9);
+      }
+
+      const normalizedChallenges = (challenges || []).map((c: any) => ({
+        ...c,
+        game_type: c?.metadata?.actual_game_type || c.game_type,
+        invited_to_me: myPhoneTail.length >= 9 && String(c.invited_phone || "").replace(/\D/g, "").slice(-9) === myPhoneTail,
+      }));
 
       return jsonResponse({
         success: true,
@@ -941,7 +963,7 @@ serve(async (req: Request) => {
         challenges: normalizedChallenges,
         recent_claims: recentClaims || [],
         today_free_data_claimed: todayFreeDataCount || 0,
-      });
+      }, 200, action === "admin_get_lobby");
     }
 
     // ── 1B. SEARCH REGISTERED PLAYERS TO INVITE ─────────────────────────────────
@@ -1002,6 +1024,9 @@ serve(async (req: Request) => {
 
       const mode = String(body.mode || "p2p").toLowerCase(); // 'p2p' | 'ai' | 'free_data'
       const rawStake = mode === "free_data" ? 0 : Math.max(0, Number(body.stake_amount || 0));
+      if (isCashPlayBlocked(settings, mode, rawStake)) {
+        return jsonResponse({ success: false, error: CASH_STAKES_PAUSED_MESSAGE, cash_stakes_paused: true }, 403);
+      }
       const paymentSource =
         mode === "free_data" || rawStake === 0
           ? "free"
@@ -1172,10 +1197,10 @@ serve(async (req: Request) => {
           : body.board_state || body.initial_board_state || {},
         current_turn: "creator",
         status: isImmediateStart ? "in_progress" : "open",
+        invited_phone: invitedPhone || null,
         metadata: {
           actual_game_type: gameType,
           is_private: isPrivateChallenge,
-          invited_phone: invitedPhone || null,
           invited_user_id: invitedUserId || null,
           invited_name: invitedName || null,
           rematch_of_challenge_id: rematchOfChallengeId,
@@ -1484,7 +1509,7 @@ serve(async (req: Request) => {
       // If this is a Private Challenge with a specific invited user/phone, verify access unless joining with the Room Code
       if (challenge.metadata?.is_private && !joinedByRoomCode) {
         const invitedUid = challenge.metadata?.invited_user_id;
-        const invitedPh = String(challenge.metadata?.invited_phone || "")
+        const invitedPh = String(challenge.invited_phone || "")
           .replace(/\D/g, "")
           .slice(-9);
         const myPh = opponentPhone.replace(/\D/g, "").slice(-9);
@@ -1505,6 +1530,9 @@ serve(async (req: Request) => {
 
       const targetChallengeId = challenge.id;
       const stake = Number(challenge.stake_amount || 0);
+      if (isCashPlayBlocked(settings, challenge.mode, stake)) {
+        return jsonResponse({ success: false, error: CASH_STAKES_PAUSED_MESSAGE, cash_stakes_paused: true }, 403);
+      }
       let verifiedPaystackRef: string | null = null;
 
       if (stake > 0) {
@@ -1666,17 +1694,7 @@ serve(async (req: Request) => {
 
       const stake = Number(challenge.stake_amount || 0);
       if (stake > 0 && challenge.creator_payment_source === "wallet" && challenge.creator_id) {
-        // Ledgered refund; the idempotency key makes a double refund impossible.
-        const { error: refundErr } = await supabaseAdmin.rpc("wallet_post", {
-          p_agent_id: challenge.creator_id,
-          p_account: "main",
-          p_amount: stake,
-          p_reason: "game_stake_refund",
-          p_reference_type: "game_challenge",
-          p_reference_id: String(challenge.id),
-          p_idempotency_key: `game_stake_refund:${challenge.id}`,
-          p_note: "Stake returned for a cancelled arena challenge",
-        });
+        const { error: refundErr } = await refundCreatorStake(supabaseAdmin, challenge);
         if (refundErr) {
           return jsonResponse({ success: false, error: "Could not return your stake. Please try again." }, 500);
         }
@@ -2228,6 +2246,9 @@ serve(async (req: Request) => {
       if (challenge.mode !== "p2p" && !challenge.metadata?.oware_server_checked) {
         return jsonResponse({ success: false, error: AI_REWARDS_PAUSED_MESSAGE, ai_rewards_paused: true }, 403);
       }
+      if (!canClaimDataReward(challenge)) {
+        return jsonResponse({ success: false, error: AI_REWARDS_PAUSED_MESSAGE, ai_rewards_paused: true }, 403);
+      }
       if (challenge.reward_claimed) {
         return jsonResponse({ success: false, error: "Reward for this challenge has already been claimed!" }, 400);
       }
@@ -2436,6 +2457,45 @@ serve(async (req: Request) => {
     }
 
     // ── 8. ADMIN: UPDATE ARENA SETTINGS & MANAGE CLAIMS ─────────────────────────
+    if (action === "admin_close_staked_rooms") {
+      const { data: rooms, error: roomsErr } = await supabaseAdmin
+        .from("game_challenges")
+        .select("*")
+        .eq("status", "open")
+        .gt("stake_amount", 0);
+      if (roomsErr) {
+        return jsonResponse({ success: false, error: roomsErr.message }, 500);
+      }
+
+      let closed = 0;
+      const failed: string[] = [];
+      const manualRefunds: Record<string, unknown>[] = [];
+      for (const room of rooms || []) {
+        if (room.creator_payment_source === "wallet" && room.creator_id) {
+          const { error: refundErr } = await refundCreatorStake(supabaseAdmin, room);
+          if (refundErr) {
+            failed.push(room.room_code);
+            continue;
+          }
+        } else {
+          manualRefunds.push({
+            room_code: room.room_code,
+            amount: Number(room.stake_amount),
+            paystack_ref: room.creator_paystack_ref,
+            phone: room.creator_phone,
+          });
+        }
+        await supabaseAdmin
+          .from("game_challenges")
+          .update({ status: "cancelled", updated_at: new Date().toISOString() })
+          .eq("id", room.id)
+          .eq("status", "open");
+        closed++;
+      }
+
+      return jsonResponse({ success: true, closed, failed, manual_refunds: manualRefunds }, 200, true);
+    }
+
     if (action === "admin_update_settings") {
       const updates = {
         arena_enabled: body.arena_enabled ?? settings.arena_enabled,

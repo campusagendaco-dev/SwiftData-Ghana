@@ -541,22 +541,17 @@ export default function ChallengeArena() {
     });
   }, []);
 
+  const cashStakesEnabled = settings.cash_stakes_enabled === true;
+
   const resolveMySideForChallenge = useCallback(
     (chal: any): "creator" | "opponent" | null => {
       if (!chal) return null;
       if (myJoinedSides[chal.id]) return myJoinedSides[chal.id];
       if (user?.id && chal.creator_id === user.id) return "creator";
       if (user?.id && chal.opponent_id === user.id) return "opponent";
-      const cleanMyPhone = String(playerPhone || profile?.phone || "").replace(/\D/g, "").slice(-9);
-      if (cleanMyPhone.length >= 9) {
-        const cleanCreatorPhone = String(chal.creator_phone || "").replace(/\D/g, "").slice(-9);
-        const cleanOpponentPhone = String(chal.opponent_phone || "").replace(/\D/g, "").slice(-9);
-        if (cleanCreatorPhone === cleanMyPhone) return "creator";
-        if (cleanOpponentPhone === cleanMyPhone) return "opponent";
-      }
       return null;
     },
-    [myJoinedSides, user?.id, playerPhone, profile?.phone]
+    [myJoinedSides, user?.id]
   );
 
   const isChallengeInvitedForMe = useCallback(
@@ -565,16 +560,9 @@ export default function ChallengeArena() {
       if (resolveMySideForChallenge(chal) === "creator") return false;
       const invitedUid = chal.metadata?.invited_user_id;
       if (invitedUid && user?.id && invitedUid === user.id) return true;
-      const cleanMyPhone = String(playerPhone || profile?.phone || "").replace(/\D/g, "").slice(-9);
-      const cleanInvitedPhone = String(chal.metadata?.invited_phone || "")
-        .replace(/\D/g, "")
-        .slice(-9);
-      if (cleanMyPhone.length >= 9 && cleanInvitedPhone.length >= 9 && cleanMyPhone === cleanInvitedPhone) {
-        return true;
-      }
-      return false;
+      return chal.invited_to_me === true;
     },
-    [resolveMySideForChallenge, user?.id, playerPhone, profile?.phone]
+    [resolveMySideForChallenge, user?.id]
   );
 
   const fetchLobby = useCallback(async (silent = false) => {
@@ -918,7 +906,9 @@ export default function ChallengeArena() {
         ? rematchOpts.overrideStake
         : Number(stakeAmount || 0);
     const stake =
-      modeToStart === "free_data" ? 0 : Math.max(0, isNaN(rawStakeInput) ? 0 : rawStakeInput);
+      modeToStart === "free_data" || settings.cash_stakes_enabled !== true
+        ? 0
+        : Math.max(0, isNaN(rawStakeInput) ? 0 : rawStakeInput);
     const minStakeRequired = Number(settings.min_stake_ghs || 2);
 
     if (modeToStart === "ai" && gameToStart !== "oware") {
@@ -1553,8 +1543,6 @@ export default function ChallengeArena() {
     const prevStake = Number(activeChallenge.stake_amount || 0);
     const otherPlayerName =
       mySide === "creator" ? activeChallenge.opponent_name : activeChallenge.creator_name;
-    const otherPlayerPhone =
-      mySide === "creator" ? activeChallenge.opponent_phone : activeChallenge.creator_phone;
     const otherPlayerUserId =
       mySide === "creator" ? activeChallenge.opponent_id : activeChallenge.creator_id;
 
@@ -1571,7 +1559,7 @@ export default function ChallengeArena() {
         gMode === "p2p"
           ? {
               name: otherPlayerName || null,
-              phone: otherPlayerPhone || null,
+              phone: null,
               userId: otherPlayerUserId || null,
             }
           : undefined,
@@ -2516,7 +2504,7 @@ export default function ChallengeArena() {
             </div>
 
             {/* Mode Selector Pills */}
-            <div className="grid grid-cols-3 gap-2">
+            <div className={`grid gap-2 ${cashStakesEnabled ? "grid-cols-3" : "grid-cols-2"}`}>
               <button
                 type="button"
                 onClick={() => setSelectedMode("free_data")}
@@ -2527,8 +2515,8 @@ export default function ChallengeArena() {
                 }`}
               >
                 <Gift className="w-4 h-4 text-amber-400 mb-1" />
-                <p className="text-xs font-black">Win Data</p>
-                <p className="text-[10px] opacity-80">Free • vs Smart AI</p>
+                <p className="text-xs font-black">Play the AI</p>
+                <p className="text-[10px] opacity-80">Free • earn points</p>
               </button>
 
               <button
@@ -2548,6 +2536,7 @@ export default function ChallengeArena() {
                 <p className="text-[10px] opacity-80">Public or Private</p>
               </button>
 
+              {cashStakesEnabled && (
               <button
                 type="button"
                 disabled={selectedGame !== "oware"}
@@ -2574,6 +2563,7 @@ export default function ChallengeArena() {
                   {selectedGame === "oware" ? "Verified match" : "Paused for upgrade"}
                 </p>
               </button>
+              )}
             </div>
 
             {selectedMode === "free_data" ? (
@@ -2649,7 +2639,7 @@ export default function ChallengeArena() {
                   </div>
                 )}
 
-                {Number(stakeAmount || 0) > 0 && (
+                {cashStakesEnabled && Number(stakeAmount || 0) > 0 && (
                   <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"
@@ -2684,6 +2674,7 @@ export default function ChallengeArena() {
                   </div>
                 )}
 
+                {cashStakesEnabled && (
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-slate-400">
@@ -2730,6 +2721,7 @@ export default function ChallengeArena() {
                     ))}
                   </div>
                 </div>
+                )}
 
                 {selectedMode === "p2p" && (
                   <div className="space-y-2 pt-1 border-t border-white/10">
@@ -3128,11 +3120,8 @@ export default function ChallengeArena() {
                   </div>
                   <h3 className="text-base sm:text-lg font-black text-white">
                     Room #{activeChallenge.room_code} —{" "}
-                    {activeChallenge.metadata?.invited_name || activeChallenge.metadata?.invited_phone
-                      ? `Waiting for ${
-                          activeChallenge.metadata.invited_name ||
-                          activeChallenge.metadata.invited_phone
-                        } to Accept`
+                    {activeChallenge.metadata?.invited_name
+                      ? `Waiting for ${activeChallenge.metadata.invited_name} to Accept`
                       : activeChallenge.metadata?.is_private
                       ? "Waiting for Friend with Room Code"
                       : "Waiting for Opponent in Public Lobby"}
