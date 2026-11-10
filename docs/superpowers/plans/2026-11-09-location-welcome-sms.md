@@ -531,9 +531,9 @@ git commit -m "feat(location): add admin controls and privacy notice"
 
 Do each step only with the owner's go-ahead. These change the live system. Launch GPS-only first; the IP key is added only after accuracy passes (Steps 7 and 8).
 
-- [ ] **Step 1: Apply the migration.** Run `npx supabase db push` after confirming with `npx supabase migration list` that only `20261109120000` is pending. The unrelated `20261105100000` file has local edits, so stop and ask if it appears as pending.
+- [ ] **Step 1: Apply the migration.** Paste `supabase/migrations/20261109120000_location_welcome_sms.sql` into the Supabase SQL editor and run it. Never run `npx supabase db push` on this project: migration history stopped recording in May 2026, so a push would re-run 285 old migrations on live data.
 - [ ] **Step 2: Run the smoke test.** Run `supabase/tests/location_welcome_sms_smoke.sql` in the SQL editor. It does run on production and is rolled back, so nothing is kept. It needs two existing users with no location SMS in the last 30 days. Expected: completes with no exception.
-- [ ] **Step 3: Deploy the function.** Run: `npx supabase functions deploy location-check --no-verify-jwt`. With mode `off`, confirm in the app that no popup appears.
+- [ ] **Step 3: Deploy the function.** Run: `npx supabase functions deploy location-check --project-ref lsocdjpflecduumopijn --no-verify-jwt --use-api` from this branch with `SUPABASE_ACCESS_TOKEN` set. With mode `off`, confirm in the app that no popup appears.
 - [ ] **Step 4: Release the frontend.** Merge the branch and deploy through the usual Vercel flow. Confirm sign-in and a purchase work.
 - [ ] **Step 5: Test send.** From Admin Settings, send a test for `Kumasi`. Expected: SMS arrives with correct text and a working link. A repeat test send within 45 seconds reports success without sending.
 - [ ] **Step 6: Walk through the spec's manual checks 3 to 6** on a test account, after setting the mode to `consent`. To simulate a move, edit the test user's rows in `user_location_towns`. This is GPS-only: no IP key is set yet.
