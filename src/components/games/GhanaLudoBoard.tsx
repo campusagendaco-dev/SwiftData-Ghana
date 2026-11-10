@@ -323,13 +323,16 @@ export interface GhanaLudoBoardProps {
   onPlayAnotherGame?: () => void;
 }
 
-function normalizeIncomingLudoState(
+export function normalizeIncomingLudoState(
   raw: any,
   creatorName: string,
   opponentName: string,
   mode: "p2p" | "ai" | "free_data"
 ): LudoState {
-  if (raw && raw.engine && Array.isArray(raw.engine.players) && raw.engine.tokens) {
+  // The arena starts every match from a generic board with no computer seats, so a
+  // computer match that has not begun must be set up here or the AI would never roll.
+  const isUnstartedComputerMatch = mode !== "p2p" && (raw?.moveCount || 0) === 0;
+  if (raw && raw.engine && Array.isArray(raw.engine.players) && raw.engine.tokens && !isUnstartedComputerMatch) {
     return raw as LudoState;
   }
   const engine = initializeGame({
