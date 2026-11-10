@@ -1,766 +1,161 @@
-import { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
-import {
-  X, ChevronRight, ChevronLeft, Wifi, CreditCard, CheckCircle2,
-  Store, TrendingUp, Users, Zap, Phone, ShieldCheck, Star,
-  ArrowRight, Smartphone, CircleDollarSign, BadgeCheck, Gift,
-  Play, BookOpen
-} from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
-
-const getEmbedUrl = (url?: string) => {
-  if (!url) return "";
-  
-  // Check if direct video format
-  if (url.match(/\.(mp4|webm|ogg)(\?.*)?$/i)) {
-    return url;
-  }
-
-  // Handle standard YouTube and shortened y2u links
-  const ytRegex = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:[^/\n\s]+\/\S+\/|(?:v|e(?:mbed)?)\/|\S*?[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
-  const match = url.match(ytRegex);
-  if (match && match[1]) {
-    return `https://www.youtube.com/embed/${match[1]}?autoplay=1&rel=0`;
-  }
-
-  return url;
-};
-
-const TutorialVideoPlayer = ({ url, accent }: { url?: string; accent: string }) => {
-  const embedUrl = getEmbedUrl(url);
-  const isDirectVideo = embedUrl && embedUrl.match(/\.(mp4|webm|ogg)(\?.*)?$/i);
-
-  if (!url) {
-    return (
-      <div 
-        className="w-full min-h-[220px] rounded-2xl border border-white/10 flex flex-col items-center justify-center p-6 text-center bg-white/[0.02]" 
-      >
-        <div className="w-12 h-12 rounded-full flex items-center justify-center mb-3 animate-pulse" style={{ background: `${accent}15`, border: `1px solid ${accent}25` }}>
-          <Play className="w-5 h-5" style={{ color: accent }} />
-        </div>
-        <p className="text-white font-bold text-sm">Video Coming Soon</p>
-        <p className="text-white/40 text-xs mt-1 max-w-[200px] mx-auto leading-relaxed">
-          The video tutorial for this section is currently being prepared. Check back soon!
-        </p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="relative w-full rounded-2xl overflow-hidden border border-white/15 aspect-video bg-black/80 shadow-2xl animate-in fade-in zoom-in-95 duration-300">
-      {isDirectVideo ? (
-        <video 
-          src={embedUrl} 
-          className="w-full h-full object-cover" 
-          controls 
-          autoPlay
-          playsInline
-        />
-      ) : (
-        <iframe
-          src={embedUrl}
-          className="absolute inset-0 w-full h-full border-0"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-          allowFullScreen
-        />
-      )}
-    </div>
-  );
-};
+import { useEffect, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import { ChevronRight, TrendingUp, Users, Wifi, X } from "lucide-react";
+import HowItWorksContent from "@/components/HowItWorksContent";
+import { HOW_IT_WORKS_PATHS, type HowItWorksPathId } from "@/lib/howItWorks";
 
 const STORAGE_KEY = "swiftdata-tutorial-seen";
+const HOW_IT_WORKS_ROUTE = "/how-it-works";
 
-
-const StepDot = ({ active, done }: { active: boolean; done: boolean }) => (
-  <div className={`rounded-full transition-all duration-300 ${
-    done ? "w-2 h-2 bg-green-400" : active ? "w-6 h-2 bg-amber-400" : "w-2 h-2 bg-white/20"
-  }`} />
-);
-
-/* ── Path selection card ── */
-const PathCard = ({
-  icon: Icon,
-  title,
-  description,
-  accent,
-  onClick,
-}: {
-  icon: typeof Wifi;
-  title: string;
-  description: string;
-  accent: string;
-  onClick: () => void;
-}) => (
-  <button
-    onClick={onClick}
-    className="group w-full rounded-2xl border border-white/8 p-4 text-left transition-all duration-200 hover:border-white/20 hover:scale-[1.02] active:scale-[0.99] bg-white/[0.03]"
-  >
-    <div className="flex items-center gap-3">
-      <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-all group-hover:scale-110"
-        style={{ background: `${accent}20`, border: `1px solid ${accent}30` }}>
-        <Icon className="w-5 h-5" style={{ color: accent }} />
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-white font-bold text-sm">{title}</p>
-        <p className="text-white/40 text-xs mt-0.5 leading-snug">{description}</p>
-      </div>
-      <ChevronRight className="w-4 h-4 text-white/25 group-hover:text-white/60 group-hover:translate-x-0.5 transition-all shrink-0" />
-    </div>
-  </button>
-);
-
-/* ── Step illustrations ── */
-
-const BuyStep1 = () => (
-  <div className="flex flex-col items-center gap-4 py-4">
-    <div className="flex gap-2">
-      {[
-        { name: "MTN", color: "#f59e0b" },
-        { name: "Telecel", color: "#dc2626" },
-        { name: "AirtelTigo", color: "#2563eb" },
-      ].map((n, i) => (
-        <div key={n.name} className="relative">
-          <div
-            className="rounded-xl px-3 py-2.5 text-center font-black text-xs transition-all"
-            style={{
-              background: i === 0 ? n.color : `${n.color}25`,
-              color: i === 0 ? (n.name === "MTN" ? "#000" : "#fff") : n.color,
-              border: `2px solid ${i === 0 ? n.color : `${n.color}40`}`,
-              animation: `tutorial-bob 2s ease-in-out ${i * 200}ms infinite`,
-            }}
-          >
-            {n.name}
-          </div>
-          {i === 0 && (
-            <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-amber-400 flex items-center justify-center">
-              <CheckCircle2 className="w-2 h-2 text-black" />
-            </span>
-          )}
-        </div>
-      ))}
-    </div>
-    <p className="text-white/50 text-xs text-center">Tap your preferred network</p>
-    <div className="grid grid-cols-3 gap-2 w-full max-w-[240px]">
-      {["1GB", "5GB", "10GB", "20GB", "30GB", "50GB"].map((size, i) => (
-        <div
-          key={size}
-          className="rounded-xl p-2 text-center"
-          style={{
-            background: i === 1 ? "#f59e0b" : "rgba(245,158,11,0.08)",
-            border: `1px solid ${i === 1 ? "#f59e0b" : "rgba(245,158,11,0.15)"}`,
-            animation: `tutorial-fade-in 0.4s ease-out ${i * 80}ms both`,
-            transform: i === 1 ? "scale(1.05)" : "scale(1)",
-          }}
-        >
-          <p className={`font-black text-sm ${i === 1 ? "text-black" : "text-amber-400"}`}>{size}</p>
-        </div>
-      ))}
-    </div>
-  </div>
-);
-
-const BuyStep2 = () => (
-  <div className="flex flex-col items-center gap-4 py-4">
-    <div className="relative w-full max-w-[280px]">
-      <div className="rounded-xl border border-white/15 flex items-center px-3 py-2.5 gap-2 bg-white/[0.07]">
-        <Phone className="w-4 h-4 text-white/40 shrink-0" />
-        <div className="flex-1">
-          <p className="text-white text-sm font-mono" style={{ animation: "tutorial-type 3s steps(11) infinite" }}>
-            0241234567
-          </p>
-        </div>
-        <div className="w-0.5 h-4 bg-amber-400" style={{ animation: "tutorial-cursor 1s step-end infinite" }} />
-      </div>
-      <p className="text-white/40 text-xs mt-2 text-center">Enter the recipient's number</p>
-    </div>
-    <div className="flex items-center gap-2 rounded-xl px-4 py-2.5 w-full max-w-[280px]" style={{ background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.3)" }}>
-      <Smartphone className="w-4 h-4 text-amber-400" />
-      <p className="text-amber-300 text-xs">It can be your own number or someone else's</p>
-    </div>
-  </div>
-);
-
-const BuyStep3 = () => (
-  <div className="flex flex-col items-center gap-4 py-4">
-    <div className="relative w-full max-w-[280px] rounded-2xl overflow-hidden border border-white/10 bg-[#0d0d18]">
-      <div className="px-4 py-3 border-b border-white/8">
-        <div className="flex items-center justify-between text-xs">
-          <span className="text-white/40">MTN 5GB</span>
-          <span className="text-white font-bold">GH₵ 22.85</span>
-        </div>
-      </div>
-      <div className="p-4 space-y-2">
-        <div className="flex justify-between text-xs text-white/50">
-          <span>Bundle price</span><span>GH₵ 21.20</span>
-        </div>
-        <div className="flex justify-between text-xs text-white/50">
-          <span>Paystack fee (3%)</span><span>GH₵ 0.64</span>
-        </div>
-        <div className="flex justify-between text-sm font-bold text-white border-t border-white/8 pt-2 mt-1">
-          <span>Total</span><span className="text-amber-400">GH₵ 21.84</span>
-        </div>
-      </div>
-      <div className="px-4 pb-4">
-        <div
-          className="w-full rounded-xl py-2.5 flex items-center justify-center gap-2 font-black text-sm text-black"
-          style={{ background: "#f59e0b", animation: "tutorial-pulse-btn 2s ease-in-out infinite" }}
-        >
-          <CreditCard className="w-4 h-4" />
-          Pay GH₵ 21.84
-        </div>
-      </div>
-    </div>
-    <p className="text-white/40 text-xs text-center">Pay with card or Mobile Money via Paystack</p>
-  </div>
-);
-
-const BuyStep4 = () => (
-  <div className="flex flex-col items-center gap-4 py-4">
-    <div className="relative">
-      <div className="w-20 h-20 rounded-full flex items-center justify-center" style={{ background: "rgba(34,197,94,0.15)", border: "2px solid rgba(34,197,94,0.4)" }}>
-        <CheckCircle2 className="w-10 h-10 text-green-400" style={{ animation: "tutorial-pop 0.5s ease-out both" }} />
-      </div>
-      <div className="absolute -inset-2 rounded-full border border-green-400/20" style={{ animation: "tutorial-ring 2s ease-out infinite" }} />
-    </div>
-    <div className="text-center">
-      <p className="text-white font-bold text-base mb-1">Data delivered! 🎉</p>
-      <p className="text-white/50 text-xs max-w-[220px] mx-auto">Your bundle is activated within seconds after payment</p>
-    </div>
-    <div className="flex gap-3">
-      {[
-        { icon: ShieldCheck, label: "Paystack secured", color: "#22c55e" },
-        { icon: Zap, label: "Instant delivery", color: "#f59e0b" },
-      ].map((b) => (
-        <div key={b.label} className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium"
-          style={{ background: `${b.color}10`, border: `1px solid ${b.color}25`, color: b.color }}>
-          <b.icon className="w-3 h-3" /> {b.label}
-        </div>
-      ))}
-    </div>
-  </div>
-);
-
-const AgentStep1 = () => (
-  <div className="flex flex-col items-center gap-4 py-4">
-    <div className="relative">
-      <div className="w-16 h-16 rounded-2xl flex items-center justify-center" style={{ background: "rgba(245,158,11,0.15)", border: "1px solid rgba(245,158,11,0.3)" }}>
-        <Users className="w-8 h-8 text-amber-400" />
-      </div>
-    </div>
-    <div className="grid grid-cols-3 gap-2 w-full max-w-[260px]">
-      {[
-        { icon: Store, label: "Own store link", color: "#f59e0b" },
-        { icon: CircleDollarSign, label: "Set your prices", color: "#22c55e" },
-        { icon: TrendingUp, label: "Earn profit", color: "#3b82f6" },
-      ].map((b) => (
-        <div key={b.label} className="rounded-xl p-2.5 text-center border border-white/8 bg-white/[0.03]">
-          <b.icon className="w-5 h-5 mx-auto mb-1" style={{ color: b.color }} />
-          <p className="text-white/60 text-[10px] leading-tight">{b.label}</p>
-        </div>
-      ))}
-    </div>
-    <p className="text-white/50 text-xs text-center max-w-[220px]">
-      Agents get wholesale prices and their own Paystack-powered storefront
-    </p>
-  </div>
-);
-
-const AgentStep2 = () => (
-  <div className="flex flex-col items-center gap-4 py-4">
-    <div className="w-full max-w-[280px] rounded-2xl border border-white/10 overflow-hidden bg-[#111124]">
-      <div className="px-4 py-3 border-b border-white/8 flex items-center gap-2">
-        <div className="w-2 h-2 rounded-full bg-red-500" />
-        <div className="w-2 h-2 rounded-full bg-amber-400" />
-        <div className="w-2 h-2 rounded-full bg-green-500" />
-        <span className="text-white/30 text-[10px] ml-1">swiftdatagh.shop/login</span>
-      </div>
-      <div className="p-4 space-y-2">
-        <div className="h-7 rounded-lg border border-white/10" style={{ background: "rgba(255,255,255,0.05)", animation: "tutorial-fade-in 0.5s ease-out 0.2s both" }}>
-          <div className="px-3 flex items-center h-full">
-            <span className="text-white/30 text-xs">Email address</span>
-          </div>
-        </div>
-        <div className="h-7 rounded-lg border border-white/10" style={{ background: "rgba(255,255,255,0.05)", animation: "tutorial-fade-in 0.5s ease-out 0.4s both" }}>
-          <div className="px-3 flex items-center h-full">
-            <span className="text-white/30 text-xs">Password</span>
-          </div>
-        </div>
-        <div className="h-8 rounded-lg flex items-center justify-center font-bold text-sm text-black" style={{ background: "#f59e0b", animation: "tutorial-fade-in 0.5s ease-out 0.6s both" }}>
-          Create Account
-        </div>
-      </div>
-    </div>
-    <p className="text-white/40 text-xs text-center">Sign up free — takes 30 seconds</p>
-  </div>
-);
-
-const AgentStep3 = () => (
-  <div className="flex flex-col items-center gap-4 py-4">
-    <div className="relative w-full max-w-[280px]">
-      <div className="rounded-2xl border border-amber-400/30 p-4 bg-amber-400/[0.06]">
-        <div className="flex items-center gap-2 mb-3">
-          <BadgeCheck className="w-5 h-5 text-amber-400" />
-          <span className="text-amber-300 font-bold text-sm">Agent Program</span>
-        </div>
-        <div className="space-y-1.5 mb-3">
-          {["Wholesale bundle prices", "Your own branded store", "Sub-agent network", "Instant payouts"].map((f, i) => (
-            <div key={f} className="flex items-center gap-2 text-xs text-white/60" style={{ animation: `tutorial-fade-in 0.4s ease-out ${i * 100}ms both` }}>
-              <CheckCircle2 className="w-3 h-3 text-green-400 shrink-0" /> {f}
-            </div>
-          ))}
-        </div>
-        <div className="rounded-xl py-2 flex items-center justify-center gap-1.5 text-sm font-bold text-black" style={{ background: "#f59e0b" }}>
-          <Gift className="w-3.5 h-3.5" /> Apply for Agent Program
-        </div>
-      </div>
-    </div>
-    <p className="text-white/40 text-xs text-center">Apply from your dashboard after signing up</p>
-  </div>
-);
-
-const AgentStep4 = () => (
-  <div className="flex flex-col items-center gap-4 py-4">
-    <div className="relative w-full max-w-[280px]">
-      <div className="rounded-2xl border border-white/10 p-4 bg-[#111124]">
-        <div className="flex items-center gap-2 mb-3">
-          <Store className="w-4 h-4 text-amber-400" />
-          <span className="text-white font-bold text-sm">Your Store is Live 🎉</span>
-        </div>
-        <div className="rounded-lg border border-amber-400/20 px-3 py-2 flex items-center gap-2 bg-amber-400/[0.08]">
-          <span className="text-amber-400 text-xs font-mono truncate">swiftdatagh.shop/store/</span>
-
-          <span className="text-amber-300 font-bold text-xs">yourname</span>
-        </div>
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          <div className="rounded-lg p-2 text-center border border-green-500/20 bg-emerald-500/[0.08]">
-            <p className="text-green-400 font-black text-lg">GH₵0</p>
-            <p className="text-white/40 text-[10px]">Today's profit</p>
-          </div>
-          <div className="rounded-lg p-2 text-center border border-blue-500/20 bg-blue-500/[0.08]">
-            <p className="text-blue-400 font-black text-lg">0</p>
-            <p className="text-white/40 text-[10px]">Customers</p>
-          </div>
-        </div>
-      </div>
-    </div>
-    <p className="text-white/40 text-xs text-center">Share your link and start earning immediately</p>
-  </div>
-);
-
-const SubStep1 = () => (
-  <div className="flex flex-col items-center gap-4 py-4">
-    <div className="relative w-full max-w-[280px] rounded-2xl border border-white/10 overflow-hidden bg-[#0d0d18]">
-      <div className="p-4 text-center border-b border-white/8">
-        <p className="text-white font-bold text-sm">Agent's Store</p>
-        <p className="text-white/40 text-xs">swiftdatagh.shop/store/<span className="text-amber-400">agentname</span></p>
-
-      </div>
-      <div className="p-4">
-        <div className="rounded-xl border border-amber-400/30 p-3 bg-amber-400/[0.06]">
-          <div className="flex items-center gap-2 mb-2">
-            <TrendingUp className="w-4 h-4 text-amber-400" />
-            <span className="text-amber-300 font-bold text-xs">Become a Sub Agent</span>
-          </div>
-          <p className="text-white/40 text-[10px] mb-2">Get your own store & earn income</p>
-          <div className="rounded-lg py-1.5 text-center text-xs font-bold text-black" style={{ background: "#f59e0b", animation: "tutorial-pulse-btn 2s ease-in-out infinite" }}>
-            Join Now →
-          </div>
-        </div>
-      </div>
-    </div>
-    <p className="text-white/40 text-xs text-center">Find the "Become a Sub Agent" section on any agent's store</p>
-  </div>
-);
-
-const SubStep2 = () => (
-  <div className="flex flex-col items-center gap-4 py-4">
-    <div className="w-full max-w-[280px] rounded-2xl border border-white/10 p-4 space-y-2 bg-[#111124]">
-      {["Full name", "Phone number", "Email address"].map((label, i) => (
-        <div key={label} className="h-8 rounded-lg border border-white/10 flex items-center px-3 bg-white/[0.05]" style={{ animation: `tutorial-fade-in 0.4s ease-out ${i * 150}ms both` }}>
-          <span className="text-white/30 text-xs">{label}</span>
-        </div>
-      ))}
-      <div className="h-8 rounded-lg flex items-center justify-center text-xs font-bold text-black" style={{ background: "#f59e0b", animation: "tutorial-fade-in 0.4s ease-out 0.5s both" }}>
-        Submit Application
-      </div>
-    </div>
-    <p className="text-white/40 text-xs text-center">Fill in your details on the signup form</p>
-  </div>
-);
-
-const SubStep3 = () => (
-  <div className="flex flex-col items-center gap-4 py-4">
-    <div className="relative w-full max-w-[280px] rounded-2xl border border-white/10 p-4 bg-[#111124]">
-      <div className="flex items-center gap-2 mb-3">
-        <CreditCard className="w-4 h-4 text-amber-400" />
-        <span className="text-white font-bold text-sm">Pay Activation Fee</span>
-      </div>
-      <div className="rounded-xl p-3 border border-white/8 mb-3 bg-white/[0.03]">
-        <div className="flex justify-between text-xs mb-1.5">
-          <span className="text-white/50">Sub-agent activation</span>
-          <span className="text-white font-bold">GH₵ 50.00</span>
-        </div>
-        <div className="flex justify-between text-xs">
-          <span className="text-white/50">One-time fee</span>
-          <span className="text-green-400 text-[10px] font-semibold">✓ Lifetime access</span>
-        </div>
-      </div>
-      <div className="rounded-xl py-2.5 flex items-center justify-center gap-2 text-sm font-bold text-black" style={{ background: "#f59e0b", animation: "tutorial-pulse-btn 2s ease-in-out infinite" }}>
-        <ShieldCheck className="w-4 h-4" /> Pay via Paystack
-      </div>
-    </div>
-    <p className="text-white/40 text-xs text-center">One-time activation fee — set by your parent agent</p>
-  </div>
-);
-
-const SubStep4 = () => (
-  <div className="flex flex-col items-center gap-4 py-4">
-    <div className="relative">
-      <div className="w-20 h-20 rounded-full flex items-center justify-center" style={{ background: "rgba(245,158,11,0.15)", border: "2px solid rgba(245,158,11,0.4)" }}>
-        <Star className="w-10 h-10 text-amber-400" style={{ animation: "tutorial-pop 0.5s ease-out both" }} />
-      </div>
-      <div className="absolute -inset-2 rounded-full border border-amber-400/20" style={{ animation: "tutorial-ring 2s ease-out infinite" }} />
-    </div>
-    <div className="text-center">
-      <p className="text-white font-bold text-base mb-1">You're an active Sub Agent! 🚀</p>
-      <p className="text-white/50 text-xs max-w-[220px] mx-auto mb-4">Your own store is ready. Share your link and start earning.</p>
-    </div>
-    <div className="grid grid-cols-2 gap-2 w-full max-w-[260px]">
-      {[
-        { label: "Your store link", value: "Unique URL", color: "#f59e0b" },
-        { label: "Earn profit on", value: "Every sale", color: "#22c55e" },
-        { label: "Dashboard access", value: "Full control", color: "#3b82f6" },
-        { label: "Set your prices", value: "Any margin", color: "#a855f7" },
-      ].map((b) => (
-        <div key={b.label} className="rounded-xl p-2.5 border border-white/8 text-center bg-white/[0.03]">
-          <p className="text-[10px] text-white/40">{b.label}</p>
-          <p className="text-xs font-bold mt-0.5" style={{ color: b.color }}>{b.value}</p>
-        </div>
-      ))}
-    </div>
-  </div>
-);
-
-/* ── Flow definitions ── */
-type Flow = "buy" | "agent" | "subagent";
-
-const FLOWS: Record<Flow, {
-  title: string;
-  accent: string;
-  cta: { label: string; to: string };
-  steps: { title: string; subtitle: string; component: React.FC }[];
-}> = {
-  buy: {
-    title: "How to Buy Data",
-    accent: "#f59e0b",
-    cta: { label: "Buy Data Now", to: "/buy-data" },
-    steps: [
-      { title: "Pick your network & bundle", subtitle: "Select MTN, Telecel, or AirtelTigo then tap a data bundle", component: BuyStep1 },
-      { title: "Enter recipient number", subtitle: "Type in the Ghana phone number that will receive the data", component: BuyStep2 },
-      { title: "Pay securely", subtitle: "Tap Pay and complete with card or MoMo on Paystack", component: BuyStep3 },
-      { title: "Delivered instantly!", subtitle: "Your data bundle lands within seconds — no delays", component: BuyStep4 },
-    ],
-  },
-  agent: {
-    title: "Become an Agent",
-    accent: "#22c55e",
-    cta: { label: "Apply for Agent Program", to: "/agent-program" },
-    steps: [
-      { title: "Why become an agent?", subtitle: "Get wholesale prices, your own store, and build passive income", component: AgentStep1 },
-      { title: "Create a free account", subtitle: "Sign up in 30 seconds — no credit card required", component: AgentStep2 },
-      { title: "Apply for the program", subtitle: "Find 'Agent Program' in your dashboard and submit your application", component: AgentStep3 },
-      { title: "Your store goes live!", subtitle: "Share your unique link and start earning on every sale", component: AgentStep4 },
-    ],
-  },
-  subagent: {
-    title: "Become a Sub Agent",
-    accent: "#a855f7",
-    cta: { label: "Find an Agent Store", to: "/buy-data" },
-    steps: [
-      { title: "Visit any agent store", subtitle: "Find a SwiftData agent and open their store link", component: SubStep1 },
-      { title: "Fill your details", subtitle: "Click 'Become a Sub Agent' and complete the signup form", component: SubStep2 },
-      { title: "Pay the activation fee", subtitle: "One-time fee set by your parent agent — paid via Paystack", component: SubStep3 },
-      { title: "Start selling!", subtitle: "Your own store is ready — share your link and earn on every order", component: SubStep4 },
-    ],
-  },
+const PATH_ICONS = { buy: Wifi, agent: TrendingUp, subagent: Users };
+const WELCOME_LABELS: Record<HowItWorksPathId, string> = {
+  buy: "Buy a data bundle",
+  agent: "Become a data agent",
+  subagent: "Become a sub agent",
 };
 
-/* ── Main modal ── */
-export default function TutorialModal() {
-  const [visible, setVisible] = useState(false);
-  const [flow, setFlow] = useState<Flow | null>(null);
-  const [step, setStep] = useState(0);
-  const [animDir, setAnimDir] = useState<"forward" | "back">("forward");
-  const [viewMode, setViewMode] = useState<"steps" | "video">("steps");
-  const [videoUrls, setVideoUrls] = useState<{ buy?: string; agent?: string; subagent?: string }>({});
+const hasSeenWelcome = () => {
+  try { return Boolean(localStorage.getItem(STORAGE_KEY)); } catch { return true; }
+};
+
+const markWelcomeSeen = () => {
+  try { localStorage.setItem(STORAGE_KEY, "1"); } catch { /* Ignore storage errors */ }
+};
+
+export default function TutorialModal({ inStore = false }: { inStore?: boolean }) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [welcomeOpen, setWelcomeOpen] = useState(false);
+  const [storePath, setStorePath] = useState<HowItWorksPathId | null>(null);
+
+  const onHowItWorksPage = location.pathname === HOW_IT_WORKS_ROUTE;
+  const slug = location.pathname.match(/^\/store\/([^/]+)/)?.[1];
 
   useEffect(() => {
-    const fetchVideoUrls = async () => {
-      try {
-        const { data } = await supabase
-          .from("public_system_settings")
-          .select("tutorial_buy_video_url, tutorial_agent_video_url, tutorial_subagent_video_url")
-          .eq("id", 1)
-          .maybeSingle();
-        
-        if (data) {
-          setVideoUrls({
-            buy: data.tutorial_buy_video_url,
-            agent: data.tutorial_agent_video_url,
-            subagent: data.tutorial_subagent_video_url,
-          });
-        }
-      } catch (e) {
-        console.error("Failed to load tutorial videos", e);
-      }
+    if (!hasSeenWelcome() && !onHowItWorksPage) setWelcomeOpen(true);
+  }, [onHowItWorksPage]);
+
+  const open = (id: HowItWorksPathId = "buy") => {
+    if (inStore) setStorePath(id);
+    else navigate(`${HOW_IT_WORKS_ROUTE}?path=${id}`);
+  };
+
+  useEffect(() => {
+    const handler = () => {
+      if (inStore) setStorePath("buy");
+      else navigate(`${HOW_IT_WORKS_ROUTE}?path=buy`);
     };
-    fetchVideoUrls();
-  }, []);
-
-  useEffect(() => {
-    const seen = localStorage.getItem(STORAGE_KEY);
-    if (!seen) setVisible(true);
-  }, []);
-
-  // Allow external callers (e.g. Navbar) to open the tutorial via a custom event
-  useEffect(() => {
-    const handler = () => { setFlow(null); setStep(0); setViewMode("steps"); setVisible(true); };
     window.addEventListener("open-tutorial", handler);
     return () => window.removeEventListener("open-tutorial", handler);
-  }, []);
+  }, [inStore, navigate]);
 
-  const dismiss = () => {
-    localStorage.setItem(STORAGE_KEY, "1");
-    setVisible(false);
+  const closeWelcome = () => {
+    markWelcomeSeen();
+    setWelcomeOpen(false);
   };
 
-  const goStep = (dir: "forward" | "back") => {
-    setAnimDir(dir);
-    setStep((s) => s + (dir === "forward" ? 1 : -1));
-  };
-
-  if (!visible) {
+  if (storePath) {
     return (
-      <button
-        onClick={() => { setFlow(null); setStep(0); setViewMode("steps"); setVisible(true); }}
-        className="fixed bottom-24 right-4 z-40 w-10 h-10 rounded-full border border-white/15 flex items-center justify-center text-white/50 hover:text-white hover:border-white/30 transition-all hover:scale-110 shadow-lg bg-[#0d0d18]/90 backdrop-blur-xl"
-        title="How it works"
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 backdrop-blur-sm"
+        onClick={(e) => { if (e.target === e.currentTarget) setStorePath(null); }}
       >
-        <span className="text-base font-black">?</span>
-      </button>
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="How it works"
+          className="relative w-full max-w-4xl max-h-[92dvh] overflow-y-auto rounded-3xl border border-border bg-background p-4 sm:p-5"
+        >
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-base font-bold text-foreground">How it works</h2>
+            <button
+              type="button"
+              onClick={() => setStorePath(null)}
+              aria-label="Close"
+              className="h-10 w-10 rounded-xl flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          <HowItWorksContent
+            pathId={storePath}
+            onPathChange={setStorePath}
+            subAgentHref={slug ? `/store/${slug}/sub-agent` : undefined}
+          />
+        </div>
+      </div>
     );
   }
 
-  const currentFlow = flow ? FLOWS[flow] : null;
-  const currentStep = currentFlow?.steps[step];
-  const StepComponent = currentStep?.component;
-  const totalSteps = currentFlow?.steps.length ?? 0;
-  const isLastStep = step === totalSteps - 1;
-
-  return (
-    <>
-      {/* CSS animations injected once */}
-      <style>{`
-        @keyframes tutorial-bob {
-          0%, 100% { transform: translateY(0); }
-          50% { transform: translateY(-4px); }
-        }
-        @keyframes tutorial-fade-in {
-          from { opacity: 0; transform: translateY(8px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes tutorial-pop {
-          0%   { transform: scale(0); opacity: 0; }
-          70%  { transform: scale(1.15); }
-          100% { transform: scale(1); opacity: 1; }
-        }
-        @keyframes tutorial-ring {
-          0%   { transform: scale(1); opacity: 0.6; }
-          100% { transform: scale(1.6); opacity: 0; }
-        }
-        @keyframes tutorial-slide-in-right {
-          from { transform: translateX(40px); opacity: 0; }
-          to   { transform: translateX(0);   opacity: 1; }
-        }
-        @keyframes tutorial-slide-in-left {
-          from { transform: translateX(-40px); opacity: 0; }
-          to   { transform: translateX(0);    opacity: 1; }
-        }
-        @keyframes tutorial-slide-up {
-          from { transform: translateY(24px); opacity: 0; }
-          to   { transform: translateY(0);    opacity: 1; }
-        }
-        @keyframes tutorial-pulse-btn {
-          0%, 100% { box-shadow: 0 0 0 0 rgba(245,158,11,0); }
-          50%       { box-shadow: 0 0 0 8px rgba(245,158,11,0.15); }
-        }
-        @keyframes tutorial-cursor {
-          0%, 100% { opacity: 1; }
-          50%       { opacity: 0; }
-        }
-        @keyframes tutorial-type {
-          from { width: 0; }
-          to   { width: 100%; }
-        }
-        .tutorial-enter-right { animation: tutorial-slide-in-right 0.3s ease-out both; }
-        .tutorial-enter-left  { animation: tutorial-slide-in-left  0.3s ease-out both; }
-        .tutorial-enter-up    { animation: tutorial-slide-up        0.35s ease-out both; }
-      `}</style>
-
-      {/* Backdrop */}
+  if (welcomeOpen) {
+    return (
       <div
-        className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-0 sm:p-4 pt-16 sm:pt-0 bg-black/70 backdrop-blur-md"
-        onClick={(e) => { if (e.target === e.currentTarget) dismiss(); }}
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-[2px]"
+        onClick={(e) => { if (e.target === e.currentTarget) closeWelcome(); }}
       >
         <div
-          className="relative w-full sm:max-w-sm rounded-b-3xl sm:rounded-2xl overflow-hidden tutorial-enter-up bg-gradient-to-b from-[#111124] to-[#0d0d18] border border-white/10"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Welcome to SwiftData"
+          className="relative w-full max-w-sm rounded-3xl border border-border bg-card p-4 shadow-xl"
         >
-          {/* Header */}
-          <div className="flex items-center justify-between px-5 pt-5 pb-3">
-            <div className="flex items-center gap-2.5">
-              {flow && (
-                <button onClick={() => { setFlow(null); setStep(0); setViewMode("steps"); }} title="Go back" className="text-white/40 hover:text-white/70 transition-colors p-1 -ml-1">
-                  <ChevronLeft className="w-4 h-4" />
-                </button>
-              )}
-              <div>
-                <h2 className="text-white font-black text-base leading-tight">
-                  {flow ? currentFlow!.title : "Welcome to SwiftData 👋"}
-                </h2>
-                {!flow && <p className="text-white/40 text-xs mt-0.5">What would you like to do?</p>}
-              </div>
+          <button
+            type="button"
+            onClick={closeWelcome}
+            aria-label="Close"
+            className="absolute right-2.5 top-2.5 h-10 w-10 rounded-xl flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
+          <div className="flex items-center gap-3 pr-10">
+            <img src="/assets/ama_avatar.webp" alt="" width={48} height={48} className="h-12 w-12 shrink-0 rounded-full border-2 border-primary/60 bg-white object-cover object-top" />
+            <div className="min-w-0">
+              <h2 className="text-base font-black text-foreground">Akwaaba to SwiftData!</h2>
+              <p className="text-xs text-muted-foreground">What would you like to do?</p>
             </div>
-            <button onClick={dismiss} title="Close" className="text-white/30 hover:text-white/60 transition-colors p-1.5 rounded-lg hover:bg-white/8">
-              <X className="w-4 h-4" />
-            </button>
           </div>
-
-          {/* Path selection */}
-          {!flow && (
-            <div className="px-5 pb-5 space-y-2.5 tutorial-enter-up">
-              <PathCard
-                icon={Wifi} accent="#f59e0b"
-                title="Buy a data bundle"
-                description="Purchase MTN, Telecel or AirtelTigo data — no account needed"
-                onClick={() => { setFlow("buy"); setStep(0); setViewMode("steps"); }}
-              />
-              <PathCard
-                icon={TrendingUp} accent="#22c55e"
-                title="Become a data agent"
-                description="Get wholesale prices, your own store and earn on every sale"
-                onClick={() => { setFlow("agent"); setStep(0); setViewMode("steps"); }}
-              />
-              <PathCard
-                icon={Users} accent="#a855f7"
-                title="Become a sub-agent"
-                description="Join under an existing agent and start your own reselling business"
-                onClick={() => { setFlow("subagent"); setStep(0); setViewMode("steps"); }}
-              />
-              <div className="pt-2 border-t border-white/8 flex items-center justify-between">
-                <p className="text-white/25 text-xs">SwiftData Ghana — #1 Data Bundles</p>
-                <button onClick={dismiss} className="text-white/30 hover:text-white/50 text-xs transition-colors">Skip tutorial</button>
-              </div>
-            </div>
-          )}
-
-          {/* Step content */}
-          {flow && currentStep && StepComponent && (
-            <div className="px-5 pb-5">
-              {/* Tabbed View Toggle */}
-              <div className="flex gap-1 p-1 rounded-xl bg-white/5 border border-white/10 mb-4">
+          <div className="mt-3 space-y-1.5">
+            {HOW_IT_WORKS_PATHS.map(({ id, accent }) => {
+              const Icon = PATH_ICONS[id];
+              return (
                 <button
-                  onClick={() => setViewMode("steps")}
-                  className={`flex-1 py-1.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
-                    viewMode === "steps"
-                      ? "bg-white/10 text-white shadow-sm"
-                      : "text-white/40 hover:text-white/60"
-                  }`}
+                  key={id}
+                  type="button"
+                  onClick={() => { closeWelcome(); open(id); }}
+                  className="w-full min-h-12 rounded-2xl border border-border/70 px-3 py-2 flex items-center gap-3 text-left hover:bg-muted/60 transition-colors"
                 >
-                  <BookOpen className="w-3.5 h-3.5" /> Interactive Guide
+                  <span className="h-8 w-8 shrink-0 rounded-xl flex items-center justify-center" style={{ background: `${accent}26`, color: accent }}>
+                    <Icon className="w-4 h-4" />
+                  </span>
+                  <span className="flex-1 text-sm font-semibold text-foreground">{WELCOME_LABELS[id]}</span>
+                  <ChevronRight className="w-4 h-4 text-muted-foreground" />
                 </button>
-                <button
-                  onClick={() => setViewMode("video")}
-                  className={`flex-1 py-1.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
-                    viewMode === "video"
-                      ? "bg-white/10 text-white shadow-sm"
-                      : "text-white/40 hover:text-white/60"
-                  }`}
-                >
-                  <Play className="w-3.5 h-3.5 text-red-400" /> Watch Video
-                </button>
-              </div>
-
-              {viewMode === "video" ? (
-                <div className="py-4 min-h-[220px] flex items-center justify-center">
-                  <TutorialVideoPlayer 
-                    url={videoUrls[flow as keyof typeof videoUrls]} 
-                    accent={currentFlow!.accent} 
-                  />
-                </div>
-              ) : (
-                <>
-                  {/* Step progress dots */}
-                  <div className="flex items-center gap-1.5 mb-3">
-                    {currentFlow!.steps.map((_, i) => (
-                      <StepDot key={i} active={i === step} done={i < step} />
-                    ))}
-                    <span className="text-white/25 text-xs ml-auto">{step + 1} / {totalSteps}</span>
-                  </div>
-
-                  {/* Step header */}
-                  <div className={animDir === "forward" ? "tutorial-enter-right" : "tutorial-enter-left"} key={`header-${step}`}>
-                    <h3 className="text-white font-bold text-sm mb-0.5">{currentStep.title}</h3>
-                    <p className="text-white/45 text-xs leading-snug">{currentStep.subtitle}</p>
-                  </div>
-
-                  {/* Illustration */}
-                  <div
-                    key={`step-${step}`}
-                    className={`min-h-[220px] flex items-center justify-center ${animDir === "forward" ? "tutorial-enter-right" : "tutorial-enter-left"}`}
-                  >
-                    <div className="w-full">
-                      <StepComponent />
-                    </div>
-                  </div>
-                </>
-              )}
-
-              {/* Navigation */}
-              <div className="flex items-center gap-2 mt-1">
-                {step > 0 && (
-                  <button
-                    onClick={() => goStep("back")}
-                    title="Previous step"
-                    className="px-3 py-2.5 rounded-xl border border-white/12 text-white/50 hover:text-white/80 hover:border-white/25 transition-all text-sm font-medium"
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                  </button>
-                )}
-
-                {isLastStep ? (
-                  <Link
-                    to={currentFlow!.cta.to}
-                    onClick={dismiss}
-                    className="flex-1 py-2.5 rounded-xl font-black text-sm text-center flex items-center justify-center gap-2 transition-all hover:scale-[1.02] active:scale-[0.98]"
-                    style={{ background: currentFlow!.accent, color: flow === "buy" ? "#000" : "#fff" }}
-                  >
-                    {currentFlow!.cta.label} <ArrowRight className="w-4 h-4" />
-                  </Link>
-                ) : (
-                  <button
-                    onClick={() => goStep("forward")}
-                    title="Next step"
-                    className="flex-1 py-2.5 rounded-xl font-black text-sm flex items-center justify-center gap-2 transition-all hover:scale-[1.02] active:scale-[0.98]"
-                    style={{ background: currentFlow!.accent, color: flow === "buy" ? "#000" : "#fff" }}
-                  >
-                    Next <ChevronRight className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
+              );
+            })}
+          </div>
+          <button
+            type="button"
+            onClick={closeWelcome}
+            className="mt-2 w-full min-h-10 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Skip for now
+          </button>
         </div>
       </div>
-    </>
+    );
+  }
+
+  if (onHowItWorksPage) return null;
+
+  return (
+    <button
+      type="button"
+      onClick={() => open()}
+      className="fixed bottom-24 right-4 z-40 w-10 h-10 rounded-full border border-border flex items-center justify-center text-muted-foreground hover:text-foreground transition-all hover:scale-110 shadow-lg bg-card/90 backdrop-blur-xl"
+      title="How it works"
+      aria-label="How it works"
+    >
+      <span className="text-base font-black">?</span>
+    </button>
   );
 }

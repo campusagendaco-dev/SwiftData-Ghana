@@ -30,8 +30,6 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { motion, AnimatePresence } from "framer-motion";
 import { NotificationCenter } from "./NotificationCenter";
 
-const openTutorial = () => window.dispatchEvent(new CustomEvent("open-tutorial"));
-
 const NavIcon = ({ icon: Icon, className = "" }: { icon: typeof Home; className?: string }) => (
   <Icon className={`w-4 h-4 shrink-0 ${className}`} />
 );
@@ -92,6 +90,7 @@ export const getMoreNavLinks = (showAgent: boolean): NavLinkConfig[] => [
   { to: "/submit-numbers", label: "Verify & Submit", icon: ShieldCheck },
   { to: "/blog", label: "Guides", icon: BookOpen },
   ...(showAgent ? [{ to: "/agent-program", label: "Become an Agent", icon: TrendingUp }] : []),
+  { to: "/how-it-works", label: "How It Works", icon: HelpCircle },
 ];
 
 const navItemClass = (compact: boolean) =>
@@ -527,9 +526,6 @@ const Navbar = () => {
                         </Link>
                       </DropdownMenuItem>
                     ))}
-                    <DropdownMenuItem className={menuItemClass} onSelect={openTutorial}>
-                      <HelpCircle className="w-4 h-4 text-muted-foreground" /> How It Works
-                    </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
@@ -762,10 +758,11 @@ const Navbar = () => {
                       <DrawerRow key={to} to={to} label={label} icon={icon} active={isActive(to)} />
                     ))}
                     <DrawerRow
+                      to="/how-it-works"
                       label="How it works"
                       icon={HelpCircle}
-                      onClick={() => { setMenuOpen(false); openTutorial(); }}
-                      trailing={<span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-400/15 px-1.5 py-0.5 rounded-md">Tutorial</span>}
+                      active={isActive("/how-it-works")}
+                      trailing={<span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-400/15 px-1.5 py-0.5 rounded-md">Videos</span>}
                     />
                   </DrawerGroup>
 

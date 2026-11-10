@@ -146,6 +146,7 @@ const DashboardNotifications = lazy(() => import("./pages/DashboardNotifications
 const Terms = lazy(() => import("./pages/Terms"));
 const Privacy = lazy(() => import("./pages/Privacy"));
 const BlogList = lazy(() => import("./pages/BlogList"));
+const HowItWorks = lazy(() => import("./pages/HowItWorks"));
 const BlogPost = lazy(() => import("./pages/BlogPost"));
 const SubmitBeneficiaryNumbers = lazy(() => import("./pages/SubmitBeneficiaryNumbers"));
 const VerifyBeneficiaryNumbers = lazy(() => import("./pages/VerifyBeneficiaryNumbers"));
@@ -434,6 +435,7 @@ const AppContent = () => {
         <Route path="/developers" element={<DeveloperPortal />} />
         <Route path="/terms" element={<Terms />} />
         <Route path="/privacy" element={<Privacy />} />
+        <Route path="/how-it-works" element={<HowItWorks />} />
         <Route path="/blog" element={<BlogList />} />
         <Route path="/blog/:slug" element={<BlogPost />} />
 
@@ -599,7 +601,7 @@ const AppContent = () => {
         </ChunkErrorBoundary>
       {!isDashboard && !isAgentStore && !isAdmin && !isChallengeArenaPage && <Footer />}
         <Suspense fallback={null}>
-          {!isDashboard && !isAdmin && !isChallengeArenaPage && !isPaymentFlow && !location.pathname.includes("/my-orders") && !location.pathname.startsWith("/agent-program") && <TutorialModal />}
+          {!isDashboard && !isAdmin && !isChallengeArenaPage && !isPaymentFlow && !location.pathname.includes("/my-orders") && !location.pathname.startsWith("/agent-program") && <TutorialModal inStore={isAgentStore} />}
           <AudioUnlocker />
           {!isAdmin && <NotificationPopup />}
           {!isAdmin && <ChallengeLiveNotifier />}

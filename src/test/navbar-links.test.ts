@@ -22,6 +22,7 @@ describe("public navigation links", () => {
         "/order-status",
         "/blog",
         "/agent-program",
+        "/how-it-works",
       ]),
     );
   });
