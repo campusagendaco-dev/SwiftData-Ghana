@@ -150,7 +150,7 @@ describe("Complete Rule-Based Ludo Gameplay Engine (13-Section Specification)", 
   });
 
   it("9 & 10. Multiple tokens of same player form a Blockade that opponents cannot pass or land on", () => {
-    let game = initializeGame({ players: ["RED", "GREEN"] });
+    let game = initializeGame({ players: ["RED", "GREEN"], config: { blockadeRulesEnabled: true } });
     // GREEN puts 2 tokens on trackPosition 15 (forming a GREEN blockade)
     game.tokens.GREEN[0] = {
       ...game.tokens.GREEN[0],
