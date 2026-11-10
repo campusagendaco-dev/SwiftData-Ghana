@@ -14,6 +14,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { Badge } from "@/components/ui/badge";
 import { playSound, playSuccessSound } from "@/lib/sound";
 import { getFlagUrl } from "@/lib/utils";
+import { AdminLocationAlertsCard } from "@/components/AdminLocationAlertsCard";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface SystemSettings {
@@ -1401,6 +1402,8 @@ const AdminSettings = () => {
               </div>
             </CardContent>
           </Card>
+
+          <AdminLocationAlertsCard />
 
           <Card>
             <CardHeader>

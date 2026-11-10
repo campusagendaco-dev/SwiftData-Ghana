@@ -283,6 +283,7 @@ export async function getSmsConfig(supabaseAdmin: any, agentId?: string): Promis
       withdrawal_completed: tMap.withdrawal_completed || settings?.withdrawal_completed_sms_message || "Your withdrawal of GHS {amount} has been completed.",
       order_failed: tMap.order_failed || settings?.order_failed_sms_message || "Order for {package} to {phone} failed.{reason} GHS {amount} has been refunded to your wallet. No panic, your refund is completed.",
       manual_credit: tMap.manual_credit || settings?.manual_credit_sms_message || "Your account has been manually credited with GHS {amount}.",
+      location_welcome: tMap.location_welcome || "",
     }
   };
 }

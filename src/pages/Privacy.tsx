@@ -35,6 +35,7 @@ const Privacy = () => {
               <li><strong>Personal Info:</strong> Full name, email address, and phone number when registering.</li>
               <li><strong>Transaction Info:</strong> Recipient phone numbers, network type, payment details (processed securely via Paystack tokenization; we do not store raw card details or momo PINs).</li>
               <li><strong>Device Info:</strong> IP address, browser type, and unique device IDs to prevent fraudulent purchases and blocks.</li>
+              <li><strong>Approximate Location:</strong> If you agree to location alerts, the town you are in, worked out from your IP address or device location. We store town names only, never exact coordinates.</li>
             </ul>
           </section>
 
@@ -48,6 +49,7 @@ const Privacy = () => {
               <li>Send transaction confirmation emails, support updates, and verification links.</li>
               <li>Detect, prevent, and mitigate fraud or security breaches.</li>
               <li>Improve site usability, design, and system performance.</li>
+              <li>To send you a text when you arrive in a new town, only if you have agreed. You can turn this off anytime in Account Settings.</li>
             </ul>
           </section>
 
