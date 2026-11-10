@@ -39,6 +39,33 @@ describe("verifyAdmin", () => {
   });
 });
 
+describe("isSecondFactorMissing", () => {
+  const withFactor = { factors: [{ status: "verified" }] };
+
+  const missing = async (user: object, aal: string) => {
+    const { isSecondFactorMissing } = await import("../../supabase/functions/_shared/auth");
+    return isSecondFactorMissing(user, tokenWith(aal));
+  };
+
+  it("blocks a user with 2FA who only entered a password", async () => {
+    expect(await missing(withFactor, "aal1")).toBe(true);
+  });
+
+  it("allows a user who completed 2FA", async () => {
+    expect(await missing(withFactor, "aal2")).toBe(false);
+  });
+
+  it("allows users who have not turned 2FA on", async () => {
+    expect(await missing({}, "aal1")).toBe(false);
+    expect(await missing({ factors: [{ status: "unverified" }] }, "aal1")).toBe(false);
+  });
+
+  it("blocks when the token cannot be read", async () => {
+    const { isSecondFactorMissing } = await import("../../supabase/functions/_shared/auth");
+    expect(isSecondFactorMissing(withFactor, "not-a-token")).toBe(true);
+  });
+});
+
 describe("computeMfaStatus", () => {
   const verified = [{ status: "verified" }];
 
