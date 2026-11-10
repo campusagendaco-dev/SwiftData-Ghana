@@ -2,8 +2,8 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   Menu, X, LogOut, LayoutDashboard, ShieldCheck,
   TrendingUp, Home, HelpCircle, ChevronRight,
-  Users, Settings, Wallet, ClipboardList, RotateCcw, Store, Sun, Moon, Zap, Palette, BookOpen,
-  Smartphone, PackageSearch, Check, ArrowRight, LogIn, Gamepad2,
+  Users, Settings, Wallet, ClipboardList, RotateCcw, Store, Sun, Moon, Zap, BookOpen,
+  Smartphone, PackageSearch, Check, ArrowRight, LogIn, Gamepad2, ChevronDown,
 } from "lucide-react";
 import { THEMES } from "@/lib/themes";
 import { useState, useEffect, useRef, type ReactNode } from "react";
@@ -18,6 +18,15 @@ import {
   type CarouselApi,
 } from "@/components/ui/carousel";
 import Autoplay from "embla-carousel-autoplay";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { motion, AnimatePresence } from "framer-motion";
 import { NotificationCenter } from "./NotificationCenter";
 
@@ -69,19 +78,199 @@ const DrawerRow = ({
   );
 };
 
+export type NavLinkConfig = { to: string; label: string; icon: typeof Home };
+
+export const PRIMARY_NAV_LINKS: NavLinkConfig[] = [
+  { to: "/", label: "Home", icon: Home },
+  { to: "/buy-data", label: "Buy Data", icon: Zap },
+  { to: "/buy-airtime", label: "Airtime", icon: Smartphone },
+  { to: "/order-status", label: "Track", icon: PackageSearch },
+  { to: "/challenges", label: "Games", icon: Gamepad2 },
+];
+
+export const getMoreNavLinks = (showAgent: boolean): NavLinkConfig[] => [
+  { to: "/submit-numbers", label: "Verify & Submit", icon: ShieldCheck },
+  { to: "/blog", label: "Guides", icon: BookOpen },
+  ...(showAgent ? [{ to: "/agent-program", label: "Become an Agent", icon: TrendingUp }] : []),
+];
+
+const navItemClass = (compact: boolean) =>
+  `relative flex items-center gap-1.5 rounded-xl font-medium whitespace-nowrap transition-all duration-200 ${
+    compact ? "px-2.5 py-[5px] text-[13px]" : "px-3 py-[7px] text-sm"
+  }`;
+
+const menuItemClass = "rounded-xl h-10 px-2.5 gap-2.5 cursor-pointer";
+
+const ActiveNavIndicator = ({ isDark }: { isDark: boolean }) => (
+  <motion.div
+    layoutId="active-nav-indicator"
+    className="absolute inset-0 rounded-xl -z-10"
+    style={isDark ? {
+      background: "linear-gradient(135deg, rgba(251,191,36,0.20) 0%, rgba(251,191,36,0.06) 100%)",
+      boxShadow: "0 0 16px rgba(251,191,36,0.08), inset 0 1px 0 rgba(255,255,255,0.08)",
+      border: "1px solid rgba(251,191,36,0.25)",
+    } : {
+      background: "linear-gradient(135deg, rgba(251,191,36,0.15) 0%, rgba(251,191,36,0.04) 100%)",
+      border: "1px solid rgba(251,191,36,0.25)",
+    }}
+    transition={{ type: "spring", stiffness: 380, damping: 30 }}
+  />
+);
+
+const DesktopNavLink = ({
+  to, label, icon, active, compact, isDark, idleClass,
+}: NavLinkConfig & { active: boolean; compact: boolean; isDark: boolean; idleClass: string }) => (
+  <Link
+    to={to}
+    aria-current={active ? "page" : undefined}
+    className={`${navItemClass(compact)} ${active ? (isDark ? "text-white" : "text-gray-900") : idleClass}`}
+  >
+    {active && <ActiveNavIndicator isDark={isDark} />}
+    <NavIcon icon={icon} className={active ? "text-amber-400" : ""} />
+    <span className="relative z-10">{label}</span>
+  </Link>
+);
+
+const GoldNavLink = ({ to, label, icon: Icon, compact }: NavLinkConfig & { compact: boolean }) => (
+  <Link to={to}>
+    <motion.div
+      className={`flex items-center gap-1.5 text-black font-black whitespace-nowrap cursor-pointer rounded-xl ${
+        compact ? "px-3 py-1.5 text-xs" : "px-4 py-2 text-sm"
+      }`}
+      whileHover={{ scale: 1.05, boxShadow: "0 0 30px rgba(251,191,36,0.55)" }}
+      whileTap={{ scale: 0.96 }}
+      style={{
+        background: "linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)",
+        boxShadow: "0 0 22px rgba(251,191,36,0.45), 0 2px 8px rgba(245,158,11,0.30), inset 0 1px 0 rgba(255,255,255,0.35)",
+      }}
+    >
+      <Icon className="w-3.5 h-3.5" /> {label}
+    </motion.div>
+  </Link>
+);
+
+const AppearanceControls = () => {
+  const { isDark, toggleDark, theme, setThemeId } = useAppTheme();
+  return (
+    <>
+      <div className="grid grid-cols-2 gap-1 rounded-xl bg-muted p-1" role="radiogroup" aria-label="Mode">
+        {[
+          { dark: false, label: "Light", icon: Sun },
+          { dark: true, label: "Dark", icon: Moon },
+        ].map(({ dark, label, icon: Icon }) => (
+          <button
+            key={label}
+            type="button"
+            role="radio"
+            aria-checked={isDark === dark}
+            onClick={() => { if (isDark !== dark) toggleDark(); }}
+            className={`h-9 rounded-lg text-[13px] font-semibold inline-flex items-center justify-center gap-1.5 transition ${
+              isDark === dark ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Icon className="w-4 h-4" /> {label}
+          </button>
+        ))}
+      </div>
+      <div>
+        <div className="flex items-center justify-between mb-2.5">
+          <span className="text-xs font-medium text-muted-foreground">Colour</span>
+          <span className="text-xs font-semibold text-foreground truncate max-w-[65%]">{theme.label}</span>
+        </div>
+        <div className="grid grid-cols-7 gap-2" role="radiogroup" aria-label="Colour theme">
+          {THEMES.map((t) => {
+            const selected = theme.id === t.id;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                aria-label={t.label}
+                title={t.label}
+                onClick={() => setThemeId(t.id)}
+                className={`relative aspect-square w-full rounded-full transition active:scale-90 ring-offset-2 ring-offset-card shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18)] ${
+                  selected ? "ring-2 ring-foreground/70" : "hover:scale-105"
+                }`}
+                style={{ background: t.dot }}
+              >
+                {selected && <Check className="absolute inset-0 m-auto w-3.5 h-3.5 text-white drop-shadow" strokeWidth={3} />}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </>
+  );
+};
+
+const DesktopAccountMenu = ({ onSignOut, agentApproved }: { onSignOut: () => void; agentApproved: boolean }) => {
+  const { profile, isAdmin, openAccountSwitcher, savedAccounts } = useAuth();
+  const links: NavLinkConfig[] = [
+    { to: "/dashboard/wallet", label: "Wallet", icon: Wallet },
+    { to: "/dashboard/transactions", label: "Transactions", icon: ClipboardList },
+    ...(agentApproved ? [{ to: "/dashboard/my-store", label: "My store", icon: Store }] : []),
+    { to: "/dashboard/account-settings", label: "Settings", icon: Settings },
+  ];
+  return (
+    <DropdownMenu modal={false}>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label="Account menu"
+          className="flex items-center gap-1 h-9 pl-0.5 pr-1 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+        >
+          <span className="h-8 w-8 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 text-black flex items-center justify-center text-xs font-black">
+            {initialsOf(profile?.full_name)}
+          </span>
+          <ChevronDown className="w-3.5 h-3.5" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" sideOffset={12} className="w-60 rounded-2xl p-1.5">
+        <DropdownMenuLabel className="px-2.5 py-2 font-normal">
+          <p className="text-sm font-semibold text-foreground truncate">{profile?.full_name || "My account"}</p>
+          <p className="text-xs text-muted-foreground truncate">
+            {isAdmin ? "Administrator" : profile?.store_name || (agentApproved ? "Agent" : "Customer")}
+          </p>
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {links.map(({ to, label, icon: Icon }) => (
+          <DropdownMenuItem key={to} asChild className={menuItemClass}>
+            <Link to={to}>
+              <Icon className="w-4 h-4 text-muted-foreground" /> {label}
+            </Link>
+          </DropdownMenuItem>
+        ))}
+        <DropdownMenuItem className={menuItemClass} onSelect={openAccountSwitcher}>
+          <Users className="w-4 h-4 text-muted-foreground" />
+          <span className="flex-1">Switch account</span>
+          {savedAccounts.length > 0 && (
+            <span className="text-[11px] text-muted-foreground tabular-nums">{savedAccounts.length} saved</span>
+          )}
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          className={`${menuItemClass} text-rose-600 dark:text-rose-400 focus:text-rose-600 dark:focus:text-rose-400`}
+          onSelect={onSignOut}
+        >
+          <LogOut className="w-4 h-4" /> Sign out
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+};
+
+
 const Navbar = () => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
-  const [hovered, setHovered] = useState(false);
   const [visible, setVisible] = useState(true);
   const lastScrollY = useRef(0);
   const location = useLocation();
   const navigate = useNavigate();
   const { user, profile, isAdmin, signOut, openAccountSwitcher, savedAccounts } = useAuth();
-   const { isDark, toggleDark, theme, setThemeId } = useAppTheme();
+   const { isDark } = useAppTheme();
    const drawerRef = useRef<HTMLDivElement>(null);
-   const themePickerRef = useRef<HTMLDivElement>(null);
-   const [themePickerOpen, setThemePickerOpen] = useState(false);
    const [menuBanners, setMenuBanners] = useState<any[]>([]);
    const [bannersLoading, setBannersLoading] = useState(false);
    const [api, setApi] = useState<CarouselApi>();
@@ -112,7 +301,7 @@ const Navbar = () => {
      });
    }, [api]);
  
-   useEffect(() => { setMenuOpen(false); setThemePickerOpen(false); }, [location.pathname]);
+   useEffect(() => { setMenuOpen(false); }, [location.pathname]);
 
    useEffect(() => {
      if (!menuOpen) return;
@@ -121,23 +310,13 @@ const Navbar = () => {
      return () => window.removeEventListener("keydown", onKey);
    }, [menuOpen]);
 
-   useEffect(() => {
-     const handler = (e: MouseEvent) => {
-       if (themePickerRef.current && !themePickerRef.current.contains(e.target as Node)) {
-         setThemePickerOpen(false);
-       }
-     };
-     document.addEventListener("mousedown", handler);
-     return () => document.removeEventListener("mousedown", handler);
-   }, []);
-
   useEffect(() => {
     const onScroll = () => {
       const currentScrollY = window.scrollY;
       setScrolled(currentScrollY > 12);
       
       // Auto-hide watcher on mobile: hide when scroll down, show when scroll up
-      if (window.innerWidth < 768) {
+      if (window.innerWidth < 1024) {
         if (currentScrollY > lastScrollY.current && currentScrollY > 80) {
           setVisible(false);
         } else {
@@ -177,16 +356,8 @@ const Navbar = () => {
 
   const agentApproved = profile?.agent_approved || profile?.sub_agent_approved;
 
-  const mainLinks = [
-    { to: "/", label: "Home", icon: Home },
-    { to: "/buy-data", label: "Buy Data", icon: Zap },
-    { to: "/buy-airtime", label: "Buy Airtime", icon: Wallet },
-    { to: "/challenges", label: "Game Challenges", icon: Zap },
-    { to: "/submit-numbers", label: "Verify & Submit", icon: ShieldCheck },
-    { to: "/order-status", label: "Track Order", icon: LayoutDashboard },
-    { to: "/blog", label: "Guides", icon: BookOpen },
-    ...(!user || !agentApproved ? [{ to: "/agent-program", label: "Agent", icon: TrendingUp }] : []),
-  ];
+  const moreLinks = getMoreNavLinks(!user || !agentApproved);
+  const moreActive = moreLinks.some((link) => isActive(link.to));
 
   /* ── Mobile drawer content ── */
   const quickActions = [
@@ -244,8 +415,6 @@ const Navbar = () => {
         color: "#111827",
       };
 
-  const dividerBg = isDark ? "bg-white/10" : "bg-black/[0.08]";
-
   return (
     <>
       {/* ─────────── Floating Glass Pill ─────────── */}
@@ -255,14 +424,8 @@ const Navbar = () => {
         animate={{ y: visible ? 0 : -85, opacity: 1 }}
         transition={{ type: "spring", stiffness: 260, damping: 20, delay: 0.2 }}
       >
-        <motion.div
-          className="mx-auto rounded-2xl pointer-events-auto w-full"
-          onMouseEnter={() => setHovered(true)}
-          onMouseLeave={() => setHovered(false)}
-          animate={{
-            maxWidth: scrolled ? (hovered ? "800px" : "740px") : (hovered ? "1050px" : "1024px"),
-          }}
-          transition={{ type: "spring", stiffness: 350, damping: 30 }}
+        <div
+          className="mx-auto rounded-2xl pointer-events-auto w-full max-w-6xl"
           style={{
             padding: "1px",
             background: pillBorder,
@@ -329,265 +492,110 @@ const Navbar = () => {
                     <ShieldCheck className="w-2.5 h-2.5 text-white" />
                   </motion.div>
                 </motion.div>
+                <span className="text-[15px] font-black tracking-tight whitespace-nowrap text-foreground">SwiftData</span>
               </Link>
 
-              {/* ── Desktop nav links ── */}
-              <motion.div 
-                className="hidden md:flex items-center"
-                animate={{
-                  gap: scrolled ? "2px" : "4px"
-                }}
-                transition={{ type: "spring", stiffness: 300, damping: 28 }}
-              >
-                {mainLinks.map(({ to, label, icon }) => (
-                  <Link
-                    key={to} to={to}
-                    className={`relative flex items-center gap-1.5 rounded-xl font-medium transition-all duration-200 ${
-                      scrolled ? "px-2 py-[5px] text-xs" : "px-3 py-[7px] text-sm"
-                    } ${
-                      isActive(to) ? (isDark ? "text-white" : "text-gray-900") : linkIdle
-                    }`}
-                  >
-                    {isActive(to) && (
-                      <motion.div
-                        layoutId="active-nav-indicator"
-                        className="absolute inset-0 rounded-xl -z-10"
-                        style={isDark ? {
-                          background: "linear-gradient(135deg, rgba(251,191,36,0.20) 0%, rgba(251,191,36,0.06) 100%)",
-                          boxShadow: "0 0 16px rgba(251,191,36,0.08), inset 0 1px 0 rgba(255,255,255,0.08)",
-                          border: "1px solid rgba(251,191,36,0.25)",
-                        } : {
-                          background: "linear-gradient(135deg, rgba(251,191,36,0.15) 0%, rgba(251,191,36,0.04) 100%)",
-                          border: "1px solid rgba(251,191,36,0.25)",
-                        }}
-                        transition={{ type: "spring", stiffness: 380, damping: 30 }}
-                      />
-                    )}
-                    <NavIcon icon={icon} className={isActive(to) ? "text-amber-400" : ""} />
-                    <span className="relative z-10">{label}</span>
-                  </Link>
+              {/* ── Desktop links ── */}
+              <div className="hidden lg:flex items-center gap-0.5 min-w-0">
+                {PRIMARY_NAV_LINKS.map((link) => (
+                  <DesktopNavLink
+                    key={link.to}
+                    {...link}
+                    active={isActive(link.to)}
+                    compact={scrolled}
+                    isDark={isDark}
+                    idleClass={linkIdle}
+                  />
                 ))}
 
-                <button
-                  onClick={openTutorial}
-                  className={`flex items-center gap-1.5 rounded-xl font-medium transition-all duration-150 ${
-                    scrolled ? "px-2 py-[5px] text-xs" : "px-3 py-[7px] text-sm"
-                  } ${linkIdle}`}
-                >
-                  <NavIcon icon={HelpCircle} /> How It Works
-                </button>
+                <DropdownMenu modal={false}>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      className={`${navItemClass(scrolled)} ${moreActive ? (isDark ? "text-white" : "text-gray-900") : linkIdle}`}
+                    >
+                      {moreActive && <ActiveNavIndicator isDark={isDark} />}
+                      <span className="relative z-10">More</span>
+                      <ChevronDown className="w-3.5 h-3.5 relative z-10" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="center" sideOffset={12} className="w-56 rounded-2xl p-1.5">
+                    {moreLinks.map(({ to, label, icon: Icon }) => (
+                      <DropdownMenuItem key={to} asChild className={`${menuItemClass} ${isActive(to) ? "bg-primary/10" : ""}`}>
+                        <Link to={to}>
+                          <Icon className={`w-4 h-4 ${isActive(to) ? "text-primary" : "text-muted-foreground"}`} /> {label}
+                        </Link>
+                      </DropdownMenuItem>
+                    ))}
+                    <DropdownMenuItem className={menuItemClass} onSelect={openTutorial}>
+                      <HelpCircle className="w-4 h-4 text-muted-foreground" /> How It Works
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
 
-                <div className={`w-px h-4 ${dividerBg} mx-1`} />
-
+              {/* ── Desktop actions ── */}
+              <div className="hidden lg:flex items-center gap-1.5 shrink-0">
                 <NotificationCenter isDark={isDark} />
 
-                <motion.button
-                  onClick={toggleDark}
-                  whileHover={{ scale: 1.08, rotate: 12 }}
-                  whileTap={{ scale: 0.92 }}
-                  className={`w-9 h-9 min-w-[36px] min-h-[36px] rounded-xl flex items-center justify-center transition-all duration-200 ${linkIdle}`}
-                  title={isDark ? "Switch to Light Mode" : "Switch to Dark Mode"}
-                  aria-label="Toggle dark mode"
-                >
-                  <AnimatePresence mode="wait" initial={false}>
-                    <motion.div
-                      key={isDark ? "dark" : "light"}
-                      initial={{ y: 10, opacity: 0, rotate: -45 }}
-                      animate={{ y: 0, opacity: 1, rotate: 0 }}
-                      exit={{ y: -10, opacity: 0, rotate: 45 }}
-                      transition={{ duration: 0.15 }}
-                    >
-                      {isDark ? <Sun className="w-3.5 h-3.5 text-amber-400" /> : <Moon className="w-3.5 h-3.5" />}
-                    </motion.div>
-                  </AnimatePresence>
-                </motion.button>
-
-                {/* Theme colour picker */}
-                <div ref={themePickerRef} className="relative">
-                  <motion.button
-                    type="button"
-                    onClick={() => setThemePickerOpen(v => !v)}
-                    whileHover={{ scale: 1.08 }}
-                    whileTap={{ scale: 0.92 }}
-                    className={`w-9 h-9 min-w-[36px] min-h-[36px] rounded-xl flex items-center justify-center transition-all duration-200 ${linkIdle}`}
-                    title="Change Theme"
-                    aria-label="Change theme colors"
-                  >
-                    <Palette className="w-3.5 h-3.5" style={{ color: theme.dot }} />
-                  </motion.button>
-
-                  <AnimatePresence>
-                    {themePickerOpen && (
-                      <motion.div
-                        initial={{ opacity: 0, scale: 0.92, y: -6 }}
-                        animate={{ opacity: 1, scale: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.92, y: -6 }}
-                        transition={{ type: "spring", stiffness: 420, damping: 28 }}
-                        className="absolute top-full right-0 mt-2 w-52 rounded-2xl p-3 z-[60]"
-                        style={{
-                          background: isDark ? "rgba(9,7,28,0.97)" : "rgba(255,255,255,0.98)",
-                          backdropFilter: "blur(24px)",
-                          border: isDark ? "1px solid rgba(255,255,255,0.09)" : "1px solid rgba(0,0,0,0.08)",
-                          boxShadow: isDark ? "0 20px 60px rgba(0,0,0,0.65)" : "0 12px 40px rgba(0,0,0,0.14)",
-                        }}
-                      >
-                        <p className={`text-[10px] font-black uppercase tracking-widest mb-2.5 px-1 ${isDark ? "text-white/30" : "text-gray-400"}`}>
-                          Choose Theme
-                        </p>
-                        <div className="grid grid-cols-3 gap-1.5">
-                          {THEMES.map((t) => (
-                            <button
-                              type="button"
-                              key={t.id}
-                              onClick={() => { setThemeId(t.id); setThemePickerOpen(false); }}
-                              className={`flex flex-col items-center gap-1.5 rounded-xl p-2 transition-all ${
-                                theme.id === t.id
-                                  ? isDark ? "bg-white/15 ring-1 ring-white/30" : "bg-gray-100 ring-1 ring-gray-300"
-                                  : isDark ? "hover:bg-white/10" : "hover:bg-gray-100"
-                              }`}
-                            >
-                              <span className="w-6 h-6 rounded-full border border-white/20 shrink-0 block" style={{ background: t.dot }} />
-                              <span className={`text-[9px] font-bold leading-none ${isDark ? "text-white/70" : "text-gray-600"}`}>{t.label}</span>
-                            </button>
-                          ))}
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-
-                {user && (
-                  <Link
-                    to={isAdmin ? "/admin" : "/dashboard"}
-                    className={`relative flex items-center gap-1.5 rounded-xl font-medium transition-all duration-200 ${
-                      scrolled ? "px-2 py-[5px] text-xs" : "px-3 py-[7px] text-sm"
-                    } ${
-                      isActive("/dashboard") || isActive("/admin") ? (isDark ? "text-white" : "text-gray-900") : linkIdle
-                    }`}
-                  >
-                    {(isActive("/dashboard") || isActive("/admin")) && (
-                      <motion.div
-                        layoutId="active-nav-indicator"
-                        className="absolute inset-0 rounded-xl -z-10"
-                        style={isDark ? {
-                          background: "linear-gradient(135deg, rgba(251,191,36,0.20) 0%, rgba(251,191,36,0.06) 100%)",
-                          boxShadow: "0 0 16px rgba(251,191,36,0.08), inset 0 1px 0 rgba(255,255,255,0.08)",
-                          border: "1px solid rgba(251,191,36,0.25)",
-                        } : {
-                          background: "linear-gradient(135deg, rgba(251,191,36,0.15) 0%, rgba(251,191,36,0.04) 100%)",
-                          border: "1px solid rgba(251,191,36,0.25)",
-                        }}
-                        transition={{ type: "spring", stiffness: 380, damping: 30 }}
-                      />
-                    )}
-                    <NavIcon
-                      icon={isAdmin ? ShieldCheck : LayoutDashboard}
-                      className={isActive("/dashboard") || isActive("/admin") ? "text-amber-400" : ""}
-                    />
-                    <span className="relative z-10">{isAdmin ? "Admin" : "Dashboard"}</span>
-                  </Link>
-                )}
-
-                {/* Account Switcher Button */}
-                {(user || savedAccounts.length > 0) && (
-                  <motion.button
-                    type="button"
-                    onClick={openAccountSwitcher}
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                    className={`relative flex items-center gap-1.5 rounded-xl font-medium transition-all duration-150 ${
-                      scrolled ? "px-2 py-[5px] text-xs" : "px-2.5 py-[7px] text-sm"
-                    } ${linkIdle}`}
-                    title="Switch Account"
-                  >
-                    <Users className="w-3.5 h-3.5 text-amber-400" />
-                    <span className="hidden lg:inline text-xs font-bold">Switch</span>
-                    {savedAccounts.length > 1 && (
-                      <span className="w-4 h-4 rounded-full bg-amber-400 text-black text-[9px] font-black flex items-center justify-center -ml-0.5">
-                        {savedAccounts.length}
-                      </span>
-                    )}
-                  </motion.button>
-                )}
-
-                {user ? (
-                  <button
-                    onClick={handleSignOut}
-                    className={`ml-0.5 flex items-center gap-1.5 rounded-xl font-medium transition-all duration-150 ${
-                      scrolled ? "px-2 py-[5px] text-xs" : "px-3 py-[7px] text-sm"
-                    } ${linkIdle}`}
-                  >
-                    <LogOut className="w-4 h-4" /> Sign Out
-                  </button>
-                ) : (
-                  <div className="flex items-center gap-1.5 ml-1">
-                    <Link to="/buy-data">
-                      <motion.div
-                        className={`flex items-center gap-1.5 text-black font-black cursor-pointer rounded-xl ${
-                          scrolled ? "px-3 py-1.5 text-xs" : "px-4 py-2 text-sm"
-                        }`}
-                        whileHover={{ scale: 1.05, boxShadow: "0 0 30px rgba(251,191,36,0.55)" }}
-                        whileTap={{ scale: 0.96 }}
-                        style={{
-                          background: "linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)",
-                          boxShadow: "0 0 22px rgba(251,191,36,0.45), 0 2px 8px rgba(245,158,11,0.30), inset 0 1px 0 rgba(255,255,255,0.35)",
-                        }}
-                      >
-                        <Zap className="w-3.5 h-3.5 fill-black" /> Buy Data
-                      </motion.div>
-                    </Link>
-                    <Link
-                      to="/login"
-                      className={`text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-colors ${linkIdle}`}
-                    >
-                      Sign In
-                    </Link>
-                  </div>
-                )}
-              </motion.div>
-
-              {/* ── Mobile right ── */}
-              <div className="md:hidden flex items-center gap-1.5">
-                <NotificationCenter isDark={isDark} />
-                {(user || savedAccounts.length > 0) && (
-                  <motion.button
-                    type="button"
-                    onClick={openAccountSwitcher}
-                    whileTap={{ scale: 0.9 }}
-                    className={`w-10 h-10 min-w-[40px] min-h-[40px] rounded-xl flex items-center justify-center transition-all duration-200 relative ${linkIdle}`}
-                    title="Switch Account"
-                    aria-label="Switch account"
-                  >
-                    <Users className="w-4 h-4 text-amber-400" />
-                    {savedAccounts.length > 1 && (
-                      <span className="absolute top-1 right-1 w-3.5 h-3.5 rounded-full bg-amber-400 text-black text-[8px] font-black flex items-center justify-center">
-                        {savedAccounts.length}
-                      </span>
-                    )}
-                  </motion.button>
-                )}
-                <motion.button
-                  onClick={toggleDark}
-                  whileTap={{ scale: 0.9, rotate: 15 }}
-                  className={`w-10 h-10 min-w-[40px] min-h-[40px] rounded-xl flex items-center justify-center transition-all duration-200 ${linkIdle}`}
-                  aria-label="Toggle dark mode"
-                >
-                  <AnimatePresence mode="wait" initial={false}>
-                    <motion.div
-                      key={isDark ? "d" : "l"}
-                      initial={{ opacity: 0, scale: 0.5 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0.5 }}
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      className={`w-9 h-9 min-w-[36px] min-h-[36px] rounded-xl flex items-center justify-center transition-all duration-200 ${linkIdle}`}
+                      title="Appearance"
+                      aria-label="Appearance"
                     >
                       {isDark ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}
-                    </motion.div>
-                  </AnimatePresence>
-                </motion.button>
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent align="end" sideOffset={12} className="w-72 rounded-2xl p-3 space-y-3">
+                    <AppearanceControls />
+                  </PopoverContent>
+                </Popover>
+
+                {user ? (
+                  <>
+                    <GoldNavLink
+                      to={isAdmin ? "/admin" : "/dashboard"}
+                      label={isAdmin ? "Admin" : "Dashboard"}
+                      icon={isAdmin ? ShieldCheck : LayoutDashboard}
+                      compact={scrolled}
+                    />
+                    <DesktopAccountMenu onSignOut={handleSignOut} agentApproved={!!agentApproved} />
+                  </>
+                ) : (
+                  <>
+                    {savedAccounts.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={openAccountSwitcher}
+                        className={`relative w-9 h-9 min-w-[36px] min-h-[36px] rounded-xl flex items-center justify-center transition-all duration-200 ${linkIdle}`}
+                        title="Switch Account"
+                        aria-label="Switch account"
+                      >
+                        <Users className="w-4 h-4 text-amber-400" />
+                      </button>
+                    )}
+                    <Link
+                      to="/login"
+                      className={`text-sm font-semibold whitespace-nowrap px-3 py-[7px] rounded-xl transition-colors ${linkIdle}`}
+                    >
+                      Sign in
+                    </Link>
+                    <GoldNavLink to="/buy-data" label="Buy Data" icon={Zap} compact={scrolled} />
+                  </>
+                )}
+              </div>
+
+              {/* ── Mobile right ── */}
+              <div className="lg:hidden flex items-center gap-1.5">
+                <NotificationCenter isDark={isDark} />
                 {!user && (
                   <Link to="/buy-data">
                     <motion.div
                       whileTap={{ scale: 0.95 }}
-                      className="flex items-center gap-1 text-black text-xs font-black px-3.5 py-2 rounded-xl cursor-pointer min-h-[38px] shadow-md shadow-amber-400/20"
+                      className="flex items-center gap-1 text-black text-xs font-black whitespace-nowrap px-3.5 py-2 rounded-xl cursor-pointer min-h-[38px] shadow-md shadow-amber-400/20"
                       style={{
                         background: "linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)",
                       }}
@@ -612,7 +620,7 @@ const Navbar = () => {
               </div>
             </motion.div>
           </nav>
-        </motion.div>
+        </div>
       </motion.div>
 
       {/* ─────────── Mobile menu drawer (portaled to body so it always scrolls on mobile) ─────────── */}
@@ -621,7 +629,7 @@ const Navbar = () => {
           {menuOpen && (
             <>
               <motion.div
-                className="md:hidden fixed inset-0 z-[9998] bg-black/45 dark:bg-black/65 backdrop-blur-[3px]"
+                className="lg:hidden fixed inset-0 z-[9998] bg-black/45 dark:bg-black/65 backdrop-blur-[3px]"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
@@ -634,7 +642,7 @@ const Navbar = () => {
                 role="dialog"
                 aria-modal="true"
                 aria-label="Menu"
-                className="md:hidden fixed top-0 right-0 bottom-0 z-[9999] w-[340px] max-w-[88vw] flex flex-col overflow-hidden bg-background/95 backdrop-blur-2xl border-l border-border/70 dark:border-white/[0.08] shadow-[-24px_0_80px_rgba(0,0,0,0.35)]"
+                className="lg:hidden fixed top-0 right-0 bottom-0 z-[9999] w-[340px] max-w-[88vw] flex flex-col overflow-hidden bg-background/95 backdrop-blur-2xl border-l border-border/70 dark:border-white/[0.08] shadow-[-24px_0_80px_rgba(0,0,0,0.35)]"
                 initial={{ x: "100%" }}
                 animate={{ x: 0 }}
                 exit={{ x: "100%" }}
@@ -795,53 +803,7 @@ const Navbar = () => {
                   <div>
                     <p className="px-1 mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Appearance</p>
                     <div className="rounded-2xl border border-border/70 dark:border-white/[0.08] bg-card/70 p-3 space-y-3">
-                      <div className="grid grid-cols-2 gap-1 rounded-xl bg-muted p-1" role="radiogroup" aria-label="Mode">
-                        {[
-                          { dark: false, label: "Light", icon: Sun },
-                          { dark: true, label: "Dark", icon: Moon },
-                        ].map(({ dark, label, icon: Icon }) => (
-                          <button
-                            key={label}
-                            type="button"
-                            role="radio"
-                            aria-checked={isDark === dark}
-                            onClick={() => { if (isDark !== dark) toggleDark(); }}
-                            className={`h-9 rounded-lg text-[13px] font-semibold inline-flex items-center justify-center gap-1.5 transition ${
-                              isDark === dark ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-                            }`}
-                          >
-                            <Icon className="w-4 h-4" /> {label}
-                          </button>
-                        ))}
-                      </div>
-                      <div>
-                        <div className="flex items-center justify-between mb-2.5">
-                          <span className="text-xs font-medium text-muted-foreground">Colour</span>
-                          <span className="text-xs font-semibold text-foreground truncate max-w-[65%]">{theme.label}</span>
-                        </div>
-                        <div className="grid grid-cols-7 gap-2" role="radiogroup" aria-label="Colour theme">
-                          {THEMES.map((t) => {
-                            const selected = theme.id === t.id;
-                            return (
-                              <button
-                                key={t.id}
-                                type="button"
-                                role="radio"
-                                aria-checked={selected}
-                                aria-label={t.label}
-                                title={t.label}
-                                onClick={() => setThemeId(t.id)}
-                                className={`relative aspect-square w-full rounded-full transition active:scale-90 ring-offset-2 ring-offset-card shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18)] ${
-                                  selected ? "ring-2 ring-foreground/70" : "hover:scale-105"
-                                }`}
-                                style={{ background: t.dot }}
-                              >
-                                {selected && <Check className="absolute inset-0 m-auto w-3.5 h-3.5 text-white drop-shadow" strokeWidth={3} />}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
+                      <AppearanceControls />
                     </div>
                   </div>
 
