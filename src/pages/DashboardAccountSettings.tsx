@@ -14,6 +14,7 @@ import { getSafeAvatarUrl } from "@/lib/avatar";
 import { useWebAuthn } from "@/hooks/useWebAuthn";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { toast } from "sonner";
+import { LocationAlertSettings } from "@/components/LocationAlertSettings";
 import MfaSetupWidget from "@/components/MfaSetupWidget";
 import { getFunctionErrorMessage } from "@/lib/function-errors";
 
@@ -750,6 +751,8 @@ const DashboardAccountSettings = () => {
               </p>
             </CardContent>
           </Card>
+
+          <LocationAlertSettings />
 
           {/* ── Saved Accounts & Switcher ── */}
           <Card className="border-none bg-card shadow-sm mt-8">
