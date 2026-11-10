@@ -172,105 +172,102 @@ const VerifyMfa = () => {
 
   if (authLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#09090b]">
-        <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
+      <div className="relative z-10 min-h-screen flex items-center justify-center">
+        <Loader2 className="w-8 h-8 text-primary animate-spin" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 py-12 bg-[#09090b]">
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-indigo-900/20 via-zinc-950 to-zinc-950 -z-10" />
-
+    <main className="relative z-10 min-h-[100dvh] flex items-center justify-center px-4 py-24">
       <motion.div
-        initial={{ opacity: 0, scale: 0.95, y: 10 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        transition={{ duration: 0.4, ease: "easeOut" }}
-        className="w-full max-w-md relative"
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3, ease: "easeOut" }}
+        className="w-full max-w-md rounded-3xl border border-border/70 bg-card/90 p-6 sm:p-8 text-center shadow-xl backdrop-blur-md"
       >
-        {/* Hologram safe glow effect behind card */}
-        <div className="absolute -inset-1 bg-gradient-to-r from-indigo-500 to-violet-600 rounded-3xl blur opacity-15 pointer-events-none" />
-        
-        <div className="relative bg-zinc-900/80 border border-white/10 rounded-3xl p-8 shadow-2xl backdrop-blur-xl flex flex-col items-center text-center overflow-hidden">
-          
-          {/* Header Icon */}
-          <div className="relative w-16 h-16 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center mb-6 group">
-            <Lock className="w-8 h-8 text-indigo-400 group-hover:scale-110 transition-transform duration-300" />
-            <div className="absolute inset-0 rounded-2xl bg-indigo-500/20 blur-md animate-pulse" />
+        <img
+          src="/assets/ama_avatar.webp"
+          alt=""
+          width={88}
+          height={88}
+          className="mx-auto h-[88px] w-[88px] rounded-full border-4 border-primary/60 bg-white object-cover object-top"
+        />
+
+        <p className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-muted px-3 py-1 text-xs font-semibold text-muted-foreground">
+          <Lock className="w-3.5 h-3.5" /> Your account is protected
+        </p>
+
+        <h1 className="mt-3 text-2xl sm:text-3xl font-black tracking-tight text-foreground">Enter your security code</h1>
+        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+          Open your authenticator app and type the 6-digit code for SwiftData.
+        </p>
+
+        <form onSubmit={handleVerify} className="mt-6 space-y-4">
+          <div className="flex justify-center gap-1.5 sm:gap-2.5">
+            {otp.map((data, index) => (
+              <input
+                key={index}
+                ref={(el) => (inputRefs.current[index] = el)}
+                type="text"
+                inputMode="numeric"
+                autoComplete={index === 0 ? "one-time-code" : "off"}
+                aria-label={`Digit ${index + 1} of 6`}
+                maxLength={6} // Allows pasting full length
+                value={data}
+                onChange={(e) => handleOtpChange(e.target, index)}
+                onKeyDown={(e) => handleKeyDown(e, index)}
+                className={`h-14 w-11 sm:w-12 rounded-2xl border-2 bg-background text-center text-2xl font-black text-foreground outline-none transition-colors focus:border-primary ${
+                  error ? "border-amber-500" : "border-border"
+                }`}
+              />
+            ))}
           </div>
 
-          <h1 className="text-2xl font-black text-white tracking-tight">Two-Factor Authentication</h1>
-          <p className="text-zinc-400 text-sm mt-2 max-w-xs mx-auto leading-relaxed">
-            Open your authenticator app and enter the 6-digit security code to unlock your account.
-          </p>
-
-          <form onSubmit={handleVerify} className="w-full mt-8 space-y-6">
-            {/* OTP Code Inputs Container */}
-            <div className="flex justify-center gap-2 sm:gap-3">
-              {otp.map((data, index) => (
-                <input
-                  key={index}
-                  ref={(el) => (inputRefs.current[index] = el)}
-                  type="text"
-                  inputMode="numeric"
-                  maxLength={6} // Allows pasting full length
-                  value={data}
-                  onChange={(e) => handleOtpChange(e.target, index)}
-                  onKeyDown={(e) => handleKeyDown(e, index)}
-                  className={`w-12 h-14 text-center text-2xl font-black border rounded-xl bg-zinc-800/50 text-white focus:bg-zinc-800 focus:border-indigo-500 outline-none transition-all duration-200 focus:ring-4 focus:ring-indigo-500/20 sm:w-14 sm:h-16 ${
-                    error ? "border-red-500/50 ring-2 ring-red-500/10" : "border-white/5"
-                  }`}
-                />
-              ))}
-            </div>
-
-            {error && (
-              <motion.div
-                initial={{ opacity: 0, y: -5 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-bold px-4 py-3 rounded-xl flex items-center gap-2 text-left"
-              >
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>{error}</span>
-              </motion.div>
-            )}
-
-            <div className="pt-2">
-              <button
-                type="submit"
-                disabled={loading || otp.join("").length !== 6}
-                className="w-full h-12 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:bg-zinc-800 text-white disabled:text-zinc-500 text-sm font-black shadow-xl shadow-indigo-600/10 transition-all hover:shadow-indigo-600/20 active:scale-[0.98] flex items-center justify-center gap-2 group"
-              >
-                {loading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Verifying Security...
-                  </>
-                ) : (
-                  <>
-                    Authorize Login <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
-                  </>
-                )}
-              </button>
-            </div>
-          </form>
-
-          {/* Secondary Actions */}
-          <div className="mt-8 pt-6 border-t border-white/5 w-full">
-            <button
-              type="button"
-              onClick={async () => {
-                await supabase.auth.signOut();
-                navigate("/login");
-              }}
-              className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors font-bold"
+          {error && (
+            <motion.div
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              role="alert"
+              className="flex items-start gap-2 rounded-2xl bg-amber-500/15 px-3 py-2.5 text-left text-sm font-medium text-foreground"
             >
-              Cancel & Sign Out
-            </button>
-          </div>
-        </div>
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+              <span>{error}</span>
+            </motion.div>
+          )}
+
+          <button
+            type="submit"
+            disabled={loading || otp.join("").length !== 6}
+            className="group flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-primary text-sm font-bold text-primary-foreground transition active:scale-[0.98] disabled:bg-muted disabled:text-muted-foreground"
+          >
+            {loading ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Checking your code...
+              </>
+            ) : (
+              <>
+                Continue <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+              </>
+            )}
+          </button>
+        </form>
+
+        <p className="mt-4 text-xs text-muted-foreground">Codes change every 30 seconds.</p>
+
+        <button
+          type="button"
+          onClick={async () => {
+            await supabase.auth.signOut();
+            navigate("/login");
+          }}
+          className="mt-2 min-h-10 px-3 text-sm font-semibold text-muted-foreground transition-colors hover:text-foreground"
+        >
+          Cancel and sign out
+        </button>
       </motion.div>
-    </div>
+    </main>
   );
 };
 

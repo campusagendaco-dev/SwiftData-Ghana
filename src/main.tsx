@@ -41,9 +41,9 @@ const forceAssetRecovery = async (sourceMsg?: string) => {
 (window as any).forceAssetRecovery = forceAssetRecovery;
 
 // Proactively flush any stale Service Worker precached index.html from older builds (v2026.11.02.openmic)
-const CURRENT_SW_BUILD_KEY = "swiftdata_sw_build_2026_11_10_mfa_v1";
-if (typeof window !== "undefined" && localStorage.getItem("swiftdata_sw_build_2026_11_10_mfa_v1") !== CURRENT_SW_BUILD_KEY) {
-  localStorage.setItem("swiftdata_sw_build_2026_11_10_mfa_v1", CURRENT_SW_BUILD_KEY);
+const CURRENT_SW_BUILD_KEY = "swiftdata_sw_build_2026_11_11_mfa_page_v1";
+if (typeof window !== "undefined" && localStorage.getItem("swiftdata_sw_build_2026_11_11_mfa_page_v1") !== CURRENT_SW_BUILD_KEY) {
+  localStorage.setItem("swiftdata_sw_build_2026_11_11_mfa_page_v1", CURRENT_SW_BUILD_KEY);
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.getRegistrations().then((regs) => {
       regs.forEach((r) => {
