@@ -15,8 +15,8 @@ vi.mock("@/lib/locationAlerts", async () => {
   const actual = await vi.importActual<typeof import("@/lib/locationAlerts")>("@/lib/locationAlerts");
   return {
     ...actual,
-    hasCheckedToday: () => hasCheckedToday(),
-    markCheckedToday: () => markCheckedToday(),
+    hasCheckedToday: (u: string) => hasCheckedToday(u),
+    markCheckedToday: (u: string) => markCheckedToday(u),
     getGrantedPosition: () => getGrantedPosition(),
     requestPosition: () => requestPosition(),
   };
@@ -83,6 +83,29 @@ describe("LocationAlertPrompt", () => {
     other.remove();
     expect(screen.queryByText(/new town you visit/)).toBeNull();
     expect(markCheckedToday).not.toHaveBeenCalled();
+  });
+
+  it("is not blocked by the non-modal floating push card", async () => {
+    const card = document.createElement("div");
+    card.setAttribute("role", "dialog");
+    card.setAttribute("data-dash-float", "high");
+    document.body.appendChild(card);
+    await openPopup();
+    card.remove();
+    expect(screen.getByText(QUESTION)).toBeInTheDocument();
+  });
+
+  it("keeps the once-a-day key per user", async () => {
+    const store = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+    });
+    const real = await vi.importActual<typeof import("@/lib/locationAlerts")>("@/lib/locationAlerts");
+    real.markCheckedToday("u1");
+    expect(real.hasCheckedToday("u1")).toBe(true);
+    expect(real.hasCheckedToday("u2")).toBe(false);
+    vi.unstubAllGlobals();
   });
 
   it("marks the day as checked after checking a granted user", async () => {
@@ -201,8 +224,8 @@ describe("locationAlerts helpers", () => {
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
       throw new Error("denied");
     });
-    expect(real.hasCheckedToday()).toBe(false);
-    expect(() => real.markCheckedToday()).not.toThrow();
+    expect(real.hasCheckedToday("u1")).toBe(false);
+    expect(() => real.markCheckedToday("u1")).not.toThrow();
     vi.restoreAllMocks();
   });
 

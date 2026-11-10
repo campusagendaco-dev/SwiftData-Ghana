@@ -17,9 +17,14 @@ const LOC = "Tell me when SwiftData is in a new town I visit";
 const PROMO = "Promotional SMS";
 
 type St = "unset" | "granted" | "declined";
-function mockStatus(status: St, sms_opt_out = false, eligible = true) {
+function mockStatus(
+  status: St,
+  sms_opt_out = false,
+  eligible = true,
+  extra: { is_admin?: boolean; has_phone?: boolean } = {},
+) {
   callLocationCheck.mockImplementation(async (body: { action: string }) => {
-    if (body.action === "status") return { eligible, status, sms_opt_out };
+    if (body.action === "status") return { eligible, is_admin: false, has_phone: true, status, sms_opt_out, ...extra };
     return { ok: true };
   });
 }
@@ -34,11 +39,25 @@ describe("LocationAlertSettings", () => {
   });
   afterEach(() => cleanup());
 
-  it("renders nothing when not eligible", async () => {
-    mockStatus("granted", false, false);
+  it("renders nothing for admins", async () => {
+    mockStatus("granted", false, false, { is_admin: true });
     const { container } = render(<LocationAlertSettings />);
     await waitFor(() => expect(callLocationCheck).toHaveBeenCalledWith({ action: "status" }));
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it("still shows both switches when the admin mode is off", async () => {
+    mockStatus("unset", false, false, { has_phone: true });
+    render(<LocationAlertSettings />);
+    expect(await screen.findByRole("switch", { name: LOC })).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: PROMO })).toBeInTheDocument();
+  });
+
+  it("shows only Promotional SMS with no phone and no granted consent", async () => {
+    mockStatus("unset", false, false, { has_phone: false });
+    render(<LocationAlertSettings />);
+    expect(await screen.findByRole("switch", { name: PROMO })).toBeInTheDocument();
+    expect(screen.queryByRole("switch", { name: LOC })).toBeNull();
   });
 
   it("renders nothing when status call fails", async () => {

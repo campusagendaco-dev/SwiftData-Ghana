@@ -143,13 +143,13 @@ export async function applyConsent(
     await deps.savePrefs(userId, { prompted_at: now });
     return;
   }
-  if (choice === "no") {
-    await deps.deleteTownRows(userId);
-  }
   await deps.savePrefs(userId, {
     status: choice === "yes" ? "granted" : "declined",
     prompted_at: now,
     consent_at: now,
     consent_version: version,
   });
+  if (choice === "no") {
+    await deps.deleteTownRows(userId);
+  }
 }

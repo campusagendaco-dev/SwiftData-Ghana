@@ -4,7 +4,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { callLocationCheck, requestPosition, LOCATION_CONSENT_VERSION } from "@/lib/locationAlerts";
 
-type Status = { eligible: boolean; status: "unset" | "granted" | "declined"; sms_opt_out: boolean };
+type Status = {
+  eligible: boolean;
+  is_admin: boolean;
+  has_phone: boolean;
+  status: "unset" | "granted" | "declined";
+  sms_opt_out: boolean;
+};
 type Saved = { ok: boolean };
 
 const LOCATION_LABEL = "Tell me when SwiftData is in a new town I visit";
@@ -31,7 +37,8 @@ export function LocationAlertSettings() {
     };
   }, []);
 
-  if (!status || !status.eligible) return null;
+  if (!status || status.is_admin) return null;
+  const showLocation = status.status === "granted" || status.has_phone;
 
   const onLocationChange = async (next: boolean) => {
     setLocationOn(next);
@@ -71,15 +78,17 @@ export function LocationAlertSettings() {
         <CardTitle className="text-lg font-bold">SMS preferences</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="flex items-center justify-between gap-4">
-          <span className="text-sm text-foreground">{LOCATION_LABEL}</span>
-          <Switch
-            aria-label={LOCATION_LABEL}
-            checked={locationOn}
-            disabled={savingLocation}
-            onCheckedChange={onLocationChange}
-          />
-        </div>
+        {showLocation && (
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-sm text-foreground">{LOCATION_LABEL}</span>
+            <Switch
+              aria-label={LOCATION_LABEL}
+              checked={locationOn}
+              disabled={savingLocation}
+              onCheckedChange={onLocationChange}
+            />
+          </div>
+        )}
         <div className="flex items-center justify-between gap-4">
           <span className="text-sm text-foreground">{PROMO_LABEL}</span>
           <Switch

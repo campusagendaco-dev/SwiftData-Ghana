@@ -13,3 +13,10 @@ it("has unique keys and coordinates inside Ghana", () => {
   for (const t of GHANA_TOWNS) { expect(t.lat).toBeGreaterThan(4.5); expect(t.lat).toBeLessThan(11.5); expect(t.lng).toBeGreaterThan(-3.5); expect(t.lng).toBeLessThan(1.5); }
 });
 it("has Bolga as an alias of Bolgatanga", () => { expect(find("Bolgatanga")!.aliases).toContain("Bolga"); });
+it("uses common Ghanaian spellings, keeping GeoNames spellings as aliases", () => {
+  expect(find("Obuasi")).toBeDefined();
+  expect(find("Wenchi")).toBeDefined();
+  expect(find("Madina")).toBeDefined();
+  expect(find("Obuase")).toBeUndefined();
+  expect(find("Obuasi")!.aliases).toContain("Obuase");
+});

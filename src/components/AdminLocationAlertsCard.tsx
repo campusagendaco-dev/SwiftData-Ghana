@@ -25,6 +25,7 @@ export function AdminLocationAlertsCard() {
   const [limit, setLimit] = useState("");
   const [town, setTown] = useState("");
   const [busy, setBusy] = useState(false);
+  const [savingMode, setSavingMode] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -45,7 +46,9 @@ export function AdminLocationAlertsCard() {
   const toggle = async (next: boolean) => {
     const previous = enabled;
     setEnabled(next);
+    setSavingMode(true);
     const res = await callLocationCheck<Saved>({ action: "admin_set_settings", mode: next ? "consent" : "off" });
+    setSavingMode(false);
     if (res?.ok !== true) {
       setEnabled(previous);
       toast.error("Could not save the location SMS setting");
@@ -94,7 +97,7 @@ export function AdminLocationAlertsCard() {
           <>
             <div className="flex items-center justify-between rounded-lg border border-border bg-card p-3">
               <span className="text-sm font-medium">Send location welcome SMS</span>
-              <Switch checked={enabled} onCheckedChange={toggle} aria-label="Location welcome SMS" />
+              <Switch checked={enabled} disabled={savingMode} onCheckedChange={toggle} aria-label="Location welcome SMS" />
             </div>
 
             <div className="space-y-2">

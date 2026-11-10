@@ -5,6 +5,7 @@ import { verifyAdmin } from "../_shared/auth.ts";
 import { dispatchUnifiedSms, formatTemplate, getSmsConfig, normalizePhone } from "../_shared/sms.ts";
 import { lookupIpCity } from "../_shared/ip_location.ts";
 import { GHANA_TOWNS } from "../_shared/ghana_towns.ts";
+import { matchTownByName } from "../_shared/location_rules.ts";
 import { applyConsent, runLocationCheck, type ClaimResult, type LocationDeps } from "../_shared/location_flow.ts";
 
 const json = (body: unknown, status = 200) =>
@@ -198,6 +199,8 @@ serve(async (req: Request) => {
         const phone = normalizePhone(profile?.phone);
         return json({
           eligible: !admin && settings.mode !== "off" && !!phone,
+          is_admin: admin,
+          has_phone: !!phone,
           status: prefs?.status ?? "unset",
           sms_opt_out: !!profile?.sms_opt_out,
         });
@@ -207,7 +210,11 @@ serve(async (req: Request) => {
         if (choice !== "yes" && choice !== "no" && choice !== "dismissed") {
           return json({ error: "Invalid choice" }, 400);
         }
-        await applyConsent(deps, user.id, choice, String(body.version ?? ""));
+        const version = body.version;
+        if (choice !== "dismissed" && (typeof version !== "string" || version.length < 1 || version.length > 20)) {
+          return json({ error: "Invalid version" }, 400);
+        }
+        await applyConsent(deps, user.id, choice, typeof version === "string" ? version : "");
         return json({ ok: true });
       }
       case "set_sms_opt_out": {
@@ -268,7 +275,7 @@ serve(async (req: Request) => {
       case "admin_test_send": {
         const admin = await verifyAdmin(req, supabaseAdmin, { checkMfa: true });
         if (!admin.success) return json({ error: admin.error }, admin.status || 403);
-        const town = GHANA_TOWNS.find((t) => t.name === body.town);
+        const town = matchTownByName(String(body.town ?? ""), "GH", GHANA_TOWNS);
         if (!town) return json({ error: "Unknown town" }, 400);
         const profile = await deps.getProfile(user.id);
         const phone = normalizePhone(profile?.phone);

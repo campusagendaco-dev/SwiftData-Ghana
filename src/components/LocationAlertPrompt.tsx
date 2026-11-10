@@ -25,7 +25,7 @@ export function LocationAlertPrompt() {
 
   useEffect(() => {
     if (!userId) return;
-    if (hasCheckedToday()) return;
+    if (hasCheckedToday(userId)) return;
 
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -35,7 +35,7 @@ export function LocationAlertPrompt() {
       if (cancelled || !status) return; // error: leave the day unmarked, retry next open
 
       if (!status.eligible || status.status === "declined" || status.sms_opt_out) {
-        markCheckedToday();
+        markCheckedToday(userId);
         return;
       }
 
@@ -43,7 +43,7 @@ export function LocationAlertPrompt() {
         const position = await getGrantedPosition();
         if (cancelled) return;
         const result = await callLocationCheck<{ needs_consent: boolean }>({ action: "check", ...(position ?? {}) });
-        if (!cancelled && result) markCheckedToday();
+        if (!cancelled && result) markCheckedToday(userId);
         return;
       }
 
@@ -51,17 +51,17 @@ export function LocationAlertPrompt() {
       const pre = await callLocationCheck<{ needs_consent: boolean }>({ action: "check" });
       if (cancelled || !pre) return;
       if (!pre.needs_consent) {
-        markCheckedToday();
+        markCheckedToday(userId);
         return;
       }
 
       // ask once, after a short wait, and only if nothing else is open
       timer = setTimeout(() => {
         if (cancelled) return;
-        if (document.querySelector('[role="dialog"]')) return;
+        if (document.querySelector('[role="dialog"]:not([data-dash-float])')) return;
         answeredRef.current = false;
         setOpen(true);
-        markCheckedToday();
+        markCheckedToday(userId);
       }, POPUP_DELAY_MS);
     })();
 
@@ -74,8 +74,10 @@ export function LocationAlertPrompt() {
   const handleYes = async () => {
     answeredRef.current = true;
     setOpen(false);
-    void callLocationCheck({ action: "set_consent", choice: "yes", version: LOCATION_CONSENT_VERSION });
+    // Call requestPosition synchronously (browser needs the tap), then make sure consent is saved before check.
+    const consent = callLocationCheck({ action: "set_consent", choice: "yes", version: LOCATION_CONSENT_VERSION });
     const position = await requestPosition();
+    await consent;
     if (position) await callLocationCheck({ action: "check", ...position });
   };
 

@@ -1,5 +1,6 @@
--- Smoke test for claim_location_sms. Everything runs inside a transaction that is rolled back.
--- Run against a non-production database after the migration 20261109120000 is applied.
+-- Smoke test for claim_location_sms. Everything runs inside a transaction that is rolled back,
+-- so it is safe to run on production after migration 20261109120000 is applied.
+-- It needs two existing users in auth.users with no location SMS in the last 30 days.
 BEGIN;
 
 DO $$
@@ -37,6 +38,14 @@ BEGIN
   v_result := public.claim_location_sms(v_user_a, 'smoke_town_a', 1000000);
   IF v_result IS DISTINCT FROM 'claimed' THEN
     RAISE EXCEPTION 'expected claimed, got %', v_result;
+  END IF;
+
+  -- 1b. A successful claim sets established_at
+  IF NOT EXISTS (
+    SELECT 1 FROM public.user_location_towns
+    WHERE user_id = v_user_a AND town_key = 'smoke_town_a' AND established_at IS NOT NULL
+  ) THEN
+    RAISE EXCEPTION 'a successful claim must set established_at';
   END IF;
 
   -- 2. Repeating the same claim (two tabs) returns already_sent and leaves one sms_sent_at

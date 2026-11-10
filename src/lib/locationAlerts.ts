@@ -7,18 +7,19 @@ const CHECK_KEY = "sd_location_checked_on";
 export type LatLng = { lat: number; lng: number };
 
 const today = () => new Date().toISOString().slice(0, 10);
+const keyFor = (userId: string) => `${CHECK_KEY}:${userId}`;
 
-export function hasCheckedToday(): boolean {
+export function hasCheckedToday(userId: string): boolean {
   try {
-    return localStorage.getItem(CHECK_KEY) === today();
+    return localStorage.getItem(keyFor(userId)) === today();
   } catch {
     return false;
   }
 }
 
-export function markCheckedToday(): void {
+export function markCheckedToday(userId: string): void {
   try {
-    localStorage.setItem(CHECK_KEY, today());
+    localStorage.setItem(keyFor(userId), today());
   } catch {
     /* storage unavailable: the server limit still applies */
   }
