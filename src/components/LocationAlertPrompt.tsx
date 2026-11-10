@@ -19,11 +19,12 @@ const POPUP_DELAY_MS = 20_000;
 
 export function LocationAlertPrompt() {
   const { user } = useAuth();
+  const userId = user?.id;
   const [open, setOpen] = useState(false);
   const answeredRef = useRef(false);
 
   useEffect(() => {
-    if (!user) return;
+    if (!userId) return;
     if (hasCheckedToday()) return;
 
     let cancelled = false;
@@ -46,7 +47,15 @@ export function LocationAlertPrompt() {
         return;
       }
 
-      // status unset: ask once, after a short wait, and only if nothing else is open
+      // status unset: ask the server whether to prompt (no position sent, so no lookup happens)
+      const pre = await callLocationCheck<{ needs_consent: boolean }>({ action: "check" });
+      if (cancelled || !pre) return;
+      if (!pre.needs_consent) {
+        markCheckedToday();
+        return;
+      }
+
+      // ask once, after a short wait, and only if nothing else is open
       timer = setTimeout(() => {
         if (cancelled) return;
         if (document.querySelector('[role="dialog"]')) return;
@@ -60,7 +69,7 @@ export function LocationAlertPrompt() {
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [user]);
+  }, [userId]);
 
   const handleYes = async () => {
     answeredRef.current = true;

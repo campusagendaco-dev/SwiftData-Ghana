@@ -48,7 +48,11 @@ beforeEach(() => {
   getGrantedPosition.mockReset().mockResolvedValue(null);
   requestPosition.mockReset().mockResolvedValue(null);
   invoke.mockImplementation(async (_n: string, { body }: { body: Body }) =>
-    body.action === "status" ? status("unset") : { data: { ok: true }, error: null },
+    body.action === "status"
+      ? status("unset")
+      : body.action === "check"
+        ? { data: { needs_consent: true }, error: null }
+        : { data: { ok: true }, error: null },
   );
 });
 
@@ -99,6 +103,20 @@ describe("LocationAlertPrompt", () => {
     expect(getGrantedPosition).not.toHaveBeenCalled();
   });
 
+  it("shows no popup and marks the day when an unset user no longer needs consent", async () => {
+    invoke.mockImplementation(async (_n: string, { body }: { body: Body }) =>
+      body.action === "status" ? status("unset") : { data: { needs_consent: false }, error: null },
+    );
+    await openPopup();
+    expect(screen.queryByText(QUESTION)).toBeNull();
+    expect(markCheckedToday).toHaveBeenCalled();
+  });
+
+  it("shows the popup when an unset user needs consent", async () => {
+    await openPopup();
+    expect(screen.getByText(QUESTION)).toBeInTheDocument();
+  });
+
   it("skips the call if already checked today", async () => {
     hasCheckedToday.mockReturnValue(true);
     await openPopup();
@@ -108,7 +126,7 @@ describe("LocationAlertPrompt", () => {
   it("does not read GPS when consent is unset, even if the browser granted it", async () => {
     await openPopup();
     expect(getGrantedPosition).not.toHaveBeenCalled();
-    expect(bodies().some((b) => b.action === "check")).toBe(false);
+    expect(bodies().filter((b) => b.action === "check").every((b) => !("lat" in b))).toBe(true);
   });
 
   it("does nothing and leaves the day unmarked when status fails", async () => {
@@ -147,7 +165,7 @@ describe("LocationAlertPrompt", () => {
     await act(async () => {
       fireEvent.click(screen.getByText("Yes, text me"));
     });
-    expect(bodies().some((b) => b.action === "check")).toBe(false);
+    expect(bodies().filter((b) => b.action === "check")).toEqual([{ action: "check" }]);
   });
 
   it("records no thanks once", async () => {
