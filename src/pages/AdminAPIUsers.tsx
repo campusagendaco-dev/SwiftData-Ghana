@@ -88,6 +88,7 @@ const AdminAPIUsers = () => {
   const [users, setUsers] = useState<APIUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [viewFilter, setViewFilter] = useState<"api_only" | "all">("api_only");
   const [expandedUser, setExpandedUser] = useState<string | null>(null);
   const [userOrders, setUserOrders] = useState<Record<string, APIOrder[]>>({});
   const [loadingOrders, setLoadingOrders] = useState<string | null>(null);
@@ -142,6 +143,19 @@ const AdminAPIUsers = () => {
   const [generating, setGenerating] = useState<string | null>(null);
   const [globalPrices, setGlobalPrices] = useState<Record<string, Record<string, number>>>({});
 
+  const isApiDeveloper = (u: APIUser) =>
+    Boolean(
+      u.api_key_prefix ||
+      u.api_key_hash ||
+      u.api_webhook_url ||
+      (u.api_requests_total ?? 0) > 0 ||
+      (u.api_requests_today ?? 0) > 0 ||
+      (u.api_wallet_balance ?? 0) > 0 ||
+      u.api_request_status === "pending" ||
+      u.api_request_status === "approved" ||
+      (u.api_custom_prices && Object.keys(u.api_custom_prices).length > 0)
+    );
+
   const fetchUsers = async () => {
     setLoading(true);
     const accessToken = session?.access_token;
@@ -151,32 +165,97 @@ const AdminAPIUsers = () => {
       return;
     }
 
-    const { data: fnData, error } = await supabase.functions.invoke("system-payout-v1", {
-      body: { action: "get_api_users" },
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
+    try {
+      // Paginate through all profiles directly so PostgREST's 1,000-row limit never truncates users (e.g. T-Z like Thomas / kankamthomas6@gmail.com)
+      const selectCols =
+        "user_id, full_name, email, api_key_prefix, api_key_hash, api_secret_key_hash, api_access_enabled, api_rate_limit, api_allowed_actions, api_ip_whitelist, api_webhook_url, api_requests_today, api_requests_total, api_last_used_at, agent_approved, sub_agent_approved, api_custom_prices, api_request_status, api_requested_at";
 
-    if (error || fnData?.error) {
-      toast({ title: "Error loading API users", description: fnData?.error ?? error?.message, variant: "destructive" });
-    } else {
-      const rows = (fnData?.users ?? []) as unknown as APIUser[];
-      
-      const userIds = rows.map((u) => u.user_id);
-      if (userIds.length > 0) {
-        const { data: wallets } = await supabase
+      const allProfiles: APIUser[] = [];
+      const pageSize = 1000;
+      for (let page = 0; page < 5; page++) {
+        const from = page * pageSize;
+        const to = from + pageSize - 1;
+        const { data: pageRows, error: pageErr } = await supabase
+          .from("profiles")
+          .select(selectCols)
+          .order("full_name", { ascending: true })
+          .range(from, to);
+
+        if (pageErr) {
+          console.warn("[AdminAPIUsers] Direct profile page fetch warning:", pageErr.message);
+          break;
+        }
+        if (!pageRows || pageRows.length === 0) break;
+        allProfiles.push(...(pageRows as unknown as APIUser[]));
+        if (pageRows.length < pageSize) break;
+      }
+
+      // Fallback to Edge Function if direct RLS query returned nothing
+      if (allProfiles.length === 0) {
+        const { data: fnData, error } = await supabase.functions.invoke("system-payout-v1", {
+          body: { action: "get_api_users" },
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (error || fnData?.error) {
+          toast({ title: "Error loading API users", description: fnData?.error ?? error?.message, variant: "destructive" });
+          setLoading(false);
+          return;
+        }
+        allProfiles.push(...((fnData?.users ?? []) as unknown as APIUser[]));
+      }
+
+      // Deduplicate by user_id
+      const uniqueMap = new Map<string, APIUser>();
+      for (const p of allProfiles) {
+        if (p?.user_id) uniqueMap.set(p.user_id, p);
+      }
+      const rows = Array.from(uniqueMap.values());
+
+      // Fetch all wallets in paginated 1,000-row batches (avoids HTTP 414 URI Too Long from .in("agent_id", 1000_uuids))
+      const walletMap = new Map<string, { balance: number; api_balance: number }>();
+      for (let page = 0; page < 5; page++) {
+        const from = page * pageSize;
+        const to = from + pageSize - 1;
+        const { data: wRows } = await supabase
           .from("wallets")
           .select("agent_id, balance, api_balance")
-          .in("agent_id", userIds);
-        
-        if (wallets) {
-          const walletMap = new Map(wallets.map((w) => [w.agent_id, w]));
-          rows.forEach((u) => {
-            const w = walletMap.get(u.user_id);
-            u.wallet_balance = w?.balance ?? 0;
-            u.api_wallet_balance = w?.api_balance ?? 0;
+          .range(from, to);
+        if (!wRows || wRows.length === 0) break;
+        for (const w of wRows) {
+          walletMap.set(w.agent_id, {
+            balance: Number(w.balance ?? 0),
+            api_balance: Number(w.api_balance ?? 0),
           });
         }
+        if (wRows.length < pageSize) break;
       }
+
+      rows.forEach((u) => {
+        const w = walletMap.get(u.user_id);
+        u.wallet_balance = w?.balance ?? 0;
+        u.api_wallet_balance = w?.api_balance ?? 0;
+      });
+
+      // Sort: Pending requests first -> Active API key holders / API balance > 0 -> Other API developers -> Alphabetical
+      rows.sort((a, b) => {
+        const aPending = a.api_request_status === "pending" ? 1 : 0;
+        const bPending = b.api_request_status === "pending" ? 1 : 0;
+        if (aPending !== bPending) return bPending - aPending;
+
+        const aHasKey = a.api_key_prefix || a.api_key_hash ? 1 : 0;
+        const bHasKey = b.api_key_prefix || b.api_key_hash ? 1 : 0;
+        if (aHasKey !== bHasKey) return bHasKey - aHasKey;
+
+        const aIsDev = isApiDeveloper(a) ? 1 : 0;
+        const bIsDev = isApiDeveloper(b) ? 1 : 0;
+        if (aIsDev !== bIsDev) return bIsDev - aIsDev;
+
+        const aApiBal = a.api_wallet_balance ?? 0;
+        const bApiBal = b.api_wallet_balance ?? 0;
+        if (aApiBal !== bApiBal) return bApiBal - aApiBal;
+
+        return (a.full_name || a.email || "").localeCompare(b.full_name || b.email || "");
+      });
 
       setUsers(rows);
       // Seed edit state from DB values
@@ -246,6 +325,8 @@ const AdminAPIUsers = () => {
       } catch (err) {
         console.error("Failed to load user traction stats:", err);
       }
+    } catch (err: any) {
+      toast({ title: "Error loading API users", description: err?.message, variant: "destructive" });
     }
     setLoading(false);
   };
@@ -454,14 +535,21 @@ const AdminAPIUsers = () => {
   };
 
 
-  const filtered = users.filter(
+  const apiDevelopers = users.filter(isApiDeveloper);
+  const q = search.trim().toLowerCase();
+  // When searching, search across ALL users (so any user by email/name/key prefix is immediately found)
+  const baseList = q ? users : viewFilter === "api_only" ? apiDevelopers : users;
+  const filtered = baseList.filter(
     (u) =>
-      u.full_name?.toLowerCase().includes(search.toLowerCase()) ||
-      u.email?.toLowerCase().includes(search.toLowerCase())
+      !q ||
+      u.full_name?.toLowerCase().includes(q) ||
+      u.email?.toLowerCase().includes(q) ||
+      u.api_key_prefix?.toLowerCase().includes(q) ||
+      u.user_id?.toLowerCase().includes(q)
   );
 
-  const totalApiUsers = users.length;
-  const activeApiUsers = users.filter((u) => u.api_access_enabled).length;
+  const totalApiUsers = apiDevelopers.length;
+  const activeApiUsers = apiDevelopers.filter((u) => u.api_access_enabled && (u.api_key_prefix || u.api_key_hash)).length;
   const pendingRequests = users.filter((u) => u.api_request_status === "pending").length;
   const totalRequestsToday = users.reduce((a, u) => a + (u.api_requests_today ?? 0), 0);
 
@@ -484,7 +572,7 @@ const AdminAPIUsers = () => {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
           { label: "Total API Users", value: totalApiUsers, icon: Users, color: "text-blue-400" },
-          { label: "Active Access", value: activeApiUsers, icon: CheckCircle, color: "text-emerald-400" },
+          { label: "Active Keys", value: activeApiUsers, icon: CheckCircle, color: "text-emerald-400" },
           { label: "Pending Requests", value: pendingRequests, icon: Clock, color: "text-amber-400" },
           { label: "Requests Today", value: totalRequestsToday.toLocaleString(), icon: Activity, color: "text-cyan-400" },
         ].map(({ label, value, icon: Icon, color }) => (
@@ -500,15 +588,37 @@ const AdminAPIUsers = () => {
         ))}
       </div>
 
-      {/* Search */}
-      <div className="relative max-w-sm">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
-        <Input
-          placeholder="Search by name or email..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="pl-9 bg-white/5 border-white/10"
-        />
+      {/* Search & Filter */}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
+        <div className="relative max-w-md w-full">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
+          <Input
+            placeholder="Search any user by name, email, or key prefix (e.g. kankamthomas6@gmail.com)..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9 bg-white/5 border-white/10"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant={viewFilter === "api_only" && !q ? "default" : "outline"}
+            onClick={() => setViewFilter("api_only")}
+            className="text-xs"
+          >
+            API Developers ({apiDevelopers.length})
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={viewFilter === "all" || Boolean(q) ? "default" : "outline"}
+            onClick={() => setViewFilter("all")}
+            className="text-xs"
+          >
+            All Users ({users.length})
+          </Button>
+        </div>
       </div>
 
       {/* User list */}

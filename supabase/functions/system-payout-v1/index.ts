@@ -341,29 +341,38 @@ serve(async (req: Request) => {
 
     switch (action as AdminUserAction) {
       case "get_api_users": {
-        let users: any[] | null = null;
+        let users: any[] = [];
         let userError: any = null;
 
-        // Try with new security columns first
-        const { data: newData, error: newError } = await supabaseAdmin
-          .from("profiles")
-          .select("user_id, full_name, email, api_key_prefix, api_key_hash, api_secret_key_hash, api_access_enabled, api_rate_limit, api_allowed_actions, api_ip_whitelist, api_webhook_url, api_requests_today, api_requests_total, api_last_used_at, agent_approved, sub_agent_approved, api_custom_prices, api_request_status, api_requested_at")
-          .or("api_key_prefix.not.is.null,api_key_hash.not.is.null,api_access_enabled.eq.true,api_request_status.eq.pending")
-          .order("full_name");
+        const selectColsNew = "user_id, full_name, email, api_key_prefix, api_key_hash, api_secret_key_hash, api_access_enabled, api_rate_limit, api_allowed_actions, api_ip_whitelist, api_webhook_url, api_requests_today, api_requests_total, api_last_used_at, agent_approved, sub_agent_approved, api_custom_prices, api_request_status, api_requested_at";
+        const selectColsLegacy = "user_id, full_name, email, api_key_prefix, api_key_hash, api_access_enabled, api_rate_limit, api_allowed_actions, api_ip_whitelist, api_webhook_url, api_requests_today, api_requests_total, api_last_used_at, agent_approved, sub_agent_approved, api_custom_prices, api_request_status, api_requested_at";
 
-        if (newError) {
-          console.warn("Falling back to legacy API user query:", newError.message);
-          // Fallback to legacy columns if migration hasn't been run
-          const { data: legacyData, error: legacyError } = await supabaseAdmin
+        // Paginate across all matching profiles so PostgREST's 1000-row limit never drops users (e.g. names starting with T-Z)
+        const pageSize = 1000;
+        let useLegacy = false;
+        for (let page = 0; page < 5; page++) {
+          const from = page * pageSize;
+          const to = from + pageSize - 1;
+          const { data: pageData, error: pageErr } = await supabaseAdmin
             .from("profiles")
-            .select("user_id, full_name, email, api_key_prefix, api_key_hash, api_access_enabled, api_rate_limit, api_allowed_actions, api_ip_whitelist, api_webhook_url, api_requests_today, api_requests_total, api_last_used_at, agent_approved, sub_agent_approved, api_custom_prices, api_request_status, api_requested_at")
+            .select(useLegacy ? selectColsLegacy : selectColsNew)
             .or("api_key_prefix.not.is.null,api_key_hash.not.is.null,api_access_enabled.eq.true,api_request_status.eq.pending")
-            .order("full_name");
+            .order("full_name")
+            .range(from, to);
 
-          users = legacyData;
-          userError = legacyError;
-        } else {
-          users = newData;
+          if (pageErr && !useLegacy && page === 0) {
+            console.warn("Falling back to legacy API user query:", pageErr.message);
+            useLegacy = true;
+            page = -1;
+            continue;
+          }
+          if (pageErr) {
+            userError = pageErr;
+            break;
+          }
+          if (!pageData || pageData.length === 0) break;
+          users.push(...pageData);
+          if (pageData.length < pageSize) break;
         }
 
         if (userError) {
@@ -380,7 +389,7 @@ serve(async (req: Request) => {
           const { data: stats } = await supabaseAdmin
             .from("user_sales_stats")
             .select("user_id, total_sales_volume")
-            .in("user_id", userIds);
+            .range(0, 2999);
 
           if (stats) {
             statsMap = Object.fromEntries(stats.map((s: any) => [s.user_id, s.total_sales_volume]));
