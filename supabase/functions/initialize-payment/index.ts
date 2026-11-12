@@ -481,6 +481,9 @@ serve(async (req: Request) => {
     let cleanTarget10 = rawTargetPhone;
     if (rawTargetPhone.startsWith("233") && rawTargetPhone.length === 12) {
       cleanTarget10 = "0" + rawTargetPhone.slice(3);
+    } else if (rawTargetPhone.length === 9) {
+      // A number typed without its leading 0 still gets the Ghana prefix check.
+      cleanTarget10 = "0" + rawTargetPhone;
     }
     if (cleanTarget10.length === 10 && cleanTarget10.startsWith("0")) {
       const ghanaPrefixes = ["024", "054", "055", "059", "025", "053", "020", "050", "027", "057", "026", "056", "023"];
