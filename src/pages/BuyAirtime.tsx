@@ -10,6 +10,7 @@ import { getAppBaseUrl } from "@/lib/app-base-url";
 import { MTNLogo, TelecelLogo, AirtelTigoLogo } from "@/components/BrandLogos";
 import LiveDeliveryBadge from "@/components/LiveDeliveryBadge";
 import { PaystackMomoCheckout } from "@/components/PaystackMomoCheckout";
+import { isGuestAirtimeClosed } from "@/lib/airtimeHours";
 import { motion, AnimatePresence } from "framer-motion";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -67,6 +68,11 @@ const BuyAirtime = () => {
   const [buying, setBuying] = useState(false);
   const [email, setEmail] = useState("");
   const [holidayMode, setHolidayMode] = useState(false);
+  const [nightClosed, setNightClosed] = useState(() => isGuestAirtimeClosed());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNightClosed(isGuestAirtimeClosed()), 60000);
+    return () => window.clearInterval(timer);
+  }, []);
   const [holidayMessage, setHolidayMessage] = useState("");
   const [orderingDisabled, setOrderingDisabled] = useState(false);
   const phoneInputRef = useRef<HTMLInputElement>(null);
@@ -85,7 +91,7 @@ const BuyAirtime = () => {
   const numAmount = Number(amount);
   const fee = calcFee(numAmount);
   const total = numAmount + fee;
-  const canPay = isPhoneValid && numAmount >= 1 && numAmount <= 500 && !orderingDisabled && !holidayMode;
+  const canPay = isPhoneValid && numAmount >= 1 && numAmount <= 500 && !orderingDisabled && !holidayMode && !nightClosed;
 
   // Auto-detect network based on digits
   const detectNetworkFromPhone = (num: string) => {
@@ -241,6 +247,18 @@ const BuyAirtime = () => {
               <div>
                 <h4 className="font-black text-amber-700 text-sm uppercase tracking-wider">Ordering Paused Notice</h4>
                 <p className="text-xs text-amber-700/80 mt-1 leading-relaxed">{holidayMessage || "System maintenance in progress. Airtime orders are temporarily paused."}</p>
+              </div>
+            </div>
+          )}
+
+          {nightClosed && !holidayMode && !orderingDisabled && (
+            <div role="status" className="p-5 rounded-2xl bg-amber-50 border border-amber-200 flex items-start gap-4">
+              <AlertTriangle className="w-6 h-6 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <h4 className="font-black text-amber-700 text-sm">Airtime is resting for the night</h4>
+                <p className="text-xs text-amber-700/80 mt-1 leading-relaxed">
+                  To keep everyone safe, airtime purchases here pause from 10:00 PM to 7:00 AM. Please come back after 7:00 AM. You can still buy data bundles any time.
+                </p>
               </div>
             </div>
           )}

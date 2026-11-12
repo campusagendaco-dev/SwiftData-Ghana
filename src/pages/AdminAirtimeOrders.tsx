@@ -44,6 +44,7 @@ interface OrderRow {
   cost_price: number | null;
   status: string;
   failure_reason: string | null;
+  payment_method?: string | null;
   created_at: string;
   agent_id: string;
   agent_name?: string;
