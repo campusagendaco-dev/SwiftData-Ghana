@@ -370,14 +370,16 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
   const stateRef = useRef<EightBallPoolState>(state);
   stateRef.current = state;
 
+  const notifiedWinnerRef = useRef<string | null>(null);
+
   // Sync incoming multiplayer state when not actively animating a shot locally
   useEffect(() => {
     if (
       !isSimulating &&
       initialState &&
-      Array.isArray(initialState.balls) &&
-      initialState.balls.length === 16 &&
       ((initialState.shotCount || 0) > (state.shotCount || 0) ||
+        Boolean(initialState.winner && !state.winner) ||
+        Boolean(initialState.ballInHand && !state.ballInHand && initialState.turn === mySide) ||
         ((initialState.shotCount || 0) === (state.shotCount || 0) &&
           initialState.turn &&
           initialState.turn !== state.turn))
@@ -385,10 +387,22 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
       setState((prev) => ({
         ...prev,
         ...initialState,
-        balls: initialState.balls!,
+        balls:
+          Array.isArray(initialState.balls) && initialState.balls.length === 16
+            ? initialState.balls
+            : prev.balls,
       }));
     }
-  }, [initialState, isSimulating, state.shotCount, state.turn]);
+  }, [initialState, isSimulating, mySide, state.ballInHand, state.shotCount, state.turn, state.winner]);
+
+  // Notify parent when winner is decided (including via Realtime P2P shot or timeout forfeit)
+  useEffect(() => {
+    if (!state.winner || isSimulating) return;
+    const winKey = `${state.shotCount || 0}-${state.winner}`;
+    if (notifiedWinnerRef.current === winKey) return;
+    notifiedWinnerRef.current = winKey;
+    onMatchComplete?.(state.winner, state);
+  }, [state, state.winner, state.shotCount, isSimulating, onMatchComplete]);
 
   // Strictly detect Portrait Viewport (height > width on mobile/tablet screens)
   useEffect(() => {
@@ -435,9 +449,7 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
     !state.winner &&
     !isSimulating &&
     !isOpponentAiming &&
-    (mode === "p2p"
-      ? state.turn === mySide || (state.shotCount || 0) === 0
-      : state.turn === "creator");
+    (mode === "p2p" ? state.turn === mySide : state.turn === "creator");
 
   // Trigger Turn Notification Banner & Acoustic Chime whenever `state.turn` or `state.shotCount` updates!
   useEffect(() => {

@@ -1813,7 +1813,7 @@ serve(async (req: Request) => {
       const s = String(latestOrder.status || "").toLowerCase();
       if (s === "fulfilled" || s === "completed" || s === "success" || s === "delivered") {
         simpleStatus = "delivered";
-      } else if (s === "failed" || s === "failure") {
+      } else if (s === "failed" || s === "failure" || s === "fulfillment_failed" || s === "cancelled") {
         simpleStatus = "failed";
       } else if (s === "pending" || s === "awaiting_payment") {
         simpleStatus = "pending";
@@ -1967,6 +1967,10 @@ serve(async (req: Request) => {
         order.provider_order_id !== "" &&
         order.provider_order_id !== "failed_api_call" &&
         order.provider_order_id !== "timeout" &&
+        order.provider_order_id !== "dispatching" &&
+        order.provider_order_id !== "routed" &&
+        order.provider_order_id !== "duplicate_cooldown" &&
+        order.provider_order_id !== "paused_by_admin" &&
         order.provider_order_id !== "manual_fulfillment_mode" &&
         order.provider_order_id !== "refunded"
       );

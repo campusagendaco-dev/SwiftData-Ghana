@@ -264,7 +264,11 @@ serve(async (req: Request) => {
               );
 
               liveProviderResult = pRes;
-              rawStatus = String(pRes?.status || "").toLowerCase().trim();
+              const rawStatusInitial = String(pRes?.status || "").toLowerCase().trim();
+              rawStatus =
+                rawStatusInitial === "failed" && /does not exist|order not found/i.test(String(pRes?.reason || ""))
+                  ? "not_found"
+                  : rawStatusInitial;
 
               const orderAgeMs = Date.now() - new Date(order.updated_at || order.created_at || Date.now()).getTime();
               // A held order is only released after the provider has had 20 minutes to show it.
@@ -272,7 +276,7 @@ serve(async (req: Request) => {
               const isStuckUnacceptedOnProvider = !hasActiveProviderRef && rawStatus === "not_found" &&
                 (isAwaiting ? awaitingAgeMs > 20 * 60_000 : orderAgeMs > 60_000);
 
-              const isDelivered = rawStatus === "delivered" || rawStatus === "successful" || rawStatus === "completed" || rawStatus === "fulfilled" || rawStatus === "000";
+              const isDelivered = rawStatus === "delivered" || rawStatus === "successful" || rawStatus === "success" || rawStatus === "completed" || rawStatus === "fulfilled" || rawStatus === "000" || rawStatus === "0000";
               const isPendingRefund = rawStatus === "failed_pending_refund" || rawStatus === "submission_unknown";
               const isRefunded = !isPendingRefund && (rawStatus === "refunded" || rawStatus === "reversed" || /refund/i.test(String(pRes?.reason || "")));
               // Conclusive provider failures OR an unaccepted #dispatching/#timeout order that the provider confirms is not_found after 60s
@@ -557,7 +561,11 @@ serve(async (req: Request) => {
           );
 
           liveProviderResult = pRes;
-          const rawStatus = String(pRes?.status || "").toLowerCase().trim();
+          const rawStatusInitial = String(pRes?.status || "").toLowerCase().trim();
+          const rawStatus =
+            rawStatusInitial === "failed" && /does not exist|order not found/i.test(String(pRes?.reason || ""))
+              ? "not_found"
+              : rawStatusInitial;
 
           const orderAgeMs = Date.now() - new Date(order.updated_at || order.created_at || Date.now()).getTime();
           // A held order is only released after the provider has had 20 minutes to show it.
@@ -565,7 +573,7 @@ serve(async (req: Request) => {
               const isStuckUnacceptedOnProvider = !hasActiveProviderRef && rawStatus === "not_found" &&
                 (isAwaiting ? awaitingAgeMs > 20 * 60_000 : orderAgeMs > 60_000);
 
-          const isDelivered = rawStatus === "delivered" || rawStatus === "successful" || rawStatus === "completed" || rawStatus === "fulfilled" || rawStatus === "000";
+          const isDelivered = rawStatus === "delivered" || rawStatus === "successful" || rawStatus === "success" || rawStatus === "completed" || rawStatus === "fulfilled" || rawStatus === "000" || rawStatus === "0000";
           const isPendingRefund = rawStatus === "failed_pending_refund" || rawStatus === "submission_unknown";
           const isRefunded = !isPendingRefund && (rawStatus === "refunded" || rawStatus === "reversed" || /refund/i.test(String(pRes?.reason || "")));
           // Conclusive provider failures OR an unaccepted #dispatching/#timeout order that the provider confirms is not_found after 60s

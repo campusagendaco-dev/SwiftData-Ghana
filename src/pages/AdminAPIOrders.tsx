@@ -11,7 +11,7 @@ import {
 import {
   Search, RotateCcw, Loader2, RefreshCw, Clipboard, ExternalLink,
   Calendar, Filter, Users, ShieldAlert, BadgePercent, Coins, CheckCircle2,
-  XCircle, Clock, CheckCircle, HelpCircle, ArrowRightRight, Trash2, ArrowUpRight
+  XCircle, Clock, CheckCircle, HelpCircle, Trash2, ArrowUpRight
 } from "lucide-react";
 import { format, startOfDay, subDays } from "date-fns";
 import { cn } from "@/lib/utils";

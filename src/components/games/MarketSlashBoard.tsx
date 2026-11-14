@@ -592,6 +592,13 @@ export function MarketSlashBoard({
     return () => window.clearTimeout(t);
   }, []);
 
+  const latestInitialStateRef = useRef<MarketSlashState | undefined>(initialState);
+  const lastP2pSyncAtRef = useRef<number>(0);
+
+  useEffect(() => {
+    latestInitialStateRef.current = initialState;
+  }, [initialState]);
+
   const clearPendingWaveTimers = useCallback(() => {
     pendingTimersRef.current.forEach((id) => window.clearTimeout(id));
     pendingTimersRef.current = [];
@@ -627,21 +634,39 @@ export function MarketSlashBoard({
 
       if (!matchSettledRef.current) {
         matchSettledRef.current = true;
+        const latestInit = latestInitialStateRef.current;
+        const otherSide: "creator" | "opponent" =
+          mySide === "creator" ? "opponent" : "creator";
         const oppScore =
           mode === "p2p"
-            ? initialState?.opponentScore || 0
-            : aiTargetScore.current;
-        const winnerSide: "creator" | "opponent" | "draw" =
-          reason === "timeout" && finalPts < oppScore
             ? mySide === "creator"
-              ? "opponent"
-              : "creator"
+              ? Number(latestInit?.opponentScore || 0)
+              : Number(latestInit?.creatorScore || 0)
+            : aiTargetScore.current;
+        const oppFinished =
+          mode === "p2p"
+            ? Boolean(
+                mySide === "creator"
+                  ? latestInit?.opponentFinished
+                  : latestInit?.creatorFinished
+              )
+            : true;
+
+        const winnerSide: "creator" | "opponent" | "draw" =
+          mode === "p2p"
+            ? (reason === "bomb" || reason === "missed") && !oppFinished
+              ? otherSide
+              : finalPts > oppScore
+              ? mySide
+              : finalPts < oppScore
+              ? otherSide
+              : "draw"
+            : reason === "bomb" || reason === "missed"
+            ? otherSide
             : finalPts > oppScore
             ? mySide
             : finalPts < oppScore
-            ? mySide === "creator"
-              ? "opponent"
-              : "creator"
+            ? otherSide
             : "draw";
 
         if (winnerSide === mySide && reason !== "bomb") {
@@ -650,22 +675,22 @@ export function MarketSlashBoard({
         }
 
         const nextState: MarketSlashState = {
-          creatorScore: mySide === "creator" ? finalPts : initialState?.creatorScore || 0,
+          creatorScore: mySide === "creator" ? finalPts : oppScore,
           opponentScore: mySide === "opponent" ? finalPts : oppScore,
           creatorLevel: stallIdxRef.current + 1,
           creatorSliced: totalSlicedRef.current,
           creatorBestCombo: bestComboRef.current,
-          creatorFinished: true,
-          opponentFinished: true,
+          creatorFinished: mySide === "creator" ? true : oppFinished,
+          opponentFinished: mySide === "opponent" ? true : oppFinished,
           turn: "creator",
           winner: winnerSide,
-          moveCount: (initialState?.moveCount || 0) + 1,
+          moveCount: Number(latestInit?.moveCount || 0) + 1,
         };
         onStateChange?.(nextState);
         onMatchComplete?.(winnerSide, nextState);
       }
     },
-    [clearPendingWaveTimers, initialState, mode, mySide, onMatchComplete, onPointsEarned, onStateChange]
+    [clearPendingWaveTimers, mode, mySide, onMatchComplete, onPointsEarned, onStateChange]
   );
 
   const handleRestartGame = useCallback(() => {
@@ -911,6 +936,27 @@ export function MarketSlashBoard({
       totalSlicedRef.current += 1;
       setTotalSliced(totalSlicedRef.current);
 
+      if (mode === "p2p" && now - lastP2pSyncAtRef.current > 2400 && !gameOverRef.current) {
+        lastP2pSyncAtRef.current = now;
+        const latestInit = latestInitialStateRef.current;
+        const oppScore =
+          mySide === "creator"
+            ? Number(latestInit?.opponentScore || 0)
+            : Number(latestInit?.creatorScore || 0);
+        onStateChange?.({
+          creatorScore: mySide === "creator" ? scoreRef.current : oppScore,
+          opponentScore: mySide === "opponent" ? scoreRef.current : oppScore,
+          creatorLevel: stallIdxRef.current + 1,
+          creatorSliced: totalSlicedRef.current,
+          creatorBestCombo: bestComboRef.current,
+          creatorFinished: Boolean(latestInit?.creatorFinished),
+          opponentFinished: Boolean(latestInit?.opponentFinished),
+          turn: "creator",
+          winner: latestInit?.winner || null,
+          moveCount: Number(latestInit?.moveCount || 0) + 1,
+        });
+      }
+
       if (totalSlicedRef.current % 25 === 0) {
         onPointsEarned?.(5, "25 Fruits Sliced (+5 Arena Pts)");
       }
@@ -982,7 +1028,7 @@ export function MarketSlashBoard({
         }, 1350);
       }
     },
-    [addFloatingText, clearPendingWaveTimers, onPointsEarned, spawnJuice, triggerEndGame]
+    [addFloatingText, clearPendingWaveTimers, mode, mySide, onPointsEarned, onStateChange, spawnJuice, triggerEndGame]
   );
 
   const finalizeSwipeCombo = useCallback(() => {

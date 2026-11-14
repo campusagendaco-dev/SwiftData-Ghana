@@ -291,9 +291,9 @@ export function getBrowserFingerprint(): string {
   // WebGL fingerprint
   try {
     const canvas = document.createElement("canvas");
-    const gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
+    const gl = (canvas.getContext("webgl") || canvas.getContext("experimental-webgl")) as WebGLRenderingContext | null;
     if (gl) {
-      const debugInfo = (gl as any).getExtension("WEBGL_debug_renderer_info");
+      const debugInfo = gl.getExtension("WEBGL_debug_renderer_info");
       if (debugInfo) {
         parts.push(gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL) || "");
         parts.push(gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) || "");

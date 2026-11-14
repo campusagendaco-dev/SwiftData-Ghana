@@ -380,9 +380,7 @@ export function DameCheckersBoard({
     onStateChange?.(INITIAL_DAME_STATE);
   }, [onRematch, mode, onStateChange]);
 
-  const isMyTurn =
-    !game.winner &&
-    (game.turn === mySide || (mode === "p2p" && (game.moveCount || 0) === 0));
+  const isMyTurn = !game.winner && game.turn === mySide;
   const allLegalMoves = isMyTurn ? getLegalDameMoves(game.board, mySide) : [];
   const selectedMoves = selectedSq
     ? allLegalMoves.filter((m) => m.fromR === selectedSq.r && m.fromC === selectedSq.c)

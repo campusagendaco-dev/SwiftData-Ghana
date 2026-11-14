@@ -356,7 +356,6 @@ serve(async (req: Request) => {
           const { data: pageData, error: pageErr } = await supabaseAdmin
             .from("profiles")
             .select(useLegacy ? selectColsLegacy : selectColsNew)
-            .or("api_key_prefix.not.is.null,api_key_hash.not.is.null,api_access_enabled.eq.true,api_request_status.eq.pending")
             .order("full_name")
             .range(from, to);
 
@@ -384,6 +383,7 @@ serve(async (req: Request) => {
 
         const userIds = (users || []).map((u: any) => u.user_id);
         let statsMap: Record<string, any> = {};
+        const walletMap = new Map<string, { main: number; api: number }>();
 
         if (userIds.length > 0) {
           const { data: stats } = await supabaseAdmin
@@ -394,10 +394,29 @@ serve(async (req: Request) => {
           if (stats) {
             statsMap = Object.fromEntries(stats.map((s: any) => [s.user_id, s.total_sales_volume]));
           }
+
+          for (let wPage = 0; wPage < 5; wPage++) {
+            const wFrom = wPage * pageSize;
+            const wTo = wFrom + pageSize - 1;
+            const { data: wRows, error: wErr } = await supabaseAdmin
+              .from("wallets")
+              .select("agent_id, balance, api_balance")
+              .range(wFrom, wTo);
+            if (wErr || !wRows || wRows.length === 0) break;
+            for (const w of wRows as any[]) {
+              walletMap.set(w.agent_id, {
+                main: Number(w.balance ?? 0),
+                api: Number(w.api_balance ?? 0),
+              });
+            }
+            if (wRows.length < pageSize) break;
+          }
         }
 
         const enrichedUsers = (users || []).map((u: any) => ({
           ...u,
+          wallet_balance: walletMap.get(u.user_id)?.main ?? 0,
+          api_wallet_balance: walletMap.get(u.user_id)?.api ?? 0,
           total_sales_volume: statsMap[u.user_id] || 0,
           stats: [{ total_sales_volume: statsMap[u.user_id] || 0 }]
         }));

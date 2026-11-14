@@ -270,11 +270,12 @@ serve(async (req) => {
         const hasAssignedProvider = Boolean(
           order.provider_order_id &&
           order.provider_order_id !== "failed_api_call" &&
-          order.provider_order_id !== "timeout" &&
           order.provider_order_id !== "dispatching" &&
           order.provider_order_id !== "routed" &&
           order.provider_order_id !== "duplicate_cooldown" &&
-          order.provider_order_id !== "refunded"
+          order.provider_order_id !== "refunded" &&
+          (order.provider_order_id !== "timeout" || Boolean(order.provider_id)) &&
+          (order.provider_order_id !== "awaiting_provider" || Boolean(order.provider_id))
         );
 
         const verifyRes = await fetch(verifyPaymentUrl, {

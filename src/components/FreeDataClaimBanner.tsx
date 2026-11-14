@@ -40,7 +40,7 @@ const FreeDataClaimBanner = () => {
           .from("orders")
           .select("id", { count: "exact", head: true })
           .eq("agent_id", user.id)
-          .eq("order_type" as any, "free_data_claim"),
+          .eq("order_type", "free_data_claim"),
       ]);
 
       const data = settingsRes.data;

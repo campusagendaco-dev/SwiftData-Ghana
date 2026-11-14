@@ -739,7 +739,24 @@ export function CandyCrashBoard({
     [findMove, reshuffle, syncGridToReactState]
   );
 
+  const latestInitialStateRef = useRef<CandyCrashState | undefined>(initialState);
+  const initializedLevelRef = useRef(false);
+
   useEffect(() => {
+    latestInitialStateRef.current = initialState;
+    if (mode === "p2p" && initialState) {
+      const oppScore =
+        mySide === "creator"
+          ? Number(initialState.opponentScore || 0)
+          : Number(initialState.creatorScore || 0);
+      challengerScoreRef.current = oppScore;
+      setChallengerLiveScore(oppScore);
+    }
+  }, [initialState, mode, mySide]);
+
+  useEffect(() => {
+    if (initializedLevelRef.current) return;
+    initializedLevelRef.current = true;
     initBoardForLevel(initialState?.creatorLevel || 1);
   }, [initBoardForLevel, initialState?.creatorLevel]);
 
@@ -988,8 +1005,52 @@ export function CandyCrashBoard({
         }
       }
 
-      const stars = win ? (currentMoves >= 8 ? 3 : currentMoves >= 4 ? 2 : 1) : 0;
-      if (win && !timedOut) {
+      const otherSide: "creator" | "opponent" =
+        mySide === "creator" ? "opponent" : "creator";
+      const latestInit = latestInitialStateRef.current;
+
+      let effectiveWin = win || (timedOut && currentScore >= currentGoal);
+      let finalChallengerScore = challengerScoreRef.current;
+      let winnerSide: "creator" | "opponent" | "draw" = effectiveWin
+        ? mySide
+        : otherSide;
+
+      if (mode === "p2p") {
+        const oppScore =
+          mySide === "creator"
+            ? Number(latestInit?.opponentScore || 0)
+            : Number(latestInit?.creatorScore || 0);
+        finalChallengerScore = oppScore;
+        if (effectiveWin) {
+          winnerSide = mySide;
+        } else if (currentScore > oppScore) {
+          effectiveWin = true;
+          winnerSide = mySide;
+        } else if (currentScore < oppScore) {
+          effectiveWin = false;
+          winnerSide = otherSide;
+        } else {
+          effectiveWin = false;
+          winnerSide = "draw";
+        }
+      } else {
+        finalChallengerScore = effectiveWin
+          ? Math.min(
+              currentScore - 20,
+              Math.max(challengerScoreRef.current, Math.round(currentGoal * 0.91))
+            )
+          : Math.max(challengerScoreRef.current, Math.round(currentGoal * 0.96));
+        winnerSide = effectiveWin ? mySide : otherSide;
+      }
+
+      const stars = effectiveWin
+        ? currentMoves >= 8
+          ? 3
+          : currentMoves >= 4
+          ? 2
+          : 1
+        : 0;
+      if (effectiveWin) {
         playLevelUpFanfare();
         triggerHapticSensor("victory");
         onPointsEarned?.(
@@ -998,34 +1059,34 @@ export function CandyCrashBoard({
         );
       }
 
-      const finalChallengerScore = win
-        ? Math.min(currentScore - 20, Math.max(challengerScoreRef.current, Math.round(currentGoal * 0.91)))
-        : Math.max(challengerScoreRef.current, Math.round(currentGoal * 0.96));
+      const oppFinished =
+        mode === "p2p"
+          ? Boolean(
+              mySide === "creator"
+                ? latestInit?.opponentFinished
+                : latestInit?.creatorFinished
+            )
+          : true;
 
       const nextState: CandyCrashState = {
-        creatorScore: currentScore,
-        opponentScore: finalChallengerScore,
-        creatorLevel: win ? currentLv + 1 : currentLv,
+        creatorScore: mySide === "creator" ? currentScore : finalChallengerScore,
+        opponentScore: mySide === "opponent" ? currentScore : finalChallengerScore,
+        creatorLevel: effectiveWin ? currentLv + 1 : currentLv,
         creatorBestCombo: bestComboRef.current,
         creatorStars: stars,
-        creatorFinished: true,
-        opponentFinished: true,
+        creatorFinished: mySide === "creator" ? true : oppFinished,
+        opponentFinished: mySide === "opponent" ? true : oppFinished,
         turn: "creator",
-        winner: win ? mySide : "opponent",
-        moveCount: (initialState?.moveCount || 0) + 1,
+        winner: winnerSide,
+        moveCount: Number(latestInit?.moveCount || 0) + 1,
       };
       onStateChange?.(nextState);
-      if (win) {
-        onMatchComplete?.(mySide, nextState);
-      } else {
-        const otherSide = mySide === "creator" ? "opponent" : "creator";
-        onMatchComplete?.(otherSide, nextState);
-      }
+      onMatchComplete?.(winnerSide, nextState);
 
       busyRef.current = true;
       window.setTimeout(() => {
         setOverModal({
-          win,
+          win: effectiveWin,
           timedOut,
           stars,
           finalScore: currentScore,
@@ -1037,7 +1098,7 @@ export function CandyCrashBoard({
     },
     [
       bestScore,
-      initialState?.moveCount,
+      mode,
       mySide,
       onMatchComplete,
       onPointsEarned,
@@ -1102,17 +1163,39 @@ export function CandyCrashBoard({
       movesRef.current -= 1;
       setMoves(movesRef.current);
 
-      // Advance Auntie Efua / Challenger live score pace per turn
-      const totalMovesForLv = Math.min(30, 17 + levelRef.current);
-      const avgNeededPerMove = (goalRef.current * 0.9) / Math.max(1, totalMovesForLv);
-      const challengerStep = Math.round(avgNeededPerMove * (0.78 + Math.random() * 0.38));
-      challengerScoreRef.current = Math.min(
-        Math.round(goalRef.current * 0.96),
-        challengerScoreRef.current + challengerStep
-      );
-      setChallengerLiveScore(challengerScoreRef.current);
+      // Advance Auntie Efua / Challenger live score pace per turn in solo/AI mode
+      if (mode !== "p2p") {
+        const totalMovesForLv = Math.min(30, 17 + levelRef.current);
+        const avgNeededPerMove = (goalRef.current * 0.9) / Math.max(1, totalMovesForLv);
+        const challengerStep = Math.round(avgNeededPerMove * (0.78 + Math.random() * 0.38));
+        challengerScoreRef.current = Math.min(
+          Math.round(goalRef.current * 0.96),
+          challengerScoreRef.current + challengerStep
+        );
+        setChallengerLiveScore(challengerScoreRef.current);
+      }
 
       await resolve(forced, [a, b], usedBombSwap);
+
+      if (mode === "p2p" && scoreRef.current < goalRef.current && movesRef.current > 0) {
+        const latestInit = latestInitialStateRef.current;
+        const oppScore =
+          mySide === "creator"
+            ? Number(latestInit?.opponentScore || 0)
+            : Number(latestInit?.creatorScore || 0);
+        onStateChange?.({
+          creatorScore: mySide === "creator" ? scoreRef.current : oppScore,
+          opponentScore: mySide === "opponent" ? scoreRef.current : oppScore,
+          creatorLevel: levelRef.current,
+          creatorBestCombo: bestComboRef.current,
+          creatorStars: 0,
+          creatorFinished: Boolean(latestInit?.creatorFinished),
+          opponentFinished: Boolean(latestInit?.opponentFinished),
+          turn: "creator",
+          winner: latestInit?.winner || null,
+          moveCount: Number(latestInit?.moveCount || 0) + 1,
+        });
+      }
 
       if (scoreRef.current >= goalRef.current) {
         finishLevel(true);
@@ -1129,7 +1212,7 @@ export function CandyCrashBoard({
       }
       busyRef.current = false;
     },
-    [clearSelectionAndHints, findMove, findRuns, finishLevel, reshuffle, resolve, swapCells]
+    [clearSelectionAndHints, findMove, findRuns, finishLevel, mode, mySide, onStateChange, reshuffle, resolve, swapCells]
   );
 
   const handleTilePointerDown = (
@@ -1540,6 +1623,8 @@ export function CandyCrashBoard({
             >
               {overModal.win
                 ? `🇬🇭 ${getMarketStage(overModal.levelNum).market.toUpperCase()} CLEARED!`
+                : overModal.timedOut
+                ? "⏱️ 75S RUSH TIME UP!"
                 : "⏳ OUT OF MOVES ON THE TRAY"}
             </Badge>
 

@@ -253,7 +253,10 @@ interface BeachBuggyTrackProps {
   roomCode?: string;
   initialState?: Partial<BuggyRaceBoardState>;
   onStateChange?: (state: BuggyRaceBoardState) => void;
-  onMatchComplete?: (winner: "creator" | "opponent" | "draw") => void;
+  onMatchComplete?: (
+    winner: "creator" | "opponent" | "draw",
+    finalState?: BuggyRaceBoardState
+  ) => void;
   onPointsEarned?: (points: number, reason: string) => void;
   playerLevel?: number;
   onBackToLobby?: () => void;
@@ -947,11 +950,10 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
       force = false,
       finished = false,
       wrecked = false
-    ) {
+    ): BuggyRaceBoardState | null {
       const now = performance.now();
-      if (!force && now - lastSyncTs < 1200) return;
+      if (!force && now - lastSyncTs < 1200) return null;
       lastSyncTs = now;
-      if (!onStateChangeRef.current) return;
 
       const prog = clamp((P.tot - playerZ) / (LAPS * trackLen), 0, 1);
       const r = getRank();
@@ -983,7 +985,8 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
         moveCount: Number(prev.moveCount || 0) + 1,
         winner: prev.winner || null,
       };
-      onStateChangeRef.current(nextState);
+      onStateChangeRef.current?.(nextState);
+      return nextState;
     }
 
     function handleDamage(dmg: number) {
@@ -1028,14 +1031,54 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
         bank: saveRef.current.bank + cVal,
       };
       persistSave(nextSave);
-      syncProgressToArena(true, false, true);
+      const finalState = syncProgressToArena(true, false, !timedOut);
+      const otherSide: "creator" | "opponent" =
+        mySide === "creator" ? "opponent" : "creator";
+
+      let winnerSide: "creator" | "opponent" | "draw" = otherSide;
+      let wonOnTimeout = false;
+      if (timedOut && mode === "p2p" && finalState) {
+        const myProg =
+          mySide === "creator"
+            ? Number(finalState.creatorProgress || 0)
+            : Number(finalState.opponentProgress || 0);
+        const oppProg =
+          mySide === "creator"
+            ? Number(finalState.opponentProgress || 0)
+            : Number(finalState.creatorProgress || 0);
+        const oppFinished =
+          mySide === "creator"
+            ? Boolean(finalState.opponentFinished)
+            : Boolean(finalState.creatorFinished);
+        const oppWrecked =
+          mySide === "creator"
+            ? Boolean(finalState.opponentWrecked)
+            : Boolean(finalState.creatorWrecked);
+
+        if (oppFinished) {
+          winnerSide = otherSide;
+          wonOnTimeout = false;
+        } else if (oppWrecked && myProg > 0) {
+          winnerSide = mySide;
+          wonOnTimeout = true;
+        } else if (Math.abs(myProg - oppProg) < 0.01) {
+          winnerSide = "draw";
+          wonOnTimeout = false;
+        } else if (myProg > oppProg) {
+          winnerSide = mySide;
+          wonOnTimeout = true;
+        } else {
+          winnerSide = otherSide;
+          wonOnTimeout = false;
+        }
+      }
 
       window.setTimeout(() => {
         setEndSummary({
-          won: false,
+          won: wonOnTimeout,
           wrecked: !timedOut,
           timedOut,
-          rank: 6,
+          rank: wonOnTimeout ? 1 : 6,
           lap,
           raceTime: P.time,
           prizeCoins: 0,
@@ -1044,8 +1087,10 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
         });
         setUiScreen("end");
         if (onMatchCompleteRef.current) {
-          const otherSide = mySide === "creator" ? "opponent" : "creator";
-          onMatchCompleteRef.current(otherSide);
+          const settledState = finalState
+            ? { ...finalState, winner: winnerSide }
+            : INITIAL_BUGGY_STATE;
+          onMatchCompleteRef.current(winnerSide, settledState);
         }
       }, 1200);
     }
@@ -1062,9 +1107,25 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
         best: isNewBest ? P.time : curSave.best,
       };
       persistSave(nextSave);
-      syncProgressToArena(true, true, false);
+      const finalState = syncProgressToArena(true, true, false);
 
-      if (r <= 2 && P.time <= RACE_CUTOFF_SECONDS) {
+      const otherSide: "creator" | "opponent" =
+        mySide === "creator" ? "opponent" : "creator";
+      let didWinMatch = r <= 2 && P.time <= RACE_CUTOFF_SECONDS;
+      if (mode === "p2p" && finalState) {
+        const oppFinished =
+          mySide === "creator"
+            ? Boolean(finalState.opponentFinished)
+            : Boolean(finalState.creatorFinished);
+        const oppTime =
+          mySide === "creator"
+            ? Number(finalState.opponentTime || 0)
+            : Number(finalState.creatorTime || 0);
+        // In 1v1 P2P, first racer to complete all 3 laps (or faster time) wins!
+        didWinMatch = !oppFinished || (oppTime > 0 && P.time <= oppTime);
+      }
+
+      if (didWinMatch && P.time <= RACE_CUTOFF_SECONDS) {
         playLevelUpFanfare();
         triggerHapticSensor("win");
         onPointsEarnedRef.current?.(
@@ -1077,7 +1138,7 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
 
       window.setTimeout(() => {
         setEndSummary({
-          won: r === 1,
+          won: mode === "p2p" ? didWinMatch : r === 1,
           wrecked: false,
           timedOut: false,
           rank: r,
@@ -1089,8 +1150,11 @@ export const BeachBuggyTrack: React.FC<BeachBuggyTrackProps> = ({
         });
         setUiScreen("end");
         if (onMatchCompleteRef.current) {
-          const otherSide = mySide === "creator" ? "opponent" : "creator";
-          onMatchCompleteRef.current(r <= 2 ? mySide : otherSide);
+          const winnerSide: "creator" | "opponent" = didWinMatch ? mySide : otherSide;
+          const settledState = finalState
+            ? { ...finalState, winner: winnerSide }
+            : INITIAL_BUGGY_STATE;
+          onMatchCompleteRef.current(winnerSide, settledState);
         }
       }, 1400);
     }

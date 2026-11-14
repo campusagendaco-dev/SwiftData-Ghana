@@ -96,7 +96,7 @@ const AdminAgents = () => {
       .select("*", { count: "exact" }) as any;
 
     query = query.eq("is_agent", true);
-    query = query.eq("is_sub_agent" as any, false);
+    query = query.eq("is_sub_agent", false);
 
     if (search) {
       const s = sanitizeSearchTerm(search);
@@ -116,9 +116,9 @@ const AdminAgents = () => {
 
     if (!isLoadMore) {
       const [totalCountRes, approvedCountRes, pendingCountRes] = await Promise.all([
-        supabase.from("profiles").select("id", { count: "exact", head: true }).eq("is_agent", true).eq("is_sub_agent" as any, false),
-        supabase.from("profiles").select("id", { count: "exact", head: true }).eq("is_agent", true).eq("is_sub_agent" as any, false).eq("agent_approved", true),
-        supabase.from("profiles").select("id", { count: "exact", head: true }).eq("is_agent", true).eq("is_sub_agent" as any, false).or("agent_approved.is.null,agent_approved.eq.false"),
+        supabase.from("profiles").select("id", { count: "exact", head: true }).eq("is_agent", true).eq("is_sub_agent", false),
+        supabase.from("profiles").select("id", { count: "exact", head: true }).eq("is_agent", true).eq("is_sub_agent", false).eq("agent_approved", true),
+        supabase.from("profiles").select("id", { count: "exact", head: true }).eq("is_agent", true).eq("is_sub_agent", false).or("agent_approved.is.null,agent_approved.eq.false"),
       ]);
       setAgentCounts({
         total: totalCountRes.count ?? 0,
@@ -136,7 +136,7 @@ const AdminAgents = () => {
       }
       const [walletChunks, subCountChunks, salesChunks, activationChunks] = await Promise.all([
         Promise.all(idChunks.map(chunk => supabase.from("wallets").select("agent_id, balance, api_balance, credit_limit").in("agent_id", chunk))),
-        Promise.all(idChunks.map(chunk => supabase.from("profiles").select("user_id, parent_agent_id").eq("is_sub_agent" as any, true).in("parent_agent_id" as any, chunk))),
+        Promise.all(idChunks.map(chunk => supabase.from("profiles").select("user_id, parent_agent_id").eq("is_sub_agent", true).in("parent_agent_id", chunk))),
         Promise.all(idChunks.map(chunk => supabase.from("user_sales_stats").select("user_id, total_sales_volume, total_own_profit, total_commissions_paid").in("user_id", chunk))),
         Promise.all(idChunks.map(chunk => supabase.from("orders").select("agent_id, amount, paystack_fee, payment_method").in("agent_id", chunk).in("order_type", ["agent_activation", "sub_agent_activation"]).in("status", ["paid", "fulfilled"]))),
       ]);

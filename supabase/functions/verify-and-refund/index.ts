@@ -163,7 +163,9 @@ serve(async (req) => {
 
     let upstreamRefundData: any = null;
     const isRerouteMode = mode === "refund_and_reroute" || mode === "reroute";
-    const hasProviderRef = !isSentinelProviderOrderId(order.provider_order_id) && !isAwaitingProviderRef(order.provider_order_id);
+    const isAwaitingProvider = isAwaitingProviderRef(order.provider_order_id);
+    const hasProviderRef = !isSentinelProviderOrderId(order.provider_order_id) && !isAwaitingProvider;
+    const mayExistOnProvider = hasProviderRef || isAwaitingProvider;
 
     let assignedProvider: any = null;
     if (order.provider_id) {
@@ -215,10 +217,10 @@ serve(async (req) => {
 
         // 2. If DataHub or DataMart and order is still active, attempt upstream refund/cancel first
         const isConfirmedFailedOrMissingOnProvider =
-          !hasProviderRef ||
+          !mayExistOnProvider ||
           ["failed", "fulfillment_failed", "refunded", "reversed", "rejected", "cancelled", "not_found"].includes(liveStatus);
 
-        if (isDataMart && hasProviderRef && !isConfirmedFailedOrMissingOnProvider) {
+        if (isDataMart && mayExistOnProvider && !isConfirmedFailedOrMissingOnProvider) {
           const dmCancel = await standardAdapter.cancelDataMartOrder(supabaseAdmin, assignedProvider, {
             reference: order.id,
             providerOrderId: order.provider_order_id,
@@ -248,7 +250,7 @@ serve(async (req) => {
               });
             }
           }
-        } else if (isDataHub && hasProviderRef && !isConfirmedFailedOrMissingOnProvider) {
+        } else if (isDataHub && mayExistOnProvider && !isConfirmedFailedOrMissingOnProvider) {
           const dhMethod = req.method === "GET" ? "GET" : "POST";
           const dhRefund = await standardAdapter.refundDataHubOrder(supabaseAdmin, assignedProvider, {
             reference: order.id,
@@ -443,8 +445,9 @@ serve(async (req) => {
           }
 
           const isConfirmedFailedOnDataMart =
-            !hasProviderRef ||
-            ["failed", "fulfillment_failed", "refunded", "reversed", "rejected", "cancelled"].includes(liveStatus);
+            !mayExistOnProvider ||
+            ["failed", "fulfillment_failed", "refunded", "reversed", "rejected", "cancelled"].includes(liveStatus) ||
+            (isAwaitingProvider && liveStatus === "not_found");
 
           if (!isConfirmedFailedOnDataMart) {
             const httpStatus =
@@ -598,7 +601,7 @@ serve(async (req) => {
         }
 
         const isFailedOrRefundedOnProvider =
-          !hasProviderRef ||
+          !mayExistOnProvider ||
           ["failed", "fulfillment_failed", "refunded", "reversed", "rejected", "cancelled", "not_found"].includes(liveStatus);
 
         if (!isFailedOrRefundedOnProvider && !isCallerAdmin) {

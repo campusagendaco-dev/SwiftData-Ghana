@@ -135,13 +135,13 @@ const AdminPromotions = () => {
     const { count } = await supabase
       .from("orders")
       .select("id", { count: "exact", head: true })
-      .eq("order_type" as any, "free_data_claim");
+      .eq("order_type", "free_data_claim");
     setClaimCount(count || 0);
 
     const { data: sumData } = await supabase
       .from("orders")
       .select("discount_amount")
-      .eq("order_type" as any, "free_data_claim");
+      .eq("order_type", "free_data_claim");
     
     const cost = sumData ? sumData.reduce((acc, row) => acc + (Number(row.discount_amount) || 0), 0) : 0;
     setTotalFreeDataCost(cost);
@@ -474,7 +474,7 @@ const AdminPromotions = () => {
     const { error } = await supabase
       .from("orders")
       .update({ order_type: "free_data_claim_archived" } as any)
-      .eq("order_type" as any, "free_data_claim");
+      .eq("order_type", "free_data_claim");
 
     if (error) {
       toast({ title: "Failed to reset claims", description: error.message, variant: "destructive" });

@@ -219,7 +219,7 @@ const AdminOverview = () => {
       (supabase.rpc as any)("get_admin_sales_stats_v2", { p_start_date: startDate.toISOString() }),
       supabase.from("ai_recommendations").select("*").is("user_id", null).eq("is_acted_upon", false).order("created_at", { ascending: false }),
       supabase.from("profiles").select("id", { count: "exact", head: true }),
-      supabase.from("profiles").select("id", { count: "exact", head: true }).eq("is_agent", true).eq("is_sub_agent" as any, false).eq("agent_approved", false),
+      supabase.from("profiles").select("id", { count: "exact", head: true }).eq("is_agent", true).eq("is_sub_agent", false).eq("agent_approved", false),
       supabase.from("profiles").select("id", { count: "exact", head: true }).gte("created_at", todayIso),
       supabase.from("providers").select("id, name, handler_type, balance, is_active, consecutive_failures, last_synced_at, priority").eq("is_active", true).order("priority", { ascending: true }),
     ]);

@@ -780,7 +780,7 @@ export function endGame(state: LudoGameState, winner: LudoPlayerId): LudoGameSta
  * 2. rollDice()
  * Generates (or accepts a deterministic test value for) a 1..6 dice roll, validates the roll,
  * handles consecutive sixes, calculates legal moves, and automatically passes the turn
- * ONLY when no legal moves exist and no extra roll was granted by a 6.
+ * when no legal moves exist.
  */
 export function rollDice(
   state: LudoGameState,

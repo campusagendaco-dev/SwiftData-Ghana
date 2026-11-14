@@ -103,11 +103,11 @@ const AdminUsers = () => {
           .in("user_id", targetAgentIds);
 
         if (tab === "customers") {
-          profQuery = profQuery.eq("is_agent", false).eq("is_sub_agent" as any, false);
+          profQuery = profQuery.eq("is_agent", false).eq("is_sub_agent", false);
         } else if (tab === "agents") {
-          profQuery = profQuery.eq("is_agent", true).eq("is_sub_agent" as any, false);
+          profQuery = profQuery.eq("is_agent", true).eq("is_sub_agent", false);
         } else if (tab === "sub-agents") {
-          profQuery = profQuery.eq("is_sub_agent" as any, true);
+          profQuery = profQuery.eq("is_sub_agent", true);
         }
 
         const { data: profData } = await profQuery;
@@ -136,11 +136,11 @@ const AdminUsers = () => {
           .in("user_id", targetAgentIds);
 
         if (tab === "customers") {
-          profQuery = profQuery.eq("is_agent", false).eq("is_sub_agent" as any, false);
+          profQuery = profQuery.eq("is_agent", false).eq("is_sub_agent", false);
         } else if (tab === "agents") {
-          profQuery = profQuery.eq("is_agent", true).eq("is_sub_agent" as any, false);
+          profQuery = profQuery.eq("is_agent", true).eq("is_sub_agent", false);
         } else if (tab === "sub-agents") {
-          profQuery = profQuery.eq("is_sub_agent" as any, true);
+          profQuery = profQuery.eq("is_sub_agent", true);
         }
 
         const { data: profData } = await profQuery;
@@ -169,11 +169,11 @@ const AdminUsers = () => {
           .in("user_id", targetUserIds);
 
         if (tab === "customers") {
-          profQuery = profQuery.eq("is_agent", false).eq("is_sub_agent" as any, false);
+          profQuery = profQuery.eq("is_agent", false).eq("is_sub_agent", false);
         } else if (tab === "agents") {
-          profQuery = profQuery.eq("is_agent", true).eq("is_sub_agent" as any, false);
+          profQuery = profQuery.eq("is_agent", true).eq("is_sub_agent", false);
         } else if (tab === "sub-agents") {
-          profQuery = profQuery.eq("is_sub_agent" as any, true);
+          profQuery = profQuery.eq("is_sub_agent", true);
         }
 
         const { data: profData } = await profQuery;
@@ -207,11 +207,11 @@ const AdminUsers = () => {
       }
 
       if (tab === "customers") {
-        q = q.eq("is_agent", false).eq("is_sub_agent" as any, false);
+        q = q.eq("is_agent", false).eq("is_sub_agent", false);
       } else if (tab === "agents") {
-        q = q.eq("is_agent", true).eq("is_sub_agent" as any, false);
+        q = q.eq("is_agent", true).eq("is_sub_agent", false);
       } else if (tab === "sub-agents") {
-        q = q.eq("is_sub_agent" as any, true);
+        q = q.eq("is_sub_agent", true);
       }
 
       const res = await q;

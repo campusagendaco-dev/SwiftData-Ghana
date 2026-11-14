@@ -981,9 +981,9 @@ const DashboardSettings = () => {
                     maxLength={11}
                     style={{ paddingLeft: "2.25rem", paddingRight: "2.25rem" }}
                   />
-                  {form.sms_sender_status === 'approved' && <CheckCircle2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-emerald-400" title="Approved" />}
-                  {form.sms_sender_status === 'pending' && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-amber-400 animate-spin" title="Pending Approval" />}
-                  {form.sms_sender_status === 'rejected' && <XCircle className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-red-400" title="Rejected" />}
+                  {form.sms_sender_status === 'approved' && <span title="Approved"><CheckCircle2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-emerald-400" /></span>}
+                  {form.sms_sender_status === 'pending' && <span title="Pending Approval"><Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-amber-400 animate-spin" /></span>}
+                  {form.sms_sender_status === 'rejected' && <span title="Rejected"><XCircle className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-red-400" /></span>}
                 </div>
                 <div className="mt-2 flex flex-col gap-3">
                   <div className="flex items-center justify-between">

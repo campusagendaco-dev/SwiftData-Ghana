@@ -1,3 +1,4 @@
+import { expect, it } from "vitest";
 import { GHANA_TOWNS } from "../../supabase/functions/_shared/ghana_towns";
 const CAPITALS = ["Accra","Kumasi","Sekondi-Takoradi","Cape Coast","Koforidua","Ho","Dambai","Tamale","Damongo","Nalerigu","Bolgatanga","Wa","Sunyani","Techiman","Goaso","Sefwi Wiawso"];
 const find = (n: string) => GHANA_TOWNS.find((t) => t.name === n);

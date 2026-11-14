@@ -1,15 +1,18 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.42.0";
-import {
+import * as webauthnServer from "npm:@simplewebauthn/server@13.1.1";
+import * as webauthnHelpers from "npm:@simplewebauthn/server@13.1.1/helpers";
+import { corsHeaders } from "../_shared/cors.ts";
+
+const {
   verifyAuthenticationResponse,
   verifyRegistrationResponse,
-} from "npm:@simplewebauthn/server@13.1.1";
-import {
+} = webauthnServer as any;
+const {
   decodeAttestationObject,
   isoBase64URL,
   parseAuthenticatorData,
-} from "npm:@simplewebauthn/server@13.1.1/helpers";
-import { corsHeaders } from "../_shared/cors.ts";
+} = webauthnHelpers as any;
 
 // Hostnames allowed to act as WebAuthn origins / relying parties.
 // Override with WEBAUTHN_ALLOWED_HOSTS="swiftdatagh.shop,www.swiftdatagh.shop,localhost".

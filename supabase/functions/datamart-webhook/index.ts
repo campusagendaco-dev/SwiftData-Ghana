@@ -142,7 +142,7 @@ serve(async (req) => {
           }).eq("id", order.id);
 
           const pmLower = String(order.payment_method || "").toLowerCase().trim();
-          if (pmLower === "wallet" || pmLower === "balance") {
+          if (pmLower === "wallet" || pmLower === "balance" || pmLower === "api") {
             await Promise.resolve(
               supabaseAdmin.rpc("refund_failed_order", { p_order_id: order.id })
             ).catch((e) => console.error("[DataMart Webhook] Wallet refund RPC error:", e));

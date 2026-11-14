@@ -150,7 +150,10 @@ describe("Complete Rule-Based Ludo Gameplay Engine (13-Section Specification)", 
   });
 
   it("9 & 10. Multiple tokens of same player form a Blockade that opponents cannot pass or land on", () => {
-    let game = initializeGame({ players: ["RED", "GREEN"] });
+    let game = initializeGame({
+      players: ["RED", "GREEN"],
+      config: { blockadeRulesEnabled: true },
+    });
     // GREEN puts 2 tokens on trackPosition 15 (forming a GREEN blockade)
     game.tokens.GREEN[0] = {
       ...game.tokens.GREEN[0],
@@ -209,7 +212,7 @@ describe("Complete Rule-Based Ludo Gameplay Engine (13-Section Specification)", 
     expect(thirdSix.state.consecutiveSixes).toBe(0);
   });
 
-  it("13. Rolling 6 when no legal moves exist still grants another roll (unless 3rd consecutive 6)", () => {
+  it("13. Rolling 6 when no legal moves exist automatically passes turn", () => {
     let game = initializeGame({ players: ["RED", "YELLOW"] });
     // Put all 4 RED tokens at step 55 (need exact 1 to finish), so a roll of 6 has 0 legal moves
     for (let i = 0; i < 4; i++) {
@@ -224,8 +227,8 @@ describe("Complete Rule-Based Ludo Gameplay Engine (13-Section Specification)", 
 
     const res = rollDice(game, "RED", 6);
     expect(res.legalMoves).toHaveLength(0);
-    expect(res.autoPassed).toBe(false);
-    expect(res.state.currentPlayer).toBe("RED");
+    expect(res.autoPassed).toBe(true);
+    expect(res.state.currentPlayer).toBe("YELLOW");
   });
 
   it("14 & 15. Rejects invalid actions and detects 4-token Victory immediately", () => {

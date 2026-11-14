@@ -420,9 +420,11 @@ export function GhanaLudoBoard({
       initialState.engine &&
       ((initialState.moveCount || 0) > (ludo.moveCount || 0) ||
         Boolean(initialState.engine.winner && !ludo.engine.winner) ||
+        Boolean(initialState.winner && !ludo.winner) ||
         ((initialState.moveCount || 0) === (ludo.moveCount || 0) &&
           (initialState.engine.currentPlayer !== ludo.engine.currentPlayer ||
-            initialState.engine.diceResult !== ludo.engine.diceResult)))
+            initialState.engine.diceResult !== ludo.engine.diceResult ||
+            (initialState.turn && initialState.turn !== ludo.turn))))
     ) {
       gameSessionIdRef.current += 1;
       setIsAnimatingMove(false);
@@ -435,6 +437,8 @@ export function GhanaLudoBoard({
   }, [
     initialState,
     ludo.moveCount,
+    ludo.turn,
+    ludo.winner,
     ludo.engine.currentPlayer,
     ludo.engine.diceResult,
     ludo.engine.winner,
@@ -444,15 +448,18 @@ export function GhanaLudoBoard({
   const myColor: LudoPlayerId = mySide === "creator" ? "RED" : "YELLOW";
 
   useEffect(() => {
-    if (!engine.winner || isAnimatingMove) return;
-    const winKey = `${engine.moveCount || 0}-${engine.winner}`;
+    const resolvedLudoWinner: "creator" | "opponent" | null = engine.winner
+      ? engine.winner === "RED"
+        ? "creator"
+        : "opponent"
+      : ludo.winner || null;
+    if (!resolvedLudoWinner || isAnimatingMove) return;
+    const winKey = `${engine.moveCount || ludo.moveCount || 0}-${resolvedLudoWinner}`;
     if (notifiedWinnerRef.current === winKey) return;
     notifiedWinnerRef.current = winKey;
     setDismissedWinnerPopup(false);
-    const mappedWinner: "creator" | "opponent" =
-      engine.winner === "RED" ? "creator" : "opponent";
-    onMatchComplete?.(mappedWinner, ludo);
-  }, [engine.winner, engine.moveCount, isAnimatingMove, ludo, onMatchComplete]);
+    onMatchComplete?.(resolvedLudoWinner, ludo);
+  }, [engine.winner, engine.moveCount, ludo.winner, ludo.moveCount, isAnimatingMove, ludo, onMatchComplete]);
 
   // Resolve visual token state during step-by-step animation
   const resolveVisualToken = useCallback(
@@ -479,7 +486,6 @@ export function GhanaLudoBoard({
     if (mode === "p2p") {
       if (mySide === "creator" && activeColor === "RED") return true;
       if (mySide === "opponent" && activeColor !== "RED") return true;
-      if ((engine.moveCount || 0) === 0 && engine.diceResult === null) return true;
       const meta = engine.playerMeta[activeColor];
       return !meta?.isAI && mySide === "creator";
     }

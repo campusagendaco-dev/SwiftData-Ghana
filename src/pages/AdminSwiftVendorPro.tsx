@@ -186,7 +186,7 @@ const AdminSwiftVendorPro = () => {
         .select("agent_id, amount, profit, parent_profit, status")
         .gte("created_at", today.toISOString());
 
-      const vendorData = wallets.map(w => {
+      const vendorData = wallets.map((w: any) => {
         const vendorOrders = orders?.filter(o => o.agent_id === w.agent_id) || [];
         const successOrders = vendorOrders.filter(o => o.status === "fulfilled");
         

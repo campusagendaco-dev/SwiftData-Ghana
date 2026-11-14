@@ -3,7 +3,7 @@ import { X, TrendingUp, Zap, ShieldCheck, Store, ArrowRight, Wifi } from "lucide
 import { supabase } from "@/integrations/supabase/client";
 import { Link } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, type Variants } from "framer-motion";
 
 interface StoreVisitorPopupProps {
   agentSlug?: string;
@@ -62,14 +62,14 @@ const StoreVisitorPopup = ({
   const hostname = window.location.hostname;
 
   // Animation variants
-  const containerVariants = {
+  const containerVariants: Variants = {
     hidden: { opacity: 0, scale: 0.92, y: -40 },
     visible: { 
       opacity: 1, 
       scale: 1, 
       y: 0, 
       transition: { 
-        type: "spring", 
+        type: "spring" as const, 
         damping: 24, 
         stiffness: 280,
         staggerChildren: 0.08,
@@ -79,9 +79,9 @@ const StoreVisitorPopup = ({
     exit: { opacity: 0, scale: 0.95, y: 20, transition: { duration: 0.2 } }
   };
 
-  const itemVariants = {
+  const itemVariants: Variants = {
     hidden: { opacity: 0, y: 15, filter: "blur(4px)" },
-    visible: { opacity: 1, y: 0, filter: "blur(0px)", transition: { type: "spring", stiffness: 300, damping: 25 } }
+    visible: { opacity: 1, y: 0, filter: "blur(0px)", transition: { type: "spring" as const, stiffness: 300, damping: 25 } }
   };
 
   return (

@@ -71,7 +71,7 @@ const AdminSentinelAI = () => {
     // Real-time subscription for actions
     const channel = supabase
       .channel("sentinel_changes")
-      .on("postgres_changes", { event: "INSERT", table: "sentinel_actions" }, (payload) => {
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "sentinel_actions" }, (payload: any) => {
         setActions((prev) => [payload.new as SentinelAction, ...prev].slice(0, 10));
         toast.info(`Sentinel: ${payload.new.action_type} action executed`);
       })

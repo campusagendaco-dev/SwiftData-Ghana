@@ -78,11 +78,11 @@ const AdminBanners = () => {
     const banner = type === 'promo' ? newBanner : newMenuBanner;
 
     if (type === 'promo') {
-      if (banner.banner_type === "image" && !banner.image) {
+      if (newBanner.banner_type === "image" && !newBanner.image) {
         toast({ variant: "destructive", title: "Error", description: "Please select an image" });
         return;
       }
-      if (banner.banner_type === "text" && !banner.content) {
+      if (newBanner.banner_type === "text" && !newBanner.content) {
         toast({ variant: "destructive", title: "Error", description: "Please enter banner text" });
         return;
       }

@@ -1247,7 +1247,11 @@ export default function ChallengeArena() {
   const handleCancelOpenChallenge = async (challengeId: string) => {
     try {
       const { data, error } = await supabase.functions.invoke("challenge-arena", {
-        body: { action: "cancel_challenge", challenge_id: challengeId },
+        body: {
+          action: "cancel_challenge",
+          challenge_id: challengeId,
+          seat_token: getSeatToken(challengeId),
+        },
       });
       if (error || !data?.success) {
         throw new Error(data?.error || error?.message || "Could not cancel challenge");
@@ -1354,7 +1358,11 @@ export default function ChallengeArena() {
   };
 
   const handleMatchComplete = useCallback(
-    async (winnerSide: "creator" | "opponent" | "draw", finalState: any) => {
+    async (
+      winnerSide: "creator" | "opponent" | "draw",
+      finalState: any,
+      options?: { reason?: string; timeoutClaim?: boolean }
+    ) => {
       if (!activeChallenge) return;
 
       const resolvedWinnerName =
@@ -1385,26 +1393,64 @@ export default function ChallengeArena() {
         return;
       }
 
+      const challengeId = activeChallenge.id;
+      const seatToken = getSeatToken(challengeId);
+
       try {
         const { data, error } = await supabase.functions.invoke("challenge-arena", {
           body: {
             action: "complete_match",
-            challenge_id: activeChallenge.id,
-            seat_token: getSeatToken(activeChallenge.id),
+            challenge_id: challengeId,
+            seat_token: seatToken,
             winner_side: winnerSide,
             board_state: finalState,
             winner_phone: playerPhone || profile?.phone || "",
             player_level: levelInfo.level,
+            reason: options?.reason,
+            timeout_claim: Boolean(options?.timeoutClaim),
           },
         });
 
-        if (!error && (data?.pending_confirmation || data?.disputed)) {
-          // P2P results settle only when both players report the same winner.
-          // Keep the local result screen; the server finishes settlement.
+        if (!error && data?.pending_confirmation) {
           toast({
-            title: data.disputed ? "Result under review" : "Waiting for opponent to confirm",
+            title: "Waiting for opponent's timer to finish",
             description: data.message,
-            variant: data.disputed ? "destructive" : undefined,
+          });
+          // Fallback: if opponent disconnected before reporting their timed score, settle after 12s grace window
+          window.setTimeout(async () => {
+            try {
+              const { data: fallbackData } = await supabase.functions.invoke("challenge-arena", {
+                body: {
+                  action: "complete_match",
+                  challenge_id: challengeId,
+                  seat_token: seatToken,
+                  winner_side: winnerSide,
+                  board_state: finalState,
+                  winner_phone: playerPhone || profile?.phone || "",
+                  player_level: levelInfo.level,
+                  reason: "timeout_grace_expired",
+                  timeout_claim: true,
+                },
+              });
+              if (fallbackData?.challenge) {
+                setActiveChallenge((prev: any) =>
+                  prev && prev.id === challengeId ? fallbackData.challenge : prev
+                );
+                fetchWalletAndPaystackKey();
+                fetchLobby(true);
+              }
+            } catch {
+              // ignore fallback error
+            }
+          }, 12000);
+          return;
+        }
+
+        if (!error && data?.disputed) {
+          toast({
+            title: "Result under review",
+            description: data.message,
+            variant: "destructive",
           });
           return;
         }
@@ -1415,9 +1461,7 @@ export default function ChallengeArena() {
               ? data.challenge
               : { ...data.challenge, winner_side: prev.winner_side, winner_name: prev.winner_name }
           );
-          // The result popup already announces win/lose/draw; only add a card
-          // when money actually landed in the wallet.
-          if (data.reward_claim && winnerSide === mySide) {
+          if (data.reward_claim && data.challenge.winner_side === mySide) {
             toast({ title: "Prize credited to your wallet", description: data.message });
           }
           fetchWalletAndPaystackKey();
@@ -1479,6 +1523,38 @@ export default function ChallengeArena() {
     setShowMatchResultModal(true);
 
     const winnerSide = derivedBoardWinner || "creator";
+
+    // If the match ended via Realtime board_state.winner while status is still 'in_progress', confirm settlement on server
+    if (
+      activeChallenge.mode === "p2p" &&
+      activeChallenge.status === "in_progress" &&
+      derivedBoardWinner &&
+      !String(activeChallenge.id || "").startsWith("local_")
+    ) {
+      supabase.functions
+        .invoke("challenge-arena", {
+          body: {
+            action: "complete_match",
+            challenge_id: activeChallenge.id,
+            seat_token: getSeatToken(activeChallenge.id),
+            winner_side: derivedBoardWinner,
+            board_state: activeChallenge.board_state,
+            winner_phone: playerPhone || profile?.phone || "",
+            player_level: levelInfo.level,
+          },
+        })
+        .then(({ data }) => {
+          if (data?.challenge) {
+            setActiveChallenge((prev: any) =>
+              prev && prev.id === data.challenge.id ? data.challenge : prev
+            );
+            fetchWalletAndPaystackKey();
+            fetchLobby(true);
+          }
+        })
+        .catch(() => {});
+    }
+
     if (winnerSide === mySide) {
       playSuccessSound();
       triggerHapticSensor("victory");
@@ -1496,15 +1572,21 @@ export default function ChallengeArena() {
   }, [
     activeChallenge?.id,
     activeChallenge?.status,
+    activeChallenge?.mode,
     activeChallenge?.winner_side,
     activeChallenge?.completed_at,
+    activeChallenge?.board_state,
     activeChallenge?.board_state?.winner,
     activeChallenge?.board_state?.engine?.winner,
     activeChallenge?.board_state?.moveCount,
     activeChallenge?.board_state?.shotCount,
     mySide,
+    playerPhone,
+    profile,
+    levelInfo.level,
     handlePointsEarned,
     fetchWalletAndPaystackKey,
+    fetchLobby,
   ]);
 
   const handleRematchCurrentGame = async () => {
@@ -1566,13 +1648,286 @@ export default function ChallengeArena() {
     });
   };
 
-  // Live Turn Shot Clock (18s Free Data / AI, 25s P2P) for Turn-Based Games
+  // ── Stage 1: Open 1v1 Room Waiting Countdown Timer (180s per cycle) ──
+  const [waitingSeconds, setWaitingSeconds] = useState<number>(180);
+  const [waitingTimedOut, setWaitingTimedOut] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (!activeChallenge || activeChallenge.status !== "open") {
+      setWaitingSeconds(180);
+      setWaitingTimedOut(false);
+      return;
+    }
+    setWaitingSeconds(180);
+    setWaitingTimedOut(false);
+  }, [activeChallenge?.id, activeChallenge?.status]);
+
+  useEffect(() => {
+    if (!activeChallenge || activeChallenge.status !== "open" || waitingTimedOut) {
+      return;
+    }
+    const waitInterval = window.setInterval(() => {
+      setWaitingSeconds((prev) => {
+        if (prev <= 1) {
+          window.clearInterval(waitInterval);
+          setWaitingTimedOut(true);
+          playTurnNotificationSound(true);
+          const roomAgeMs = activeChallenge.created_at
+            ? Date.now() - new Date(activeChallenge.created_at).getTime()
+            : 0;
+          if (roomAgeMs >= 15 * 60 * 1000) {
+            window.setTimeout(() => {
+              handleCancelOpenChallenge(activeChallenge.id);
+            }, 0);
+          } else {
+            window.setTimeout(() => {
+              toast({
+                title: "⏱️ Waiting Time Up!",
+                description:
+                  "No opponent joined yet. Extend the timer, switch to AI, or cancel for an instant refund.",
+              });
+            }, 0);
+          }
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => window.clearInterval(waitInterval);
+  }, [activeChallenge, waitingTimedOut, toast]);
+
+  // ── Stage 2: Live Turn Shot Clock (18s Free Data / AI, 25s P2P) for Turn-Based Games ──
   const [turnShotClockSec, setTurnShotClockSec] = useState<number>(18);
   const turnTimeoutStrikesRef = useRef<number>(0);
+  const opponentTimeoutStrikesRef = useRef<number>(0);
+  const [myTimeoutStrikes, setMyTimeoutStrikes] = useState<number>(0);
+  const [opponentTimeoutStrikes, setOpponentTimeoutStrikes] = useState<number>(0);
+  const [claimingTimeout, setClaimingTimeout] = useState<boolean>(false);
 
   useEffect(() => {
     turnTimeoutStrikesRef.current = 0;
+    opponentTimeoutStrikesRef.current = 0;
+    setMyTimeoutStrikes(0);
+    setOpponentTimeoutStrikes(0);
   }, [activeChallenge?.id]);
+
+  // Reset consecutive timeout strikes when a player completes a move
+  useEffect(() => {
+    if (!activeChallenge || activeChallenge.status !== "in_progress") return;
+    const serverStrikes = activeChallenge.board_state?.timeoutStrikes;
+    if (serverStrikes && typeof serverStrikes === "object") {
+      const otherSide = mySide === "creator" ? "opponent" : "creator";
+      const sMy = Number(serverStrikes[mySide] || 0);
+      const sOpp = Number(serverStrikes[otherSide] || 0);
+      turnTimeoutStrikesRef.current = sMy;
+      opponentTimeoutStrikesRef.current = sOpp;
+      setMyTimeoutStrikes(sMy);
+      setOpponentTimeoutStrikes(sOpp);
+    }
+  }, [
+    activeChallenge?.id,
+    activeChallenge?.status,
+    activeChallenge?.board_state?.moveCount,
+    activeChallenge?.board_state?.shotCount,
+    activeChallenge?.board_state?.timeoutStrikes,
+    mySide,
+  ]);
+
+  const handleClaimOpponentTimeout = useCallback(
+    async (forceForfeit = false) => {
+      if (!activeChallenge || activeChallenge.status !== "in_progress" || claimingTimeout) {
+        return;
+      }
+      setClaimingTimeout(true);
+      try {
+        const { data, error } = await supabase.functions.invoke("challenge-arena", {
+          body: {
+            action: "claim_timeout",
+            challenge_id: activeChallenge.id,
+            seat_token: getSeatToken(activeChallenge.id),
+            forfeit: forceForfeit,
+            winner_phone: playerPhone || profile?.phone || "",
+            player_level: levelInfo.level,
+          },
+        });
+
+        if (error || !data?.success) {
+          throw new Error(data?.error || error?.message || "Could not claim turn timeout");
+        }
+
+        if (data.too_early) {
+          toast({
+            title: "Turn Clock Still Running",
+            description: data.message || "Wait for the opponent's turn clock to hit 0s.",
+          });
+          return;
+        }
+
+        if (data.strike === 1 && data.challenge) {
+          opponentTimeoutStrikesRef.current = 1;
+          setOpponentTimeoutStrikes(1);
+          setActiveChallenge(data.challenge);
+          playTurnNotificationSound(false);
+          toast({
+            title: "⏱️ Opponent Timed Out (Strike 1/2)!",
+            description: data.message || "Turn passed to you! Next timeout awards you the match win.",
+          });
+          return;
+        }
+
+        if (data.challenge) {
+          setActiveChallenge(data.challenge);
+          if (data.challenge.status === "completed") {
+            setShowPlayAnotherPicker(false);
+            setShowMatchResultModal(true);
+            toast({
+              title: "🏆 Victory by Opponent Timeout!",
+              description: data.message || "Your opponent's turn clock expired.",
+            });
+            fetchWalletAndPaystackKey();
+            fetchLobby(true);
+          }
+        }
+      } catch (err: any) {
+        toast({
+          title: "Timeout Check",
+          description: err.message || "Could not process turn timeout",
+          variant: "destructive",
+        });
+      } finally {
+        setClaimingTimeout(false);
+      }
+    },
+    [
+      activeChallenge,
+      claimingTimeout,
+      playerPhone,
+      profile,
+      levelInfo.level,
+      toast,
+      fetchWalletAndPaystackKey,
+      fetchLobby,
+    ]
+  );
+
+  const executeMyTurnTimeoutStrikeOne = useCallback(async () => {
+    if (!activeChallenge || activeChallenge.status !== "in_progress") return;
+    const otherSide: "creator" | "opponent" = mySide === "creator" ? "opponent" : "creator";
+    const gType = String(activeChallenge.game_type || "");
+    const prevBoard =
+      activeChallenge.board_state && typeof activeChallenge.board_state === "object"
+        ? { ...activeChallenge.board_state }
+        : {};
+    const updatedStrikes = {
+      ...(prevBoard.timeoutStrikes || { creator: 0, opponent: 0 }),
+      [mySide]: 1,
+    };
+
+    try {
+      if (gType === "oware") {
+        const owareMod = await import("@/components/games/OwareGameBoard");
+        const legal = owareMod.getLegalOwareMoves(prevBoard, mySide);
+        if (legal.length > 0) {
+          const autoPit = legal[0];
+          if (activeChallenge.metadata?.oware_server_checked) {
+            const { data } = await supabase.functions.invoke("challenge-arena", {
+              body: {
+                action: "oware_play",
+                challenge_id: activeChallenge.id,
+                seat_token: getSeatToken(activeChallenge.id),
+                pit: autoPit,
+                variant: prevBoard.variant || "nam-nam",
+              },
+            });
+            if (data?.board) {
+              setActiveChallenge((prev: any) =>
+                prev ? { ...prev, board_state: data.board, current_turn: data.board.turn } : prev
+              );
+              if (data.board.winner) {
+                handleMatchComplete(data.board.winner, data.board);
+              }
+              return;
+            }
+          }
+          const sim = owareMod.simulateOwareMove(prevBoard, autoPit, mySide);
+          if (sim) {
+            const nextOware = {
+              ...sim,
+              timeoutStrikes: updatedStrikes,
+              summary: `⏱️ Turn Time Up (Strike 1/2) — Auto-sowed pit #${autoPit + 1}.`,
+            };
+            await handleBoardStateChange(nextOware);
+            if (nextOware.winner) {
+              handleMatchComplete(nextOware.winner, nextOware);
+            }
+            return;
+          }
+        }
+      } else if (gType === "dame") {
+        const dameMod = await import("@/components/games/DameCheckersBoard");
+        if (Array.isArray(prevBoard.board)) {
+          const legal = dameMod.getLegalDameMoves(prevBoard.board, mySide);
+          if (legal.length > 0) {
+            const moved = dameMod.applyDameMove(prevBoard, legal[0], mySide);
+            const nextDame = {
+              ...moved,
+              timeoutStrikes: updatedStrikes,
+              lastMove: "⏱️ Turn Time Up (Strike 1/2) — Auto-moved piece!",
+            };
+            await handleBoardStateChange(nextDame);
+            if (nextDame.winner) {
+              handleMatchComplete(nextDame.winner, nextDame);
+            }
+            return;
+          }
+        }
+      } else if (gType === "ludo") {
+        const nextColor = otherSide === "creator" ? "RED" : "YELLOW";
+        const prevEng = prevBoard.engine && typeof prevBoard.engine === "object" ? prevBoard.engine : {};
+        const playersArr = Array.isArray(prevEng.players) ? prevEng.players : ["RED", "YELLOW"];
+        const nextLudo = {
+          ...prevBoard,
+          turn: otherSide,
+          moveCount: Number(prevBoard.moveCount || 0) + 1,
+          lastAction: "⏱️ Turn Time Up (Strike 1/2) — Turn passed!",
+          timeoutStrikes: updatedStrikes,
+          engine: {
+            ...prevEng,
+            currentPlayer: nextColor,
+            currentPlayerIndex: Math.max(0, playersArr.indexOf(nextColor)),
+            diceResult: null,
+            consecutiveSixes: 0,
+            moveCount: Number(prevEng.moveCount || 0) + 1,
+          },
+        };
+        await handleBoardStateChange(nextLudo);
+        return;
+      } else if (gType === "pool") {
+        const nextPool = {
+          ...prevBoard,
+          turn: otherSide,
+          ballInHand: true,
+          shotCount: Number(prevBoard.shotCount || 0) + 1,
+          moveCount: Number(prevBoard.moveCount || 0) + 1,
+          lastEvent: "⏱️ Shot Clock Expired (Strike 1/2) — Turn & Ball-in-Hand passed!",
+          timeoutStrikes: updatedStrikes,
+        };
+        await handleBoardStateChange(nextPool);
+        return;
+      }
+
+      // Fallback turn pass
+      await handleBoardStateChange({
+        ...prevBoard,
+        turn: otherSide,
+        moveCount: Number(prevBoard.moveCount || 0) + 1,
+        timeoutStrikes: updatedStrikes,
+      });
+    } catch (err) {
+      console.warn("Auto-pass turn on Strike 1 failed:", err);
+    }
+  }, [activeChallenge, mySide, handleBoardStateChange, handleMatchComplete]);
 
   useEffect(() => {
     if (
@@ -1599,10 +1954,36 @@ export default function ChallengeArena() {
         if (prev <= 1) {
           if (isMyTurnNow) {
             turnTimeoutStrikesRef.current += 1;
+            const nextStrikes = turnTimeoutStrikesRef.current;
+            setMyTimeoutStrikes(nextStrikes);
             playTurnNotificationSound(true);
-            if (turnTimeoutStrikesRef.current >= 2) {
+            if (nextStrikes >= 2) {
               window.clearInterval(timer);
-              const otherSide = mySide === "creator" ? "opponent" : "creator";
+              const otherSide: "creator" | "opponent" =
+                mySide === "creator" ? "opponent" : "creator";
+              const prevBoard =
+                activeChallenge.board_state && typeof activeChallenge.board_state === "object"
+                  ? { ...activeChallenge.board_state }
+                  : {};
+              const forfeitedState: any = {
+                ...prevBoard,
+                winner: otherSide,
+                turn: otherSide,
+                moveCount: Number(prevBoard.moveCount || 0) + 1,
+                timeoutStrikes: {
+                  ...(prevBoard.timeoutStrikes || { creator: 0, opponent: 0 }),
+                  [mySide]: nextStrikes,
+                },
+                summary: "⏱️ Match forfeited due to 2 consecutive turn timeouts.",
+                lastEvent: "⏱️ Match forfeited due to 2 consecutive turn timeouts.",
+              };
+              if (forfeitedState.engine && typeof forfeitedState.engine === "object") {
+                forfeitedState.engine = {
+                  ...forfeitedState.engine,
+                  winner: otherSide === "creator" ? "RED" : "YELLOW",
+                  matchStatus: "COMPLETED",
+                };
+              }
               window.setTimeout(() => {
                 toast({
                   title: "⏱️ Turn Shot Clock Expired Twice!",
@@ -1610,19 +1991,31 @@ export default function ChallengeArena() {
                     "Match forfeited due to inactivity. Make your moves before the shot clock hits 0s!",
                   variant: "destructive",
                 });
-                handleMatchComplete(otherSide, activeChallenge.board_state || {});
+                handleBoardStateChange(forfeitedState);
+                handleMatchComplete(otherSide, forfeitedState, {
+                  reason: "timeout_forfeit",
+                  timeoutClaim: true,
+                });
               }, 0);
               return 0;
             } else {
               window.setTimeout(() => {
                 toast({
-                  title: "⏱️ Shot Clock Warning (Strike 1/2)!",
+                  title: "⏱️ Turn Time Up (Strike 1/2)!",
                   description:
-                    "Make your move before the timer hits 0s or the match will be forfeited!",
+                    "Auto-played / passed turn. Next turn timeout will forfeit the match!",
                   variant: "destructive",
                 });
+                executeMyTurnTimeoutStrikeOne();
               }, 0);
             }
+          } else if (activeChallenge.mode === "p2p") {
+            // Waiting on P2P opponent whose turn clock just hit 0s:
+            // Give a 2.5s network grace buffer for their auto-move to arrive; if still stuck, claim timeout on server!
+            window.setTimeout(() => {
+              const shouldForfeitNow = opponentTimeoutStrikesRef.current >= 1;
+              handleClaimOpponentTimeout(shouldForfeitNow);
+            }, 2500);
           }
           return limitSec;
         }
@@ -1641,6 +2034,9 @@ export default function ChallengeArena() {
     activeChallenge?.board_state?.moveCount,
     activeChallenge?.board_state?.shotCount,
     mySide,
+    executeMyTurnTimeoutStrikeOne,
+    handleBoardStateChange,
+    handleClaimOpponentTimeout,
     handleMatchComplete,
     toast,
   ]);
@@ -3104,7 +3500,7 @@ export default function ChallengeArena() {
             {activeChallenge.status === "open" && (
               <div className="p-5 sm:p-6 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-4">
                 <div className="text-center space-y-1.5">
-                  <div className="flex items-center justify-center gap-2">
+                  <div className="flex flex-wrap items-center justify-center gap-2">
                     <Loader2 className="w-6 h-6 text-amber-400 animate-spin" />
                     <Badge
                       className={
@@ -3116,6 +3512,22 @@ export default function ChallengeArena() {
                       {activeChallenge.metadata?.is_private
                         ? "🔒 PRIVATE CHALLENGE ROOM"
                         : "🌍 PUBLIC CHALLENGE ROOM"}
+                    </Badge>
+                    <Badge
+                      className={
+                        waitingTimedOut
+                          ? "bg-rose-500 text-white font-black text-[10px] uppercase animate-pulse"
+                          : waitingSeconds <= 30
+                          ? "bg-amber-500/30 text-amber-200 border border-amber-400/50 font-mono font-black text-[10px]"
+                          : "bg-slate-900/90 text-sky-300 border border-sky-400/40 font-mono font-black text-[10px]"
+                      }
+                    >
+                      {waitingTimedOut
+                        ? "⏱️ WAIT TIME UP (00:00)"
+                        : `⏱️ Wait Timer: ${String(Math.floor(waitingSeconds / 60)).padStart(
+                            2,
+                            "0"
+                          )}:${String(waitingSeconds % 60).padStart(2, "0")}`}
                     </Badge>
                   </div>
                   <h3 className="text-base sm:text-lg font-black text-white">
@@ -3132,6 +3544,90 @@ export default function ChallengeArena() {
                       : `Your challenge is live on the Public Arena Board! You can also share #${activeChallenge.room_code} directly with a friend:`}
                   </p>
                 </div>
+
+                {/* Waiting Time Up Resolution Banner */}
+                {waitingTimedOut && (
+                  <div className="max-w-xl mx-auto p-4 rounded-2xl bg-rose-950/70 border border-rose-400/50 space-y-3 text-center animate-in fade-in duration-200">
+                    <div className="space-y-1">
+                      <p className="text-xs sm:text-sm font-black text-rose-200">
+                        ⏱️ Waiting Time Up — No Opponent Has Joined Room #{activeChallenge.room_code} Yet
+                      </p>
+                      <p className="text-[11px] text-slate-300">
+                        {Number(activeChallenge.stake_amount || 0) > 0
+                          ? `Your GH₵ ${Number(activeChallenge.stake_amount).toFixed(
+                              2
+                            )} stake is safe. Keep waiting and re-alert players, or cancel for an instant full refund:`
+                          : "Keep waiting and re-alert online players, switch to an instant AI match, or cancel this room:"}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center justify-center gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={sendingInvite}
+                        onClick={() => {
+                          setWaitingSeconds(180);
+                          setWaitingTimedOut(false);
+                          handleSendRoomInvite(activeChallenge, { broadcastAll: true });
+                        }}
+                        className="h-9 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs gap-1.5"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        Wait +3 Mins &amp; Re-Notify Lobby
+                      </Button>
+
+                      {Number(activeChallenge.stake_amount || 0) === 0 && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            const gKey = (activeChallenge.game_type || "pool") as GameType;
+                            const aiName =
+                              HUMAN_CHALLENGER_PERSONAS[gKey]?.name || "Grandmaster AI";
+                            setWaitingTimedOut(false);
+                            setMySide("creator");
+                            setActiveChallenge((prev: any) => {
+                              if (!prev) return prev;
+                              return {
+                                ...prev,
+                                status: "in_progress",
+                                mode: "ai",
+                                opponent_name: aiName,
+                                current_turn: "creator",
+                                board_state: {
+                                  ...(prev.board_state || {}),
+                                  turn: "creator",
+                                },
+                              };
+                            });
+                            toast({
+                              title: `⚡ Switched to ${aiName}!`,
+                              description: "Playing immediately without waiting!",
+                            });
+                          }}
+                          className="h-9 rounded-xl border-emerald-400/50 bg-emerald-500/15 text-emerald-200 font-black text-xs gap-1.5"
+                        >
+                          <Brain className="w-3.5 h-3.5" />
+                          Play vs AI Now
+                        </Button>
+                      )}
+
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => handleCancelOpenChallenge(activeChallenge.id)}
+                        className="h-9 rounded-xl font-black text-xs gap-1.5"
+                      >
+                        <XCircle className="w-3.5 h-3.5" />
+                        {Number(activeChallenge.stake_amount || 0) > 0
+                          ? `Cancel & Refund GH₵ ${Number(activeChallenge.stake_amount).toFixed(2)}`
+                          : "Cancel Room"}
+                      </Button>
+                    </div>
+                  </div>
+                )}
 
                 <div className="max-w-xl mx-auto p-4 rounded-2xl bg-slate-950/90 border border-white/10 space-y-3">
                   <div className="flex flex-col sm:flex-row gap-2">
@@ -3262,19 +3758,14 @@ export default function ChallengeArena() {
               <>
                 {activeChallenge.status === "in_progress" &&
                   activeChallenge.game_type !== "slash" &&
+                  activeChallenge.game_type !== "candy" &&
                   activeChallenge.game_type !== "buggy" &&
                   (activeChallenge.game_type !== "pool" || activeChallenge.mode === "p2p") && (() => {
                     const currentTurnSide =
                       activeChallenge.current_turn ||
                       activeChallenge.board_state?.turn ||
                       "creator";
-                    const hasAnyMoveOccurred =
-                      Number(activeChallenge.board_state?.shotCount || 0) > 0 ||
-                      Number(activeChallenge.board_state?.moveCount || 0) > 0 ||
-                      Number(activeChallenge.board_state?.engine?.moveCount || 0) > 0;
-                    const isCurrentlyMyTurn =
-                      currentTurnSide === mySide ||
-                      (activeChallenge.mode === "p2p" && !hasAnyMoveOccurred);
+                    const isCurrentlyMyTurn = currentTurnSide === mySide;
                     const gType = (activeChallenge.game_type || "pool") as GameType;
                     const activeLudoColor = activeChallenge.board_state?.currentPlayerColor;
                     const activeLudoSeat =
@@ -3293,14 +3784,18 @@ export default function ChallengeArena() {
                           HUMAN_CHALLENGER_PERSONAS[gType]?.name ||
                           "Player 2");
 
-                    // For Pool P2P or Oware (which has its own built-in turn & sowing banner), only show this bar when waiting on a P2P friend so Ping / vs AI buttons are handy
+                    // In solo/AI mode for Pool or Oware, hide the extra top bar; in 1v1 P2P mode, always show the live turn shot clock for both players!
                     if (
                       (activeChallenge.game_type === "pool" ||
                         activeChallenge.game_type === "oware") &&
-                      (isCurrentlyMyTurn || activeChallenge.mode !== "p2p")
+                      activeChallenge.mode !== "p2p"
                     ) {
                       return null;
                     }
+
+                    const activeStrikesForTurn = isCurrentlyMyTurn
+                      ? myTimeoutStrikes
+                      : opponentTimeoutStrikes;
 
                     return (
                       <div
@@ -3310,7 +3805,7 @@ export default function ChallengeArena() {
                             : "bg-white/[0.03] border-white/10"
                         }`}
                       >
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <span
                             className={`w-2 h-2 rounded-full shrink-0 ${
                               isCurrentlyMyTurn
@@ -3328,12 +3823,33 @@ export default function ChallengeArena() {
                                 : "bg-white/[0.06] text-slate-300"
                             }`}
                           >
-                            {turnShotClockSec}s
+                            ⏱️ {turnShotClockSec}s
                           </span>
+                          {activeStrikesForTurn > 0 && (
+                            <span className="px-2 py-0.5 rounded-lg bg-rose-500/25 border border-rose-400/40 text-rose-200 text-[10px] font-black">
+                              ⚠️ Timeout Strike {activeStrikesForTurn}/2
+                            </span>
+                          )}
                         </div>
 
                         {!isCurrentlyMyTurn && activeChallenge.mode === "p2p" && (
-                          <div className="flex items-center gap-1">
+                          <div className="flex flex-wrap items-center gap-1">
+                            {(opponentTimeoutStrikes >= 1 || turnShotClockSec <= 2) && (
+                              <Button
+                                type="button"
+                                size="sm"
+                                disabled={claimingTimeout}
+                                onClick={() =>
+                                  handleClaimOpponentTimeout(opponentTimeoutStrikes >= 1)
+                                }
+                                className="h-6 rounded-lg bg-rose-500 hover:bg-rose-400 text-white font-black text-[9px] gap-1 px-2 animate-pulse"
+                              >
+                                <Zap className="w-2.5 h-2.5" />
+                                {opponentTimeoutStrikes >= 1
+                                  ? "Claim Timeout Win"
+                                  : "Pass Stuck Turn"}
+                              </Button>
+                            )}
                             <Button
                               type="button"
                               size="sm"

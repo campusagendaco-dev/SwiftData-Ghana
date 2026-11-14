@@ -56,3 +56,4 @@ CREATE POLICY "Users can view own disputes"
     user_id = auth.uid()
     OR user_id IS NULL
   );
+

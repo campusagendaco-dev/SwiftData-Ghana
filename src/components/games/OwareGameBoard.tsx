@@ -633,7 +633,10 @@ export function OwareGameBoard({
   // Keep synced with external realtime board_state updates in P2P mode (and animate the opponent's move!)
   useEffect(() => {
     if (
-      !serverChecked &&
+      (!serverChecked || mode === "p2p") &&
+      !awaitingServer &&
+      serverQueueRef.current.length === 0 &&
+      !serverBoardRef.current &&
       !isAnimating &&
       initialState &&
       Array.isArray(initialState.pits) &&
@@ -816,8 +819,7 @@ export function OwareGameBoard({
   // Display state (either live animation frame or settled game state)
   const displayPits = animStep ? animStep.pits : game.pits;
   const displayScores = animStep ? animStep.scores : game.scores;
-  const activeSideForLegalMoves =
-    mode === "p2p" && (game.moveCount || 0) === 0 ? mySide : game.turn;
+  const activeSideForLegalMoves = game.turn;
   const legalMovesForTurn =
     !game.winner && !isAnimating
       ? getLegalOwareMoves(game, activeSideForLegalMoves)
@@ -875,7 +877,7 @@ export function OwareGameBoard({
   const isMyTurn =
     !game.winner &&
     !isAnimating &&
-    (game.turn === mySide || (mode === "p2p" && (game.moveCount || 0) === 0));
+    game.turn === mySide;
 
   // Shared Terracotta Carved Bowl styling matching the reference photo
   const terracottaBowlStyle = {

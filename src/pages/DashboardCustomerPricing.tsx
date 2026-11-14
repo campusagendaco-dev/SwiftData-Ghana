@@ -43,35 +43,52 @@ const DashboardCustomerPricing = () => {
 
   useEffect(() => {
     const loadApiPricing = async () => {
-      const ctx = await fetchApiPricingContext(profile?.parent_agent_id);
+      const ctx = await fetchApiPricingContext();
       
       const newBases: PackageBasePrices = {};
       const newOffline: Record<string, string[]> = {};
 
       for (const [net, pkgs] of Object.entries(basePackages)) {
         newBases[net] = {};
+        const multiplier = ctx.multipliers[net] || 1;
         for (const pkg of pkgs) {
-          const applied = applyPriceMultiplier(pkg, net, ctx);
-          newBases[net][pkg.size] = applied.price;
-          
-          if (!applied.isAvailable) {
-            if (!newOffline[net]) newOffline[net] = [];
-            newOffline[net].push(pkg.size);
-          }
+          newBases[net][pkg.size] = applyPriceMultiplier(pkg.price, multiplier);
         }
       }
+
+      const { data } = await supabase
+        .from("global_package_settings")
+        .select("network, package_size, agent_price, sub_agent_price, is_unavailable");
+
+      (data || []).forEach((row: any) => {
+        if (row.is_unavailable) {
+          if (!newOffline[row.network]) newOffline[row.network] = [];
+          newOffline[row.network].push(row.package_size);
+        }
+        const numericSubAgentPrice = Number(row?.sub_agent_price);
+        const numericAgentPrice = Number(row?.agent_price);
+        const priceToUse =
+          profile?.is_sub_agent && Number.isFinite(numericSubAgentPrice) && numericSubAgentPrice > 0
+            ? numericSubAgentPrice
+            : numericAgentPrice;
+        if (!Number.isFinite(priceToUse) || priceToUse <= 0) return;
+        if (!newBases[row.network]) newBases[row.network] = {};
+        const multiplier = ctx.multipliers[row.network] || 1;
+        newBases[row.network][row.package_size] = applyPriceMultiplier(priceToUse, multiplier);
+      });
+
       setPackageBasePrices(newBases);
       setGloballyUnavailable(newOffline);
     };
     loadApiPricing();
-  }, [profile?.parent_agent_id]);
+  }, [profile?.parent_agent_id, profile?.is_sub_agent]);
 
   useEffect(() => {
     const defaults = buildDefaultPrices(packageBasePrices);
     
     // We try to default to the existing guest 'agent_prices' if registered_user_prices is empty
     const fallbackPrices = (profile?.agent_prices || {}) as Record<string, any>;
-    const savedPrices = (profile?.registered_user_prices || {}) as Record<string, any>;
+    const savedPrices = ((profile as any)?.registered_user_prices || {}) as Record<string, any>;
 
     for (const [network, pkgs] of Object.entries(basePackages)) {
       for (const pkg of pkgs) {
@@ -141,7 +158,7 @@ const DashboardCustomerPricing = () => {
     }
 
     setSaving(true);
-    const existingPrices = (profile?.registered_user_prices || {}) as Record<string, any>;
+    const existingPrices = ((profile as any)?.registered_user_prices || {}) as Record<string, any>;
     const mergedPrices = { ...existingPrices, ...prices };
 
     const { error } = await supabase

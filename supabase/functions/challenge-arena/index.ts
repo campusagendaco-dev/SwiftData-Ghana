@@ -951,7 +951,40 @@ serve(async (req: Request) => {
         myPhoneTail = String(me?.phone || "").replace(/\D/g, "").slice(-9);
       }
 
-      const normalizedChallenges = (challenges || []).map((c: any) => ({
+      // Auto-expire & refund stale open P2P challenges older than 30 minutes so abandoned rooms never lock stakes
+      const nowMsForExpiry = Date.now();
+      const staleOpenCutoffMs = 30 * 60 * 1000;
+      const updatedChallengesList = [...(challenges || [])];
+      for (let i = 0; i < updatedChallengesList.length; i++) {
+        const c = updatedChallengesList[i];
+        if (
+          c &&
+          c.status === "open" &&
+          c.created_at &&
+          nowMsForExpiry - new Date(c.created_at).getTime() > staleOpenCutoffMs
+        ) {
+          const { data: expiredRow } = await supabaseAdmin
+            .from("game_challenges")
+            .update({
+              status: "cancelled",
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", c.id)
+            .eq("status", "open")
+            .select("*")
+            .maybeSingle();
+
+          if (expiredRow) {
+            const stakeAmt = Number(c.stake_amount || 0);
+            if (stakeAmt > 0 && c.creator_payment_source === "wallet" && c.creator_id) {
+              await refundCreatorStake(supabaseAdmin, c);
+            }
+            updatedChallengesList[i] = expiredRow;
+          }
+        }
+      }
+
+      const normalizedChallenges = updatedChallengesList.map((c: any) => ({
         ...c,
         game_type: c?.metadata?.actual_game_type || c.game_type,
         invited_to_me: myPhoneTail.length >= 9 && String(c.invited_phone || "").replace(/\D/g, "").slice(-9) === myPhoneTail,
@@ -1688,8 +1721,47 @@ serve(async (req: Request) => {
         .eq("id", challengeId)
         .maybeSingle();
 
-      if (!challenge || challenge.status !== "open") {
+      if (!challenge) {
+        return jsonResponse({ success: false, error: "Challenge not found" }, 404);
+      }
+      if (challenge.status === "cancelled") {
+        return jsonResponse({
+          success: true,
+          challenge,
+          already_cancelled: true,
+          message: "Challenge already cancelled.",
+        });
+      }
+      if (challenge.status !== "open") {
         return jsonResponse({ success: false, error: "Only open challenges waiting for an opponent can be cancelled" }, 400);
+      }
+
+      const callerSide = await resolveCallerSide(challenge, authUser, body.seat_token);
+      const hasCreatorIdentity = Boolean(
+        challenge.creator_id || challenge.metadata?.seat_token_hashes?.creator
+      );
+      const roomAgeMs = challenge.created_at
+        ? Date.now() - new Date(challenge.created_at).getTime()
+        : 0;
+      const isExpiredOpenRoom = roomAgeMs >= 15 * 60 * 1000;
+      if (hasCreatorIdentity && callerSide !== "creator" && !isExpiredOpenRoom) {
+        return jsonResponse({ success: false, error: "Only the room creator can cancel this challenge." }, 403);
+      }
+
+      // Atomically transition from 'open' -> 'cancelled' first to prevent double refunds
+      const { data: cancelled } = await supabaseAdmin
+        .from("game_challenges")
+        .update({
+          status: "cancelled",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", challengeId)
+        .eq("status", "open")
+        .select("*")
+        .maybeSingle();
+
+      if (!cancelled) {
+        return jsonResponse({ success: false, error: "Challenge could not be cancelled (it may have just started)." }, 409);
       }
 
       const stake = Number(challenge.stake_amount || 0);
@@ -1699,16 +1771,6 @@ serve(async (req: Request) => {
           return jsonResponse({ success: false, error: "Could not return your stake. Please try again." }, 500);
         }
       }
-
-      const { data: cancelled } = await supabaseAdmin
-        .from("game_challenges")
-        .update({
-          status: "cancelled",
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", challengeId)
-        .select("*")
-        .single();
 
       return jsonResponse({
         success: true,
@@ -1937,11 +1999,213 @@ serve(async (req: Request) => {
       return jsonResponse({ success: true, board: next, ai_moves: aiMoves });
     }
 
+    // ── 5C. CLAIM PER-TURN TIMEOUT (STRIKE 1 AUTO-MOVE/PASS OR STRIKE 2 FORFEIT) ──
+    if (action === "claim_timeout") {
+      const challengeId = String(body.challenge_id || "").trim();
+      const forceForfeit = Boolean(body.forfeit);
+
+      const { data: challenge } = await supabaseAdmin
+        .from("game_challenges")
+        .select("*")
+        .eq("id", challengeId)
+        .maybeSingle();
+
+      if (!challenge) {
+        return jsonResponse({ success: false, error: "Challenge not found" }, 404);
+      }
+      if (challenge.status === "completed") {
+        return jsonResponse({ success: true, challenge, already_completed: true });
+      }
+      if (challenge.status !== "in_progress") {
+        return jsonResponse({ success: false, error: "This match is not active." }, 409);
+      }
+
+      const callerSide = await resolveCallerSide(challenge, authUser, body.seat_token);
+      if (!callerSide) {
+        return jsonResponse({ success: false, error: "You are not a player in this match." }, 403);
+      }
+
+      const otherSide: "creator" | "opponent" = callerSide === "creator" ? "opponent" : "creator";
+      const prevBoard =
+        challenge.board_state && typeof challenge.board_state === "object"
+          ? { ...challenge.board_state }
+          : {};
+      const currentTurn = String(challenge.current_turn || prevBoard.turn || "creator");
+
+      if (currentTurn === callerSide && !forceForfeit) {
+        return jsonResponse({
+          success: true,
+          challenge,
+          message: "It is already your turn.",
+        });
+      }
+
+      const lastUpdatedMs = challenge.updated_at
+        ? new Date(challenge.updated_at).getTime()
+        : challenge.created_at
+        ? new Date(challenge.created_at).getTime()
+        : 0;
+      const elapsedMs = Date.now() - lastUpdatedMs;
+
+      // Require at least 18 seconds of inactivity before a turn timeout can be claimed
+      if (elapsedMs < 18_000 && !forceForfeit) {
+        return jsonResponse({
+          success: true,
+          challenge,
+          too_early: true,
+          message: "Turn clock has not expired yet.",
+        });
+      }
+
+      const prevStrikes =
+        prevBoard.timeoutStrikes && typeof prevBoard.timeoutStrikes === "object"
+          ? { ...prevBoard.timeoutStrikes }
+          : { creator: 0, opponent: 0 };
+      const nextOtherStrikes = Number(prevStrikes[otherSide] || 0) + 1;
+      const updatedStrikes = {
+        ...prevStrikes,
+        [otherSide]: nextOtherStrikes,
+      };
+
+      const gType = String(challenge.metadata?.actual_game_type || challenge.game_type || "");
+
+      // Strike 1 (and < 48s elapsed without explicit forfeit): Auto-play legal move or pass turn to active player
+      if (nextOtherStrikes === 1 && !forceForfeit && elapsedMs < 48_000) {
+        let nextBoard: any = {
+          ...prevBoard,
+          timeoutStrikes: updatedStrikes,
+        };
+        let nextTurnSide: "creator" | "opponent" = callerSide;
+
+        if (gType === "oware" && isValidOwareState(prevBoard as OwareState)) {
+          const autoPit = chooseOwareAiMove(prevBoard as OwareState, {
+            difficulty: "easy",
+            aiSide: otherSide,
+          });
+          if (autoPit >= 0) {
+            const moved = simulateOwareMove(prevBoard as OwareState, autoPit, otherSide);
+            if (moved) {
+              const settledOware = settleIfNoLegalMoves(moved);
+              nextBoard = {
+                ...settledOware,
+                timeoutStrikes: updatedStrikes,
+                summary: `⏱️ Turn Time Up (Strike 1/2) — Auto-sowed pit #${autoPit + 1}.`,
+              };
+              nextTurnSide = (settledOware.turn as "creator" | "opponent") || callerSide;
+            } else {
+              nextBoard.turn = callerSide;
+              nextBoard.moveCount = Number(prevBoard.moveCount || 0) + 1;
+            }
+          } else {
+            nextBoard.turn = callerSide;
+            nextBoard.moveCount = Number(prevBoard.moveCount || 0) + 1;
+          }
+        } else if (gType === "ludo") {
+          const nextColor = callerSide === "creator" ? "RED" : "YELLOW";
+          const prevEng = prevBoard.engine && typeof prevBoard.engine === "object" ? prevBoard.engine : {};
+          const playersArr = Array.isArray(prevEng.players) ? prevEng.players : ["RED", "YELLOW"];
+          nextBoard = {
+            ...prevBoard,
+            turn: callerSide,
+            moveCount: Number(prevBoard.moveCount || 0) + 1,
+            lastAction: "⏱️ Opponent Turn Time Up (Strike 1/2) — Turn passed to you!",
+            timeoutStrikes: updatedStrikes,
+            engine: {
+              ...prevEng,
+              currentPlayer: nextColor,
+              currentPlayerIndex: Math.max(0, playersArr.indexOf(nextColor)),
+              diceResult: null,
+              consecutiveSixes: 0,
+              moveCount: Number(prevEng.moveCount || 0) + 1,
+            },
+          };
+          nextTurnSide = callerSide;
+        } else if (gType === "pool") {
+          nextBoard = {
+            ...prevBoard,
+            turn: callerSide,
+            ballInHand: true,
+            shotCount: Number(prevBoard.shotCount || 0) + 1,
+            moveCount: Number(prevBoard.moveCount || 0) + 1,
+            lastEvent: "⏱️ Opponent Shot Clock Expired (Strike 1/2) — Ball-in-Hand awarded to you!",
+            timeoutStrikes: updatedStrikes,
+          };
+          nextTurnSide = callerSide;
+        } else {
+          nextBoard = {
+            ...prevBoard,
+            turn: callerSide,
+            moveCount: Number(prevBoard.moveCount || 0) + 1,
+            lastMove: "⏱️ Opponent Turn Time Up (Strike 1/2) — Turn passed to you!",
+            timeoutStrikes: updatedStrikes,
+          };
+          nextTurnSide = callerSide;
+        }
+
+        // If the auto-move did not end the game, save Strike 1 state and return
+        if (!nextBoard.winner) {
+          const { data: updatedChallenge, error: strikeErr } = await supabaseAdmin
+            .from("game_challenges")
+            .update({
+              board_state: nextBoard,
+              current_turn: nextTurnSide,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", challengeId)
+            .eq("status", "in_progress")
+            .select("*")
+            .maybeSingle();
+
+          if (strikeErr || !updatedChallenge) {
+            return jsonResponse({ success: false, error: strikeErr?.message || "Could not update turn timeout state" }, 500);
+          }
+
+          return jsonResponse({
+            success: true,
+            strike: 1,
+            challenge: updatedChallenge,
+            message: "Opponent turn time expired (Strike 1/2). Turn passed to you!",
+          });
+        }
+
+        // If the auto-move in Oware finished the game, fall through to complete_match settlement
+        body.winner_side = nextBoard.winner;
+        body.board_state = nextBoard;
+        body.timeout_claim = true;
+      } else {
+        // Strike 2 or explicit forfeit after timeout -> Settle match in favor of callerSide!
+        const forfeitedBoard: any = {
+          ...prevBoard,
+          winner: callerSide,
+          turn: callerSide,
+          moveCount: Number(prevBoard.moveCount || 0) + 1,
+          timeoutStrikes: updatedStrikes,
+          summary: "⏱️ Match won by timeout (opponent did not play within the turn clock).",
+          lastEvent: "⏱️ Match won by timeout (opponent's turn clock expired).",
+          lastAction: "⏱️ Match won by timeout (opponent's turn clock expired).",
+        };
+        if (forfeitedBoard.engine && typeof forfeitedBoard.engine === "object") {
+          forfeitedBoard.engine = {
+            ...forfeitedBoard.engine,
+            winner: callerSide === "creator" ? "RED" : "YELLOW",
+            matchStatus: "COMPLETED",
+          };
+        }
+        body.winner_side = callerSide;
+        body.board_state = forfeitedBoard;
+        body.timeout_claim = true;
+      }
+    }
+
     // ── 6. COMPLETE MATCH & SETTLE PRIZE / FREE DATA REWARD ─────────────────────
-    if (action === "complete_match") {
+    if (action === "complete_match" || action === "claim_timeout") {
       const challengeId = String(body.challenge_id || "").trim();
       let winnerSide = String(body.winner_side || "creator"); // 'creator' | 'opponent' | 'draw'
       let finalBoardState = body.board_state || {};
+      const isTimeoutClaim =
+        action === "claim_timeout" ||
+        Boolean(body.timeout_claim) ||
+        String(body.reason || "").toLowerCase().includes("timeout");
 
       const { data: challenge } = await supabaseAdmin
         .from("game_challenges")
@@ -1962,8 +2226,8 @@ serve(async (req: Request) => {
         });
       }
 
-      // Server-checked Oware: ignore what the client claims; the server's board decides.
-      if (challenge.metadata?.oware_server_checked) {
+      // Server-checked Oware: ignore what the client claims; the server's board decides (unless timeout forfeit).
+      if (challenge.metadata?.oware_server_checked && !isTimeoutClaim) {
         const serverBoard = challenge.board_state as OwareState;
         if (!serverBoard?.winner) {
           return jsonResponse({ success: false, error: "The server has not recorded a finished game yet." }, 409);
@@ -1990,28 +2254,87 @@ serve(async (req: Request) => {
         return jsonResponse({ success: false, error: "This match has not started yet." }, 409);
       }
 
+      const actualGameType = String(
+        challenge.metadata?.actual_game_type || challenge.game_type || ""
+      ).toLowerCase();
+      const isSimultaneousTimedGame = ["slash", "candy", "buggy"].includes(actualGameType);
+
       if (challenge.mode === "p2p") {
         const reporterSide = await resolveCallerSide(challenge, authUser, body.seat_token);
         if (!reporterSide) {
           return jsonResponse({ success: false, error: "You are not a player in this match." }, 403);
         }
+        const otherSide = reporterSide === "creator" ? "opponent" : "creator";
 
-        // Record this side's report with compare-and-swap on updated_at so the
-        // two players' near-simultaneous reports can't overwrite each other.
+        // Record this side's report & merge their final board scores/progress with compare-and-swap on updated_at
         let current = challenge;
         let reports: Record<string, string> = {};
+        let mergedBoard: Record<string, any> = {};
+
         for (let attempt = 0; attempt < 4; attempt++) {
           const meta = current.metadata && typeof current.metadata === "object" ? current.metadata : {};
+          const existingBoard =
+            current.board_state && typeof current.board_state === "object"
+              ? { ...current.board_state }
+              : {};
+          const incomingBoard =
+            finalBoardState && typeof finalBoardState === "object"
+              ? { ...finalBoardState }
+              : {};
+
+          if (isSimultaneousTimedGame) {
+            mergedBoard = {
+              ...existingBoard,
+              ...incomingBoard,
+              creatorScore:
+                reporterSide === "creator" && typeof incomingBoard.creatorScore === "number"
+                  ? incomingBoard.creatorScore
+                  : typeof existingBoard.creatorScore === "number"
+                  ? existingBoard.creatorScore
+                  : incomingBoard.creatorScore ?? 0,
+              opponentScore:
+                reporterSide === "opponent" && typeof incomingBoard.opponentScore === "number"
+                  ? incomingBoard.opponentScore
+                  : typeof existingBoard.opponentScore === "number"
+                  ? existingBoard.opponentScore
+                  : incomingBoard.opponentScore ?? 0,
+              creatorProgress:
+                reporterSide === "creator" && typeof incomingBoard.creatorProgress === "number"
+                  ? incomingBoard.creatorProgress
+                  : typeof existingBoard.creatorProgress === "number"
+                  ? existingBoard.creatorProgress
+                  : incomingBoard.creatorProgress ?? 0,
+              opponentProgress:
+                reporterSide === "opponent" && typeof incomingBoard.opponentProgress === "number"
+                  ? incomingBoard.opponentProgress
+                  : typeof existingBoard.opponentProgress === "number"
+                  ? existingBoard.opponentProgress
+                  : incomingBoard.opponentProgress ?? 0,
+              creatorFinished:
+                reporterSide === "creator"
+                  ? Boolean(incomingBoard.creatorFinished ?? true)
+                  : Boolean(existingBoard.creatorFinished),
+              opponentFinished:
+                reporterSide === "opponent"
+                  ? Boolean(incomingBoard.opponentFinished ?? true)
+                  : Boolean(existingBoard.opponentFinished),
+            };
+          } else {
+            mergedBoard = {
+              ...existingBoard,
+              ...incomingBoard,
+              winner: incomingBoard.winner || existingBoard.winner || winnerSide,
+            };
+          }
+
           reports = { ...(meta.result_reports || {}), [reporterSide]: winnerSide };
-          const otherSide = reporterSide === "creator" ? "opponent" : "creator";
-          const disputed = Boolean(reports[otherSide]) && reports[otherSide] !== winnerSide;
           const { data: saved } = await supabaseAdmin
             .from("game_challenges")
             .update({
+              board_state: mergedBoard,
               metadata: {
                 ...meta,
                 result_reports: reports,
-                ...(disputed ? { disputed: true, disputed_at: new Date().toISOString() } : {}),
               },
               updated_at: new Date().toISOString(),
             })
@@ -2030,26 +2353,92 @@ serve(async (req: Request) => {
           current = fresh;
         }
 
-        const otherSide = reporterSide === "creator" ? "opponent" : "creator";
+        finalBoardState = mergedBoard;
         const otherReport = reports[otherSide];
-        if (!otherReport) {
-          return jsonResponse({
-            success: true,
-            pending_confirmation: true,
-            challenge: current,
-            message: "Result recorded. Waiting for your opponent's game to confirm the winner.",
-          });
+        const isSelfConcessionOrDraw = winnerSide === otherSide || winnerSide === "draw";
+        const bothFinishedSimultaneous = Boolean(
+          mergedBoard.creatorFinished && mergedBoard.opponentFinished
+        );
+
+        if (isSimultaneousTimedGame) {
+          // In simultaneous timed games (Fruit Slash 60s, Candy 75s, Buggy 95s):
+          // Wait for both players to finish (unless a player conceded early or claimed timeout after grace period)
+          if (!otherReport && !bothFinishedSimultaneous && !isTimeoutClaim) {
+            return jsonResponse({
+              success: true,
+              pending_confirmation: true,
+              challenge: current,
+              message: "Score recorded! Waiting a few seconds for your opponent's timer to finish...",
+            });
+          }
+
+          // Resolve winner deterministically from merged final scores / race progress so Time Up never marks both lost or disputed!
+          if (actualGameType === "slash" || actualGameType === "candy") {
+            const cScore = Number(mergedBoard.creatorScore ?? 0);
+            const oScore = Number(mergedBoard.opponentScore ?? 0);
+            if (bothFinishedSimultaneous || (otherReport && otherReport !== winnerSide)) {
+              winnerSide = cScore > oScore ? "creator" : oScore > cScore ? "opponent" : "draw";
+            }
+          } else if (actualGameType === "buggy") {
+            const cProg = Number(mergedBoard.creatorProgress ?? 0);
+            const oProg = Number(mergedBoard.opponentProgress ?? 0);
+            const cFin = Boolean(mergedBoard.creatorFinished);
+            const oFin = Boolean(mergedBoard.opponentFinished);
+            if (otherReport && otherReport !== winnerSide) {
+              if (cFin && !oFin) winnerSide = "creator";
+              else if (oFin && !cFin) winnerSide = "opponent";
+              else if (Math.abs(cProg - oProg) < 0.01) winnerSide = "draw";
+              else winnerSide = cProg > oProg ? "creator" : "opponent";
+            }
+          }
+        } else {
+          // Turn-based 1v1 games (Oware, Ludo, 8-Ball Pool, Dame Checkers):
+          // Settle immediately when:
+          // - Reporter concedes defeat / reports draw (e.g. turn timeout forfeit)
+          // - Timeout claim after opponent inactivity
+          // - Board state carries the deterministic winner
+          // - Both players reported
+          const boardWinner =
+            mergedBoard.winner ||
+            (mergedBoard.engine?.winner
+              ? mergedBoard.engine.winner === "RED"
+                ? "creator"
+                : "opponent"
+              : null);
+
+          if (!otherReport && !isSelfConcessionOrDraw && !isTimeoutClaim && !boardWinner) {
+            return jsonResponse({
+              success: true,
+              pending_confirmation: true,
+              challenge: current,
+              message: "Result recorded. Waiting for your opponent's game to confirm the winner.",
+            });
+          }
+
+          if (otherReport && otherReport !== winnerSide) {
+            // If both players reported the other side won (simultaneous timeout), settle as draw
+            if (reports.creator === "opponent" && reports.opponent === "creator") {
+              winnerSide = "draw";
+            } else if (boardWinner && ["creator", "opponent", "draw"].includes(boardWinner)) {
+              winnerSide = boardWinner;
+            } else {
+              return jsonResponse({
+                success: true,
+                disputed: true,
+                challenge: current,
+                message: "The two players reported different winners. Stakes are held and an admin will review this match.",
+              });
+            }
+          }
         }
-        if (otherReport !== winnerSide) {
-          return jsonResponse({
-            success: true,
-            disputed: true,
-            challenge: current,
-            message: "The two players reported different winners. Stakes are held and an admin will review this match.",
-          });
-        }
-        // Both players agree: fall through to settlement.
       }
+
+      const settledBoardState = {
+        ...(finalBoardState && typeof finalBoardState === "object"
+          ? finalBoardState
+          : challenge.board_state || {}),
+        winner: winnerSide,
+      };
 
       // Atomically claim settlement before moving any money: two concurrent
       // complete_match calls (both players' clients fire one) must not both pay.
@@ -2067,6 +2456,7 @@ serve(async (req: Request) => {
               : winnerSide === "opponent"
               ? challenge.opponent_name || "Challenger"
               : "Draw",
+          board_state: settledBoardState,
           completed_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         })

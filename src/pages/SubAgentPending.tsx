@@ -82,7 +82,7 @@ const SubAgentPending = () => {
       window.history.replaceState({}, "", window.location.pathname);
       setVerifying(false);
     }).catch(() => {
-      window.history.history.replaceState({}, "", window.location.pathname);
+      window.history.replaceState({}, "", window.location.pathname);
       setVerifying(false);
     });
   }, [refreshProfile, navigate, toast]);

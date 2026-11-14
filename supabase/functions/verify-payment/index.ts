@@ -1555,7 +1555,7 @@ serve(async (req: any) => {
       })
       .eq("id", targetReference)
       .in("status", allowedStatuses)
-      .or("provider_order_id.is.null,provider_order_id.in.(dispatching,timeout,failed_api_call,routed,manual_fulfillment_mode,paused_by_admin,duplicate_cooldown,refunded)")
+      .or("provider_order_id.is.null,provider_order_id.in.(dispatching,failed_api_call,routed,manual_fulfillment_mode,paused_by_admin,duplicate_cooldown,refunded)")
       .select("*")
       .maybeSingle();
 
@@ -2446,6 +2446,11 @@ serve(async (req: any) => {
           // Datamart/Datahub use AT_BIGTIME. Bossu uses AT.
           const fallbackNetKey = (ht as string === "bossu" || ht as string === "standard") ? "AT" : "AT_BIGTIME";
           result = await callProviderApi(supabaseAdmin, provider, await buildDataPayload(provider, fallbackNetKey), "purchase");
+          if (!result.ok && isUncertainDeliveryError(result.reason)) {
+            heldAtProvider = provider;
+            console.warn(`[verify-payment] ${provider.name} AT_BIGTIME retry gave no clear answer for ${targetReference} (${result.reason}). Holding as pending at provider.`);
+            break;
+          }
         }
       }
 
@@ -2468,6 +2473,12 @@ serve(async (req: any) => {
             result = skResult;
             successfulProviderId = skProvider.id;
             console.log(`[verify-payment] SKPlug failover SUCCESSFUL for ${recipient}! Provider Order ID: ${skResult.id}`);
+          } else if (isUncertainDeliveryError(skResult.reason)) {
+            result = skResult;
+            heldAtProvider = skProvider;
+            lastAttemptedProvider = skProvider;
+            console.warn(`[verify-payment] ${skProvider.name} failover gave no clear answer for ${targetReference} (${skResult.reason}). Holding as pending at provider.`);
+            break;
           } else {
             console.error(`[verify-payment] SKPlug failover also rejected: ${skResult.reason}`);
           }
@@ -2502,6 +2513,12 @@ serve(async (req: any) => {
             result = dmResult;
             successfulProviderId = dmProvider.id;
             console.log(`[verify-payment] Datamart API failover SUCCESSFUL for ${recipient}! Provider Order ID: ${dmResult.id}`);
+          } else if (isUncertainDeliveryError(dmResult.reason)) {
+            result = dmResult;
+            heldAtProvider = dmProvider;
+            lastAttemptedProvider = dmProvider;
+            console.warn(`[verify-payment] ${dmProvider.name} failover gave no clear answer for ${targetReference} (${dmResult.reason}). Holding as pending at provider.`);
+            break;
           } else {
             console.error(`[verify-payment] Datamart failover also rejected: ${dmResult.reason}`);
           }
@@ -2676,34 +2693,29 @@ serve(async (req: any) => {
         reasonStr.includes("abort");
 
       if (isTimeoutOrNetworkError) {
-        // Mark as processing (with provider_order_id = "timeout" to prevent cron-auto-retry from retrying it)
-        // This keeps it in processing state so webhook can fulfill it when it arrives,
-        // and prevents the auto-refund trigger from firing immediately.
-        const updatedMetadata = {
-          ...(claimedOrder.metadata || {}),
-          provider_timeout_reason: result.reason || "Connection timeout"
-        };
-        await supabaseAdmin.from("orders").update({
-          status: "processing",
-          provider_order_id: "timeout",
-          failure_reason: null,
-          metadata: updatedMetadata
-        }).eq("id", targetReference);
+        // Hold as awaiting_provider locked to the attempted provider so cron/verify-payment never double-dispatches it.
+        await markAwaitingProvider(
+          supabaseAdmin,
+          { id: targetReference, metadata: claimedOrder.metadata },
+          lastAttemptedProvider,
+          result.reason || "Connection timeout"
+        );
 
         log(supabaseAdmin, { 
           level: "warn", 
           source: "verify-payment", 
           event: "order.timeout_processing", 
-          message: `Order timed out during provider purchase. Left in processing: ${result.reason}`, 
+          message: `Order timed out during provider purchase. Held as awaiting_provider: ${result.reason}`, 
           order_id: targetReference, 
-          agent_id: claimedOrder.agent_id, 
+          agent_id: claimedOrder.agent_id,
+          provider_id: lastAttemptedProvider?.id,
           data: { reason: result.reason, network, package_size: packageSize } 
         });
 
         return new Response(JSON.stringify({
           status: "processing",
           reason: `Provider connection timed out. We are verifying the transaction status. Please wait.`,
-          provider_order_id: "timeout"
+          provider_order_id: AWAITING_PROVIDER_REF
         }), { headers: corsHeaders });
       }
 

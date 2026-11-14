@@ -1261,9 +1261,18 @@ export class StandardAdapter implements ProviderAdapter {
 
     const cleanRef = String(params.reference ?? "").trim();
     const rawOrderNum = params.orderNumber !== undefined && params.orderNumber !== null ? String(params.orderNumber).trim() : "";
-    const cleanOrderNum = rawOrderNum && rawOrderNum !== "failed_api_call" && rawOrderNum !== "timeout" && rawOrderNum !== "manual_fulfillment_mode"
-      ? rawOrderNum
-      : "";
+    const cleanOrderNum =
+      rawOrderNum &&
+      rawOrderNum !== "failed_api_call" &&
+      rawOrderNum !== "timeout" &&
+      rawOrderNum !== "awaiting_provider" &&
+      rawOrderNum !== "dispatching" &&
+      rawOrderNum !== "routed" &&
+      rawOrderNum !== "duplicate_cooldown" &&
+      rawOrderNum !== "paused_by_admin" &&
+      rawOrderNum !== "manual_fulfillment_mode"
+        ? rawOrderNum
+        : "";
 
     if (!cleanRef && !cleanOrderNum) {
       return {
@@ -1432,6 +1441,7 @@ export class StandardAdapter implements ProviderAdapter {
         !s ||
         s === "dispatching" ||
         s === "timeout" ||
+        s === "awaiting_provider" ||
         s === "routed" ||
         s === "duplicate_cooldown" ||
         s === "manual_fulfillment_mode" ||
@@ -1799,6 +1809,7 @@ export class StandardAdapter implements ProviderAdapter {
         !s ||
         s === "dispatching" ||
         s === "timeout" ||
+        s === "awaiting_provider" ||
         s === "routed" ||
         s === "duplicate_cooldown" ||
         s === "manual_fulfillment_mode" ||
@@ -1811,6 +1822,8 @@ export class StandardAdapter implements ProviderAdapter {
     };
     const handlerType = String(provider?.handler_type || "").toLowerCase();
     if (isHySpeedHandler(handlerType)) {
+      let sawNotFound = false;
+      let lastErrReason = "";
       try {
         const apiKey = Deno.env.get("HYSPEEDDATA_API_KEY") || Deno.env.get("SWIFTRESELLER_API_KEY") || provider.api_key || "";
         const hsBase = normalizeHySpeedBaseUrl(Deno.env.get("HYSPEEDDATA_BASE_URL") || provider.base_url);
@@ -1834,7 +1847,7 @@ export class StandardAdapter implements ProviderAdapter {
               const resolvedId = String(orderObj.reference || orderObj.id || cand);
               const prepaidToken = orderObj.utility_meta?.token ? String(orderObj.utility_meta.token) : undefined;
 
-              if (["completed", "delivered", "fulfilled"].includes(s)) {
+              if (["completed", "delivered", "fulfilled", "success", "successful"].includes(s)) {
                 return {
                   ok: true,
                   status: "fulfilled",
@@ -1842,7 +1855,7 @@ export class StandardAdapter implements ProviderAdapter {
                   raw: prepaidToken ? { ...orderObj, prepaid_token: prepaidToken } : orderObj,
                 };
               }
-              if (["pending", "processing", "queued"].includes(s)) {
+              if (["pending", "processing", "queued", "waiting", "accepted", "submitted", "in_progress", "ongoing"].includes(s)) {
                 return {
                   ok: true,
                   status: "processing",
@@ -1850,24 +1863,47 @@ export class StandardAdapter implements ProviderAdapter {
                   raw: orderObj,
                 };
               }
-              if (["failed", "rejected", "cancelled", "refunded"].includes(s)) {
+              if (["failed", "rejected", "cancelled", "refunded", "reversed"].includes(s)) {
                 return {
                   ok: false,
-                  status: "fulfillment_failed",
+                  status: s === "refunded" || s === "reversed" ? "refunded" : "fulfillment_failed",
                   reason: orderObj.message || json.message || json.error || `Order ${s} on provider`,
                   id: resolvedId,
                   raw: orderObj,
                 };
               }
+              return {
+                ok: true,
+                status: "processing",
+                id: resolvedId,
+                raw: orderObj,
+              };
             }
+            const errMsg = String(json?.message || json?.error || "");
+            if (/not found/i.test(errMsg)) sawNotFound = true;
+            else if (errMsg) lastErrReason = errMsg;
+          } else if (res.status === 404) {
+            sawNotFound = true;
+          } else {
+            lastErrReason = `HySpeedData status returned HTTP ${res.status}`;
           }
         }
       } catch (err: any) {
         console.warn("[HySpeedData-checkStatus] Error:", err.message);
+        lastErrReason = err?.message || "HySpeedData status request failed";
       }
-      return { ok: false, status: "not_found", reason: "Order not found on provider." };
+      if (lastErrReason && !sawNotFound) {
+        return { ok: false, status: "error", reason: lastErrReason };
+      }
+      return {
+        ok: false,
+        status: sawNotFound ? "not_found" : "error",
+        reason: sawNotFound ? "Order not found on provider." : (lastErrReason || "HySpeedData status check inconclusive."),
+      };
     }
     if (handlerType === "bundlezone") {
+      let hadSuccessResponse = false;
+      let lastErrReason = "";
       try {
         const apiKey = Deno.env.get("BUNDLEZONE_API_KEY") || provider.api_key || "";
         const baseUrl = (Deno.env.get("BUNDLEZONE_BASE_URL") || provider.base_url || "https://bundlezone.shop").replace(/\/+$/, "");
@@ -1883,6 +1919,7 @@ export class StandardAdapter implements ProviderAdapter {
               }
             });
             if (res.ok) {
+              hadSuccessResponse = true;
               const json = await res.json().catch(() => ({}));
               const orderObj = json.data?.order || json.data;
               if (json.success && orderObj && (orderObj.status || json.data?.status)) {
@@ -1952,17 +1989,28 @@ export class StandardAdapter implements ProviderAdapter {
                   raw: orderObj
                 };
               }
+            } else if (res.status === 404) {
+              hadSuccessResponse = true;
+            } else {
+              lastErrReason = `BundleZone status returned HTTP ${res.status}`;
             }
           }
         }
       } catch (err: any) {
         console.warn("[BundleZone-checkStatus] Error:", err.message);
+        lastErrReason = err?.message || "BundleZone status request failed";
+      }
+      if (!hadSuccessResponse) {
+        return { ok: false, status: "error", reason: lastErrReason || "BundleZone status check inconclusive." };
       }
       return { ok: false, status: "not_found", reason: "Order not found on BundleZone." };
     }
     if (handlerType === "spendless") {
+      let hadSuccessResponse = false;
+      let lastErrReason = "";
       try {
         const apiKey = Deno.env.get("SPENDLESS_API_KEY") || provider.api_key || "";
+        const cleanPid = !isSentinelRef(providerOrderId) ? String(providerOrderId) : "";
         const pages = [1, 2, 3];
         for (const page of pages) {
           const txRes = await fetch(`https://spendless.top/api/transactions?page=${page}`, {
@@ -1973,11 +2021,11 @@ export class StandardAdapter implements ProviderAdapter {
             }
           });
           if (txRes.ok) {
+            hadSuccessResponse = true;
             const txJson = await txRes.json();
             const txs = txJson?.data?.transactions || txJson?.transactions || [];
             const match = txs.find((t: any) =>
-              String(t.orderId) === String(providerOrderId) ||
-              String(t.reference) === String(providerOrderId) ||
+              (cleanPid && (String(t.orderId) === cleanPid || String(t.reference) === cleanPid)) ||
               String(t.reference) === String(reference)
             );
             if (match) {
@@ -1990,10 +2038,16 @@ export class StandardAdapter implements ProviderAdapter {
               }
               return { ok: true, status: "processing", id: String(match.reference || match.orderId), raw: match };
             }
+          } else {
+            lastErrReason = `Spendless status returned HTTP ${txRes.status}`;
           }
         }
       } catch (err: any) {
         console.warn("[Spendless checkStatus] Fallback to /api/transactions error:", err?.message || err);
+        lastErrReason = err?.message || "Spendless status request failed";
+      }
+      if (!hadSuccessResponse) {
+        return { ok: false, status: "error", reason: lastErrReason || "Spendless status check inconclusive." };
       }
       return { ok: false, status: "not_found", reason: "Order not found on Spendless." };
     }
@@ -2190,10 +2244,14 @@ export class StandardAdapter implements ProviderAdapter {
               };
             }
             // For status checks, only surface a failure status when the provider EXPLICITLY reported one.
-            // Anything else (e.g. success:false "order not found") stays inconclusive so callers never
-            // fail + re-route an order that may already be delivering (double data).
+            // If a candidate URL answered with a non-terminal error (e.g. success:false "Order not found"),
+            // try remaining candidate URLs before concluding.
             const explicitFail = ["failed", "refunded", "reversed", "rejected", "cancelled", "declined", "failed_pending_refund"];
             const semStatus = String(semantic.status || "").toLowerCase();
+            if (endpoint === "status" && !explicitFail.includes(semStatus)) {
+              lastReason = semantic.reason || "Status check inconclusive";
+              break;
+            }
             return {
               ok: false,
               reason: semantic.reason || "Provider rejected this order.",
