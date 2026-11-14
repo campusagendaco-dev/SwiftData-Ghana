@@ -34,3 +34,5 @@ supabase/.temp/
 # AI Metadata & Scratchpad
 brain/
 scratch/
+brag-output/
+brag-output*/
