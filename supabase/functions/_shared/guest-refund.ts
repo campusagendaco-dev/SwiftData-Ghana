@@ -322,6 +322,64 @@ export async function executeGuestBeneficiaryRefund(
     meta = { ...currentOrder.metadata };
   }
 
+  // 7. ATOMIC REFUND CLAIM (CAS Lock):
+  // Lock the order in Postgres before calling Paystack /refund so concurrent guest_refund calls cannot double-refund.
+  if (meta.guest_refund_status === "completed") {
+    console.warn(`[guest-refund] REFUND BLOCKED: Order ${orderId} metadata already marks guest_refund_status = completed.`);
+    return {
+      success: false,
+      refunded: false,
+      gateway: "none",
+      error: "Order has already been refunded."
+    };
+  }
+  const existingLockTime = meta.guest_refund_locked_at ? new Date(meta.guest_refund_locked_at).getTime() : 0;
+  if (meta.guest_refund_status === "processing" && existingLockTime > 0 && (Date.now() - existingLockTime) < 120_000) {
+    console.warn(`[guest-refund] REFUND BLOCKED: Concurrent refund already in progress for order ${orderId}.`);
+    return {
+      success: false,
+      refunded: false,
+      gateway: "none",
+      error: "A refund request for this order is already being processed. Please wait."
+    };
+  }
+
+  if (orderId && supabaseAdmin) {
+    const lockNowIso = new Date().toISOString();
+    const lockMetadata = {
+      ...meta,
+      guest_refund_status: "processing",
+      guest_refund_locked_at: lockNowIso,
+    };
+
+    let lockQuery = supabaseAdmin
+      .from("orders")
+      .update({
+        metadata: lockMetadata,
+        updated_at: lockNowIso,
+      })
+      .eq("id", orderId)
+      .not("status", "in", "(fulfilled,completed,refunded,pending,paid,awaiting_payment)")
+      .or("auto_refunded.is.null,auto_refunded.eq.false");
+
+    if (currentOrder.updated_at) {
+      lockQuery = lockQuery.eq("updated_at", currentOrder.updated_at);
+    }
+
+    const { data: lockedOrder, error: lockErr } = await lockQuery.select("*").maybeSingle();
+    if (lockErr || !lockedOrder) {
+      console.warn(`[guest-refund] REFUND BLOCKED: Failed to acquire atomic refund lock for order ${orderId}`, lockErr);
+      return {
+        success: false,
+        refunded: false,
+        gateway: "none",
+        error: "Refund is already being processed by another request or order state changed."
+      };
+    }
+    currentOrder = lockedOrder;
+    meta = lockMetadata;
+  }
+
   // Gather candidate Paystack transaction references in order of priority:
   const candidateRefs: string[] = Array.from(new Set([
     meta.paystack_reference,

@@ -587,7 +587,7 @@ serve(async (req: Request) => {
 
   const signatureValid = safeEqual(hashBuf, sigBuf);
   if (!signatureValid) {
-    console.error("Invalid signature. Expected:", hash, "Got:", signature);
+    console.error("[paystack-webhook] Invalid webhook signature rejected");
     return new Response(JSON.stringify({ error: "Invalid signature" }), {
       status: 401,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -861,6 +861,14 @@ serve(async (req: Request) => {
     let smsPhone = "";
 
     if (!existingOrder) {
+      if (verifyData?.data?.currency !== "GHS") {
+        console.warn(`[Webhook Security] Currency mismatch on uninitialized order: Paid in ${verifyData?.data?.currency}, Expected GHS for order: ${orderId}`);
+        return new Response(JSON.stringify({ received: true, error: "Currency mismatch" }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
       let normalizedProfit = 0;
       let normalizedParentProfit = 0;
       let resolvedCostPrice = 0;

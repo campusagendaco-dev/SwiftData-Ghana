@@ -315,7 +315,7 @@ serve(async (req: Request) => {
     return json({ error: "Server misconfigured" }, 500);
   }
 
-  const authResult = await verifyAdmin(req, supabaseAdmin, { checkMfa: true, checkIp: false });
+  const authResult = await verifyAdmin(req, supabaseAdmin, { checkMfa: true, checkIp: true });
   if (!authResult.success) {
     return new Response(JSON.stringify({ error: authResult.error }), {
       status: authResult.status,
@@ -415,6 +415,8 @@ serve(async (req: Request) => {
 
         const enrichedUsers = (users || []).map((u: any) => ({
           ...u,
+          api_key_hash: u.api_key_hash ? "Hashed" : null,
+          api_secret_key_hash: u.api_secret_key_hash ? "Hashed" : null,
           wallet_balance: walletMap.get(u.user_id)?.main ?? 0,
           api_wallet_balance: walletMap.get(u.user_id)?.api ?? 0,
           total_sales_volume: statsMap[u.user_id] || 0,
@@ -2282,11 +2284,11 @@ serve(async (req: Request) => {
       }
 
       case "find_user": {
-        const { search } = body;
+        const cleanSearch = String(body.search || "").replace(/[,()]/g, "").trim();
         const { data: users, error: findError } = await supabaseAdmin
           .from("profiles")
           .select("user_id, email, full_name, is_agent, agent_approved")
-          .or(`email.ilike.%${search}%,full_name.ilike.%${search}%`)
+          .or(`email.ilike.%${cleanSearch}%,full_name.ilike.%${cleanSearch}%`)
           .limit(10);
 
         if (findError) throw findError;

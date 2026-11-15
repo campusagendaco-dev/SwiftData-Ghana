@@ -746,13 +746,13 @@ serve(async (req: Request) => {
     
     if (p.endsWith("/balance")) finalAction = "balance";
     else if (p.endsWith("/account")) finalAction = "account";
-    else if (p.endsWith("/plans")) finalAction = "plans";
-    else if (p.endsWith("/buy") || p.endsWith("/purchase") || p.endsWith("/order") || p.endsWith("/buy-data") || p.includes("/buy-data") || p.endsWith("/payment/airtime") || p.endsWith("/payment/data")) finalAction = "buy";
+    else if (p.endsWith("/plans") || p.endsWith("/packages") || action === "packages") finalAction = "plans";
+    else if (p.endsWith("/buy") || p.endsWith("/purchase") || p.endsWith("/order") || p.endsWith("/buy-data") || p.includes("/buy-data") || p.endsWith("/payment/airtime") || p.endsWith("/payment/data") || action === "purchase" || action === "bulk_buy" || action === "airtime") finalAction = "buy";
     else if (p.endsWith("/sms") || p.endsWith("/api/sms")) finalAction = "sms";
     else if (p.includes("/orders-summary") || p.includes("/orders_summary")) finalAction = "orders_summary";
-    else if (p.endsWith("/orders")) finalAction = "orders";
+    else if (p.endsWith("/orders") || action === "transactions") finalAction = "orders";
     else if (p.includes("/callback")) finalAction = "callback";
-    else if (p.includes("/status")) finalAction = "status";
+    else if (p.includes("/status") || action === "order_status" || action === "verify_claim") finalAction = "status";
     else if (p.endsWith("/wallets")) finalAction = "wallets";
     else if (p.endsWith("/wallet/transfer")) finalAction = "wallet_transfer";
     else if (p.endsWith("/afa-registration")) finalAction = "afa_registration";
@@ -781,8 +781,44 @@ serve(async (req: Request) => {
       return json({ success: false, error: `Action '${finalAction}' requires an API key.` }, 401);
     }
 
-    const allowedActions: string[] = profile.allowed_actions || ["balance", "plans", "account", "buy", "orders", "orders_summary", "status", "order_refund", "callback", "wallets", "wallet_transfer", "afa_registration", "results_checker", "validate_bill", "pay_bill", "ecg_lookup", "ecg_pay", "service_status", "submit_numbers"];
-    if (!allowedActions.includes(finalAction) && !["index", "account", "balance", "plans", "buy", "orders", "orders_summary", "status", "order_refund", "callback", "wallets", "wallet_transfer", "afa_registration", "results_checker", "validate_bill", "pay_bill", "ecg_lookup", "ecg_pay", "service_status", "submit_numbers"].includes(finalAction)) {
+    const ACTION_PERMISSION_MAP: Record<string, string> = {
+      balance: "balance",
+      account: "balance",
+      wallets: "balance",
+      wallet_transfer: "balance",
+      plans: "plans",
+      packages: "plans",
+      buy: "buy",
+      purchase: "buy",
+      bulk_buy: "buy",
+      airtime: "buy",
+      validate_bill: "buy",
+      pay_bill: "buy",
+      ecg_lookup: "buy",
+      ecg_pay: "buy",
+      afa_registration: "buy",
+      results_checker: "buy",
+      submit_numbers: "buy",
+      orders: "orders",
+      orders_summary: "orders",
+      status: "orders",
+      order_status: "orders",
+      transactions: "orders",
+      order_refund: "orders",
+      verify_claim: "orders",
+      callback: "orders",
+    };
+
+    const rawAllowed = profile.allowed_actions ?? profile.api_allowed_actions;
+    const allowedActions: string[] = Array.isArray(rawAllowed)
+      ? rawAllowed
+      : ["balance", "plans", "buy", "orders"];
+    const canonicalAction = ACTION_PERMISSION_MAP[finalAction] || finalAction;
+    if (
+      !allowedActions.includes(finalAction) &&
+      !allowedActions.includes(canonicalAction) &&
+      !["index", "service_status"].includes(finalAction)
+    ) {
       return json({ success: false, error: `Action '${finalAction}' not permitted.` }, 403);
     }
 
@@ -961,7 +997,6 @@ serve(async (req: Request) => {
         success: true,
         name: profile.full_name || "API User",
         balance: Number(wallet?.balance ?? 0),
-        apiKey: rawApiKey,
         active: profile.access_enabled
       });
     }
@@ -1357,8 +1392,27 @@ serve(async (req: Request) => {
       if (!payload) return json({ success: false, error: "Invalid JSON body" }, 400);
 
       const { afa_full_name, afa_ghana_card, customer_phone, amount, request_id } = payload;
-      if (!customer_phone || !amount || !afa_full_name || !afa_ghana_card)
-        return json({ success: false, error: "Missing required fields: customer_phone, amount, afa_full_name, afa_ghana_card" }, 400);
+      if (!customer_phone || !afa_full_name || !afa_ghana_card)
+        return json({ success: false, error: "Missing required fields: customer_phone, afa_full_name, afa_ghana_card" }, 400);
+
+      const [{ data: afaSysSettings }, { data: afaPkgSetting }] = await Promise.all([
+        supabase.from("system_settings").select("*").eq("id", 1).maybeSingle(),
+        supabase
+          .from("global_package_settings")
+          .select("agent_price, api_price, public_price")
+          .eq("network", "AFA")
+          .eq("package_size", "BUNDLE")
+          .maybeSingle(),
+      ]);
+
+      const sysAfaPrice = Number((afaSysSettings as any)?.afa_price ?? (afaSysSettings as any)?.afa_registration_price ?? 0);
+      const pkgAfaPrice = Number(afaPkgSetting?.api_price ?? afaPkgSetting?.agent_price ?? afaPkgSetting?.public_price ?? 0);
+      const configuredAfaPrice = sysAfaPrice > 0 ? sysAfaPrice : (pkgAfaPrice > 0 ? pkgAfaPrice : 15);
+      const minAfaAmount = Math.max(15, Number.isFinite(configuredAfaPrice) ? configuredAfaPrice : 15);
+      const clientAfaAmount = Number(amount);
+      const resolvedAfaAmount = Number.isFinite(clientAfaAmount) && clientAfaAmount > minAfaAmount
+        ? parseFloat(clientAfaAmount.toFixed(2))
+        : minAfaAmount;
 
       const idemKey = req.headers.get("X-Idempotency-Key") || crypto.randomUUID();
       
@@ -1367,7 +1421,7 @@ serve(async (req: Request) => {
         p_network: "AFA",
         p_package_size: "BUNDLE",
         p_phone: normalizeRecipient(customer_phone),
-        p_amount: amount,
+        p_amount: resolvedAfaAmount,
         p_request_id: String(payload?.client_reference || request_id || idemKey).trim(),
         p_idem_key: idemKey,
         p_test_mode: profile.test_mode
@@ -1416,17 +1470,38 @@ serve(async (req: Request) => {
       if (!payload) return json({ success: false, error: "Invalid JSON body" }, 400);
 
       const { checker_type, quantity, amount, customer_phone, request_id } = payload;
-      if (!checker_type || !quantity || !amount)
-        return json({ success: false, error: "Missing required fields: checker_type, quantity, amount" }, 400);
+      if (!checker_type || !quantity)
+        return json({ success: false, error: "Missing required fields: checker_type, quantity" }, 400);
+
+      const parsedQty = Math.floor(Number(quantity));
+      if (!Number.isFinite(parsedQty) || parsedQty < 1 || parsedQty > 100) {
+        return json({ success: false, error: "Invalid quantity. Must be an integer between 1 and 100." }, 400);
+      }
+
+      const { data: checkerSettings } = await supabase
+        .from("system_settings")
+        .select("wassce_price, bece_price")
+        .eq("id", 1)
+        .maybeSingle();
+
+      const isBece = String(checker_type).trim().toUpperCase().includes("BECE");
+      const rawUnitPrice = Number(isBece ? (checkerSettings?.bece_price ?? 15) : (checkerSettings?.wassce_price ?? 18));
+      const minUnitFloor = isBece ? 15 : 18;
+      const unitPrice = Number.isFinite(rawUnitPrice) && rawUnitPrice >= minUnitFloor ? rawUnitPrice : minUnitFloor;
+      const minTotalAmount = parseFloat((unitPrice * parsedQty).toFixed(2));
+      const clientAmount = Number(amount);
+      const resolvedCheckerAmount = Number.isFinite(clientAmount) && clientAmount > minTotalAmount
+        ? parseFloat(clientAmount.toFixed(2))
+        : minTotalAmount;
 
       const idemKey = req.headers.get("X-Idempotency-Key") || crypto.randomUUID();
       
       const { data: result, error: rpcError } = await supabase.schema("api").rpc("create_order_rpc", {
         p_user_id: currentUserId,
         p_network: checker_type,
-        p_package_size: String(quantity),
+        p_package_size: String(parsedQty),
         p_phone: normalizeRecipient(customer_phone || "0000000000"),
-        p_amount: amount,
+        p_amount: resolvedCheckerAmount,
         p_request_id: String(payload?.client_reference || request_id || idemKey).trim(),
         p_idem_key: idemKey,
         p_test_mode: profile.test_mode
@@ -1442,7 +1517,7 @@ serve(async (req: Request) => {
         metadata: {
           client_reference: request_id || idemKey,
           checker_type,
-          quantity
+          quantity: parsedQty
         }
       }).eq("id", orderId);
 
@@ -1481,8 +1556,13 @@ serve(async (req: Request) => {
       if (!payload) return json({ success: false, error: "Invalid JSON body" }, 400);
 
       const { customerNumber, billType, amount, senderName } = payload;
-      if (!customerNumber || !billType || !amount || !senderName)
+      if (!customerNumber || !billType || amount === undefined || amount === null || !senderName)
         return json({ success: false, error: "Missing required fields: customerNumber, billType, amount, senderName" }, 400);
+
+      const numericAmount = Number(amount);
+      if (!Number.isFinite(numericAmount) || numericAmount < 1) {
+        return json({ success: false, error: "Invalid amount. Minimum bill payment amount is GHS 1.00." }, 400);
+      }
 
       const idemKey = req.headers.get("X-Idempotency-Key") || crypto.randomUUID();
       
@@ -1491,7 +1571,7 @@ serve(async (req: Request) => {
         p_network: billType,
         p_package_size: "AIRTIME", // Use AIRTIME internally so it bypasses strict data bundle checks
         p_phone: normalizeRecipient(customerNumber),
-        p_amount: amount,
+        p_amount: numericAmount,
         p_request_id: idemKey,
         p_idem_key: idemKey,
         p_test_mode: profile.test_mode
@@ -1518,7 +1598,7 @@ serve(async (req: Request) => {
         return json({
           success: true,
           transaction_id: orderId,
-          cost: amount,
+          cost: numericAmount,
           balance: result.balance
         });
       }
@@ -1532,7 +1612,7 @@ serve(async (req: Request) => {
       return json({
         success: true,
         transaction_id: orderId,
-        cost: amount,
+        cost: numericAmount,
         balance: result.balance
       });
     }
@@ -1558,8 +1638,13 @@ serve(async (req: Request) => {
       if (!payload) return json({ success: false, error: "Invalid JSON body" }, 400);
 
       const { phoneNumber, accountNumber, amount } = payload;
-      if (!phoneNumber || !accountNumber || !amount)
+      if (!phoneNumber || !accountNumber || amount === undefined || amount === null)
         return json({ success: false, error: "Missing required fields: phoneNumber, accountNumber, amount" }, 400);
+
+      const numericAmount = Number(amount);
+      if (!Number.isFinite(numericAmount) || numericAmount < 1) {
+        return json({ success: false, error: "Invalid amount. Minimum ECG payment amount is GHS 1.00." }, 400);
+      }
 
       const idemKey = req.headers.get("X-Idempotency-Key") || crypto.randomUUID();
       
@@ -1568,7 +1653,7 @@ serve(async (req: Request) => {
         p_network: "ECG",
         p_package_size: "AIRTIME", // Use AIRTIME internally so it bypasses strict data bundle checks
         p_phone: normalizeRecipient(phoneNumber),
-        p_amount: amount,
+        p_amount: numericAmount,
         p_request_id: idemKey,
         p_idem_key: idemKey,
         p_test_mode: profile.test_mode
@@ -1594,7 +1679,7 @@ serve(async (req: Request) => {
         return json({
           success: true,
           transaction_id: orderId,
-          cost: amount,
+          cost: numericAmount,
           balance: result.balance
         });
       }
@@ -1608,7 +1693,7 @@ serve(async (req: Request) => {
       return json({
         success: true,
         transaction_id: orderId,
-        cost: amount,
+        cost: numericAmount,
         balance: result.balance
       });
     }
@@ -1701,13 +1786,11 @@ serve(async (req: Request) => {
           return json({ success: false, error: "Missing required field: callback_url" }, 400);
         }
 
-        try {
-          const parsed = new URL(callbackUrl);
-          if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-            return json({ success: false, error: "Invalid callback_url protocol. Must be HTTP or HTTPS." }, 400);
-          }
-        } catch {
-          return json({ success: false, error: "Invalid callback_url format." }, 400);
+        if (!isSafeWebhookUrl(callbackUrl)) {
+          return json({
+            success: false,
+            error: "Invalid or unsafe callback_url. Must be a public HTTPS URL."
+          }, 400);
         }
 
         const { error: updateErr } = await supabase
@@ -1774,7 +1857,11 @@ serve(async (req: Request) => {
       if (UUID_RE.test(orderId)) {
         query = query.or(`id.eq.${orderId},metadata->>client_reference.eq.${orderId}`);
       } else {
-        query = query.or(`id.eq.${orderId},metadata->>client_reference.eq.${orderId}`);
+        const cleanOrderId = orderId.replace(/[^a-zA-Z0-9._:-]/g, "");
+        if (!cleanOrderId) {
+          return json({ success: false, error: "Invalid order reference format" }, 400);
+        }
+        query = query.eq("metadata->>client_reference", cleanOrderId);
       }
 
       const { data: order, error } = await query.maybeSingle();
@@ -1906,10 +1993,20 @@ serve(async (req: Request) => {
         .select("*")
         .eq("agent_id", currentUserId);
 
-      if (UUID_RE.test(targetIdentifier)) {
-        orderQuery = orderQuery.or(`id.eq.${targetIdentifier},provider_order_id.eq.${targetIdentifier},metadata->>client_reference.eq.${targetIdentifier}`);
+      const sanitizedTargetId = targetIdentifier.replace(/[^a-zA-Z0-9._:-]/g, "");
+      if (!sanitizedTargetId) {
+        return json({
+          success: false,
+          status: "error",
+          error: "Invalid reference or orderNumber format",
+          message: "Invalid reference or orderNumber format"
+        }, 400);
+      }
+
+      if (UUID_RE.test(sanitizedTargetId)) {
+        orderQuery = orderQuery.or(`id.eq.${sanitizedTargetId},provider_order_id.eq.${sanitizedTargetId},metadata->>client_reference.eq.${sanitizedTargetId}`);
       } else {
-        orderQuery = orderQuery.or(`provider_order_id.eq.${targetIdentifier},metadata->>client_reference.eq.${targetIdentifier}`);
+        orderQuery = orderQuery.or(`provider_order_id.eq.${sanitizedTargetId},metadata->>client_reference.eq.${sanitizedTargetId}`);
       }
 
       const { data: order, error: ordErr } = await orderQuery.limit(1).maybeSingle();

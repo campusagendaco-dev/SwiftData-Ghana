@@ -54,6 +54,18 @@ async function sendWalletTopupSms(supabaseAdmin: any, userId: string, amount: nu
   }
 }
 
+function safeEqual(a: string, b: string): boolean {
+  const enc = new TextEncoder();
+  const aBuf = enc.encode(a);
+  const bBuf = enc.encode(b);
+  if (aBuf.length !== bBuf.length) return false;
+  let diff = 0;
+  for (let i = 0; i < aBuf.length; i++) {
+    diff |= aBuf[i] ^ bBuf[i];
+  }
+  return diff === 0;
+}
+
 async function verifyKorbaSignature(
   secretKey: string,
   transactionId: string,
@@ -77,7 +89,7 @@ async function verifyKorbaSignature(
     .map(b => b.toString(16).padStart(2, '0'))
     .join('');
     
-  return computedSignature.toLowerCase() === receivedSignature.toLowerCase();
+  return safeEqual(computedSignature.toLowerCase(), String(receivedSignature || "").toLowerCase());
 }
 
 import { fetchViaDb } from "../_shared/db_proxy.ts";
@@ -94,8 +106,8 @@ async function verifyKorbaStatusViaApi(
   try {
     const isDisb = isDisbursementCallback || transactionId.endsWith("_disb");
     const cleanId = String(transactionId || "").trim().replace(/_disb$/, "");
-    // Korba stores data/topup transactions with `_disb` appended — always try both forms.
-    const candidateIds = isDisb ? [`${cleanId}_disb`, cleanId] : [cleanId, `${cleanId}_disb`];
+    // Only query `${cleanId}_disb` when `isDisbursementCallback` is true (never fall back from `_disb` to collection leg `cleanId`).
+    const candidateIds = isDisb ? [`${cleanId}_disb`] : [cleanId];
 
     for (const txId of candidateIds) {
       const statusPayload = {
@@ -191,8 +203,8 @@ serve(async (req: Request) => {
     const expectedToken = korbaProvider?.settings?.callback_token;
     if (expectedToken) {
       const receivedToken = req.headers.get("x-callback-token") || req.headers.get("X-Callback-Token");
-      if (receivedToken !== expectedToken) {
-        console.error(`[korba-webhook] Forbidden callback: expected ${expectedToken}, got ${receivedToken}`);
+      if (!receivedToken || !safeEqual(receivedToken, String(expectedToken))) {
+        console.error("[korba-webhook] Forbidden callback: invalid callback token");
         return json({ error: "Forbidden" }, 403);
       }
     }
@@ -259,7 +271,7 @@ serve(async (req: Request) => {
 
   const expectedToken = korbaProvider?.settings?.callback_token;
   const receivedToken = req.headers.get("x-callback-token") || req.headers.get("X-Callback-Token");
-  const isTokenAuthenticated = !!(expectedToken && receivedToken === expectedToken);
+  const isTokenAuthenticated = Boolean(expectedToken && receivedToken && safeEqual(receivedToken, String(expectedToken)));
 
   // Pre-fetch order so we know payment_method for status API disambiguation
   const { data: preFetchedOrder } = await supabaseAdmin
@@ -335,7 +347,19 @@ serve(async (req: Request) => {
         if (prepaidToken) {
           patch.metadata = { ...(existingOrder.metadata || {}), prepaid_token: prepaidToken };
         }
-        await supabaseAdmin.from("orders").update(patch).eq("id", cleanedTransactionId);
+        const { data: fulfilledRow, error: fulfillErr } = await supabaseAdmin
+          .from("orders")
+          .update(patch)
+          .eq("id", cleanedTransactionId)
+          .neq("status", "fulfilled")
+          .neq("status", "completed")
+          .select("id")
+          .maybeSingle();
+
+        if (fulfillErr || !fulfilledRow) {
+          console.log(`[korba-webhook] Order ${cleanedTransactionId} already fulfilled concurrently. Skipping.`);
+          return json({ received: true, already_processed: true });
+        }
 
         try {
           await supabaseAdmin.rpc("credit_order_profits", { p_order_id: cleanedTransactionId });
@@ -532,6 +556,21 @@ serve(async (req: Request) => {
     }
 
     if (orderType === "agent_activation") {
+      const { data: settings } = await supabaseAdmin
+        .from("v_system_settings_with_secrets")
+        .select("agent_activation_fee")
+        .eq("id", 1)
+        .maybeSingle();
+      const AGENT_ACTIVATION_MINIMUM = Number(settings?.agent_activation_fee || 50);
+
+      if (!Number.isFinite(verifiedAmount) || verifiedAmount < AGENT_ACTIVATION_MINIMUM * 0.97) {
+        await supabaseAdmin.from("orders").update({
+          status: "fulfillment_failed",
+          failure_reason: `Payment too low for agent activation. Minimum GHS ${AGENT_ACTIVATION_MINIMUM}, received GHS ${verifiedAmount.toFixed(2)}.`,
+        }).eq("id", cleanedTransactionId);
+        return json({ received: true, fulfilled: false, failure_reason: "Activation payment below minimum" });
+      }
+
       const agentId = existingOrder.agent_id;
       if (agentId) {
         const { data: agentProfile } = await supabaseAdmin
@@ -578,6 +617,15 @@ serve(async (req: Request) => {
       const subAgentId = existingOrder.agent_id;
       const parentAgentId = existingOrder.metadata?.parent_agent_id;
       const activationAmount = Number(existingOrder.amount);
+
+      if (!Number.isFinite(verifiedAmount) || verifiedAmount < SUB_AGENT_MINIMUM * 0.97) {
+        await supabaseAdmin.from("orders").update({
+          status: "fulfillment_failed",
+          failure_reason: `Payment too low for sub-agent activation. Minimum GHS ${SUB_AGENT_MINIMUM}, received GHS ${verifiedAmount.toFixed(2)}.`,
+        }).eq("id", cleanedTransactionId);
+        return json({ received: true, fulfilled: false, failure_reason: "Activation payment below minimum" });
+      }
+
       const baseFee = SUB_AGENT_MINIMUM;
       const agentProfit = Math.max(0, parseFloat((activationAmount - baseFee).toFixed(2)));
 

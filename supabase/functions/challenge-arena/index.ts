@@ -770,7 +770,8 @@ async function verifyPaystackReference(
   reference: string,
   expectedAmountGhs: number
 ): Promise<{ ok: boolean; amountGhs: number; reason?: string }> {
-  if (!reference) {
+  const safeRef = String(reference || "").replace(/[^a-zA-Z0-9._:-]/g, "");
+  if (!safeRef) {
     return { ok: false, amountGhs: 0, reason: "Missing Paystack payment reference" };
   }
 
@@ -788,7 +789,7 @@ async function verifyPaystackReference(
   const { data: existingCreatorRef } = await supabaseAdmin
     .from("game_challenges")
     .select("id")
-    .or(`creator_paystack_ref.eq.${reference},opponent_paystack_ref.eq.${reference}`)
+    .or(`creator_paystack_ref.eq.${safeRef},opponent_paystack_ref.eq.${safeRef}`)
     .limit(1);
 
   if (existingCreatorRef && existingCreatorRef.length > 0) {
@@ -800,7 +801,7 @@ async function verifyPaystackReference(
     const { data: orderRow } = await supabaseAdmin
       .from("orders")
       .select("id, status, amount, paystack_verified_amount")
-      .or(`id.eq.${reference},provider_order_id.eq.${reference}`)
+      .or(`id.eq.${safeRef},provider_order_id.eq.${safeRef}`)
       .maybeSingle();
 
     if (
@@ -1263,6 +1264,18 @@ serve(async (req: Request) => {
       }
 
       if (insertErr) {
+        if (rawStake > 0 && paymentSource === "wallet" && authUser?.id) {
+          await supabaseAdmin.rpc("wallet_post", {
+            p_agent_id: authUser.id,
+            p_account: "main",
+            p_amount: rawStake,
+            p_reason: "game_stake_refund",
+            p_reference_type: "game_challenge_create",
+            p_reference_id: roomCode,
+            p_idempotency_key: `game_stake_rollback:create:${authUser.id}:${roomCode}`,
+            p_note: "Rollback stake after challenge creation failed",
+          });
+        }
         return jsonResponse({ success: false, error: insertErr.message }, 500);
       }
       if (created && created.metadata?.actual_game_type) {
@@ -1687,6 +1700,18 @@ serve(async (req: Request) => {
         .single();
 
       if (joinErr || !updated) {
+        if (stake > 0 && paymentSource === "wallet" && authUser?.id) {
+          await supabaseAdmin.rpc("wallet_post", {
+            p_agent_id: authUser.id,
+            p_account: "main",
+            p_amount: stake,
+            p_reason: "game_stake_refund",
+            p_reference_type: "game_challenge",
+            p_reference_id: String(challenge.id),
+            p_idempotency_key: `game_stake_rollback:join:${challenge.id}:${authUser.id}`,
+            p_note: "Rollback stake after joining challenge failed",
+          });
+        }
         return jsonResponse({ success: false, error: "Could not join challenge (it may have just been taken)" }, 400);
       }
 
@@ -1823,10 +1848,35 @@ serve(async (req: Request) => {
         ? { ...prevMeta, last_turn_sms_at: nowMs, last_turn_notified_side: currentTurn }
         : prevMeta;
 
+      const prevBoardForSync =
+        prevChallenge?.board_state && typeof prevChallenge.board_state === "object"
+          ? prevChallenge.board_state
+          : {};
+      const prevStrikesForSync =
+        prevBoardForSync.timeoutStrikes && typeof prevBoardForSync.timeoutStrikes === "object"
+          ? prevBoardForSync.timeoutStrikes
+          : null;
+      const sanitizedBoardState =
+        boardState && typeof boardState === "object" ? { ...boardState } : {};
+      if (prevStrikesForSync || sanitizedBoardState.timeoutStrikes) {
+        const incomingStrikes =
+          sanitizedBoardState.timeoutStrikes && typeof sanitizedBoardState.timeoutStrikes === "object"
+            ? sanitizedBoardState.timeoutStrikes
+            : {};
+        const otherSyncSide = syncSide === "creator" ? "opponent" : "creator";
+        sanitizedBoardState.timeoutStrikes = {
+          creator: Number(incomingStrikes.creator ?? prevStrikesForSync?.creator ?? 0),
+          opponent: Number(incomingStrikes.opponent ?? prevStrikesForSync?.opponent ?? 0),
+          ...(syncSide
+            ? { [otherSyncSide]: Number(prevStrikesForSync?.[otherSyncSide] ?? 0) }
+            : {}),
+        };
+      }
+
       const { data: updated, error: syncErr } = await supabaseAdmin
         .from("game_challenges")
         .update({
-          board_state: boardState,
+          board_state: sanitizedBoardState,
           current_turn: currentTurn,
           metadata: nextMeta,
           updated_at: new Date().toISOString(),
@@ -2000,9 +2050,9 @@ serve(async (req: Request) => {
     }
 
     // ── 5C. CLAIM PER-TURN TIMEOUT (STRIKE 1 AUTO-MOVE/PASS OR STRIKE 2 FORFEIT) ──
+    let verifiedOwareTimeoutWin = false;
     if (action === "claim_timeout") {
       const challengeId = String(body.challenge_id || "").trim();
-      const forceForfeit = Boolean(body.forfeit);
 
       const { data: challenge } = await supabaseAdmin
         .from("game_challenges")
@@ -2032,7 +2082,7 @@ serve(async (req: Request) => {
           : {};
       const currentTurn = String(challenge.current_turn || prevBoard.turn || "creator");
 
-      if (currentTurn === callerSide && !forceForfeit) {
+      if (!currentTurn || currentTurn === callerSide) {
         return jsonResponse({
           success: true,
           challenge,
@@ -2040,15 +2090,12 @@ serve(async (req: Request) => {
         });
       }
 
-      const lastUpdatedMs = challenge.updated_at
-        ? new Date(challenge.updated_at).getTime()
-        : challenge.created_at
-        ? new Date(challenge.created_at).getTime()
-        : 0;
+      const lastUpdatedRef = prevBoard.updated_at || challenge.updated_at || challenge.created_at;
+      const lastUpdatedMs = lastUpdatedRef ? new Date(lastUpdatedRef).getTime() : 0;
       const elapsedMs = Date.now() - lastUpdatedMs;
 
-      // Require at least 18 seconds of inactivity before a turn timeout can be claimed
-      if (elapsedMs < 18_000 && !forceForfeit) {
+      // Require at least 18 seconds of server-verified inactivity before a turn timeout can be claimed
+      if (elapsedMs < 18_000) {
         return jsonResponse({
           success: true,
           challenge,
@@ -2061,16 +2108,17 @@ serve(async (req: Request) => {
         prevBoard.timeoutStrikes && typeof prevBoard.timeoutStrikes === "object"
           ? { ...prevBoard.timeoutStrikes }
           : { creator: 0, opponent: 0 };
-      const nextOtherStrikes = Number(prevStrikes[otherSide] || 0) + 1;
+      const nextStrike = Number(prevStrikes[otherSide] || 0) + 1;
+      const isStrikeTwoForfeit = nextStrike >= 2;
       const updatedStrikes = {
         ...prevStrikes,
-        [otherSide]: nextOtherStrikes,
+        [otherSide]: nextStrike,
       };
 
       const gType = String(challenge.metadata?.actual_game_type || challenge.game_type || "");
 
-      // Strike 1 (and < 48s elapsed without explicit forfeit): Auto-play legal move or pass turn to active player
-      if (nextOtherStrikes === 1 && !forceForfeit && elapsedMs < 48_000) {
+      // Strike 1: Auto-play legal move or pass turn to active player
+      if (!isStrikeTwoForfeit) {
         let nextBoard: any = {
           ...prevBoard,
           timeoutStrikes: updatedStrikes,
@@ -2088,6 +2136,7 @@ serve(async (req: Request) => {
               const settledOware = settleIfNoLegalMoves(moved);
               nextBoard = {
                 ...settledOware,
+                gameOver: Boolean(settledOware.winner),
                 timeoutStrikes: updatedStrikes,
                 summary: `⏱️ Turn Time Up (Strike 1/2) — Auto-sowed pit #${autoPit + 1}.`,
               };
@@ -2168,12 +2217,13 @@ serve(async (req: Request) => {
           });
         }
 
-        // If the auto-move in Oware finished the game, fall through to complete_match settlement
+        // If the server auto-move in Oware finished the game, fall through to complete_match settlement
+        verifiedOwareTimeoutWin = true;
         body.winner_side = nextBoard.winner;
         body.board_state = nextBoard;
         body.timeout_claim = true;
       } else {
-        // Strike 2 or explicit forfeit after timeout -> Settle match in favor of callerSide!
+        // Strike 2 forfeit after server-verified timeout -> Settle match in favor of callerSide!
         const forfeitedBoard: any = {
           ...prevBoard,
           winner: callerSide,
@@ -2202,7 +2252,7 @@ serve(async (req: Request) => {
       const challengeId = String(body.challenge_id || "").trim();
       let winnerSide = String(body.winner_side || "creator"); // 'creator' | 'opponent' | 'draw'
       let finalBoardState = body.board_state || {};
-      const isTimeoutClaim =
+      const rawTimeoutClaim =
         action === "claim_timeout" ||
         Boolean(body.timeout_claim) ||
         String(body.reason || "").toLowerCase().includes("timeout");
@@ -2226,8 +2276,11 @@ serve(async (req: Request) => {
         });
       }
 
-      // Server-checked Oware: ignore what the client claims; the server's board decides (unless timeout forfeit).
-      if (challenge.metadata?.oware_server_checked && !isTimeoutClaim) {
+      // Server-checked Oware: ignore what the client claims; the server's board decides (unless self-concession on timeout).
+      const isOwareServerTimeout =
+        verifiedOwareTimeoutWin ||
+        (rawTimeoutClaim && (winnerSide === "opponent" || winnerSide === "draw"));
+      if (challenge.metadata?.oware_server_checked && !isOwareServerTimeout) {
         const serverBoard = challenge.board_state as OwareState;
         if (!serverBoard?.winner) {
           return jsonResponse({ success: false, error: "The server has not recorded a finished game yet." }, 409);
@@ -2265,6 +2318,14 @@ serve(async (req: Request) => {
           return jsonResponse({ success: false, error: "You are not a player in this match." }, 403);
         }
         const otherSide = reporterSide === "creator" ? "opponent" : "creator";
+
+        const initialExistingBoard =
+          challenge.board_state && typeof challenge.board_state === "object"
+            ? { ...challenge.board_state }
+            : {};
+        const lastActivityRef =
+          initialExistingBoard.updated_at || challenge.updated_at || challenge.created_at;
+        const elapsedMs = lastActivityRef ? Date.now() - new Date(lastActivityRef).getTime() : 0;
 
         // Record this side's report & merge their final board scores/progress with compare-and-swap on updated_at
         let current = challenge;
@@ -2320,11 +2381,22 @@ serve(async (req: Request) => {
                   : Boolean(existingBoard.opponentFinished),
             };
           } else {
+            const { winner: _unverifiedIncomingWinner, ...safeIncomingBoard } = incomingBoard;
+            const authoritativeOwareWinner =
+              actualGameType === "oware" &&
+              existingBoard.gameOver === true &&
+              existingBoard.winner === winnerSide
+                ? existingBoard.winner
+                : undefined;
             mergedBoard = {
               ...existingBoard,
-              ...incomingBoard,
-              winner: incomingBoard.winner || existingBoard.winner || winnerSide,
+              ...safeIncomingBoard,
             };
+            if (authoritativeOwareWinner) {
+              mergedBoard.winner = authoritativeOwareWinner;
+            } else {
+              delete mergedBoard.winner;
+            }
           }
 
           reports = { ...(meta.result_reports || {}), [reporterSide]: winnerSide };
@@ -2361,9 +2433,10 @@ serve(async (req: Request) => {
         );
 
         if (isSimultaneousTimedGame) {
+          const isTimeoutClaim = rawTimeoutClaim && elapsedMs >= 11_000;
           // In simultaneous timed games (Fruit Slash 60s, Candy 75s, Buggy 95s):
           // Wait for both players to finish (unless a player conceded early or claimed timeout after grace period)
-          if (!otherReport && !bothFinishedSimultaneous && !isTimeoutClaim) {
+          if (!otherReport && !bothFinishedSimultaneous && !isTimeoutClaim && !isSelfConcessionOrDraw) {
             return jsonResponse({
               success: true,
               pending_confirmation: true,
@@ -2393,18 +2466,21 @@ serve(async (req: Request) => {
           }
         } else {
           // Turn-based 1v1 games (Oware, Ludo, 8-Ball Pool, Dame Checkers):
-          // Settle immediately when:
-          // - Reporter concedes defeat / reports draw (e.g. turn timeout forfeit)
-          // - Timeout claim after opponent inactivity
-          // - Board state carries the deterministic winner
-          // - Both players reported
+          // If only one player has reported (!otherReport), only allow unilateral immediate win settlement if:
+          // a) isSelfConcessionOrDraw is true (caller concedes or claims draw), OR
+          // b) For Oware, existingBoard already has existingBoard.gameOver === true && existingBoard.winner === winnerSide, OR
+          // c) isTimeoutClaim is verified server-side (elapsedMs >= 18_000 AND (existingBoard.timeoutStrikes?.[otherSide] || 0) >= 1).
           const boardWinner =
-            mergedBoard.winner ||
-            (mergedBoard.engine?.winner
-              ? mergedBoard.engine.winner === "RED"
-                ? "creator"
-                : "opponent"
-              : null);
+            actualGameType === "oware" &&
+            initialExistingBoard.gameOver === true &&
+            initialExistingBoard.winner === winnerSide
+              ? initialExistingBoard.winner
+              : null;
+          const isTimeoutClaim =
+            rawTimeoutClaim &&
+            elapsedMs >= 18_000 &&
+            (Number(initialExistingBoard.timeoutStrikes?.[otherSide] || 0) >= 1 ||
+              verifiedOwareTimeoutWin);
 
           if (!otherReport && !isSelfConcessionOrDraw && !isTimeoutClaim && !boardWinner) {
             return jsonResponse({
@@ -2493,14 +2569,37 @@ serve(async (req: Request) => {
       const stake = Number(challenge.stake_amount || 0);
       const prizePool = Number(challenge.prize_pool || 0);
 
-      // Case A: Draw in a paid match -> Refund wallet stakes
+      // Case A: Draw in a paid match -> Refund wallet stakes via ledgered, idempotent wallet_post
       if (winnerSide === "draw" && stake > 0) {
-        // credit_wallet is an atomic increment (creates the wallet if missing).
         if (challenge.creator_payment_source === "wallet" && challenge.creator_id) {
-          await supabaseAdmin.rpc("credit_wallet", { p_agent_id: challenge.creator_id, p_amount: stake });
+          const { error: postErr } = await supabaseAdmin.rpc("wallet_post", {
+            p_agent_id: challenge.creator_id,
+            p_account: "main",
+            p_amount: stake,
+            p_reason: "game_stake_refund",
+            p_reference_type: "game_challenge",
+            p_reference_id: String(challenge.id),
+            p_idempotency_key: `game_stake_refund:${challenge.id}:${challenge.creator_id}`,
+            p_note: `Draw stake refund for ${challenge.game_type.toUpperCase()} Challenge (#${challenge.room_code})`,
+          });
+          if (postErr) {
+            await supabaseAdmin.rpc("credit_wallet", { p_agent_id: challenge.creator_id, p_amount: stake });
+          }
         }
         if (challenge.opponent_payment_source === "wallet" && challenge.opponent_id) {
-          await supabaseAdmin.rpc("credit_wallet", { p_agent_id: challenge.opponent_id, p_amount: stake });
+          const { error: postErr } = await supabaseAdmin.rpc("wallet_post", {
+            p_agent_id: challenge.opponent_id,
+            p_account: "main",
+            p_amount: stake,
+            p_reason: "game_stake_refund",
+            p_reference_type: "game_challenge",
+            p_reference_id: String(challenge.id),
+            p_idempotency_key: `game_stake_refund:${challenge.id}:${challenge.opponent_id}`,
+            p_note: `Draw stake refund for ${challenge.game_type.toUpperCase()} Challenge (#${challenge.room_code})`,
+          });
+          if (postErr) {
+            await supabaseAdmin.rpc("credit_wallet", { p_agent_id: challenge.opponent_id, p_amount: stake });
+          }
         }
         rewardClaimed = true;
         settlementMessage = "Match ended in a draw! Wallet stakes have been returned.";
@@ -2513,7 +2612,19 @@ serve(async (req: Request) => {
 
       if (humanWon && stake > 0 && prizePool > 0) {
         if (challenge.reward_type === "wallet_cash" && winnerId) {
-          await supabaseAdmin.rpc("credit_wallet", { p_agent_id: winnerId, p_amount: prizePool });
+          const { error: payoutErr } = await supabaseAdmin.rpc("wallet_post", {
+            p_agent_id: winnerId,
+            p_account: "main",
+            p_amount: prizePool,
+            p_reason: "game_payout",
+            p_reference_type: "game_challenge",
+            p_reference_id: String(challenge.id),
+            p_idempotency_key: `game_payout:${challenge.id}`,
+            p_note: `Won ${challenge.game_type.toUpperCase()} Challenge (#${challenge.room_code})`,
+          });
+          if (payoutErr) {
+            await supabaseAdmin.rpc("credit_wallet", { p_agent_id: winnerId, p_amount: prizePool });
+          }
 
           rewardClaimed = true;
           settlementMessage = `🎉 Victory! GH₵ ${prizePool.toFixed(2)} has been credited to ${winnerName}'s Wallet!`;
@@ -2778,12 +2889,14 @@ serve(async (req: Request) => {
       }
 
       // 2. Enforce 7-day per-user / per-phone cooldown
+      const safeUserId = String(authUser.id || "").replace(/[^a-zA-Z0-9-]/g, "");
+      const cleanPhone = String(phone || "").replace(/[^0-9+]/g, "");
       const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
       const { count: recentUserClaims } = await supabaseAdmin
         .from("game_reward_claims")
         .select("id", { count: "exact", head: true })
         .eq("reward_type", "free_data")
-        .or(`user_id.eq.${authUser.id},winner_phone.eq.${phone}`)
+        .or(`user_id.eq.${safeUserId},winner_phone.eq.${cleanPhone}`)
         .gte("created_at", sevenDaysAgo);
 
       if ((recentUserClaims || 0) > 0) {
@@ -3712,9 +3825,35 @@ serve(async (req: Request) => {
     }
 
     if (action === "delete_story") {
+      if (!authUser) return signInRequired("delete a story");
       const storyId = String(body.story_id || "").trim();
       if (!storyId) {
         return jsonResponse({ success: false, error: "Missing story_id" }, 400);
+      }
+
+      const { data: story } = await supabaseAdmin
+        .from("game_user_stories")
+        .select("id, user_id")
+        .eq("id", storyId)
+        .maybeSingle();
+
+      if (!story) {
+        return jsonResponse({ success: false, error: "Story not found" }, 404);
+      }
+
+      let isAdmin = false;
+      if (story.user_id !== authUser.id) {
+        const { data: roleRow } = await supabaseAdmin
+          .from("user_roles")
+          .select("role")
+          .eq("user_id", authUser.id)
+          .eq("role", "admin")
+          .maybeSingle();
+        isAdmin = Boolean(roleRow);
+      }
+
+      if (story.user_id !== authUser.id && !isAdmin) {
+        return jsonResponse({ success: false, error: "You can only delete your own story." }, 403);
       }
 
       await supabaseAdmin.from("game_user_stories").delete().eq("id", storyId);

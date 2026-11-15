@@ -1295,15 +1295,20 @@ export default function ChallengeArena() {
       const prevColor = activeChallenge.board_state?.currentPlayerColor;
       const nextColor = nextState.currentPlayerColor;
 
+      const syncedState =
+        activeChallenge.board_state?.timeoutStrikes && !nextState?.timeoutStrikes
+          ? { ...nextState, timeoutStrikes: activeChallenge.board_state.timeoutStrikes }
+          : nextState;
+
       if (
-        !nextState.winner &&
+        !syncedState.winner &&
         (prevTurn !== nextTurn || (prevColor && nextColor && prevColor !== nextColor))
       ) {
-        triggerOverallTurnNotification(activeChallenge, nextTurn, nextState);
+        triggerOverallTurnNotification(activeChallenge, nextTurn, syncedState);
       }
 
       setActiveChallenge((prev: any) =>
-        prev ? { ...prev, board_state: nextState, current_turn: nextTurn } : prev
+        prev ? { ...prev, board_state: syncedState, current_turn: nextTurn } : prev
       );
       if (activeChallenge.mode === "p2p") {
         await supabase.functions.invoke("challenge-arena", {
@@ -1311,7 +1316,7 @@ export default function ChallengeArena() {
             action: "sync_board",
             challenge_id: activeChallenge.id,
             seat_token: getSeatToken(activeChallenge.id),
-            board_state: nextState,
+            board_state: syncedState,
             current_turn: nextTurn,
           },
         });
@@ -1735,7 +1740,7 @@ export default function ChallengeArena() {
   ]);
 
   const handleClaimOpponentTimeout = useCallback(
-    async (forceForfeit = false) => {
+    async (_forceForfeit = false) => {
       if (!activeChallenge || activeChallenge.status !== "in_progress" || claimingTimeout) {
         return;
       }
@@ -1746,7 +1751,6 @@ export default function ChallengeArena() {
             action: "claim_timeout",
             challenge_id: activeChallenge.id,
             seat_token: getSeatToken(activeChallenge.id),
-            forfeit: forceForfeit,
             winner_phone: playerPhone || profile?.phone || "",
             player_level: levelInfo.level,
           },
@@ -1991,7 +1995,6 @@ export default function ChallengeArena() {
                     "Match forfeited due to inactivity. Make your moves before the shot clock hits 0s!",
                   variant: "destructive",
                 });
-                handleBoardStateChange(forfeitedState);
                 handleMatchComplete(otherSide, forfeitedState, {
                   reason: "timeout_forfeit",
                   timeoutClaim: true,
@@ -3834,7 +3837,7 @@ export default function ChallengeArena() {
 
                         {!isCurrentlyMyTurn && activeChallenge.mode === "p2p" && (
                           <div className="flex flex-wrap items-center gap-1">
-                            {(opponentTimeoutStrikes >= 1 || turnShotClockSec <= 2) && (
+                            {turnShotClockSec <= 2 && (
                               <Button
                                 type="button"
                                 size="sm"

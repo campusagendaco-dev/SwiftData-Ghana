@@ -1543,7 +1543,11 @@ serve(async (req: any) => {
 
     const targetStatus = "processing";
     // Guard against overwriting a real provider_order_id (e.g. SKP...) that was written by a concurrent worker while we verified payment
-    const { data: claimedOrder, error: claimError } = await supabaseAdmin
+    const claimableSentinelFilter = isUndispatchedProcessing
+      ? "provider_order_id.is.null,provider_order_id.in.(dispatching,failed_api_call,routed,manual_fulfillment_mode,paused_by_admin,duplicate_cooldown,refunded)"
+      : "provider_order_id.is.null,provider_order_id.in.(failed_api_call,routed,manual_fulfillment_mode,paused_by_admin,duplicate_cooldown,refunded)";
+
+    let claimQuery = supabaseAdmin
       .from("orders")
       .update({ 
         status: targetStatus, 
@@ -1555,7 +1559,13 @@ serve(async (req: any) => {
       })
       .eq("id", targetReference)
       .in("status", allowedStatuses)
-      .or("provider_order_id.is.null,provider_order_id.in.(dispatching,failed_api_call,routed,manual_fulfillment_mode,paused_by_admin,duplicate_cooldown,refunded)")
+      .or(claimableSentinelFilter);
+
+    if (isUndispatchedProcessing && existingOrder?.updated_at) {
+      claimQuery = claimQuery.eq("updated_at", existingOrder.updated_at);
+    }
+
+    const { data: claimedOrder, error: claimError } = await claimQuery
       .select("*")
       .maybeSingle();
 
@@ -1712,6 +1722,22 @@ serve(async (req: any) => {
     }
 
     if (currentOrderType === "agent_activation") {
+      const { data: settings } = await supabaseAdmin
+        .from("v_system_settings_with_secrets")
+        .select("agent_activation_fee")
+        .eq("id", 1)
+        .maybeSingle();
+      const AGENT_ACTIVATION_MINIMUM = Number(settings?.agent_activation_fee || 50);
+      const activationPaid = Number(verifiedAmount || claimedOrder.paystack_verified_amount || claimedOrder.amount || 0);
+
+      if (!Number.isFinite(activationPaid) || activationPaid < AGENT_ACTIVATION_MINIMUM * 0.97) {
+        await supabaseAdmin.from("orders").update({
+          status: "fulfillment_failed",
+          failure_reason: `Payment too low for agent activation. Minimum GHS ${AGENT_ACTIVATION_MINIMUM}, received GHS ${activationPaid.toFixed(2)}.`,
+        }).eq("id", targetReference);
+        return new Response(JSON.stringify({ status: "error", error: "Activation payment below minimum" }), { status: 400, headers: corsHeaders });
+      }
+
       const agentId = claimedOrder.agent_id || metadata?.agent_id;
       if (agentId) {
         const { data: agentProfile } = await supabaseAdmin
@@ -1751,10 +1777,19 @@ serve(async (req: any) => {
     if (currentOrderType === "sub_agent_activation") {
       const subAgentId = claimedOrder.agent_id || metadata?.sub_agent_id;
       const parentAgentId = metadata?.parent_agent_id;
-      const activationAmount = Number(metadata?.activation_fee || claimedOrder.amount || verifiedAmount || 0);
+      const activationAmount = Number(verifiedAmount || claimedOrder.paystack_verified_amount || claimedOrder.amount || metadata?.activation_fee || 0);
       
       const { data: settings } = await supabaseAdmin.from("v_system_settings_with_secrets").select("sub_agent_base_fee").eq("id", 1).maybeSingle();
-      const baseFee = Number(settings?.sub_agent_base_fee || 5);
+      const SUB_AGENT_MINIMUM = Number(settings?.sub_agent_base_fee || 5);
+      const baseFee = SUB_AGENT_MINIMUM;
+
+      if (!Number.isFinite(activationAmount) || activationAmount < SUB_AGENT_MINIMUM * 0.97) {
+        await supabaseAdmin.from("orders").update({
+          status: "fulfillment_failed",
+          failure_reason: `Payment too low for sub-agent activation. Minimum GHS ${SUB_AGENT_MINIMUM}, received GHS ${activationAmount.toFixed(2)}.`,
+        }).eq("id", targetReference);
+        return new Response(JSON.stringify({ status: "error", error: "Activation payment below minimum" }), { status: 400, headers: corsHeaders });
+      }
 
       const agentProfit = Math.max(0, parseFloat((activationAmount - baseFee).toFixed(2)));
       

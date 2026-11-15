@@ -136,7 +136,7 @@ serve(async (req: Request) => {
     return json({ error: "Server misconfigured" }, 500);
   }
 
-  const authResult = await verifyAdmin(req, supabaseAdmin);
+  const authResult = await verifyAdmin(req, supabaseAdmin, { checkMfa: true, checkIp: true });
   if (!authResult.success) {
     return new Response(JSON.stringify({ error: authResult.error }), {
       status: authResult.status,
@@ -209,6 +209,8 @@ serve(async (req: Request) => {
 
         const enrichedUsers = (users || []).map((u: any) => ({
           ...u,
+          api_key_hash: u.api_key_hash ? "Hashed" : null,
+          api_secret_key_hash: u.api_secret_key_hash ? "Hashed" : null,
           total_sales_volume: statsMap[u.user_id] || 0,
           stats: [{ total_sales_volume: statsMap[u.user_id] || 0 }]
         }));
@@ -1264,11 +1266,11 @@ serve(async (req: Request) => {
       }
 
       case "find_user": {
-        const { search } = body;
+        const cleanSearch = String(body.search || "").replace(/[,()]/g, "").trim();
         const { data: users, error: findError } = await supabaseAdmin
           .from("profiles")
           .select("user_id, email, full_name, is_agent, agent_approved")
-          .or(`email.ilike.%${search}%,full_name.ilike.%${search}%`)
+          .or(`email.ilike.%${cleanSearch}%,full_name.ilike.%${cleanSearch}%`)
           .limit(10);
 
         if (findError) throw findError;
@@ -1841,7 +1843,7 @@ serve(async (req: Request) => {
         // 1. Fetch order details
         const { data: order, error: fetchErr } = await supabaseAdmin
           .from("orders")
-          .select("id, status, amount, agent_id, order_type, payment_method")
+          .select("id, status, amount, agent_id, order_type, payment_method, paystack_verified_amount, auto_refunded")
           .eq("id", orderId)
           .maybeSingle();
 
@@ -1849,48 +1851,90 @@ serve(async (req: Request) => {
           throw new Error(fetchErr?.message || `Order ${orderId} not found.`);
         }
 
-        if (order.status === "refunded") {
+        if (order.status === "refunded" || order.auto_refunded) {
           return new Response(JSON.stringify({ success: true, message: "Order is already refunded" }), {
             status: 200,
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
 
-        // 2. Perform wallet/balance refund if there is a valid agent
-        if (order.agent_id && order.agent_id !== "00000000-0000-0000-0000-000000000000") {
-          if (order.order_type === "api") {
-            const { error: refundErr } = await supabaseAdmin
-              .schema("api")
-              .rpc("credit_api_wallet", { p_user_id: order.agent_id, p_amount: order.amount });
-            if (refundErr) throw refundErr;
-          } else {
-            const { error: refundErr } = await supabaseAdmin
-              .rpc("credit_wallet", { p_agent_id: order.agent_id, p_amount: order.amount });
-            if (refundErr) throw refundErr;
-          }
+        if (order.status === "fulfilled" || order.status === "completed") {
+          return json({ error: "Cannot refund an already fulfilled or completed order." }, 400);
         }
 
-        // 3. Mark the order as refunded in the database
-        const { error: updateErr } = await supabaseAdmin
-          .from("orders")
-          .update({
-            status: "refunded",
-            auto_refunded: true,
-            refund_amount: order.amount,
-            refunded_at: new Date().toISOString(),
-            refund_reason: reason || "Manual refund by admin",
-            updated_at: new Date().toISOString()
-          })
-          .eq("id", orderId);
+        const orderTypeLower = String(order.order_type || "").toLowerCase().trim();
+        if (["wallet_topup", "store_wallet_topup", "agent_activation", "sub_agent_activation"].includes(orderTypeLower)) {
+          return json({ error: `Order type '${order.order_type}' is not eligible for wallet refund.` }, 400);
+        }
 
-        if (updateErr) throw updateErr;
+        const pmLower = String(order.payment_method || "").toLowerCase().trim();
+        const isWalletPayment = pmLower === "wallet" || pmLower === "balance";
+        const isApiOrder = orderTypeLower === "api";
+
+        if (order.status === "pending" && !isWalletPayment && !isApiOrder) {
+          return json({ error: "Cannot refund an unpaid pending order." }, 400);
+        }
+
+        const refundAmount = Number(order.amount || 0);
+        if (!Number.isFinite(refundAmount) || refundAmount <= 0) {
+          return json({ error: "Invalid order refund amount." }, 400);
+        }
+
+        // 2. Perform wallet/balance refund if there is a valid agent
+        if (!order.agent_id || order.agent_id === "00000000-0000-0000-0000-000000000000") {
+          return json({ error: "Guest orders without an agent account must use the guest Paystack refund flow." }, 400);
+        }
+
+        if (isWalletPayment && !isApiOrder) {
+          const { data: refundSuccess, error: rpcErr } = await supabaseAdmin.rpc("refund_failed_order", {
+            p_order_id: order.id,
+          });
+          if (rpcErr || !refundSuccess) {
+            throw new Error(rpcErr?.message || "Order is not eligible for wallet refund");
+          }
+          if (reason) {
+            await supabaseAdmin
+              .from("orders")
+              .update({ refund_reason: reason, updated_at: new Date().toISOString() })
+              .eq("id", orderId);
+          }
+        } else {
+          const { data: refundPost, error: postErr } = await supabaseAdmin.rpc("wallet_post", {
+            p_agent_id: order.agent_id,
+            p_account: isApiOrder ? "api" : "main",
+            p_amount: refundAmount,
+            p_reason: "order_refund",
+            p_reference_type: "order",
+            p_reference_id: String(order.id),
+            p_idempotency_key: "refund:" + order.id,
+            p_note: reason || "Manual refund by admin",
+          });
+          if (postErr || !(refundPost as any)?.success) {
+            throw new Error(postErr?.message || (refundPost as any)?.error || "Wallet refund failed");
+          }
+
+          // 3. Mark the order as refunded in the database
+          const { error: updateErr } = await supabaseAdmin
+            .from("orders")
+            .update({
+              status: "refunded",
+              auto_refunded: true,
+              refund_amount: refundAmount,
+              refunded_at: new Date().toISOString(),
+              refund_reason: reason || "Manual refund by admin",
+              updated_at: new Date().toISOString()
+            })
+            .eq("id", orderId);
+
+          if (updateErr) throw updateErr;
+        }
 
         // Log the action to admin audit logs
         await Promise.resolve(supabaseAdmin.from("admin_action_log").insert({
           admin_email: actor.email || "system",
           action: "refund_order",
           target_email: order.agent_id,
-          metadata: { order_id: orderId, reason, amount: order.amount }
+          metadata: { order_id: orderId, reason, amount: refundAmount }
         })).then(() => {
         });
 
