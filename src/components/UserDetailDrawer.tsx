@@ -241,18 +241,17 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
       const { error: directErr } = await (supabase.from("profiles") as any)
         .update({
           is_suspended: next,
-          suspended_at: next ? new Date().toISOString() : null,
+          suspended_until: null,
         })
         .eq("user_id", user.user_id);
 
       if (directErr) {
-        const { data: res, error } = await supabase.functions.invoke("system-payout-v1", {
-          body: { action: "bulk_suspend_users", user_ids: [user.user_id], suspend: next },
-          headers: { Authorization: `Bearer ${session?.access_token}` },
+        const { error: rpcErr } = await (supabase as any).rpc("toggle_user_suspension", {
+          p_user_id: user.user_id,
+          p_suspend: next,
         });
-        
-        if (error || res?.error) {
-          throw new Error(await parseEdgeError(error, res));
+        if (rpcErr) {
+          throw new Error(rpcErr.message || directErr.message || "Failed to update suspension status");
         }
       }
 

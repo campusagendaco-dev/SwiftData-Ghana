@@ -2372,7 +2372,7 @@ serve(async (req: Request) => {
           .from("profiles")
           .update({
             is_suspended: isSuspend,
-            suspended_at: isSuspend ? new Date().toISOString() : null,
+            suspended_until: null,
           })
           .in("user_id", validIds);
         if (updateErr) throw updateErr;
