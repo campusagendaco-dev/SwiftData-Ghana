@@ -36,6 +36,50 @@ function findName(obj: any): string | null {
   return null;
 }
 
+function isValidGhanaPhone(phone: string): boolean {
+  const digits = (phone || "").replace(/\D+/g, "");
+  return (
+    (digits.startsWith("0") && digits.length === 10) ||
+    (digits.startsWith("233") && digits.length === 12) ||
+    digits.length === 9
+  );
+}
+
+function pickErrorMessage(res: any): string | null {
+  if (!res || typeof res !== "object") return typeof res === "string" && res.trim() ? res.trim() : null;
+  const results = res.results && typeof res.results === "object" ? res.results : null;
+  const candidates = [
+    typeof results?.data === "string" ? results.data : null,
+    results?.error_message,
+    results?.message,
+    results?.error,
+    results?.detail,
+    res.error_message,
+    res.error,
+    res.detail,
+    res.message,
+    typeof res.data === "string" ? res.data : null,
+    results?.data && typeof results.data === "object"
+      ? results.data.message || results.data.detail || results.data.error
+      : null,
+  ];
+  for (const c of candidates) {
+    if (typeof c === "string" && c.trim()) return c.trim();
+    if (c && typeof c === "object") {
+      const nested = c.message || c.detail || c.error || (typeof c.data === "string" ? c.data : null);
+      if (typeof nested === "string" && nested.trim()) return nested.trim();
+    }
+  }
+  // DRF-style field errors: { "meter_number": ["This field is required."] }
+  const fieldErrors = (res.errors && typeof res.errors === "object" ? res.errors : null)
+    || (results?.errors && typeof results.errors === "object" ? results.errors : null);
+  if (fieldErrors) {
+    const first = Object.entries(fieldErrors)[0];
+    if (first) return `${first[0]}: ${Array.isArray(first[1]) ? first[1][0] : first[1]}`;
+  }
+  return null;
+}
+
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -55,10 +99,21 @@ serve(async (req: Request) => {
       if (!alias || !meter_number || !regPhone || !meter_category) {
         return new Response(JSON.stringify({ success: false, error: "Missing required fields for Add Meter" }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
+      if (!isValidGhanaPhone(String(regPhone))) {
+        return new Response(JSON.stringify({ success: false, error: "Please enter a valid 10-digit Ghana mobile phone number (e.g. 024XXXXXXX)." }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
 
-      const KORBA_CLIENT_ID = Deno.env.get("KORBA_CLIENT_ID") || "2419";
-      const KORBA_CLIENT_KEY = Deno.env.get("KORBA_CLIENT_KEY") || "";
-      const KORBA_SECRET_KEY = Deno.env.get("KORBA_SECRET_KEY") || "";
+      const { data: meterProviders } = await supabaseAdmin
+        .from("providers")
+        .select("*")
+        .eq("provider_type", "utility")
+        .order("priority", { ascending: true });
+      const korbaProv = (meterProviders as any[])?.find((p: any) => p.is_active && p.name === "Korba")
+        || (meterProviders as any[])?.find((p: any) => p.name === "Korba");
+
+      const KORBA_CLIENT_ID = Deno.env.get("KORBA_CLIENT_ID") || korbaProv?.settings?.client_id || "2419";
+      const KORBA_CLIENT_KEY = Deno.env.get("KORBA_CLIENT_KEY") || korbaProv?.api_key || korbaProv?.settings?.client_key || "";
+      const KORBA_SECRET_KEY = Deno.env.get("KORBA_SECRET_KEY") || korbaProv?.api_secret || korbaProv?.settings?.secret_key || "";
 
       if (!KORBA_CLIENT_KEY || !KORBA_SECRET_KEY) {
         return new Response(JSON.stringify({ success: false, error: "Korba credentials not configured" }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -66,11 +121,11 @@ serve(async (req: Request) => {
 
       const payload = {
         client_id: parseInt(KORBA_CLIENT_ID) || 2419,
-        alias: alias.trim(),
-        meter_number: meter_number.trim(),
-        phone_number: formatTo233(regPhone),
-        meter_category: meter_category.toUpperCase(),
-        account_number: regAccount ? regAccount.trim() : undefined
+        alias: String(alias).trim(),
+        meter_number: String(meter_number).trim(),
+        phone_number: formatTo233(String(regPhone)),
+        meter_category: String(meter_category).trim().toUpperCase(),
+        account_number: regAccount ? String(regAccount).trim() : undefined
       };
 
       // Generate HMAC signature
@@ -115,14 +170,33 @@ serve(async (req: Request) => {
       try {
         jsonResponse = JSON.parse(responseText);
       } catch {
-        return new Response(JSON.stringify({ success: false, error: "Invalid response from Korba" }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        console.error(`Add Meter: non-JSON response (HTTP ${response.status}):`, responseText.slice(0, 500));
+        return new Response(JSON.stringify({ success: false, error: `Invalid response from Korba (HTTP ${response.status})` }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
-      if (jsonResponse.success) {
+      if (response.ok && jsonResponse?.success && jsonResponse?.results?.success !== false) {
         return new Response(JSON.stringify({ success: true, results: jsonResponse.results }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      } else {
-        return new Response(JSON.stringify({ success: false, error: jsonResponse.error_message || jsonResponse.message || "Failed to add meter." }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
+
+      const reason = pickErrorMessage(jsonResponse) || `Failed to add meter (HTTP ${response.status}).`;
+
+      // If ECG reports that this meter is already linked to the customer's account, treat as idempotent success
+      // so the UI immediately verifies and loads the meter via the linked phone number instead of blocking the user.
+      if (/already\s+exists/i.test(reason)) {
+        console.log("Add Meter: meter already exists on account; returning idempotent success:", reason);
+        return new Response(
+          JSON.stringify({
+            success: true,
+            already_registered: true,
+            message: reason,
+            results: jsonResponse?.results ?? null,
+          }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      console.error(`Add Meter failed (HTTP ${response.status}):`, responseText.slice(0, 1000));
+      return new Response(JSON.stringify({ success: false, error: reason }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     if (!utility_type || !provider || (!account_number && !phone_number)) {

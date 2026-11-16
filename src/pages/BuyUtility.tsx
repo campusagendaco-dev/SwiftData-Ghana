@@ -130,7 +130,12 @@ const BuyUtility = () => {
 
   const handleRegisterMeter = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!regAlias || !regMeterNumber || !regPhone) {
+    const cleanAlias = regAlias.trim();
+    const cleanMeter = regMeterNumber.trim();
+    const cleanPhone = regPhone.trim();
+    const cleanAccount = regAccountNumber.trim();
+
+    if (!cleanAlias || !cleanMeter || !cleanPhone) {
       toast({ title: "Please fill in all required fields", variant: "destructive" });
       return;
     }
@@ -141,32 +146,45 @@ const BuyUtility = () => {
           action: "add_meter",
           utility_type: "electricity",
           provider: "ECG Prepaid",
-          alias: regAlias.trim(),
-          meter_number: regMeterNumber.trim(),
-          phone_number: regPhone.trim(),
+          alias: cleanAlias,
+          meter_number: cleanMeter,
+          phone_number: cleanPhone,
           meter_category: regCategory,
-          account_number: regAccountNumber.trim() || undefined
+          account_number: cleanAccount || undefined
         }
       });
 
       if (error || !data?.success) {
-        toast({ title: "Registration failed", description: data?.error || "Could not register meter.", variant: "destructive" });
+        let errMsg = data?.error || error?.message || "Could not register meter.";
+        if (!data?.error && error && typeof (error as any).context?.json === "function") {
+          try {
+            const errBody = await (error as any).context.json();
+            if (errBody?.error) errMsg = errBody.error;
+          } catch {
+            // ignore JSON parse errors
+          }
+        }
+        toast({ title: "Registration failed", description: errMsg, variant: "destructive" });
       } else {
-        toast({ title: "Meter Registered Successfully!", description: `Meter ${regMeterNumber} is now registered.` });
+        toast({
+          title: data.already_registered ? "Meter Already Linked!" : "Meter Registered Successfully!",
+          description: data.already_registered
+            ? "This meter is already linked to your ECG account. Loading meter details now..."
+            : `Meter ${cleanMeter} is now registered.`,
+        });
         setShowRegisterDialog(false);
         setRegAlias("");
         setRegMeterNumber("");
         setRegPhone("");
         setRegAccountNumber("");
-        
-        // Auto fill and trigger verification lookup for the new registered phone number
-        setAccountNumber(regPhone.trim());
-        setTimeout(() => {
-          handleVerify();
-        }, 100);
+
+        // Auto fill and trigger verification lookup directly with cleanPhone (avoiding stale React closure state)
+        setAccountNumber(cleanPhone);
+        if (!provider) setProvider("ECG Prepaid");
+        void handleVerify(cleanPhone, cleanMeter);
       }
     } catch (err: any) {
-      toast({ title: "Network error", description: "Please try again later.", variant: "destructive" });
+      toast({ title: "Network error", description: err?.message || "Please try again later.", variant: "destructive" });
     } finally {
       setRegistering(false);
     }
@@ -177,11 +195,12 @@ const BuyUtility = () => {
     reset();
   };
 
-  const handleVerify = async () => {
-    const targetAccount = accountNumber.trim();
+  const handleVerify = async (overrideAccount?: string | React.MouseEvent, preferredMeterNumber?: string) => {
+    const targetAccount = typeof overrideAccount === "string" ? overrideAccount.trim() : accountNumber.trim();
     const targetPhone = phoneNumber.trim();
+    const targetProvider = provider || (typeof overrideAccount === "string" ? "ECG Prepaid" : "");
 
-    if ((!targetAccount && !targetPhone) || !provider) {
+    if ((!targetAccount && !targetPhone) || !targetProvider) {
       toast({ title: "Verification details missing", description: "Select a provider and enter account details", variant: "destructive" });
       return;
     }
@@ -193,7 +212,7 @@ const BuyUtility = () => {
       const { data, error } = await supabase.functions.invoke("utility-lookup", {
         body: {
           utility_type: activeTab,
-          provider: provider,
+          provider: targetProvider,
           account_number: targetAccount,
           phone_number: targetPhone || undefined,
         },
@@ -206,14 +225,17 @@ const BuyUtility = () => {
         setMeters(returnedMeters);
         
         if (returnedMeters.length > 0) {
-          const firstMeter = returnedMeters[0];
-          const resolvedName = firstMeter.customerName || firstMeter.alias || data.customer_name || data.accountName;
+          const matchedMeter =
+            (preferredMeterNumber
+              ? returnedMeters.find((m: any) => String(m.meterNumber || "").trim() === preferredMeterNumber.trim())
+              : null) || returnedMeters[0];
+          const resolvedName = matchedMeter.customerName || matchedMeter.alias || data.customer_name || data.accountName;
           setAccountName(resolvedName);
-          setSelectedMeterId(firstMeter.id || firstMeter.meterId || null);
-          setSelectedMeterNumber(firstMeter.meterNumber || null);
+          setSelectedMeterId(matchedMeter.id || matchedMeter.meterId || null);
+          setSelectedMeterNumber(matchedMeter.meterNumber || null);
           
-          if (firstMeter.meterNumber && !accountNumber) {
-            setAccountNumber(firstMeter.meterNumber);
+          if (matchedMeter.meterNumber && !targetAccount) {
+            setAccountNumber(matchedMeter.meterNumber);
           }
         } else {
           const resolvedName = data.customer_name || data.accountName;
