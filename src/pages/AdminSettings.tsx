@@ -1020,7 +1020,11 @@ const AdminSettings = () => {
               "Authorization": `Bearer ${session.access_token}`,
               "apikey": SUPABASE_PUBLISHABLE_KEY,
             },
-            body: JSON.stringify({ action: "update_system_settings", settings: {}, providers: toUpsert }),
+            body: JSON.stringify({
+              action: "update_system_settings",
+              settings: { active_payment_gateway: settings.active_payment_gateway || "paystack" },
+              providers: toUpsert,
+            }),
           });
         }
       } catch (syncErr) {

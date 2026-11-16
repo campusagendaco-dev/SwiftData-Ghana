@@ -412,22 +412,31 @@ const AdminUsers = () => {
     if (!selectedUsers.length) return;
     setBulkActionLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke("system-payout-v1", {
-        body: { action: "bulk_suspend_users", user_ids: selectedUsers, suspend },
-        headers: { Authorization: `Bearer ${session?.access_token}` },
-      });
-      if (error) {
-        let msg = error.message;
-        try {
-          const bodyText = await (error as any).context?.text();
-          if (bodyText) {
-            const parsed = JSON.parse(bodyText);
-            if (parsed.error) msg = parsed.error;
-          }
-        } catch (_e) { /* ignore parse error */ }
-        throw new Error(msg);
+      const { error: directErr } = await (supabase.from("profiles") as any)
+        .update({
+          is_suspended: suspend,
+          suspended_at: suspend ? new Date().toISOString() : null,
+        })
+        .in("user_id", selectedUsers);
+
+      if (directErr) {
+        const { data, error } = await supabase.functions.invoke("system-payout-v1", {
+          body: { action: "bulk_suspend_users", user_ids: selectedUsers, suspend },
+          headers: { Authorization: `Bearer ${session?.access_token}` },
+        });
+        if (error) {
+          let msg = error.message;
+          try {
+            const bodyText = await (error as any).context?.text();
+            if (bodyText) {
+              const parsed = JSON.parse(bodyText);
+              if (parsed.error) msg = parsed.error;
+            }
+          } catch (_e) { /* ignore parse error */ }
+          throw new Error(msg);
+        }
+        if (data?.error) throw new Error(data.error);
       }
-      if (data?.error) throw new Error(data.error);
 
       toast({ title: suspend ? "Users Suspended" : "Users Restored", description: `${selectedUsers.length} users updated.` });
       setUsers(prev => prev.map(u => selectedUsers.includes(u.user_id) ? { ...u, is_suspended: suspend } : u));
@@ -444,23 +453,32 @@ const AdminUsers = () => {
     const next = !user.is_suspended;
     setRowAction(user.user_id, "suspend");
     try {
-      const { data, error } = await supabase.functions.invoke("system-payout-v1", {
-        body: { action: "bulk_suspend_users", user_ids: [user.user_id], suspend: next },
-        headers: { Authorization: `Bearer ${session?.access_token}` },
-      });
+      const { error: directErr } = await (supabase.from("profiles") as any)
+        .update({
+          is_suspended: next,
+          suspended_at: next ? new Date().toISOString() : null,
+        })
+        .eq("user_id", user.user_id);
 
-      if (error) {
-        let msg = error.message;
-        try {
-          const bodyText = await (error as any).context?.text();
-          if (bodyText) {
-            const parsed = JSON.parse(bodyText);
-            if (parsed.error) msg = parsed.error;
-          }
-        } catch (_e) { /* ignore parse error */ }
-        throw new Error(msg);
+      if (directErr) {
+        const { data, error } = await supabase.functions.invoke("system-payout-v1", {
+          body: { action: "bulk_suspend_users", user_ids: [user.user_id], suspend: next },
+          headers: { Authorization: `Bearer ${session?.access_token}` },
+        });
+
+        if (error) {
+          let msg = error.message;
+          try {
+            const bodyText = await (error as any).context?.text();
+            if (bodyText) {
+              const parsed = JSON.parse(bodyText);
+              if (parsed.error) msg = parsed.error;
+            }
+          } catch (_e) { /* ignore parse error */ }
+          throw new Error(msg);
+        }
+        if (data?.error) throw new Error(data.error);
       }
-      if (data?.error) throw new Error(data.error);
 
       toast({ title: next ? "User suspended" : "User restored", description: user.email });
       setUsers(prev => prev.map(u => u.user_id === user.user_id ? { ...u, is_suspended: next } : u));

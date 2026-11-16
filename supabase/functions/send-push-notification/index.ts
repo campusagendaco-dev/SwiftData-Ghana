@@ -1,8 +1,5 @@
-import "../deno.d.ts";
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import webpush from "npm:web-push";
 import { corsHeaders } from "../_shared/cors.ts";
 import { verifyAdmin } from "../_shared/auth.ts";
 
@@ -17,23 +14,33 @@ const cleanKey = (val: string | undefined): string =>
 const VAPID_PUBLIC_KEY = cleanKey(Deno.env.get("VAPID_PUBLIC_KEY")) || DEFAULT_VAPID_PUBLIC;
 const VAPID_PRIVATE_KEY = cleanKey(Deno.env.get("VAPID_PRIVATE_KEY"));
 
+let webpushInstance: any = null;
 let vapidInitialized = false;
 let vapidInitError: string | null = null;
 
-if (VAPID_PRIVATE_KEY) {
+async function getWebPush(): Promise<any> {
+  if (webpushInstance && vapidInitialized) {
+    return webpushInstance;
+  }
+  if (!VAPID_PRIVATE_KEY) {
+    return null;
+  }
   try {
-    webpush.setVapidDetails(
+    const mod = await import("npm:web-push");
+    webpushInstance = mod.default || mod;
+    webpushInstance.setVapidDetails(
       "mailto:admin@swiftdatagh.shop",
       VAPID_PUBLIC_KEY,
       VAPID_PRIVATE_KEY
     );
     vapidInitialized = true;
+    vapidInitError = null;
+    return webpushInstance;
   } catch (vapidErr: any) {
     vapidInitError = vapidErr?.message || String(vapidErr);
-    console.error("[Push] Failed to initialize VAPID credentials:", vapidErr);
+    console.error("[Push] Failed to initialize web-push VAPID credentials:", vapidErr);
+    return null;
   }
-} else {
-  console.warn("[Push] VAPID_PRIVATE_KEY environment secret is not configured.");
 }
 
 let supabaseAdminInstance: any = null;
@@ -51,7 +58,7 @@ const isValidUuid = (val: any): boolean => typeof val === "string" && UUID_REGEX
 
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    return new Response(null, { status: 200, headers: corsHeaders });
   }
 
   const supabaseAdmin = getSupabaseAdmin();
@@ -272,7 +279,8 @@ serve(async (req: Request) => {
       }
     }
 
-    if (!VAPID_PRIVATE_KEY || !vapidInitialized) {
+    const webpush = await getWebPush();
+    if (!VAPID_PRIVATE_KEY || !webpush || !vapidInitialized) {
       return new Response(
         JSON.stringify({
           success: false,

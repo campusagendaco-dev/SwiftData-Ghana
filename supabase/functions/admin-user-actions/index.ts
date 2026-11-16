@@ -129,7 +129,7 @@ type AdminUserAction =
 
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    return new Response(null, { status: 200, headers: corsHeaders });
   }
 
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
@@ -865,8 +865,9 @@ serve(async (req: Request) => {
           }
           if (NUMERIC_KEYS.has(key)) {
             const n = Number(val);
-            if (!Number.isFinite(n) || n < 0 || n > 100000) {
-              return new Response(JSON.stringify({ error: `Setting '${key}' must be a non-negative number ≤ 100000` }), {
+            const minVal = key === "background_blueness" ? -10 : 0;
+            if (!Number.isFinite(n) || n < minVal || n > 100000) {
+              return new Response(JSON.stringify({ error: `Setting '${key}' must be a valid number between ${minVal} and 100000` }), {
                 status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
               });
             }
@@ -879,16 +880,18 @@ serve(async (req: Request) => {
           filteredSettings[key] = val;
         }
 
-        const { error: updateError } = await supabaseAdmin
-          .from("system_settings")
-          .update(filteredSettings)
-          .eq("id", 1);
+        if (Object.keys(filteredSettings).length > 0) {
+          const { error: updateError } = await supabaseAdmin
+            .from("system_settings")
+            .update(filteredSettings)
+            .eq("id", 1);
 
-        if (updateError) {
-          return new Response(JSON.stringify({ error: updateError.message }), {
-            status: 500,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
+          if (updateError) {
+            return new Response(JSON.stringify({ error: updateError.message }), {
+              status: 500,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
         }
 
         return new Response(JSON.stringify({ 
@@ -1302,7 +1305,13 @@ serve(async (req: Request) => {
 
       case "purge_test_accounts": {
         const { data: result, error: rpcError } = await supabaseAdmin.rpc("purge_test_accounts");
-        if (rpcError) throw rpcError;
+        if (rpcError) {
+          console.warn("[admin-user-actions] purge_test_accounts RPC warning:", rpcError.message);
+          return new Response(JSON.stringify({ success: false, deleted_count: 0, error: rpcError.message }), {
+            status: 200,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
         return new Response(JSON.stringify(result), {
           status: 200,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -1311,20 +1320,36 @@ serve(async (req: Request) => {
 
       case "bulk_suspend_users": {
         const { user_ids, suspend } = body;
-        if (!Array.isArray(user_ids)) throw new Error("user_ids must be an array");
+        if (!Array.isArray(user_ids)) {
+          return new Response(JSON.stringify({ error: "user_ids must be an array" }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
         const isSuspend = !!suspend;
-        const { data: result, error: rpcError } = await supabaseAdmin.rpc("bulk_suspend_users", {
-          p_user_ids: user_ids,
-          p_suspend: isSuspend
-        });
-        if (rpcError) throw rpcError;
+        const validIds = user_ids.filter((id: any) => isValidUuid(id));
+        if (validIds.length === 0) {
+          return new Response(JSON.stringify({ success: true, count: 0 }), {
+            status: 200,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        const { error: updateErr } = await supabaseAdmin
+          .from("profiles")
+          .update({
+            is_suspended: isSuspend,
+            suspended_at: isSuspend ? new Date().toISOString() : null,
+          })
+          .in("user_id", validIds);
+        if (updateErr) throw updateErr;
 
         // Also sync Supabase Auth GoTrue banned_until status so active session tokens are revoked immediately
-        Promise.all(user_ids.map((uid: string) => 
+        Promise.all(validIds.map((uid: string) => 
           supabaseAdmin.auth.admin.updateUserById(uid, { ban_duration: isSuspend ? "876000h" : "none" }).catch(() => null)
         )).catch(() => null);
 
-        return new Response(JSON.stringify(result), {
+        return new Response(JSON.stringify({ success: true, count: validIds.length }), {
           status: 200,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -1332,13 +1357,27 @@ serve(async (req: Request) => {
 
       case "manage_blacklist": {
         const { op, type, value, reason } = body;
-        if (op === "add") {
-          const { error: insError } = await supabaseAdmin.from("security_blacklist").insert({
-            type, value, reason, created_by: actor.id
+        const cleanVal = String(value || "").trim();
+        if (!cleanVal) {
+          return new Response(JSON.stringify({ error: "value is required" }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
+        }
+        if (op === "add") {
+          const createdBy = isValidUuid(actor?.id) && actor.id !== "00000000-0000-0000-0000-000000000000" ? actor.id : null;
+          const { error: insError } = await supabaseAdmin.from("security_blacklist").upsert(
+            {
+              type: type === "domain" ? "domain" : "ip",
+              value: cleanVal,
+              reason: reason || null,
+              created_by: createdBy,
+            },
+            { onConflict: "value" }
+          );
           if (insError) throw insError;
         } else if (op === "remove") {
-          const { error: delError } = await supabaseAdmin.from("security_blacklist").delete().eq("value", value);
+          const { error: delError } = await supabaseAdmin.from("security_blacklist").delete().eq("value", cleanVal);
           if (delError) throw delError;
         }
         return new Response(JSON.stringify({ success: true }), {
@@ -1431,17 +1470,31 @@ serve(async (req: Request) => {
           });
         }
 
-        const upserts = packages.map((p: any) => ({
-          network: p.network,
-          package_size: p.package_size,
-          cost_price: p.cost_price ?? null,
-          agent_price: p.agent_price ?? null,
-          sub_agent_price: p.sub_agent_price ?? null,
-          public_price: p.public_price ?? null,
-          api_price: p.api_price ?? null,
-          is_unavailable: !!p.is_unavailable,
-          updated_at: new Date().toISOString(),
-        }));
+        const dedupedMap = new Map<string, any>();
+        for (const p of packages) {
+          const net = String(p.network || "").trim();
+          const size = String(p.package_size || "").trim();
+          if (!net || !size) continue;
+          dedupedMap.set(`${net}::${size}`, {
+            network: net,
+            package_size: size,
+            cost_price: p.cost_price ?? null,
+            agent_price: p.agent_price ?? null,
+            sub_agent_price: p.sub_agent_price ?? null,
+            public_price: p.public_price ?? null,
+            api_price: p.api_price ?? null,
+            is_unavailable: !!p.is_unavailable,
+            updated_at: new Date().toISOString(),
+          });
+        }
+        const upserts = Array.from(dedupedMap.values());
+
+        if (upserts.length === 0) {
+          return new Response(JSON.stringify({ success: true, saved: 0 }), {
+            status: 200,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
 
         const { error: upsertError } = await supabaseAdmin
           .from("global_package_settings")

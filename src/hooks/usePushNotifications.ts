@@ -122,36 +122,47 @@ async function persistSubscriptionToBackend(params: {
   userId: string | null;
 }): Promise<{ ok: boolean; error?: string }> {
   const { endpoint, p256dh, auth, userId } = params;
-  const syncSig = `${endpoint}::${userId || "anon"}`;
 
+  // Verify there is an active authenticated session before attempting to persist to push_subscriptions.
+  // Guest/unauthenticated visitors on `/` or `/login` keep their browser PushSubscription locally
+  // and automatically sync it to the database once authenticated.
+  const { data: sessionData } = await supabase.auth.getSession().catch(() => ({ data: { session: null } }));
+  const session = sessionData?.session;
+  const authedUserId = session?.user?.id || null;
+
+  if (!session?.access_token || !authedUserId) {
+    // Defer backend persistence until user is authenticated (prevents 401 on push_subscriptions and preflight errors on / and /login)
+    if (!userId) {
+      return { ok: true };
+    }
+    return { ok: false, error: "Please sign in to link push notifications to your account." };
+  }
+
+  const syncSig = `${endpoint}::${authedUserId}`;
   if (lastSyncedSignature === syncSig) {
     return { ok: true };
   }
 
-  // Tier 1: Edge Function action="subscribe" (uses service_role key on server, zero RLS or missing-RPC 404 issues)
+  // Tier 1: SECURITY DEFINER RPC register_push_subscription (handles cross-account endpoint rebinding cleanly without Edge Function cold-start dependency)
   try {
-    const { data: fnData, error: fnErr } = await supabase.functions.invoke("send-push-notification", {
-      body: {
-        action: "subscribe",
-        endpoint,
-        p256dh,
-        auth,
-        user_id: userId,
-      },
+    const { data: rpcData, error: rpcErr } = await (supabase.rpc as any)("register_push_subscription", {
+      p_endpoint: endpoint,
+      p_p256dh: p256dh || "",
+      p_auth: auth || "",
     });
-    if (!fnErr && fnData?.success) {
+    if (!rpcErr && (rpcData === true || rpcData?.success === true)) {
       lastSyncedSignature = syncSig;
       return { ok: true };
     }
-  } catch (_fnEx) {
+  } catch (_rpcEx) {
     // Fall through to Tier 2
   }
 
-  // Tier 2: Direct table upsert fallback
+  // Tier 2: Direct authenticated table upsert fallback (only when a valid session token and user_id exist)
   try {
     const { error: upsertErr } = await supabase.from("push_subscriptions" as any).upsert(
       {
-        user_id: userId,
+        user_id: authedUserId,
         endpoint,
         p256dh: p256dh || null,
         auth: auth || null,
@@ -383,9 +394,9 @@ export function usePushNotifications() {
     [supported, user?.id, toast]
   );
 
-  // Sync existing granted permission to backend on mount or when user logs in
+  // Sync existing granted permission to backend ONLY when an authenticated user session is present
   useEffect(() => {
-    if (supported && permissionState === "granted") {
+    if (supported && permissionState === "granted" && user?.id) {
       subscribeUser(true);
     }
   }, [supported, permissionState, user?.id, subscribeUser]);
@@ -407,17 +418,26 @@ export function usePushNotifications() {
         await subscription.unsubscribe();
         lastSyncedSignature = null;
 
-        // Remove from backend via Edge Function or direct delete
-        try {
-          await supabase.functions.invoke("send-push-notification", {
-            body: { action: "unsubscribe", endpoint },
-          });
-        } catch (_e) {
-          if (user?.id) {
+        // Remove from backend via authenticated RPC or direct delete
+        const { data: sessionData } = await supabase.auth.getSession().catch(() => ({ data: { session: null } }));
+        const authedUserId = sessionData?.session?.user?.id || null;
+        if (sessionData?.session?.access_token && authedUserId) {
+          try {
+            const { error: rpcErr } = await (supabase.rpc as any)("unregister_push_subscription", {
+              p_endpoint: endpoint,
+            });
+            if (rpcErr) {
+              await supabase
+                .from("push_subscriptions" as any)
+                .delete()
+                .eq("user_id", authedUserId)
+                .eq("endpoint", endpoint);
+            }
+          } catch (_e) {
             await supabase
               .from("push_subscriptions" as any)
               .delete()
-              .eq("user_id", user.id)
+              .eq("user_id", authedUserId)
               .eq("endpoint", endpoint);
           }
         }

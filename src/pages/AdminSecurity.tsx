@@ -290,9 +290,24 @@ const AdminSecurity = () => {
     return data;
   }, [session]);
 
+  const suspendUsersDirect = useCallback(async (ids: string[], suspend: boolean) => {
+    if (!ids.length) return;
+    const { error: directErr } = await (supabase.from("profiles") as any)
+      .update({
+        is_suspended: suspend,
+        suspended_at: suspend ? new Date().toISOString() : null,
+      })
+      .in("user_id", ids);
+    if (!directErr) return;
+    await invoke({ action: "bulk_suspend_users", user_ids: ids, suspend });
+  }, [invoke]);
+
   /* ── auto-response engine ────────────────────────────────────────── */
   const runAutoResponse = useCallback(async (
-    cls: IpCluster[], vel: VelocityAccount[],
+    cls: IpCluster[],
+    vel: VelocityAccount[],
+    existingBlValues: Set<string> = new Set(),
+    alreadySuspendedIds: Set<string> = new Set(),
   ) => {
     if (!autoModeRef.current) return;
     setScanning(true);
@@ -302,6 +317,15 @@ const AdminSecurity = () => {
       if (handledRef.current.ips.has(cluster.ip)) continue;
       handledRef.current.ips.add(cluster.ip);
 
+      const unsuspendedIds = cluster.accounts
+        .filter(a => !a.is_suspended && !alreadySuspendedIds.has(a.user_id))
+        .map(a => a.user_id);
+      const isAlreadyBlacklisted = existingBlValues.has(cluster.ip);
+
+      if (unsuspendedIds.length === 0 && isAlreadyBlacklisted) {
+        continue;
+      }
+
       const eId = addEntry({
         type: "AUTO_SUSPEND", severity: "critical", status: "executing",
         target: cluster.ip,
@@ -309,16 +333,21 @@ const AdminSecurity = () => {
         count: cluster.accounts.length,
       });
       try {
-        await invoke({ action: "bulk_suspend_users", user_ids: cluster.accounts.map(a => a.user_id), suspend: true });
+        if (unsuspendedIds.length > 0) {
+          await suspendUsersDirect(unsuspendedIds, true);
+        }
         updateEntry(eId, { status: "done" });
-        const blId = addEntry({
-          type: "AUTO_BLACKLIST", severity: "critical", status: "executing",
-          target: cluster.ip,
-          reasoning: `Blacklisting ${cluster.ip} — ${cluster.accounts.length}-account cluster confirmed`,
-        });
-        await invoke({ action: "manage_blacklist", op: "add", type: "ip", value: cluster.ip, reason: `Auto: ${cluster.accounts.length}-account cluster` });
-        updateEntry(blId, { status: "done" });
-        setNeutralized(n => n + cluster.accounts.length + 1);
+        if (!isAlreadyBlacklisted) {
+          const blId = addEntry({
+            type: "AUTO_BLACKLIST", severity: "critical", status: "executing",
+            target: cluster.ip,
+            reasoning: `Blacklisting ${cluster.ip} — ${cluster.accounts.length}-account cluster confirmed`,
+          });
+          await invoke({ action: "manage_blacklist", op: "add", type: "ip", value: cluster.ip, reason: `Auto: ${cluster.accounts.length}-account cluster` });
+          existingBlValues.add(cluster.ip);
+          updateEntry(blId, { status: "done" });
+        }
+        setNeutralized(n => n + unsuspendedIds.length + (isAlreadyBlacklisted ? 0 : 1));
         toast({ title: `🔒 Auto-Neutralized: ${cluster.ip}`, description: `${cluster.accounts.length} accounts suspended + IP blacklisted` });
       } catch {
         updateEntry(eId, { status: "failed" });
@@ -327,7 +356,7 @@ const AdminSecurity = () => {
 
     /* 2. Extreme velocity (≤1 min) → auto-suspend as confirmed bots */
     for (const acct of vel.filter(v => v.minutes_to_first_order <= 1)) {
-      if (handledRef.current.users.has(acct.user_id)) continue;
+      if (handledRef.current.users.has(acct.user_id) || alreadySuspendedIds.has(acct.user_id)) continue;
       handledRef.current.users.add(acct.user_id);
 
       const eId = addEntry({
@@ -336,7 +365,7 @@ const AdminSecurity = () => {
         reasoning: `${acct.email} — order ${acct.minutes_to_first_order}m post-signup, bot signature confirmed`,
       });
       try {
-        await invoke({ action: "bulk_suspend_users", user_ids: [acct.user_id], suspend: true });
+        await suspendUsersDirect([acct.user_id], true);
         updateEntry(eId, { status: "done" });
         setNeutralized(n => n + 1);
       } catch {
@@ -346,7 +375,7 @@ const AdminSecurity = () => {
 
     setScanning(false);
     setThreatsAnalyzed(n => n + cls.length + vel.length);
-  }, [invoke, addEntry, updateEntry, toast]);
+  }, [invoke, suspendUsersDirect, addEntry, updateEntry, toast]);
 
   /* ── attack pattern detector ─────────────────────────────────────── */
   const detectPatterns = useCallback((cls: IpCluster[], vel: VelocityAccount[], ref: ReferralGroup[]) => {
@@ -498,7 +527,9 @@ const AdminSecurity = () => {
 
     /* run AI after data loads */
     detectPatterns(shared, vel, groups);
-    await runAutoResponse(shared, vel);
+    const existingBlSet = new Set<string>((blacklistRes.data || []).map((b: any) => String(b.value || "").trim()));
+    const alreadySuspendedSet = new Set<string>(profiles.filter(p => p.is_suspended).map(p => p.user_id));
+    await runAutoResponse(shared, vel, existingBlSet, alreadySuspendedSet);
   }, [detectPatterns, runAutoResponse]);
 
   useEffect(() => { void fetchData(); }, [fetchData]);
@@ -616,15 +647,22 @@ const AdminSecurity = () => {
 
   const handleBulkSuspend = async (ids: string[], suspend: boolean) => {
     try {
-      await invoke({ action: "bulk_suspend_users", user_ids: ids, suspend });
+      await suspendUsersDirect(ids, suspend);
       toast({ title: suspend ? `${ids.length} accounts suspended` : `${ids.length} accounts restored` });
       void fetchData(true);
     } catch (e: any) { toast({ title: "Action Failed", description: e.message, variant: "destructive" }); }
   };
 
   const handleBlacklist = async (op: "add" | "remove", value: string, type?: string, reason?: string) => {
+    const cleanVal = String(value || "").trim();
+    if (!cleanVal) return;
+    if (op === "add" && blacklist.some(b => String(b.value || "").trim() === cleanVal)) {
+      toast({ title: "Already in blocklist", description: `${cleanVal} is already blocked.` });
+      setBlValue(""); setBlReason("");
+      return;
+    }
     try {
-      await invoke({ action: "manage_blacklist", op, type, value, reason });
+      await invoke({ action: "manage_blacklist", op, type, value: cleanVal, reason });
       toast({ title: op === "add" ? "Added to blocklist" : "Removed from blocklist" });
       if (op === "add") { setBlValue(""); setBlReason(""); }
       void fetchData(true);

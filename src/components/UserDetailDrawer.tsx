@@ -238,13 +238,22 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
     const next = !isSuspended;
     setSuspending(true);
     try {
-      const { data: res, error } = await supabase.functions.invoke("system-payout-v1", {
-        body: { action: "bulk_suspend_users", user_ids: [user.user_id], suspend: next },
-        headers: { Authorization: `Bearer ${session?.access_token}` },
-      });
-      
-      if (error || res?.error) {
-        throw new Error(await parseEdgeError(error, res));
+      const { error: directErr } = await (supabase.from("profiles") as any)
+        .update({
+          is_suspended: next,
+          suspended_at: next ? new Date().toISOString() : null,
+        })
+        .eq("user_id", user.user_id);
+
+      if (directErr) {
+        const { data: res, error } = await supabase.functions.invoke("system-payout-v1", {
+          body: { action: "bulk_suspend_users", user_ids: [user.user_id], suspend: next },
+          headers: { Authorization: `Bearer ${session?.access_token}` },
+        });
+        
+        if (error || res?.error) {
+          throw new Error(await parseEdgeError(error, res));
+        }
       }
 
       setIsSuspended(next);
