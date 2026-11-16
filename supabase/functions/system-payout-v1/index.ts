@@ -2367,20 +2367,36 @@ serve(async (req: Request) => {
           });
         }
 
-        // Perform update directly via service_role client (avoids public.is_admin() returning false when auth.uid() is NULL on service_role RPC calls)
-        const { error: updateErr } = await supabaseAdmin
-          .from("profiles")
-          .update({
-            is_suspended: isSuspend,
-            suspended_until: null,
-          })
-          .in("user_id", validIds);
-        if (updateErr) throw updateErr;
+        // Perform update directly via service_role client in chunks of 50 to avoid PostgREST URL length limits
+        const chunkSize = 50;
+        for (let i = 0; i < validIds.length; i += chunkSize) {
+          const chunk = validIds.slice(i, i + chunkSize);
+          const { error: updateErr } = await supabaseAdmin
+            .from("profiles")
+            .update({
+              is_suspended: isSuspend,
+              suspended_until: null,
+            })
+            .in("user_id", chunk);
+          if (updateErr) throw updateErr;
+        }
 
-        // Also sync Supabase Auth GoTrue banned_until status so active session tokens are revoked immediately
-        Promise.all(validIds.map((uid: string) =>
-          supabaseAdmin.auth.admin.updateUserById(uid, { ban_duration: isSuspend ? "876000h" : "none" }).catch(() => null)
-        )).catch(() => null);
+        // Sync Supabase Auth GoTrue banned_until status so active session tokens are revoked/restored immediately
+        const authChunkSize = 25;
+        for (let i = 0; i < validIds.length; i += authChunkSize) {
+          const chunk = validIds.slice(i, i + authChunkSize);
+          await Promise.all(
+            chunk.map(async (uid: string) => {
+              try {
+                await supabaseAdmin.auth.admin.updateUserById(uid, {
+                  ban_duration: isSuspend ? "876000h" : "none",
+                });
+              } catch {
+                // Non-fatal if auth user record is missing
+              }
+            })
+          );
+        }
 
         return new Response(JSON.stringify({ success: true, count: validIds.length }), {
           status: 200,
