@@ -49,7 +49,7 @@ BEGIN
 
   UPDATE public.profiles
   SET is_suspended = p_suspend,
-      suspended_at = CASE WHEN p_suspend THEN NOW() ELSE NULL END
+      suspended_until = NULL
   WHERE user_id = ANY(p_user_ids);
 
   RETURN jsonb_build_object('success', true, 'count', array_length(p_user_ids, 1));

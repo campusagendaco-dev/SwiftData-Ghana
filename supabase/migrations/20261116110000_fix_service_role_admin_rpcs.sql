@@ -29,7 +29,8 @@ BEGIN
 
   UPDATE public.profiles
   SET is_suspended = COALESCE(p_suspend, false),
-      suspended_at = CASE WHEN COALESCE(p_suspend, false) THEN NOW() ELSE NULL END
+      suspended_until = NULL,
+      updated_at = NOW()
   WHERE user_id = ANY(p_user_ids);
 
   RETURN jsonb_build_object('success', true, 'count', COALESCE(array_length(p_user_ids, 1), 0));

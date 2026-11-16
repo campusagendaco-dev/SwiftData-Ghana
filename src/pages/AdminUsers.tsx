@@ -412,30 +412,32 @@ const AdminUsers = () => {
     if (!selectedUsers.length) return;
     setBulkActionLoading(true);
     try {
-      const { error: directErr } = await (supabase.from("profiles") as any)
-        .update({
-          is_suspended: suspend,
-          suspended_at: suspend ? new Date().toISOString() : null,
-        })
-        .in("user_id", selectedUsers);
-
-      if (directErr) {
-        const { data, error } = await supabase.functions.invoke("system-payout-v1", {
-          body: { action: "bulk_suspend_users", user_ids: selectedUsers, suspend },
-          headers: { Authorization: `Bearer ${session?.access_token}` },
-        });
-        if (error) {
-          let msg = error.message;
-          try {
-            const bodyText = await (error as any).context?.text();
-            if (bodyText) {
-              const parsed = JSON.parse(bodyText);
-              if (parsed.error) msg = parsed.error;
-            }
-          } catch (_e) { /* ignore parse error */ }
-          throw new Error(msg);
+      let directFailed = false;
+      const chunkSize = 50;
+      for (let i = 0; i < selectedUsers.length; i += chunkSize) {
+        const chunk = selectedUsers.slice(i, i + chunkSize);
+        const { error: directErr } = await (supabase.from("profiles") as any)
+          .update({
+            is_suspended: suspend,
+            suspended_until: null,
+          })
+          .in("user_id", chunk);
+        if (directErr) {
+          directFailed = true;
+          break;
         }
-        if (data?.error) throw new Error(data.error);
+      }
+
+      if (directFailed) {
+        const results = await Promise.all(
+          selectedUsers.map((uid) =>
+            (supabase as any).rpc("toggle_user_suspension", { p_user_id: uid, p_suspend: suspend })
+          )
+        );
+        const firstErr = results.find((r) => r.error)?.error;
+        if (firstErr) {
+          throw new Error(firstErr.message || "Failed to update suspension status");
+        }
       }
 
       toast({ title: suspend ? "Users Suspended" : "Users Restored", description: `${selectedUsers.length} users updated.` });
@@ -456,28 +458,18 @@ const AdminUsers = () => {
       const { error: directErr } = await (supabase.from("profiles") as any)
         .update({
           is_suspended: next,
-          suspended_at: next ? new Date().toISOString() : null,
+          suspended_until: null,
         })
         .eq("user_id", user.user_id);
 
       if (directErr) {
-        const { data, error } = await supabase.functions.invoke("system-payout-v1", {
-          body: { action: "bulk_suspend_users", user_ids: [user.user_id], suspend: next },
-          headers: { Authorization: `Bearer ${session?.access_token}` },
+        const { error: rpcErr } = await (supabase as any).rpc("toggle_user_suspension", {
+          p_user_id: user.user_id,
+          p_suspend: next,
         });
-
-        if (error) {
-          let msg = error.message;
-          try {
-            const bodyText = await (error as any).context?.text();
-            if (bodyText) {
-              const parsed = JSON.parse(bodyText);
-              if (parsed.error) msg = parsed.error;
-            }
-          } catch (_e) { /* ignore parse error */ }
-          throw new Error(msg);
+        if (rpcErr) {
+          throw new Error(rpcErr.message || directErr.message || "Failed to update suspension status");
         }
-        if (data?.error) throw new Error(data.error);
       }
 
       toast({ title: next ? "User suspended" : "User restored", description: user.email });

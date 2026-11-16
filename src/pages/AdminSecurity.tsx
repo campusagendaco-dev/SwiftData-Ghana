@@ -292,15 +292,30 @@ const AdminSecurity = () => {
 
   const suspendUsersDirect = useCallback(async (ids: string[], suspend: boolean) => {
     if (!ids.length) return;
-    const { error: directErr } = await (supabase.from("profiles") as any)
-      .update({
-        is_suspended: suspend,
-        suspended_at: suspend ? new Date().toISOString() : null,
-      })
-      .in("user_id", ids);
-    if (!directErr) return;
-    await invoke({ action: "bulk_suspend_users", user_ids: ids, suspend });
-  }, [invoke]);
+    let directFailed = false;
+    const chunkSize = 50;
+    for (let i = 0; i < ids.length; i += chunkSize) {
+      const chunk = ids.slice(i, i + chunkSize);
+      const { error: directErr } = await (supabase.from("profiles") as any)
+        .update({
+          is_suspended: suspend,
+          suspended_until: null,
+        })
+        .in("user_id", chunk);
+      if (directErr) {
+        directFailed = true;
+        break;
+      }
+    }
+    if (!directFailed) return;
+    const results = await Promise.all(
+      ids.map((uid) => (supabase as any).rpc("toggle_user_suspension", { p_user_id: uid, p_suspend: suspend }))
+    );
+    const firstErr = results.find((r) => r.error)?.error;
+    if (firstErr) {
+      throw new Error(firstErr.message || "Failed to update suspension status");
+    }
+  }, []);
 
   /* ── auto-response engine ────────────────────────────────────────── */
   const runAutoResponse = useCallback(async (
@@ -343,7 +358,14 @@ const AdminSecurity = () => {
             target: cluster.ip,
             reasoning: `Blacklisting ${cluster.ip} — ${cluster.accounts.length}-account cluster confirmed`,
           });
-          await invoke({ action: "manage_blacklist", op: "add", type: "ip", value: cluster.ip, reason: `Auto: ${cluster.accounts.length}-account cluster` });
+          const { data: existingBlRow } = await supabase
+            .from("security_blacklist")
+            .select("id")
+            .eq("value", cluster.ip)
+            .maybeSingle();
+          if (!existingBlRow) {
+            await invoke({ action: "manage_blacklist", op: "add", type: "ip", value: cluster.ip, reason: `Auto: ${cluster.accounts.length}-account cluster` });
+          }
           existingBlValues.add(cluster.ip);
           updateEntry(blId, { status: "done" });
         }
@@ -355,6 +377,21 @@ const AdminSecurity = () => {
     }
 
     /* 2. Extreme velocity (≤1 min) → auto-suspend as confirmed bots */
+    const candidateBotAccts = vel.filter(
+      v => v.minutes_to_first_order <= 1 && !handledRef.current.users.has(v.user_id) && !alreadySuspendedIds.has(v.user_id)
+    );
+    if (candidateBotAccts.length > 0) {
+      const { data: botProfRows } = await (supabase.from("profiles") as any)
+        .select("user_id, is_suspended")
+        .in("user_id", candidateBotAccts.map(v => v.user_id));
+      for (const row of (botProfRows || []) as { user_id: string; is_suspended: boolean }[]) {
+        if (row.is_suspended) {
+          alreadySuspendedIds.add(row.user_id);
+          handledRef.current.users.add(row.user_id);
+        }
+      }
+    }
+
     for (const acct of vel.filter(v => v.minutes_to_first_order <= 1)) {
       if (handledRef.current.users.has(acct.user_id) || alreadySuspendedIds.has(acct.user_id)) continue;
       handledRef.current.users.add(acct.user_id);
@@ -656,13 +693,33 @@ const AdminSecurity = () => {
   const handleBlacklist = async (op: "add" | "remove", value: string, type?: string, reason?: string) => {
     const cleanVal = String(value || "").trim();
     if (!cleanVal) return;
-    if (op === "add" && blacklist.some(b => String(b.value || "").trim() === cleanVal)) {
-      toast({ title: "Already in blocklist", description: `${cleanVal} is already blocked.` });
-      setBlValue(""); setBlReason("");
-      return;
+    if (op === "add") {
+      if (blacklist.some(b => String(b.value || "").trim() === cleanVal)) {
+        toast({ title: "Already in blocklist", description: `${cleanVal} is already blocked.` });
+        setBlValue(""); setBlReason("");
+        return;
+      }
+      const { data: existingBlRow } = await supabase
+        .from("security_blacklist")
+        .select("id")
+        .eq("value", cleanVal)
+        .maybeSingle();
+      if (existingBlRow) {
+        toast({ title: "Already in blocklist", description: `${cleanVal} is already blocked.` });
+        setBlValue(""); setBlReason("");
+        void fetchData(true);
+        return;
+      }
     }
     try {
-      await invoke({ action: "manage_blacklist", op, type, value: cleanVal, reason });
+      if (op === "remove") {
+        const { error: directDelErr } = await supabase.from("security_blacklist").delete().eq("value", cleanVal);
+        if (directDelErr) {
+          await invoke({ action: "manage_blacklist", op, type, value: cleanVal, reason });
+        }
+      } else {
+        await invoke({ action: "manage_blacklist", op, type, value: cleanVal, reason });
+      }
       toast({ title: op === "add" ? "Added to blocklist" : "Removed from blocklist" });
       if (op === "add") { setBlValue(""); setBlReason(""); }
       void fetchData(true);
