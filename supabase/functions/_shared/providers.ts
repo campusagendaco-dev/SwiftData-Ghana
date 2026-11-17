@@ -216,15 +216,16 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
   const isStandardSmeSize = /^\d+(\.\d+)?\s*(GB|MB)$/i.test(String(order?.package_size || "").trim());
   const isTelecomNetwork = uppercaseNet.includes("MTN") || uppercaseNet.includes("TELECEL") || uppercaseNet.includes("VODA") || uppercaseNet.includes("AT") || uppercaseNet.includes("AIRTEL");
 
-  const isAffordableSmeBundle = isDataOrder && (
+  const isMashUpPattern = uppercaseNet.includes("MASH") || uppercaseNet.includes("COMBO") || orderCategory === "mashup" || order?.network === "MTN Mash Up" || (pkgUpper.includes("MINS") && uppercaseNet.includes("MTN"));
+
+  const isAffordableSmeBundle = isDataOrder && !isMashUpPattern && !isKorbaPackagePattern && (
+    isStandardSmeSize ||
     orderCategory === "affordable" || 
     orderCategory === "sme" || 
     orderCategory.includes("sme") ||
-    (isStandardSmeSize && !isKorbaPackagePattern) ||
-    (isTelecomNetwork && !isKorbaPackagePattern && !isExplicitKorbaCategory)
+    (isTelecomNetwork && !isExplicitKorbaCategory)
   );
 
-  const isMashUpPattern = uppercaseNet.includes("MASH") || uppercaseNet.includes("COMBO") || orderCategory === "mashup" || order?.network === "MTN Mash Up" || (pkgUpper.includes("MINS") && uppercaseNet.includes("MTN"));
   let isExplicitKorba = !isMashUpPattern && !isAffordableSmeBundle && korbaProvider && (
     uppercaseNet.startsWith("KORBA") || 
     orderCategory === "korba" ||

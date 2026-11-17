@@ -515,12 +515,55 @@ serve(async (req: Request) => {
     const dbNet = normalizeNetworkForPricing(networkRaw);
     const upperDbNet = dbNet.toUpperCase();
     const reqCategory = String(customMetadata?.category || customMetadata?.package_category || payload?.category || "").toLowerCase();
-    const isMashUpPkg = dbNet === "MTN Mash Up" || normalizedNet === "MTN Mash Up" || upperDbNet.includes("MASH") || upperDbNet.includes("COMBO") || reqCategory === "mashup";
+    const pkgSizeTrimmed = String(package_size || "").trim();
+    const pkgSizeUpper = pkgSizeTrimmed.toUpperCase();
+    const isMashUpPkg = dbNet === "MTN Mash Up" || normalizedNet === "MTN Mash Up" || upperDbNet.includes("MASH") || upperDbNet.includes("COMBO") || reqCategory === "mashup" || (pkgSizeUpper.includes("MINS") && upperDbNet.includes("MTN"));
+    const isStandardSmeSize = /^\d+(\.\d+)?\s*(GB|MB)$/i.test(pkgSizeTrimmed);
+    const isKorbaPackagePattern = !isStandardSmeSize && (
+      pkgSizeUpper.startsWith("GHS") ||
+      pkgSizeUpper.includes("RACT_DATA") ||
+      pkgSizeUpper.includes("KOKROKOO") ||
+      pkgSizeUpper.includes("MIDNIGHT") ||
+      pkgSizeUpper.includes("SOCIAL") ||
+      pkgSizeUpper.includes("VIDEO") ||
+      pkgSizeUpper.includes("IDD")
+    );
 
-    // wallet-buy-data strictly prices against global_package_settings (SME & MashUp).
-    // Never allow client payload/metadata to spoof is_korba=true or category="korba".
-    const finalIsKorba = false;
-    const resolvedCategory = isMashUpPkg ? "mashup" : "affordable";
+    // Server-side Korba retail verification: NEVER trust client flags for SME bundles,
+    // but allow genuine non-SME Korba retail bundles verified by pattern or active Korba provider_packages row.
+    let finalIsKorba = false;
+    if (!isMashUpPkg && !isStandardSmeSize) {
+      if (isKorbaPackagePattern) {
+        finalIsKorba = true;
+      } else {
+        const { data: korbaProv } = await supabaseAdmin
+          .from("providers")
+          .select("id")
+          .eq("handler_type", "korba")
+          .eq("is_active", true)
+          .maybeSingle();
+        if (korbaProv?.id) {
+          const cleanReqPkg = pkgSizeUpper.replace(/\s+/g, "");
+          const { data: korbaPkgs } = await supabaseAdmin
+            .from("provider_packages")
+            .select("package_name, external_id, network")
+            .eq("provider_id", korbaProv.id)
+            .eq("is_active", true);
+          finalIsKorba = (korbaPkgs || []).some((kp: any) => {
+            const kpNet = String(kp.network || "").toUpperCase();
+            const netOk = !kpNet || kpNet === upperDbNet || (upperDbNet.includes("MTN") && kpNet.includes("MTN")) ||
+              ((upperDbNet.includes("TELECEL") || upperDbNet.includes("VODA")) && (kpNet.includes("TELECEL") || kpNet.includes("VODA"))) ||
+              ((upperDbNet.includes("AIRTEL") || upperDbNet.includes("AT") || upperDbNet.includes("TIGO")) && (kpNet.includes("AIRTEL") || kpNet.includes("AT") || kpNet.includes("TIGO")));
+            if (!netOk) return false;
+            return (
+              String(kp.package_name || "").toUpperCase().replace(/\s+/g, "") === cleanReqPkg ||
+              String(kp.external_id || "").toUpperCase().replace(/\s+/g, "") === cleanReqPkg
+            );
+          });
+        }
+      }
+    }
+    const resolvedCategory = isMashUpPkg ? "mashup" : (finalIsKorba ? "korba" : "affordable");
 
     // 2. INSERT ORDER (FOREGROUND)
     console.log(`[INSERT] Creating order ${orderId}...`);

@@ -2524,7 +2524,7 @@ serve(async (req: any) => {
       // Never trigger this hardcoded DataMart failover if the current provider is already SKDataPlug/DataMart or if the error is a duplicate/pending order!
       const providerHandlerLower = (provider.handler_type || "").toLowerCase();
       const isDataHub = providerHandlerLower === "datahub";
-      const isNonBeneficiaryProvider = providerHandlerLower === "skdataplug" || providerHandlerLower === "datamart" || providerHandlerLower === "spendless";
+      const isNonBeneficiaryProvider = providerHandlerLower === "skdataplug" || providerHandlerLower === "datamart" || providerHandlerLower === "spendless" || providerHandlerLower === "korba";
       const isMtn = network.toUpperCase().includes("MTN") || network.toUpperCase() === "YELLO";
       const isBeneficiaryOrLimitError = !isNonBeneficiaryProvider && !isDuplicateOrderError(result.reason) && (
         isBeneficiaryFailure(result.reason) ||

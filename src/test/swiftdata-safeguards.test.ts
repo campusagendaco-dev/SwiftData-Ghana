@@ -278,6 +278,22 @@ describe("SwiftData Critical Business & Security Invariants", () => {
       const utilityProviders = await resolveProvidersForOrder(supabaseAdmin, utilityOrder);
       expect(utilityProviders[0]?.handler_type).toBe("korba");
     });
+
+    it("routes explicit Korba retail data bundles (e.g. GHS 399 (217340 MB)) to Korba even if metadata had category='affordable'", async () => {
+      const supabaseAdmin = createMockSupabase(baseProviders);
+
+      const retailOrder = {
+        id: "ord-korba-retail-399",
+        order_type: "data",
+        network: "MTN",
+        package_size: "GHS 399 (217340 MB)",
+        amount: 399,
+        metadata: { category: "affordable", is_korba: false },
+      };
+      const retailProviders = await resolveProvidersForOrder(supabaseAdmin, retailOrder);
+      expect(retailProviders).toHaveLength(1);
+      expect(retailProviders[0]?.handler_type).toBe("korba");
+    });
   });
 
   describe("2. Korba _disb Transaction Status Candidate IDs & Status Codes", () => {

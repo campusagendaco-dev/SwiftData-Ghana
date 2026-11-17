@@ -135,7 +135,13 @@ export class KorbaAdapter implements ProviderAdapter {
         pkgUpper.includes("VIDEO") || 
         pkgUpper.includes("IDD");
       const orderCat = String(data.metadata?.category || data.metadata?.package_category || "").toLowerCase();
-      const isExplicitKorba = data.metadata?.is_korba === true || data.metadata?.is_korba === "true" || orderCat === "korba" || orderCat === "retail";
+      const isExplicitKorba = !isStandardSmeSize && (
+        data.metadata?.is_korba === true ||
+        data.metadata?.is_korba === "true" ||
+        orderCat === "korba" ||
+        orderCat === "retail" ||
+        isKorbaPackagePattern
+      );
 
       if (!isExplicitKorba && (orderCat === "affordable" || orderCat === "sme" || orderCat.includes("sme") || (isStandardSmeSize && !isKorbaPackagePattern))) {
         console.warn(`[KorbaAdapter] Blocked attempt to purchase SME data bundle via Korba: ${data.package_size || data.plan} for ${rawNet}`);

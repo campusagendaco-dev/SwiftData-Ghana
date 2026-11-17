@@ -307,12 +307,32 @@ serve(async (req: Request) => {
 
     const detectedOrderType = String(metadata?.order_type || payload?.order_type || "").toLowerCase();
     const network = String(metadata?.network || payload?.network || "");
+    const pkgSizeTrim = String(metadata?.package_size || payload?.package_size || "").trim();
+    const pkgSizeUpper = pkgSizeTrim.toUpperCase();
+    const isStandardSmePkg = /^\d+(\.\d+)?\s*(GB|MB)$/i.test(pkgSizeTrim);
+    const isKorbaRetailPattern = !isStandardSmePkg && (
+      pkgSizeUpper.startsWith("GHS") ||
+      pkgSizeUpper.includes("RACT_DATA") ||
+      pkgSizeUpper.includes("KOKROKOO") ||
+      pkgSizeUpper.includes("MIDNIGHT") ||
+      pkgSizeUpper.includes("SOCIAL") ||
+      pkgSizeUpper.includes("VIDEO") ||
+      pkgSizeUpper.includes("IDD")
+    );
     const catLower = String(metadata?.category || metadata?.package_category || payload?.category || "").toLowerCase();
-    const isSmeCategory = catLower === "affordable" || catLower === "sme" || catLower === "mashup" || catLower.includes("sme") || (detectedOrderType === "data" && !catLower.includes("retail") && !catLower.includes("korba"));
+    const isSmeCategory = !isKorbaRetailPattern && (
+      isStandardSmePkg ||
+      catLower === "affordable" ||
+      catLower === "sme" ||
+      catLower === "mashup" ||
+      catLower.includes("sme") ||
+      (detectedOrderType === "data" && !catLower.includes("retail") && !catLower.includes("korba"))
+    );
 
     const isKorbaPackage = 
       !isSmeCategory && (
         isKorba || 
+        isKorbaRetailPattern ||
         detectedOrderType === "airtime" || 
         detectedOrderType === "utility" ||
         network.toUpperCase().startsWith("KORBA") ||
