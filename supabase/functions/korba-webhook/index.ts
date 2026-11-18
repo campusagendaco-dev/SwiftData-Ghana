@@ -103,7 +103,7 @@ async function verifyKorbaStatusViaApi(
   transactionId: string,
   isDisbursementCallback = false,
   paymentMethod?: string | null
-): Promise<boolean> {
+): Promise<{ confirmed: boolean; amount: number | null; prepaidToken: string | null }> {
   try {
     const isDisb = isDisbursementCallback || transactionId.endsWith("_disb");
     const cleanId = String(transactionId || "").trim().replace(/_disb$/, "");
@@ -166,14 +166,23 @@ async function verifyKorbaStatusViaApi(
 
         if (isExplicitSuccess) {
           console.log(`[korba-webhook] Confirmed Korba status as SUCCESS via status API for txId: ${txId}`);
-          return true;
+          const rawAmt = Number(resData?.amount ?? resData?.data?.amount ?? resData?.results?.amount);
+          const verifiedAmt = Number.isFinite(rawAmt) && rawAmt > 0 ? rawAmt : null;
+          let apiToken: string | null =
+            resData?.token || resData?.prepaid_token || resData?.voucher ||
+            resData?.data?.token || resData?.data?.prepaid_token || null;
+          if (!apiToken && typeof resData?.message === "string") {
+            const m = resData.message.match(/\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b/) || resData.message.match(/\b\d{20}\b/);
+            if (m) apiToken = m[0].replace(/[-\s]/g, "");
+          }
+          return { confirmed: true, amount: verifiedAmt, prepaidToken: apiToken ? String(apiToken).trim() : null };
         }
       }
     }
-    return false;
+    return { confirmed: false, amount: null, prepaidToken: null };
   } catch (err) {
     console.error("[korba-webhook] verifyKorbaStatusViaApi error:", err);
-    return false;
+    return { confirmed: false, amount: null, prepaidToken: null };
   }
 }
 
@@ -281,6 +290,7 @@ serve(async (req: Request) => {
     .eq("id", cleanedTransactionId)
     .maybeSingle();
 
+  let verifiedApiAmount: number | null = null;
   if (signature) {
     if (!KORBA_SECRET_KEY) {
       console.error("[korba-webhook] KORBA_SECRET_KEY missing for signature verification.");
@@ -296,9 +306,10 @@ serve(async (req: Request) => {
     console.log("[korba-webhook] Callback authenticated via header callback token.");
   } else if (KORBA_CLIENT_KEY && KORBA_SECRET_KEY && cleanedTransactionId) {
     // Standard Korba webhooks do not include a signature query/body parameter.
-    // Confirm transaction status via Korba API for security.
+    // Confirm transaction status via Korba API for security and ignore attacker-controlled
+    // status/prepaid_token params from the unsigned request.
     console.log(`[korba-webhook] Standard Korba callback without signature. Verifying status via Korba API for tx: ${transactionId}`);
-    const isConfirmed = await verifyKorbaStatusViaApi(
+    const apiCheck = await verifyKorbaStatusViaApi(
       supabaseAdmin,
       KORBA_CLIENT_ID,
       KORBA_CLIENT_KEY,
@@ -307,8 +318,11 @@ serve(async (req: Request) => {
       isDisbursementCallback,
       preFetchedOrder?.payment_method
     );
-    if (isConfirmed) {
+    if (apiCheck.confirmed) {
       console.log(`[korba-webhook] Korba transaction status confirmed as SUCCESS via status API.`);
+      status = "SUCCESS";
+      prepaidToken = apiCheck.prepaidToken || "";
+      verifiedApiAmount = apiCheck.amount;
     } else {
       console.error(`[korba-webhook] Unauthorized callback: Korba status API rejected tx ${transactionId}`);
       return json({ error: "Unauthorized: Transaction status check failed" }, 401);
@@ -444,7 +458,12 @@ serve(async (req: Request) => {
     }
 
     const orderType = existingOrder.order_type || "data";
-    const verifiedAmount = Number(existingOrder.amount);
+    const expectedOrderAmount = Number(existingOrder.amount);
+    if (verifiedApiAmount !== null && verifiedApiAmount < expectedOrderAmount - 0.05) {
+      console.error(`[korba-webhook] Underpayment detected for ${cleanedTransactionId}: korba=${verifiedApiAmount} < expected=${expectedOrderAmount}`);
+      return json({ error: "Payment amount mismatch" }, 400);
+    }
+    const verifiedAmount = verifiedApiAmount !== null ? Math.min(verifiedApiAmount, expectedOrderAmount) : expectedOrderAmount;
     
     // Atomically claim the order before crediting wallets or dispatching fulfillment
     const isWalletFunding = orderType === "wallet_topup" || orderType === "store_wallet_topup";

@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { timingSafeEqual } from "./gateway-security.ts";
 
 /**
  * Decodes JWT token payload to read custom claims (e.g. aal, role)
@@ -67,7 +68,7 @@ export async function verifyAdmin(
     // 1. Direct match against SUPABASE_SERVICE_ROLE_KEY env var (e.g. sb_secret_... or JWT)
     // 2. Or if token is a JWT with role === "service_role", verify it cryptographically against Supabase PostgREST
     //    (which validates the HMAC-SHA256 JWT signature against the project JWT secret).
-    let isServiceRole = !!(serviceRoleKey && token.trim() === serviceRoleKey);
+    let isServiceRole = !!(serviceRoleKey && timingSafeEqual(token.trim(), serviceRoleKey));
     if (!isServiceRole && claims?.role === "service_role") {
       const supabaseUrl = (Deno.env.get("SUPABASE_URL") || "").replace(/\/+$/, "");
       if (supabaseUrl) {

@@ -12,6 +12,8 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
+import { verifyAdmin } from "../_shared/auth.ts";
+import { timingSafeEqual } from "../_shared/gateway-security.ts";
 import { getSmsConfig, sendSmsViaTxtConnect } from "../_shared/sms.ts";
 import { callAiAgent } from "../_shared/ai.ts";
 
@@ -22,6 +24,19 @@ serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   const db = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
+
+  const cronSecret = (Deno.env.get("CRON_SECRET") || "").trim();
+  const providedCron = (req.headers.get("x-cron-secret") || "").trim();
+  const isCronAuthed = Boolean(cronSecret && providedCron && timingSafeEqual(providedCron, cronSecret));
+  if (!isCronAuthed) {
+    const authRes = await verifyAdmin(req, db, { checkMfa: false });
+    if (!authRes.success) {
+      return new Response(JSON.stringify({ error: authRes.error || "Unauthorized" }), {
+        status: authRes.status || 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+  }
 
   try {
     console.log("🎯 Threat Hunter: Initiating cross-signal correlation sweep...");
