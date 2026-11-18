@@ -128,12 +128,18 @@ export interface WaSenderMessageOptions {
  * @param optionsOrKey - Optional WaSenderMessageOptions object or string API key
  * @param apiKeyOverride - Optional API key if options object is passed
  */
-export async function sendWaSenderMessage(
+export interface WhatsAppSendResult {
+  success: boolean;
+  disconnected?: boolean;
+  error?: string;
+}
+
+export async function sendWaSenderMessageDetailed(
   to: string,
   text?: string,
   optionsOrKey?: string | WaSenderMessageOptions,
   apiKeyOverride?: string
-): Promise<boolean> {
+): Promise<WhatsAppSendResult> {
   const WHATSAPP_API_URL = Deno.env.get("WHATSAPP_API_URL") || "https://www.wasenderapi.com/api/send-message";
 
   let options: WaSenderMessageOptions | undefined;
@@ -150,7 +156,7 @@ export async function sendWaSenderMessage(
 
   if (!resolvedKey) {
     console.warn("[WaSender] No API key available. Message not sent:", text ? text.slice(0, 80) : "media message");
-    return false;
+    return { success: false, error: "Missing WaSender API key" };
   }
 
   // Format destination: if channel, group, lid, or username, keep as is. Otherwise format international.
@@ -182,6 +188,7 @@ export async function sendWaSenderMessage(
 
   let attempts = 0;
   const maxAttempts = 3;
+  let lastError = "WaSender send failed";
 
   while (attempts < maxAttempts) {
     attempts++;
@@ -208,16 +215,17 @@ export async function sendWaSenderMessage(
 
       if (res.ok && resJson?.success !== false) {
         console.log("[WaSender] Sent message to", formattedTo);
-        return true;
+        return { success: true };
       }
 
-      const errMessage = resJson?.message || (typeof resJson === "string" ? resJson : "Unknown error");
+      const errMessage = resJson?.message || (typeof resJson === "string" ? resJson : `HTTP ${res.status}`);
+      lastError = String(errMessage);
       console.error(`[WaSender] Send failed (attempt ${attempts}/${maxAttempts}):`, res.status, errMessage);
 
       // If the session is disconnected in Wasender, retrying immediately is useless and worsens flood
       if (typeof errMessage === "string" && errMessage.toLowerCase().includes("session is not connected")) {
         console.warn(`[WaSender] Session disconnected detected for ${formattedTo}. Aborting retries.`);
-        return false;
+        return { success: false, disconnected: true, error: errMessage };
       }
 
       if (res.status === 429 && attempts < maxAttempts) {
@@ -235,14 +243,25 @@ export async function sendWaSenderMessage(
       }
 
       break;
-    } catch (error) {
+    } catch (error: any) {
+      lastError = error?.message || String(error);
       console.error(`[WaSender] Error on attempt ${attempts}:`, error);
       if (attempts >= maxAttempts) break;
       await new Promise((resolve) => setTimeout(resolve, 1000));
     }
   }
 
-  return false;
+  return { success: false, error: lastError };
+}
+
+export async function sendWaSenderMessage(
+  to: string,
+  text?: string,
+  optionsOrKey?: string | WaSenderMessageOptions,
+  apiKeyOverride?: string
+): Promise<boolean> {
+  const res = await sendWaSenderMessageDetailed(to, text, optionsOrKey, apiKeyOverride);
+  return res.success;
 }
 
 // In-memory cache for contact verification (24 hour TTL) to stay well under WhatsApp limits
@@ -1697,10 +1716,10 @@ export async function sendKovaWhatsAppMessage(
   }
 }
 
-export async function sendWhatsAppMessage(to: string, text: string, apiKey?: string) {
-  if (!to || !text) return;
+export async function sendWhatsAppMessage(to: string, text: string, apiKey?: string): Promise<WhatsAppSendResult> {
+  if (!to || !text) return { success: false, error: "Missing recipient or message text" };
   const cleanTo = normalizePhone(to) || to.replace(/\D/g, "");
-  if (!cleanTo || cleanTo.length < 9) return;
+  if (!cleanTo || cleanTo.length < 9) return { success: false, error: "Invalid recipient phone number" };
 
   // Anti-Ban Safeguard: Deduplication flood protection (prevents double replies within 3.5s)
   const dedupKey = `${cleanTo}:${text.trim().slice(0, 100)}`;
@@ -1708,7 +1727,7 @@ export async function sendWhatsAppMessage(to: string, text: string, apiKey?: str
   const lastSent = recentMessageDedupCache.get(dedupKey);
   if (lastSent && now - lastSent < 3500) {
     console.log(`[WhatsApp Anti-Ban] Skipped duplicate message to ${cleanTo} within 3.5s`);
-    return;
+    return { success: true };
   }
   recentMessageDedupCache.set(dedupKey, now);
 
@@ -1719,15 +1738,15 @@ export async function sendWhatsAppMessage(to: string, text: string, apiKey?: str
   }
 
   // 1. Primary WhatsApp Engine: WaSender API (Multi-device conversational bot)
-  const wasenderSuccess = await sendWaSenderMessage(to, text, apiKey);
-  if (wasenderSuccess) return;
+  const wasenderRes = await sendWaSenderMessageDetailed(to, text, apiKey);
+  if (wasenderRes.success) return { success: true };
 
   // 2. Secondary: Twilio WhatsApp API
   let twilioSid = Deno.env.get("TWILIO_ACCOUNT_SID");
   let twilioToken = Deno.env.get("TWILIO_AUTH_TOKEN");
   let twilioFrom = Deno.env.get("TWILIO_WHATSAPP_NUMBER") || Deno.env.get("TWILIO_FROM_NUMBER");
 
-  // Fallback to database system_settings if environment variables are not set
+  // Fallback to database v_system_settings_with_secrets if environment variables are not set
   if (!twilioSid || !twilioToken || !twilioFrom) {
     try {
       const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
@@ -1736,7 +1755,7 @@ export async function sendWhatsAppMessage(to: string, text: string, apiKey?: str
         const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2");
         const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
         const { data: settings } = await supabase
-          .from("system_settings")
+          .from("v_system_settings_with_secrets")
           .select("twilio_account_sid, twilio_auth_token, twilio_from_number")
           .eq("id", 1)
           .maybeSingle();
@@ -1748,7 +1767,7 @@ export async function sendWhatsAppMessage(to: string, text: string, apiKey?: str
         }
       }
     } catch (dbErr) {
-      console.warn("[WhatsApp] Could not resolve Twilio config from system_settings:", dbErr);
+      console.warn("[WhatsApp] Could not resolve Twilio config from v_system_settings_with_secrets:", dbErr);
     }
   }
 
@@ -1758,14 +1777,21 @@ export async function sendWhatsAppMessage(to: string, text: string, apiKey?: str
       authToken: twilioToken,
       fromNumber: twilioFrom,
     });
-    if (twilioSuccess) return;
+    if (twilioSuccess) return { success: true };
   }
 
   // 3. Fallbacks: Meta Cloud API / WATI (if active tokens exist)
   const metaSuccess = await sendMetaWhatsAppCloudMessage(to, text);
-  if (metaSuccess) return;
+  if (metaSuccess) return { success: true };
 
-  await sendWatiMessage(to, text);
+  const watiSuccess = await sendWatiMessage(to, text);
+  if (watiSuccess) return { success: true };
+
+  return {
+    success: false,
+    disconnected: wasenderRes.disconnected,
+    error: wasenderRes.error || "All WhatsApp providers failed to deliver message",
+  };
 }
 
 /**

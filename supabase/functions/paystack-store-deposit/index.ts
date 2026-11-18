@@ -99,24 +99,39 @@ serve(async (req) => {
       return new Response(JSON.stringify({ ...result, order_id: orderId, status: isFailed ? "failed" : "pending" }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
     } else if (action === "check-status") {
-      if (!transaction_id) {
+      if (!transaction_id || typeof transaction_id !== "string") {
         return new Response(JSON.stringify({ error: "Missing transaction_id" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
-      const { data: order } = await supabase.from("orders").select("*").eq("id", transaction_id).single();
-      
-      if (!order) {
+      const { data: order } = await supabase
+        .from("orders")
+        .select("id, agent_id, order_type, amount, status, failure_reason, metadata, created_at")
+        .eq("id", transaction_id)
+        .eq("order_type", "store_wallet_topup")
+        .maybeSingle();
+
+      if (!order || order.metadata?.customer_id !== user.id) {
         return new Response(JSON.stringify({ error: "Order not found" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
       if (order.status === "fulfilled" || order.status === "failed") {
-         return new Response(JSON.stringify({ status: order.status === "fulfilled" ? "successful" : "failed", order }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        return new Response(JSON.stringify({
+          status: order.status === "fulfilled" ? "successful" : "failed",
+          order: {
+            id: order.id,
+            amount: order.amount,
+            status: order.status,
+            failure_reason: order.failure_reason || null,
+            created_at: order.created_at,
+          },
+        }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
-      const resp = await fetch(`https://api.paystack.co/transaction/verify/${transaction_id}`, { method: "GET", headers });
+      const resp = await fetch(`https://api.paystack.co/transaction/verify/${encodeURIComponent(transaction_id)}`, { method: "GET", headers });
       const result = await resp.json();
 
-      const isSuccess = result.status && result.data?.status === "success";
+      const psCurrency = String(result.data?.currency || "").toUpperCase();
+      const isSuccess = Boolean(result.status && result.data?.status === "success" && psCurrency === "GHS");
       const isFailed = !isSuccess && result.data?.status === "failed";
 
       if (isSuccess) {

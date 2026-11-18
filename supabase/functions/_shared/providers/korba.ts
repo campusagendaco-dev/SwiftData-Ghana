@@ -33,7 +33,7 @@ export class KorbaAdapter implements ProviderAdapter {
       ? (retrySuffix ? `${cleanRefNoDisb}${retrySuffix}_disb` : (rawRef.endsWith("_disb") ? rawRef : `${rawRef}_disb`))
       : `ord_${crypto.randomUUID()}_disb`;
     const callbackUrl = String(data.callback_url || `${Deno.env.get("SUPABASE_URL")}/functions/v1/korba-webhook`);
-    const baseUrl = (provider?.base_url || Deno.env.get("KORBA_BASE_URL") || "https://xchange.korba365.com/api/v1.0").replace(/\/+$/, "");
+    const baseUrl = (Deno.env.get("KORBA_BASE_URL") || provider?.base_url || "https://xchange.korba365.com/api/v1.0").replace(/\/+$/, "");
 
     let targetUrl = `${baseUrl}/transaction_status/`;
     let korbaPayload: Record<string, any> = {};
@@ -387,7 +387,7 @@ export class KorbaAdapter implements ProviderAdapter {
       return { ok: false, status: "failed", reason: "Missing valid transaction ID for status check." };
     }
 
-    const baseUrl = (provider?.base_url || Deno.env.get("KORBA_BASE_URL") || "https://xchange.korba365.com/api/v1.0").replace(/\/+$/, "");
+    const baseUrl = (Deno.env.get("KORBA_BASE_URL") || provider?.base_url || "https://xchange.korba365.com/api/v1.0").replace(/\/+$/, "");
     const targetUrl = `${baseUrl}/transaction_status/`;
 
     let lastResponse: ProviderResponse = { ok: false, status: "failed", reason: "No definitive status from Korba" };

@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
+import { verifyAdmin } from "../_shared/auth.ts";
 import { sendPaymentSms, normalizePhone } from "../_shared/sms.ts";
 
 declare const Deno: any;
@@ -14,6 +15,14 @@ serve(async (req: Request) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+
+    const authResult = await verifyAdmin(req, supabaseAdmin);
+    if (!authResult.success) {
+      return new Response(JSON.stringify({ error: authResult.error || "Unauthorized" }), {
+        status: authResult.status || 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     const body = await req.json();
     const { phone, action, order_id, amount, package_size, network, agent_id, reason, custom_message, status, custom_sender_id } = body;

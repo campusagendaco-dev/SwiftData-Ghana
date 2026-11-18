@@ -201,7 +201,9 @@ export const NotificationCenter = (_props: { isDark?: boolean }) => {
             ),
             { duration: 6000, unstyled: true }
           );
-          if (activeTone) playSound(activeTone, 0.45);
+          if (activeTone && localStorage.getItem("swift_sound_alerts") !== "false") {
+            playSound(activeTone, 0.45);
+          }
         }
       )
       .subscribe();

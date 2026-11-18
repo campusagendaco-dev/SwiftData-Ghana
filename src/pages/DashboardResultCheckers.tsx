@@ -10,7 +10,7 @@ import {
   Clock, CopyCheck, XCircle, Download, Printer, FileSpreadsheet, Check,
   Sparkles, Plus, Minus, UserCheck, Eye, Zap, RefreshCw, ArrowRight
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, escapeHtml } from "@/lib/utils";
 import { useConnectivity } from "@/hooks/useConnectivity";
 import { WifiOff } from "lucide-react";
 import { playSuccessSound } from "@/lib/sound";
@@ -254,24 +254,31 @@ const DashboardResultCheckers = () => {
       return;
     }
 
-    const vouchersHtml = voucherList.map((v: any, i: number) => `
+    const safeVType = escapeHtml(vType);
+    const safeTargetPhone = escapeHtml(targetPhone);
+    const vouchersHtml = voucherList.map((v: any, i: number) => {
+      const safeLabel = escapeHtml(v.type || `${vType} RESULTS CHECKER`);
+      const safeSerial = escapeHtml(v.serial);
+      const safePin = escapeHtml(v.pin);
+      return `
       <div style="border: 2px solid #cbd5e1; border-radius: 12px; padding: 16px; margin-bottom: 16px; font-family: monospace; background: #f8fafc; page-break-inside: avoid;">
         <div style="font-weight: bold; color: #475569; font-size: 11px; margin-bottom: 8px; text-transform: uppercase; tracking: 0.1em;">
-          VOUCHER ${i + 1} — ${v.type || vType + ' RESULTS CHECKER'}
+          VOUCHER ${i + 1} — ${safeLabel}
         </div>
-        <div style="font-size: 16px; margin-bottom: 4px; color: #0f172a;"><strong>SERIAL:</strong> ${v.serial}</div>
-        <div style="font-size: 16px; margin-bottom: 8px; color: #0f172a;"><strong>PIN:</strong> ${v.pin}</div>
+        <div style="font-size: 16px; margin-bottom: 4px; color: #0f172a;"><strong>SERIAL:</strong> ${safeSerial}</div>
+        <div style="font-size: 16px; margin-bottom: 8px; color: #0f172a;"><strong>PIN:</strong> ${safePin}</div>
         <div style="font-size: 11px; color: #64748b; border-top: 1px dashed #cbd5e1; padding-top: 6px;">
-          COMBINED: SERIAL: ${v.serial} | PIN: ${v.pin}
+          COMBINED: SERIAL: ${safeSerial} | PIN: ${safePin}
         </div>
       </div>
-    `).join("");
+    `;
+    }).join("");
 
     printWindow.document.write(`
       <!DOCTYPE html>
       <html>
         <head>
-          <title>Print Voucher Cards — ${vType}</title>
+          <title>Print Voucher Cards — ${safeVType}</title>
           <style>
             body { font-family: system-ui, -apple-system, sans-serif; padding: 24px; color: #0f172a; max-width: 800px; margin: 0 auto; }
             h2 { margin-bottom: 4px; font-size: 22px; font-weight: 800; }
@@ -279,8 +286,8 @@ const DashboardResultCheckers = () => {
           </style>
         </head>
         <body>
-          <h2>${vType} Results Checker Vouchers</h2>
-          <p>Recipient: <strong>${targetPhone}</strong> | Quantity: <strong>${voucherList.length}</strong> | Total Amount: <strong>₵${totalAmount.toFixed(2)}</strong></p>
+          <h2>${safeVType} Results Checker Vouchers</h2>
+          <p>Recipient: <strong>${safeTargetPhone}</strong> | Quantity: <strong>${voucherList.length}</strong> | Total Amount: <strong>₵${totalAmount.toFixed(2)}</strong></p>
           <hr style="border: none; border-top: 1px solid #e2e8f0; margin-bottom: 20px;" />
           ${vouchersHtml}
           <script>

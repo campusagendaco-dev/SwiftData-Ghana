@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useRealtimeRefresh } from "@/hooks/useRealtimeRefresh";
 import { useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { sanitizeSearchTerm, cn } from "@/lib/utils";
+import { sanitizeSearchTerm, cn, escapeHtml } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -717,11 +717,11 @@ export default function AdminCheckerOrders() {
                   const vHtml = selectedOrderVouchers.vouchers.map((v: any, idx: number) => `
                     <div style="border: 2px solid #cbd5e1; border-radius: 12px; padding: 16px; margin-bottom: 16px; font-family: monospace; background: #f8fafc;">
                       <div style="font-weight: bold; color: #475569; font-size: 11px; margin-bottom: 8px;">VOUCHER ${idx + 1}</div>
-                      <div><strong>SERIAL:</strong> ${v.serial}</div>
-                      <div><strong>PIN:</strong> ${v.pin}</div>
+                      <div><strong>SERIAL:</strong> ${escapeHtml(v.serial)}</div>
+                      <div><strong>PIN:</strong> ${escapeHtml(v.pin)}</div>
                     </div>
                   `).join("");
-                  printWin.document.write(`<html><body><h2>${selectedOrderVouchers.package}</h2>${vHtml}<script>window.print();window.close();</script></body></html>`);
+                  printWin.document.write(`<html><body><h2>${escapeHtml(selectedOrderVouchers.package)}</h2>${vHtml}<script>window.print();window.close();</script></body></html>`);
                   printWin.document.close();
                 }}
                 className="h-11 rounded-2xl bg-rose-500 hover:bg-rose-600 text-white font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2"

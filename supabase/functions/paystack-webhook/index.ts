@@ -721,13 +721,12 @@ serve(async (req: Request) => {
           p_reason: disputeReason,
         });
         if (freezeRes?.success && freezeRes?.collection_id && freezeRes?.merchant_id) {
-          await notifyAdmins(
-            supabaseAdmin,
-            "Gateway Collection Dispute Alert",
-            `Dispute opened on collection ${disputeRef} (${disputeReason}). Merchant settlements have been automatically frozen.`,
-            "error",
-            { reference: disputeRef, merchant_id: freezeRes.merchant_id, reason: disputeReason },
-          );
+          notifyAdmins(supabaseAdmin, {
+            title: "Gateway Collection Dispute Alert",
+            message: `Dispute opened on collection ${disputeRef} (${disputeReason}). Merchant settlements have been automatically frozen.`,
+            type: "error",
+            data: { reference: disputeRef, merchant_id: freezeRes.merchant_id, reason: disputeReason },
+          });
           await dispatchGatewayWebhook(supabaseAdmin, {
             collectionId: freezeRes.collection_id,
             merchantId: freezeRes.merchant_id,

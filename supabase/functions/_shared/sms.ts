@@ -385,36 +385,14 @@ export async function sendSmsViaKorba(
     let response: any;
     let responseText = "";
 
-    // 1. Try routing through static IP proxy bridge (fetchViaDb)
-    try {
-      response = await fetchViaDb(supabaseAdmin, endpoint, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(payload),
-      });
-      responseText = await response.text();
-    } catch (proxyErr) {
-      console.warn(`[Korba SMS] DB proxy attempt failed for ${formattedPhone}:`, proxyErr);
-    }
-
-    // 2. Fallback to direct fetch if proxy route fails (e.g. 502 / network glitch)
-    if (!response || !response.ok || response.status >= 500) {
-      try {
-        console.log(`[Korba SMS] Attempting direct fetch fallback to Korba for ${formattedPhone}...`);
-        const directRes = await fetch(endpoint, {
-          method: "POST",
-          headers,
-          body: JSON.stringify(payload),
-          signal: AbortSignal.timeout(8000),
-        });
-        if (directRes) {
-          response = directRes;
-          responseText = await directRes.text();
-        }
-      } catch (directErr) {
-        console.warn(`[Korba SMS] Direct fetch fallback failed for ${formattedPhone}:`, directErr);
-      }
-    }
+    // Route strictly through whitelisted static IP proxy bridge (fetchViaDb).
+    // Direct native Deno Edge fetches are forbidden for Korba (blocked by Korba IP whitelist: 401 IP not allowed).
+    response = await fetchViaDb(supabaseAdmin, endpoint, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload),
+    });
+    responseText = await response.text();
 
     let data: any;
     try {

@@ -1,14 +1,48 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { corsHeaders } from "../_shared/cors.ts";
+import { verifyAdmin } from "../_shared/auth.ts";
 import { sendPaymentSms } from "../_shared/sms.ts";
 
 // Cron: runs daily at 07:00 UTC
 // Sends a morning summary report to all admins
 
-serve(async (_req) => {
+function timingSafeEqualStr(a: string, b: string): boolean {
+  if (!a || !b || a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
+serve(async (req: Request) => {
+  if (req.method === "OPTIONS") {
+    return new Response(null, { status: 200, headers: corsHeaders });
+  }
+
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
   const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+  const authHeader = req.headers.get("Authorization") || "";
+  const bearerToken = authHeader.replace(/^Bearer\s+/i, "").trim();
+  const headerCronSecret = (req.headers.get("x-cron-secret") || "").trim();
+  const cronSecret = (Deno.env.get("CRON_SECRET") || "").trim();
+  const isCronOrService =
+    timingSafeEqualStr(bearerToken, (SUPABASE_SERVICE_ROLE_KEY || "").trim()) ||
+    (Boolean(cronSecret) &&
+      (timingSafeEqualStr(bearerToken, cronSecret) || timingSafeEqualStr(headerCronSecret, cronSecret)));
+
+  if (!isCronOrService) {
+    const adminCheck = await verifyAdmin(req, supabase);
+    if (!adminCheck.success) {
+      return new Response(JSON.stringify({ error: adminCheck.error || "Unauthorized" }), {
+        status: adminCheck.status || 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+  }
 
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
@@ -44,7 +78,7 @@ serve(async (_req) => {
 
   // Withdrawals yesterday
   const { data: withdrawals } = await supabase
-    .from("wallet_withdrawals")
+    .from("withdrawals")
     .select("amount, status")
     .gte("created_at", since)
     .lte("created_at", until);
@@ -76,7 +110,7 @@ serve(async (_req) => {
     date: dateLabel,
     orders: { total: orders.length, fulfilled: fulfilled.length, failed: failed.length, processing: processing.length },
     revenue: { total: totalRevenue, profit: totalProfit, refunded: totalRefunded },
-    withdrawals: { approved: approvedWithdrawals.length, total_paid: totalWithdrawals, pending: pendingWithdrawals },
+    withdrawals: { approved: approvedWithdrawals.length, total_paid: totalWithdrawn, pending: pendingWithdrawals },
     agents: { new_today: newAgents || 0 },
     providers: { low_balance: lowBalanceProviders.map((p) => `${p.name}: GHS ${Number(p.balance || 0).toFixed(2)}`) },
   };
@@ -109,6 +143,7 @@ serve(async (_req) => {
       title: `📊 Daily Report — ${dateLabel}`,
       message: `${fulfilled.length} fulfilled orders · GHS ${totalRevenue.toFixed(2)} revenue · ${failed.length} failed`,
       type: "info",
+      link: "/admin/analytics",
       data: { ...report, link: "/admin/analytics" },
     })));
 
@@ -126,9 +161,6 @@ serve(async (_req) => {
   }
 
   return new Response(JSON.stringify({ sent: true, report }), {
-    status: 200, headers: { "Content-Type": "application/json" },
+    status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 });
-
-// Fix: unused variable
-const totalWithdrawals = 0; // placeholder — computed inline above

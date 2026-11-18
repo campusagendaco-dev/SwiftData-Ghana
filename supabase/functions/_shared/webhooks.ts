@@ -1,14 +1,19 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 // Replaced node:crypto with Web Crypto API
 
-// SSRF Prevention: Block private/loopback/link-local destinations
-const PRIVATE_IP_RE = /^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|::1|fc|fd)/i;
+// SSRF Prevention: Block private/loopback/link-local/CGNAT/IPv6-private destinations
+const PRIVATE_IPV4_OR_HOST_RE =
+  /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.|0\.)/i;
+const PRIVATE_IPV6_RE = /^(::1?$|0:0:0:0:0:0:0:1$|::ffff:|fc|fd|fe[89ab])/i;
 function isSafeWebhookUrl(url: string): boolean {
   try {
-    const parsed = new URL(url);
+    const parsed = new URL(url.trim());
     if (parsed.protocol !== "https:") return false;
-    if (PRIVATE_IP_RE.test(parsed.hostname)) return false;
-    if (parsed.hostname === "localhost") return false;
+    if (parsed.username || parsed.password) return false;
+    const host = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+    if (!host) return false;
+    if (host.includes(":") ? PRIVATE_IPV6_RE.test(host) : PRIVATE_IPV4_OR_HOST_RE.test(host)) return false;
+    if (host.endsWith(".local") || host.endsWith(".internal") || host.endsWith(".localhost")) return false;
     return true;
   } catch { return false; }
 }
@@ -54,6 +59,7 @@ export async function notifyApiClient(supabaseAdmin: any, orderId: string, statu
 
       await fetch(profile.api_webhook_url, {
         method: "POST",
+        redirect: "manual",
         headers: {
           "Content-Type": "application/json",
           "X-Swift-Signature": signature,
@@ -103,6 +109,7 @@ export async function notifyWalletCredit(supabaseAdmin: any, userId: string, amo
 
       await fetch(profile.api_webhook_url, {
         method: "POST",
+        redirect: "manual",
         headers: {
           "Content-Type": "application/json",
           "X-Swift-Signature": signature,

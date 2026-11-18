@@ -210,3 +210,6 @@ verify_jwt = false
 
 [functions.wallet-reconcile]
 verify_jwt = false
+
+[functions.gateway-collect]
+verify_jwt = false

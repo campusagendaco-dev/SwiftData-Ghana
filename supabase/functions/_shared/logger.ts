@@ -58,6 +58,7 @@ interface AdminAlertEntry {
   title: string;
   message: string;
   type?: string;
+  link?: string | null;
   data?: Record<string, unknown> | null;
 }
 
@@ -77,11 +78,15 @@ export function notifyAdmins(supabaseAdmin: any, entry: AdminAlertEntry): void {
       }
       if (!admins?.length) return;
       const safeData = entry.data ? (maskSensitive(entry.data) as Record<string, unknown>) : null;
+      const resolvedLink =
+        entry.link ??
+        (typeof entry.data?.link === "string" ? entry.data.link : null);
       const notifications = admins.map((a: any) => ({
         user_id: a.user_id,
         title: entry.title,
         message: entry.message,
         type: entry.type || "error",
+        link: resolvedLink,
         data: safeData,
       }));
       supabaseAdmin

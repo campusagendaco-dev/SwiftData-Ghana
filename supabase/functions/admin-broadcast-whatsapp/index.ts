@@ -76,11 +76,11 @@ async function processQueueBatch(supabaseAdmin: any, targetBroadcastId?: string,
         }
 
         // 1. Send text message
-        const textResult: any = await sendWhatsAppMessage(phone, finalMessage);
+        const textResult = await sendWhatsAppMessage(phone, finalMessage);
         
         // Check for session disconnection error from Wasender
-        if (textResult?.data?.message?.includes?.("Session is not connected") || 
-            textResult?.error?.includes?.("Session is not connected")) {
+        if (textResult?.disconnected ||
+            textResult?.error?.toLowerCase?.().includes("session is not connected")) {
           errMsg = "WhatsApp Session is disconnected in Wasender";
           console.warn(`[WA Queue Worker] Session disconnected detected for ${phone}. Pausing queue.`);
           
@@ -100,7 +100,17 @@ async function processQueueBatch(supabaseAdmin: any, targetBroadcastId?: string,
           return; // Stop processing further until reconnected
         }
 
-        success = Boolean(textResult);
+        success = textResult?.success === true;
+        if (!success) {
+          errMsg = textResult?.error || "All WhatsApp providers failed to deliver message";
+          console.warn(`[WA Queue Worker] Delivery failed for ${phone}: ${errMsg}`);
+          await supabaseAdmin.from("whatsapp_broadcast_queue").update({
+            status: "failed",
+            error_message: errMsg,
+            updated_at: new Date().toISOString()
+          }).eq("id", item.id);
+          continue;
+        }
 
         // 2. Dispatch Media Attachment if configured
         if (opts.imageUrl || opts.videoUrl || opts.documentUrl || opts.audioUrl || opts.stickerUrl) {
@@ -114,7 +124,7 @@ async function processQueueBatch(supabaseAdmin: any, targetBroadcastId?: string,
           }).catch((mediaErr) => console.warn(`[WA Queue Worker] Media dispatch warning for ${phone}:`, mediaErr));
         }
 
-        // Mark as sent
+        // Mark as sent only after confirmed delivery
         await supabaseAdmin.from("whatsapp_broadcast_queue").update({
           status: "sent",
           sent_at: new Date().toISOString(),

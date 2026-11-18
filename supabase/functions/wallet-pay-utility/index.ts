@@ -36,9 +36,22 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: "Missing required fields" }), { status: 200, headers: corsHeaders });
     }
 
-    const payAmount = Number(amount);
-    if (!Number.isFinite(payAmount) || payAmount <= 0) {
-      return new Response(JSON.stringify({ error: "Invalid amount" }), { status: 200, headers: corsHeaders });
+    const payAmount = Math.round(Number(amount) * 100) / 100;
+    if (!Number.isFinite(payAmount) || payAmount < 1 || payAmount > 50000) {
+      return new Response(JSON.stringify({ error: "Invalid amount. Must be between GHS 1.00 and GHS 50,000.00." }), { status: 200, headers: corsHeaders });
+    }
+
+    // Whitelist safe utility metadata fields — never spread arbitrary client metadata
+    const rawMeta = payload.metadata && typeof payload.metadata === "object" && !Array.isArray(payload.metadata)
+      ? payload.metadata
+      : {};
+    const ALLOWED_META_KEYS = ["meter_type", "meter_category", "district", "customer_name", "account_name", "account_number", "phone", "reference_note"];
+    const safeMeta: Record<string, string | number | boolean> = {};
+    for (const k of ALLOWED_META_KEYS) {
+      const v = (rawMeta as Record<string, unknown>)[k];
+      if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
+        safeMeta[k] = typeof v === "string" ? v.slice(0, 200) : v;
+      }
     }
 
     // Atomic debit
@@ -55,7 +68,7 @@ serve(async (req) => {
     }
 
     const orderId = crypto.randomUUID();
-    await supabaseAdmin.from("orders").insert({
+    const { error: insertError } = await supabaseAdmin.from("orders").insert({
       id: orderId,
       agent_id: user.id,
       order_type: "utility",
@@ -67,8 +80,17 @@ serve(async (req) => {
       status: "paid",
       payment_method: "wallet",
       failure_reason: "Awaiting manual fulfillment / Token generation",
-      metadata: { lookup_transaction_id, ...(payload.metadata || {}) }
+      metadata: { ...safeMeta, lookup_transaction_id }
     });
+
+    if (insertError) {
+      console.error("[wallet-pay-utility] Order insert failed, refunding wallet:", insertError);
+      await supabaseAdmin.rpc("credit_wallet", { p_agent_id: user.id, p_amount: payAmount });
+      return new Response(JSON.stringify({ error: "Failed to record utility order. Your wallet has been refunded." }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     // Trigger verify-payment asynchronously via EdgeRuntime.waitUntil so utility payment returns instantly (<200ms)
     const verifyPaymentUrl = `${SUPABASE_URL}/functions/v1/verify-payment`;

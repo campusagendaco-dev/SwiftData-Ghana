@@ -6,6 +6,7 @@ import {
   isAllowedRedirectUrl,
   isSafeGatewayWebhookUrl,
   isTimestampFresh,
+  normalizeFeePercent,
   signGatewayRequest,
   timingSafeEqual,
   verifyGatewayRequestSignature,
@@ -115,16 +116,43 @@ describe("Payment Gateway Security Helpers", () => {
     expect(isAllowedRedirectUrl("https://myshop.com/return", [])).toBe(false);
   });
 
-  it("blocks SSRF and non-HTTPS webhook URLs", () => {
+  it("blocks SSRF and non-HTTPS webhook URLs including bracketed IPv6 and CGNAT", () => {
     expect(isSafeGatewayWebhookUrl("https://api.myshop.com/webhooks/swiftdata")).toBe(true);
+    expect(isSafeGatewayWebhookUrl("https://fcbarcelona.com/webhooks")).toBe(true);
     expect(isSafeGatewayWebhookUrl("http://api.myshop.com/webhooks")).toBe(false);
     expect(isSafeGatewayWebhookUrl("https://127.0.0.1/hook")).toBe(false);
     expect(isSafeGatewayWebhookUrl("https://localhost/hook")).toBe(false);
     expect(isSafeGatewayWebhookUrl("https://169.254.169.254/latest/meta-data")).toBe(false);
     expect(isSafeGatewayWebhookUrl("https://10.0.0.5/hook")).toBe(false);
     expect(isSafeGatewayWebhookUrl("https://192.168.1.10/hook")).toBe(false);
+    expect(isSafeGatewayWebhookUrl("https://100.64.0.1/hook")).toBe(false);
+    expect(isSafeGatewayWebhookUrl("https://[::1]/hook")).toBe(false);
+    expect(isSafeGatewayWebhookUrl("https://[fe80::1]/hook")).toBe(false);
+    expect(isSafeGatewayWebhookUrl("https://[fc00::1]/hook")).toBe(false);
+    expect(isSafeGatewayWebhookUrl("https://[fd12:3456::1]/hook")).toBe(false);
+    expect(isSafeGatewayWebhookUrl("https://[::ffff:127.0.0.1]/hook")).toBe(false);
+    expect(isSafeGatewayWebhookUrl("https://[::ffff:169.254.169.254]/hook")).toBe(false);
     expect(isSafeGatewayWebhookUrl("https://api.myshop.com:8443/hook")).toBe(false);
     expect(isSafeGatewayWebhookUrl("https://user:pass@api.myshop.com/hook")).toBe(false);
+  });
+
+  it("normalizes decimal and percentage fee rates accurately", () => {
+    expect(normalizeFeePercent(0.03)).toBe(3);
+    expect(normalizeFeePercent(0.025)).toBe(2.5);
+    expect(normalizeFeePercent("0.03")).toBe(3);
+    expect(normalizeFeePercent(3)).toBe(3);
+    expect(normalizeFeePercent(0)).toBe(0);
+    expect(normalizeFeePercent(null, 3)).toBe(3);
+    expect(normalizeFeePercent(undefined, 3)).toBe(3);
+    expect(normalizeFeePercent(-1, 3)).toBe(3);
+    expect(normalizeFeePercent("invalid", 3)).toBe(3);
+
+    const amounts = calculateCollectionAmounts({
+      baseAmount: 100,
+      feePercent: normalizeFeePercent(0.03, 3),
+    });
+    expect(amounts.customerFee).toBe(3);
+    expect(amounts.totalCharged).toBe(103);
   });
 
   it("enforces IP allowlist when configured", () => {

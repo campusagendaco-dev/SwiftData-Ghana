@@ -244,12 +244,21 @@ const AdminGuard = ({ children }: { children: React.ReactNode }) => {
             return;
           }
 
-          const res = await fetch("https://api.ipify.org?format=json");
-          const { ip } = await res.json();
-          setIpAllowed(allowed.includes(ip));
+          try {
+            const res = await fetch("https://api.ipify.org?format=json");
+            if (!res.ok) {
+              setIpAllowed(false);
+              return;
+            }
+            const { ip } = await res.json();
+            setIpAllowed(Boolean(ip && allowed.includes(ip)));
+          } catch (ipErr) {
+            console.error("IP lookup failed while allowlist is active:", ipErr);
+            setIpAllowed(false); // Fail closed when an admin IP allowlist is configured
+          }
         } catch (e) {
           console.error("IP check failed:", e);
-          setIpAllowed(true); // Fallback to allow if API fails, but logged
+          setIpAllowed(false); // Fail closed on unexpected error
         }
       };
       checkIp();

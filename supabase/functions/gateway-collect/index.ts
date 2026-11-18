@@ -9,6 +9,7 @@ import {
   extractClientIp,
   isAllowedClientIp,
   isAllowedRedirectUrl,
+  normalizeFeePercent,
   sha256Hex,
   timingSafeEqual,
   verifyGatewayRequestSignature,
@@ -128,6 +129,24 @@ function serializeCollection(c: any) {
     settled_at: c.settled_at || null,
     created_at: c.created_at,
   };
+}
+
+async function findMerchantCollection(supabaseAdmin: any, merchantId: string, ref: string): Promise<any | null> {
+  const { data: byRef } = await supabaseAdmin
+    .from("gateway_collections")
+    .select("*")
+    .eq("merchant_id", merchantId)
+    .eq("reference", ref)
+    .maybeSingle();
+  if (byRef) return byRef;
+
+  const { data: byClientRef } = await supabaseAdmin
+    .from("gateway_collections")
+    .select("*")
+    .eq("merchant_id", merchantId)
+    .eq("client_reference", ref)
+    .maybeSingle();
+  return byClientRef || null;
 }
 
 async function getAuthenticatedUser(req: Request, supabaseAdmin: any): Promise<{ userId: string; isAdmin: boolean } | null> {
@@ -406,12 +425,12 @@ serve(async (req: Request) => {
     }
   }
 
-  // Per-merchant rate limit
-  const { data: merchantRateOk } = await supabaseAdmin.rpc("check_generic_rate_limit", {
+  // Per-merchant rate limit (fail-closed on RPC error)
+  const { data: merchantRateOk, error: merchantRateErr } = await supabaseAdmin.rpc("check_generic_rate_limit", {
     p_key: `gw_merchant:${merchant.id}`,
     p_rate_limit: Number(merchant.rate_limit_per_min || 30),
   });
-  if (merchantRateOk === false) {
+  if (merchantRateErr || merchantRateOk !== true) {
     return json({ success: false, error: "Rate limit exceeded. Please slow down." }, 429);
   }
 
@@ -515,13 +534,13 @@ serve(async (req: Request) => {
       );
     }
 
-    // Per-phone anti-prompt-bombing velocity limit
+    // Per-phone anti-prompt-bombing velocity limit (fail-closed on RPC error)
     if (paymentPhone) {
-      const { data: phoneOk } = await supabaseAdmin.rpc("check_generic_rate_limit", {
+      const { data: phoneOk, error: phoneRateErr } = await supabaseAdmin.rpc("check_generic_rate_limit", {
         p_key: `gw_phone:${paymentPhone}`,
         p_rate_limit: 2,
       });
-      if (phoneOk === false) {
+      if (phoneRateErr || phoneOk !== true) {
         return json(
           { success: false, error: "A payment prompt was sent to this phone number recently. Please wait a minute." },
           429,
@@ -537,7 +556,7 @@ serve(async (req: Request) => {
         .select("paystack_deposit_fee_percent")
         .eq("id", 1)
         .maybeSingle();
-      feePercent = Number(sysSettings?.paystack_deposit_fee_percent ?? 3);
+      feePercent = normalizeFeePercent(sysSettings?.paystack_deposit_fee_percent, 3);
     }
 
     const amounts = calculateCollectionAmounts({
@@ -685,12 +704,7 @@ serve(async (req: Request) => {
       return json({ success: false, error: "reference and a 4-8 digit otp are required." }, 400);
     }
 
-    const { data: col } = await supabaseAdmin
-      .from("gateway_collections")
-      .select("*")
-      .eq("merchant_id", merchant.id)
-      .or(`reference.eq.${ref},client_reference.eq.${ref}`)
-      .maybeSingle();
+    const col = await findMerchantCollection(supabaseAdmin, merchant.id, ref);
 
     if (!col) return json({ success: false, error: "Collection not found." }, 404);
     if (col.status !== "pending") {
@@ -736,12 +750,7 @@ serve(async (req: Request) => {
     }
     if (!ref) return json({ success: false, error: "reference is required." }, 400);
 
-    const { data: col } = await supabaseAdmin
-      .from("gateway_collections")
-      .select("*")
-      .eq("merchant_id", merchant.id)
-      .or(`reference.eq.${ref},client_reference.eq.${ref}`)
-      .maybeSingle();
+    const col = await findMerchantCollection(supabaseAdmin, merchant.id, ref);
 
     if (!col) return json({ success: false, error: "Collection not found." }, 404);
 
@@ -807,8 +816,14 @@ serve(async (req: Request) => {
 
   // GET /v1/collections
   if (subPath === "/v1/collections" && req.method === "GET") {
-    const limit = Math.min(100, Math.max(1, Number(url.searchParams.get("limit") || 25)));
-    const offset = Math.max(0, Number(url.searchParams.get("offset") || 0));
+    const rawLimit = Number(url.searchParams.get("limit"));
+    const rawOffset = Number(url.searchParams.get("offset"));
+    const limit = Number.isFinite(rawLimit) && url.searchParams.get("limit") !== null
+      ? Math.min(100, Math.max(1, Math.trunc(rawLimit)))
+      : 25;
+    const offset = Number.isFinite(rawOffset) && url.searchParams.get("offset") !== null
+      ? Math.max(0, Math.trunc(rawOffset))
+      : 0;
     const statusFilter = url.searchParams.get("status")?.trim();
 
     let query = supabaseAdmin

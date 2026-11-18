@@ -41,12 +41,56 @@ serve(async (req) => {
 
     const { amount, wallet_credit, callback_url, wallet_type } = payload || {};
     const chargeAmount = Number(amount);
-    const creditAmount = Number(wallet_credit || amount);
+    const creditAmount = Number(wallet_credit ?? amount);
     const isApiWallet = wallet_type === "api";
 
-    if (!chargeAmount || chargeAmount < 10) {
+    if (!Number.isFinite(chargeAmount) || chargeAmount < 10 || !Number.isFinite(creditAmount) || creditAmount < 10) {
       return new Response(JSON.stringify({ error: "Minimum top-up amount is GHS 10.00" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Validate callback_url against approved app origins to prevent open redirects
+    let safeCallbackUrl: string | undefined = undefined;
+    if (callback_url !== undefined && callback_url !== null && String(callback_url).trim() !== "") {
+      try {
+        const parsedCb = new URL(String(callback_url).trim());
+        const host = parsedCb.hostname.toLowerCase();
+        const appUrlEnv = Deno.env.get("APP_URL") || Deno.env.get("SITE_URL") || "";
+        let envHost = "";
+        try { envHost = appUrlEnv ? new URL(appUrlEnv).hostname.toLowerCase() : ""; } catch { /* ignore */ }
+        const isAllowedOrigin =
+          (parsedCb.protocol === "https:" && (
+            host === "swiftdatagh.shop" ||
+            host.endsWith(".swiftdatagh.shop") ||
+            host === "swiftdatagh.com" ||
+            host.endsWith(".swiftdatagh.com") ||
+            (envHost !== "" && host === envHost)
+          )) ||
+          (parsedCb.protocol === "http:" && (host === "localhost" || host === "127.0.0.1"));
+        if (!isAllowedOrigin || parsedCb.username || parsedCb.password) {
+          return new Response(JSON.stringify({ error: "Invalid callback_url origin" }), {
+            status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        safeCallbackUrl = parsedCb.toString();
+      } catch {
+        return new Response(JSON.stringify({ error: "Invalid callback_url" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
+    // Fetch user profile to verify API access eligibility and email
+    const { data: profile } = await supabaseAdmin
+      .from("profiles")
+      .select("email, api_access_enabled")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (isApiWallet && profile?.api_access_enabled !== true) {
+      return new Response(JSON.stringify({ error: "API access is not enabled for this account." }), {
+        status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
@@ -109,12 +153,6 @@ serve(async (req) => {
     });
 
     // Initialize Paystack payment
-    const { data: profile } = await supabaseAdmin
-      .from("profiles")
-      .select("email")
-      .eq("user_id", user.id)
-      .maybeSingle();
-
     const amountInPesewas = Math.round(chargeAmount * 100);
     const response = await fetch("https://api.paystack.co/transaction/initialize", {
       method: "POST",
@@ -126,7 +164,7 @@ serve(async (req) => {
         email: profile?.email || user.email,
         amount: amountInPesewas,
         reference: orderId,
-        callback_url: callback_url || undefined,
+        callback_url: safeCallbackUrl,
         metadata: { 
           order_id: orderId, 
           order_type: "wallet_topup", 

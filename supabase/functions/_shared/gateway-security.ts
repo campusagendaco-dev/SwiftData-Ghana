@@ -3,8 +3,16 @@
 export const GATEWAY_TIMESTAMP_WINDOW_SEC = 300; // ±5 minutes
 export const GATEWAY_MAX_FEE_GHS = 100;
 
-const PRIVATE_HOST_RE =
-  /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|0\.|::1|\[::1\]|fc|fd|fe80)/i;
+const PRIVATE_IPV4_OR_HOST_RE =
+  /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.|0\.)/i;
+const PRIVATE_IPV6_RE = /^(::1?$|0:0:0:0:0:0:0:1$|::ffff:|fc|fd|fe[89ab])/i;
+
+function isPrivateOrLoopbackHost(rawHost: string): boolean {
+  const host = rawHost.toLowerCase().replace(/^\[|\]$/g, "");
+  if (!host) return true;
+  if (host.includes(":")) return PRIVATE_IPV6_RE.test(host);
+  return PRIVATE_IPV4_OR_HOST_RE.test(host);
+}
 
 /** Constant-time string comparison to prevent timing side-channels. */
 export function timingSafeEqual(a: string, b: string): boolean {
@@ -120,8 +128,8 @@ export function isSafeGatewayWebhookUrl(rawUrl: string): boolean {
     const parsed = new URL(rawUrl.trim());
     if (parsed.protocol !== "https:") return false;
     if (parsed.username || parsed.password) return false;
-    const host = parsed.hostname.toLowerCase();
-    if (!host || PRIVATE_HOST_RE.test(host)) return false;
+    const host = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+    if (!host || isPrivateOrLoopbackHost(host)) return false;
     if (host.endsWith(".local") || host.endsWith(".internal") || host.endsWith(".localhost")) return false;
     if (parsed.port && parsed.port !== "443") return false;
     return true;
@@ -140,8 +148,8 @@ export function isAllowedRedirectUrl(rawUrl: string, allowedDomains: string[]): 
     const parsed = new URL(rawUrl.trim());
     if (parsed.protocol !== "https:") return false;
     if (parsed.username || parsed.password) return false;
-    const host = parsed.hostname.toLowerCase();
-    if (!host || PRIVATE_HOST_RE.test(host)) return false;
+    const host = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+    if (!host || isPrivateOrLoopbackHost(host)) return false;
 
     return allowedDomains.some((rawDomain) => {
       const domain = String(rawDomain || "")
@@ -181,6 +189,17 @@ export function extractClientIp(req: Request): string {
 
 export function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
+}
+
+/**
+ * Normalizes a fee rate stored either as a decimal fraction (e.g. `0.03` for 3%)
+ * or as a percentage (e.g. `3` for 3%) into a percentage value (0..100).
+ */
+export function normalizeFeePercent(raw: unknown, defaultPercent = 3): number {
+  if (raw === null || raw === undefined || raw === "") return defaultPercent;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) return defaultPercent;
+  return n > 0 && n <= 1 ? round2(n * 100) : n;
 }
 
 /**
@@ -299,6 +318,7 @@ export async function dispatchGatewayWebhook(
     try {
       const res = await fetch(merchant.webhook_url, {
         method: "POST",
+        redirect: "manual",
         headers: {
           "Content-Type": "application/json",
           "X-Swift-Webhook-Signature": sigHeader,
@@ -311,7 +331,9 @@ export async function dispatchGatewayWebhook(
       });
       clearTimeout(timeoutId);
       httpStatus = res.status;
-      if (res.ok) {
+      if (res.status >= 300 && res.status < 400) {
+        errMsg = `HTTP ${res.status}: Redirects are not permitted for webhooks`;
+      } else if (res.ok) {
         delivered = true;
       } else {
         const text = await res.text().catch(() => "");

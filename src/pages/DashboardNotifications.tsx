@@ -92,10 +92,11 @@ const DashboardNotifications = () => {
   };
 
   useEffect(() => {
+    if (!user?.id) return;
     fetchNotifications();
 
     // Subscribe to real-time notification inserts for this active user
-    const channelId = `dashboard-inbox-${user?.id}-${Math.random().toString(36).substring(7)}`;
+    const channelId = `dashboard-inbox-${user.id}-${Math.random().toString(36).substring(7)}`;
     const channel = supabase
       .channel(channelId)
       .on(
@@ -104,7 +105,7 @@ const DashboardNotifications = () => {
           event: "INSERT",
           schema: "public",
           table: "user_notifications",
-          filter: `user_id=eq.${user?.id}`,
+          filter: `user_id=eq.${user.id}`,
         },
         (payload) => {
           const newNotif = payload.new as UserNotification;

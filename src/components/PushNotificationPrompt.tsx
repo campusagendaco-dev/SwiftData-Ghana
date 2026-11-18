@@ -76,8 +76,13 @@ export const PushNotificationPrompt: React.FC<PushNotificationPromptProps> = ({
     }
   };
 
-  // If push is not supported or already granted
-  if (!supported || permissionState === "granted") {
+  // If push is not supported, hide the prompt entirely (never claim notifications are active)
+  if (!supported) {
+    return null;
+  }
+
+  // If already granted
+  if (permissionState === "granted") {
     if (variant === "inline") {
       return (
         <div className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border border-emerald-500/20 bg-emerald-500/5 text-emerald-400 text-xs font-semibold ${className}`}>
