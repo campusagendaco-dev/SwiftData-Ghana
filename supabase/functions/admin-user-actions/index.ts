@@ -381,31 +381,72 @@ serve(async (req: Request) => {
 
       case "reset_transaction_pin": {
         if (!isValidUuid(user_id)) throw new Error("Invalid or missing user_id");
+
+        const { data: targetProfile, error: profErr } = await supabaseAdmin
+          .from("profiles")
+          .select("phone, full_name")
+          .eq("user_id", user_id)
+          .maybeSingle();
+        if (profErr || !targetProfile) throw new Error("User profile not found");
+
+        // Cryptographically random 4-digit temporary PIN (1000-9999)
+        const randArr = new Uint32Array(1);
+        crypto.getRandomValues(randArr);
+        const tempPin = String(1000 + (randArr[0] % 9000));
+
         const { error: pinErr } = await supabaseAdmin
           .from("profiles")
-          .update({ transaction_pin: null, updated_at: new Date().toISOString() })
+          .update({ transaction_pin: tempPin, updated_at: new Date().toISOString() })
           .eq("user_id", user_id);
         if (pinErr) throw pinErr;
+
+        let smsSent = false;
+        let maskedPhone: string | null = null;
+        const recipient = normalizePhone(targetProfile.phone);
+        if (recipient) {
+          maskedPhone = recipient.length >= 6
+            ? `${recipient.slice(0, 3)}****${recipient.slice(-3)}`
+            : recipient;
+          try {
+            const smsConfig = await getSmsConfig(supabaseAdmin);
+            if (smsConfig.apiKey) {
+              const msg = `SwiftData: Your temporary 4-digit Transaction PIN is ${tempPin}. Please log in and change it immediately under Account Settings.`;
+              const smsRes = await sendSmsViaTxtConnect(
+                smsConfig.apiKey,
+                smsConfig.senderId,
+                recipient,
+                msg,
+                "pin_reset",
+                user_id,
+              );
+              smsSent = Boolean(smsRes?.success);
+            }
+          } catch (smsErr) {
+            console.error("[admin-user-actions] PIN reset SMS failed:", smsErr);
+          }
+        }
 
         await logAdminAudit(supabaseAdmin, {
           adminId: actor.id,
           action: "reset_transaction_pin",
           targetUserId: user_id,
-          details: { message: "Admin cleared user transaction PIN" },
+          details: { message: "Admin generated temporary transaction PIN", sms_sent: smsSent },
         });
 
         await logSecurityEvent(supabaseAdmin, {
           userId: user_id,
           eventType: "transaction_pin_reset",
           severity: "warning",
-          details: { admin_id: actor.id, reason: "Admin cleared transaction PIN" },
+          details: { admin_id: actor.id, sms_sent: smsSent },
         });
 
         try {
           await supabaseAdmin.from("user_notifications").insert({
             user_id,
             title: "Transaction PIN Reset",
-            message: "Your 4-digit Transaction PIN has been reset by an administrator. Please set a new PIN in Account Settings.",
+            message: smsSent
+              ? "A temporary 4-digit Transaction PIN has been sent to your phone via SMS. Please change it immediately in Account Settings."
+              : "Your 4-digit Transaction PIN was reset by an administrator. Please update it in Account Settings.",
             type: "info",
             link: "/dashboard/account-settings",
           });
@@ -413,7 +454,14 @@ serve(async (req: Request) => {
           // non-critical
         }
 
-        return json({ success: true, user_id });
+        return json({
+          success: true,
+          user_id,
+          sms_sent: smsSent,
+          masked_phone: maskedPhone,
+          // Only reveal temp_pin to the admin if SMS could not be delivered
+          temp_pin: smsSent ? undefined : tempPin,
+        });
       }
 
       case "get_user_audit_logs": {

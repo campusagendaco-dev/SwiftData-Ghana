@@ -315,7 +315,7 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
   const [resettingPin, setResettingPin] = useState(false);
   const handleResetPin = async () => {
     if (!user) return;
-    if (!window.confirm(`Clear the 4-digit Transaction PIN for ${user.full_name || user.email}? They will be able to set a new PIN in Account Settings.`)) return;
+    if (!window.confirm(`Generate a new temporary 4-digit Transaction PIN and send it via SMS to ${user.full_name || user.email}?`)) return;
     setResettingPin(true);
     try {
       const { data: res, error } = await supabase.functions.invoke("admin-user-actions", {
@@ -323,7 +323,22 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
         headers: { Authorization: `Bearer ${session?.access_token}` },
       });
       if (error || res?.error) throw new Error(await parseEdgeError(error, res));
-      toast({ title: "Transaction PIN Cleared", description: `${user.full_name || user.email} can now set a new PIN in Account Settings.` });
+      if (res?.sms_sent) {
+        toast({
+          title: "Temporary PIN Sent via SMS",
+          description: `A new 4-digit PIN was texted to ${res.masked_phone || "the user's phone"}. They can change it in Account Settings.`,
+        });
+      } else if (res?.temp_pin) {
+        toast({
+          title: `Temporary PIN: ${res.temp_pin}`,
+          description: "SMS could not be sent (no valid phone or SMS gateway issue). Share this temporary PIN with the user and ask them to change it in Account Settings.",
+        });
+      } else {
+        toast({
+          title: "Transaction PIN Reset",
+          description: `${user.full_name || user.email} can now change their PIN in Account Settings.`,
+        });
+      }
     } catch (err: any) {
       toast({ title: "PIN Reset Failed", description: err.message, variant: "destructive" });
     } finally {
