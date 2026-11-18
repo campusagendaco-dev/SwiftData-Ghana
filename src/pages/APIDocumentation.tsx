@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import LastMtnOrderWidget from "@/components/LastMtnOrderWidget";
 
 const BASE_URL = "https://lsocdjpflecduumopijn.supabase.co/functions/v1/developer-api";
+const GATEWAY_BASE_URL = "https://lsocdjpflecduumopijn.supabase.co/functions/v1/gateway-collect";
 
 type Lang = "curl" | "node" | "python" | "php";
 const LANGS: Lang[] = ["curl", "node", "python", "php"];
@@ -155,6 +156,24 @@ const makeSnippets = (key: string): Record<string, Record<Lang, string>> => {
       python: `import requests\n\nres = requests.post(\n    "${BASE_URL}/purchases/submit-numbers",\n    headers={"X-API-Key": "${K}"},\n    json={"numbers": "0241234567, 0551234569, 0538122730"}\n)\nprint(res.json())`,
       php: `<?php\n$payload = json_encode(["numbers" => "0241234567, 0551234569, 0538122730"]);\n$ch = curl_init("${BASE_URL}/purchases/submit-numbers");\ncurl_setopt_array($ch, [\n    CURLOPT_POST => true,\n    CURLOPT_POSTFIELDS => $payload,\n    CURLOPT_HTTPHEADER => [\n        "Content-Type: application/json",\n        "X-API-Key: ${K}"\n    ],\n    CURLOPT_RETURNTRANSFER => true,\n]);\necho curl_exec($ch);`,
     },
+    gateway_init: {
+      curl: `TS=$(date +%s)\nNONCE=$(uuidgen)\nPATH_STR="/v1/initialize"\nBODY='{"client_reference":"ORD-1001","amount":50.00,"payment_phone":"0241234567","payment_network":"MTN","description":"Order #1001"}'\nSIG=$(printf "%s" "$TS.$NONCE.POST.$PATH_STR.$BODY" | openssl dgst -sha256 -hmac "$SWIFTDATA_WEBHOOK_SECRET" -hex | awk '{print $2}')\n\ncurl -X POST "${GATEWAY_BASE_URL}$PATH_STR" \\\n  -H "Authorization: Bearer swft_gsk_live_xxxxxxxxxxxxxxxx" \\\n  -H "X-Swift-Timestamp: $TS" \\\n  -H "X-Swift-Nonce: $NONCE" \\\n  -H "X-Swift-Signature: $SIG" \\\n  -H "Content-Type: application/json" \\\n  -d "$BODY"`,
+      node: `import crypto from "node:crypto";\n\nconst path = "/v1/initialize";\nconst body = JSON.stringify({\n  client_reference: "ORD-1001",\n  amount: 50.00, // Base GHS amount — customer pays Paystack fee on top\n  redirect_url: "https://myshop.com/checkout/complete", // Must match allowed_domains\n  // OR pass payment_phone + payment_network ("MTN" | "TELECEL" | "AIRTELTIGO") for direct MoMo prompt\n  customer_email: "customer@myshop.com",\n  description: "Order #1001",\n});\n\nconst timestamp = String(Math.floor(Date.now() / 1000));\nconst nonce = crypto.randomUUID();\nconst signature = crypto\n  .createHmac("sha256", process.env.SWIFTDATA_WEBHOOK_SECRET)\n  .update(\`\${timestamp}.\${nonce}.POST.\${path}.\${body}\`)\n  .digest("hex");\n\nconst res = await fetch(\`${GATEWAY_BASE_URL}\${path}\`, {\n  method: "POST",\n  headers: {\n    "Content-Type": "application/json",\n    Authorization: \`Bearer \${process.env.SWIFTDATA_GATEWAY_KEY}\`,\n    "X-Swift-Timestamp": timestamp,\n    "X-Swift-Nonce": nonce,\n    "X-Swift-Signature": signature,\n  },\n  body,\n});\nconst data = await res.json();`,
+      python: `import hmac, hashlib, json, time, uuid, os, requests\n\npath = "/v1/initialize"\nbody = json.dumps({\n    "client_reference": "ORD-1001",\n    "amount": 50.00,\n    "redirect_url": "https://myshop.com/checkout/complete",\n    "customer_email": "customer@myshop.com",\n    "description": "Order #1001",\n}, separators=(",", ":"))\n\nts = str(int(time.time()))\nnonce = str(uuid.uuid4())\nmsg = f"{ts}.{nonce}.POST.{path}.{body}".encode()\nsig = hmac.new(os.environ["SWIFTDATA_WEBHOOK_SECRET"].encode(), msg, hashlib.sha256).hexdigest()\n\nres = requests.post(\n    f"${GATEWAY_BASE_URL}{path}",\n    headers={\n        "Content-Type": "application/json",\n        "Authorization": f"Bearer {os.environ['SWIFTDATA_GATEWAY_KEY']}",\n        "X-Swift-Timestamp": ts,\n        "X-Swift-Nonce": nonce,\n        "X-Swift-Signature": sig,\n    },\n    data=body,\n)\nprint(res.json())`,
+      php: `<?php\n$path = "/v1/initialize";\n$body = json_encode([\n    "client_reference" => "ORD-1001",\n    "amount" => 50.00,\n    "payment_phone" => "0241234567",\n    "payment_network" => "MTN",\n    "description" => "Order #1001",\n]);\n$ts = (string) time();\n$nonce = bin2hex(random_bytes(16));\n$sig = hash_hmac("sha256", "{$ts}.{$nonce}.POST.{$path}.{$body}", getenv("SWIFTDATA_WEBHOOK_SECRET"));\n\n$ch = curl_init("${GATEWAY_BASE_URL}" . $path);\ncurl_setopt_array($ch, [\n    CURLOPT_POST => true,\n    CURLOPT_POSTFIELDS => $body,\n    CURLOPT_RETURNTRANSFER => true,\n    CURLOPT_HTTPHEADER => [\n        "Content-Type: application/json",\n        "Authorization: Bearer " . getenv("SWIFTDATA_GATEWAY_KEY"),\n        "X-Swift-Timestamp: {$ts}",\n        "X-Swift-Nonce: {$nonce}",\n        "X-Swift-Signature: {$sig}",\n    ],\n]);\necho curl_exec($ch);`,
+    },
+    gateway_status: {
+      curl: `REF="SWFT_COL_a3f2b1c0-d4e5-6789-ab01-cd2345ef6789"\nTS=$(date +%s)\nNONCE=$(uuidgen)\nPATH_STR="/v1/status/$REF"\nSIG=$(printf "%s" "$TS.$NONCE.GET.$PATH_STR." | openssl dgst -sha256 -hmac "$SWIFTDATA_WEBHOOK_SECRET" -hex | awk '{print $2}')\n\ncurl -X GET "${GATEWAY_BASE_URL}$PATH_STR" \\\n  -H "Authorization: Bearer swft_gsk_live_xxxxxxxxxxxxxxxx" \\\n  -H "X-Swift-Timestamp: $TS" \\\n  -H "X-Swift-Nonce: $NONCE" \\\n  -H "X-Swift-Signature: $SIG"`,
+      node: `import crypto from "node:crypto";\n\nconst path = \`/v1/status/\${encodeURIComponent(reference)}\`;\nconst timestamp = String(Math.floor(Date.now() / 1000));\nconst nonce = crypto.randomUUID();\nconst signature = crypto\n  .createHmac("sha256", process.env.SWIFTDATA_WEBHOOK_SECRET)\n  .update(\`\${timestamp}.\${nonce}.GET.\${path}.\`) // empty raw body for GET\n  .digest("hex");\n\nconst res = await fetch(\`${GATEWAY_BASE_URL}\${path}\`, {\n  headers: {\n    Authorization: \`Bearer \${process.env.SWIFTDATA_GATEWAY_KEY}\`,\n    "X-Swift-Timestamp": timestamp,\n    "X-Swift-Nonce": nonce,\n    "X-Swift-Signature": signature,\n  },\n});\nconst { data } = await res.json();`,
+      python: `import hmac, hashlib, time, uuid, os, requests\n\npath = f"/v1/status/{reference}"\nts = str(int(time.time()))\nnonce = str(uuid.uuid4())\nsig = hmac.new(\n    os.environ["SWIFTDATA_WEBHOOK_SECRET"].encode(),\n    f"{ts}.{nonce}.GET.{path}.".encode(),\n    hashlib.sha256,\n).hexdigest()\n\nres = requests.get(\n    f"${GATEWAY_BASE_URL}{path}",\n    headers={\n        "Authorization": f"Bearer {os.environ['SWIFTDATA_GATEWAY_KEY']}",\n        "X-Swift-Timestamp": ts,\n        "X-Swift-Nonce": nonce,\n        "X-Swift-Signature": sig,\n    },\n)\nprint(res.json())`,
+      php: `<?php\n$path = "/v1/status/" . urlencode($reference);\n$ts = (string) time();\n$nonce = bin2hex(random_bytes(16));\n$sig = hash_hmac("sha256", "{$ts}.{$nonce}.GET.{$path}.", getenv("SWIFTDATA_WEBHOOK_SECRET"));\n\n$ch = curl_init("${GATEWAY_BASE_URL}" . $path);\ncurl_setopt_array($ch, [\n    CURLOPT_RETURNTRANSFER => true,\n    CURLOPT_HTTPHEADER => [\n        "Authorization: Bearer " . getenv("SWIFTDATA_GATEWAY_KEY"),\n        "X-Swift-Timestamp: {$ts}",\n        "X-Swift-Nonce: {$nonce}",\n        "X-Swift-Signature: {$sig}",\n    ],\n]);\necho curl_exec($ch);`,
+    },
+    gateway_webhook: {
+      curl: `# Outbound Gateway Webhooks include:\n# X-Swift-Webhook-Signature: t=1800000000,v1=<hmac_sha256_hex>\n# X-Swift-Event: collection.success | collection.settled | collection.failed | collection.disputed\n# X-Swift-Delivery-Id: <uuid>\n#\n# Compute: HMAC_SHA256(SWIFTDATA_WEBHOOK_SECRET, "\${t}.\${rawBody}")\n# Compare in constant time against v1.`,
+      node: `import crypto from "node:crypto";\n\napp.post("/webhooks/swiftdata-gateway", express.raw({ type: "application/json" }), (req, res) => {\n  const rawBody = req.body.toString();\n  const header = String(req.headers["x-swift-webhook-signature"] || "");\n  const parts = Object.fromEntries(header.split(",").map((p) => p.split("=")));\n\n  const expected = crypto\n    .createHmac("sha256", process.env.SWIFTDATA_WEBHOOK_SECRET)\n    .update(\`\${parts.t}.\${rawBody}\`)\n    .digest("hex");\n\n  if (!parts.v1 || !crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(parts.v1))) {\n    return res.status(401).send("Invalid signature");\n  }\n\n  const event = JSON.parse(rawBody);\n  if (event.event === "collection.success" || event.event === "collection.settled") {\n    // Mark order paid in your database using event.data.client_reference\n  }\n  res.sendStatus(200);\n});`,
+      python: `import hmac, hashlib\nfrom flask import Flask, request, abort\n\n@app.route("/webhooks/swiftdata-gateway", methods=["POST"])\ndef gateway_webhook():\n    raw_body = request.get_data(as_text=True)\n    header = request.headers.get("X-Swift-Webhook-Signature", "")\n    parts = dict(item.split("=", 1) for item in header.split(",") if "=" in item)\n    expected = hmac.new(\n        SWIFTDATA_WEBHOOK_SECRET.encode(),\n        f"{parts.get('t', '')}.{raw_body}".encode(),\n        hashlib.sha256,\n    ).hexdigest()\n    if not hmac.compare_digest(expected, parts.get("v1", "")):\n        abort(401)\n    event = request.json\n    print(event["event"], event["data"]["client_reference"])\n    return "", 200`,
+      php: `<?php\n$rawBody = file_get_contents("php://input");\n$header = $_SERVER["HTTP_X_SWIFT_WEBHOOK_SIGNATURE"] ?? "";\nparse_str(str_replace(",", "&", $header), $parts);\n$expected = hash_hmac("sha256", ($parts["t"] ?? "") . "." . $rawBody, getenv("SWIFTDATA_WEBHOOK_SECRET"));\n\nif (!hash_equals($expected, $parts["v1"] ?? "")) {\n    http_response_code(401);\n    exit("Invalid signature");\n}\n$event = json_decode($rawBody, true);\necho $event["event"];`,
+    },
   };
 };
 
@@ -198,6 +217,9 @@ const RESPONSES: Record<string, string> = {
   verify_beneficiary_not_exists: `{\n  "success": true,\n  "exists": false,\n  "error": "Not on beneficiary list",\n  "message": "0241234567 is not added to our beneficiary list"\n}`,
   verify_beneficiary_offline: `{\n  "success": false,\n  "exists": false,\n  "error": "Verification service unavailable",\n  "message": "MTN beneficiary verification is currently offline. Please try again shortly."\n}`,
   submit_numbers_ok: `{\n  "success": true,\n  "data": {\n    "submitted": 3,\n    "numbers": [\n      "0241234567",\n      "0551234569",\n      "0538122730"\n    ],\n    "invalid": [],\n    "message": "3 number(s) submitted for beneficiary approval"\n  }\n}`,
+  gateway_init_ok: `{\n  "success": true,\n  "data": {\n    "id": "9f8c2d10-...",\n    "reference": "SWFT_COL_a3f2b1c0-d4e5-6789-ab01-cd2345ef6789",\n    "client_reference": "ORD-1001",\n    "status": "pending",\n    "currency": "GHS",\n    "channel": "mobile_money",\n    "amount": {\n      "base": 50.00,\n      "fee": 1.50,\n      "platform_fee": 0.00,\n      "total": 51.50,\n      "net_settlement": 50.00\n    },\n    "next_action": "redirect",\n    "authorization_url": "https://checkout.paystack.com/xxxxxxxx",\n    "message": "Redirect the customer to authorization_url to complete payment."\n  }\n}`,
+  gateway_status_ok: `{\n  "success": true,\n  "data": {\n    "reference": "SWFT_COL_a3f2b1c0-d4e5-6789-ab01-cd2345ef6789",\n    "client_reference": "ORD-1001",\n    "status": "settled",\n    "currency": "GHS",\n    "channel": "mobile_money",\n    "amount": {\n      "base": 50.00,\n      "fee": 1.50,\n      "platform_fee": 0.00,\n      "total": 51.50,\n      "net_settlement": 50.00\n    },\n    "paid_at": "2026-11-18T22:10:15.000Z",\n    "settled_at": "2026-11-18T22:10:16.000Z"\n  }\n}`,
+  gateway_webhook_event: `{\n  "event": "collection.settled",\n  "timestamp": "2026-11-18T22:10:16.000Z",\n  "data": {\n    "reference": "SWFT_COL_a3f2b1c0-d4e5-6789-ab01-cd2345ef6789",\n    "client_reference": "ORD-1001",\n    "status": "settled",\n    "currency": "GHS",\n    "amount": {\n      "base": 50.00,\n      "fee": 1.50,\n      "total": 51.50,\n      "net_settlement": 50.00\n    }\n  }\n}`,
 };
 
 
@@ -318,6 +340,7 @@ const NAV_ITEMS = [
   { id: "sms",             label: "Send SMS",            icon: Zap },
   { id: "orders",          label: "Order History",       icon: List },
   { id: "status",          label: "Order Status",        icon: Activity },
+  { id: "payment-collection", label: "Payment Collection", icon: CreditCard },
   { id: "webhooks",        label: "Webhooks",            icon: Globe },
   { id: "rate-limits",     label: "Rate Limits",         icon: Gauge },
   { id: "errors",          label: "Error Reference",     icon: AlertTriangle },
@@ -1226,6 +1249,108 @@ const APIDocumentation = () => {
                 <div className="grid lg:grid-cols-2 gap-6">
                   <ResponseBlock code={RESPONSES.order_status_404} variant="error" label="Response · 404 Not Found" />
                   <ResponseBlock code={RESPONSES.order_status_500} variant="error" label="Response · 500 Server Error" />
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* ── Payment Collection Gateway ─────────────────────────── */}
+          <section>
+            <SectionAnchor id="payment-collection" />
+            <SectionHeader icon={CreditCard} title="Payment Collection Gateway" />
+            <p className="text-white/45 text-sm mb-6 md:ml-11 max-w-2xl">
+              Accept secure Mobile Money & Paystack payments directly on your own website or app using SwiftData&apos;s isolated Payment Gateway.
+              The customer pays the Paystack processing fee on top of your base amount, and net funds settle to your configured SwiftData wallet.
+              Apply and manage your gateway keys, allowed domains, and IP whitelist in{" "}
+              <Link to="/dashboard/gateway" className="text-sky-400 hover:underline font-semibold">
+                Dashboard → Payment Gateway
+              </Link>.
+            </p>
+
+            <div className="md:ml-11 space-y-6">
+              {/* Base URL & Security Headers */}
+              <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs font-bold text-emerald-300 uppercase tracking-wider flex items-center gap-2">
+                    <Shield className="w-4 h-4" /> Gateway Base URL &amp; Required Security Headers
+                  </span>
+                  <code className="text-xs font-mono text-emerald-200 bg-black/40 px-2.5 py-1 rounded-lg">{GATEWAY_BASE_URL}</code>
+                </div>
+                <p className="text-xs text-white/55 leading-relaxed">
+                  Every server-to-server request must be signed with HMAC-SHA256 using your <code className="text-emerald-300">swft_whsec_...</code> secret over the canonical string{" "}
+                  <code className="text-amber-300">{`\${timestamp}.\${nonce}.\${METHOD}.\${path}.\${rawBody}`}</code>. Requests older than ±5 minutes or with reused nonces are rejected.
+                </p>
+                <div className="rounded-lg border border-white/10 overflow-hidden bg-black/20">
+                  <ParamRow name="Authorization" type="header" required desc="Bearer swft_gsk_live_... (generated in Dashboard → Payment Gateway; never expose in browser JS)" />
+                  <ParamRow name="X-Swift-Timestamp" type="header" required desc="Current Unix timestamp in seconds (must be within ±300 seconds of server time)" />
+                  <ParamRow name="X-Swift-Nonce" type="header" required desc="Unique single-use string per request (e.g. UUID v4). Duplicate nonces return HTTP 409" />
+                  <ParamRow name="X-Swift-Signature" type="header" required desc="64-char hex HMAC-SHA256 digest of `${timestamp}.${nonce}.${METHOD}.${path}.${rawBody}`" />
+                </div>
+              </div>
+
+              {/* Endpoint 1: POST /v1/initialize */}
+              <div className="space-y-4">
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <MethodBadge method="POST" />
+                  <code className="text-sm font-mono font-bold text-white/90">/v1/initialize</code>
+                  <Badge variant="outline" className="text-[10px] border-emerald-500/30 text-emerald-300">MoMo STK Push &amp; Hosted Checkout</Badge>
+                </div>
+                <p className="text-xs text-white/45">
+                  Initialize a payment collection. Supply <code className="text-sky-300">payment_phone</code> + <code className="text-sky-300">payment_network</code> for an instant Mobile Money prompt on the customer&apos;s phone, OR supply <code className="text-sky-300">redirect_url</code> (matching your approved <code className="text-amber-300">allowed_domains</code>) to receive a Paystack hosted checkout <code className="text-sky-300">authorization_url</code>.
+                </p>
+
+                <div className="rounded-xl border border-white/8 overflow-hidden">
+                  <div className="px-4 py-2.5 bg-white/[0.03] border-b border-white/5">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-white/25">Body Parameters</span>
+                  </div>
+                  <ParamRow name="client_reference" type="string" required desc="Your unique order/invoice ID (1-100 chars). Enforces strict idempotency per merchant." />
+                  <ParamRow name="amount" type="number" required desc="Base amount in GHS (>= 1.00, within your merchant per-tx & daily/monthly caps). Customer pays Paystack fee on top." />
+                  <ParamRow name="redirect_url" type="string" required={false} desc="HTTPS return URL for hosted checkout. Must belong to one of your approved allowed_domains." />
+                  <ParamRow name="payment_phone" type="string" required={false} desc="Customer Ghana MoMo number (e.g. 0241234567) for direct STK push prompt." />
+                  <ParamRow name="payment_network" type="string" required={false} desc="Required with payment_phone: MTN, TELECEL, or AIRTELTIGO." />
+                  <ParamRow name="customer_email" type="string" required={false} desc="Customer email for receipt/Paystack reference." />
+                  <ParamRow name="description" type="string" required={false} desc="Short payment description (max 140 chars)." />
+                  <ParamRow name="metadata" type="object" required={false} desc="Optional JSON object echoed back on status queries." />
+                </div>
+
+                <div className="grid lg:grid-cols-2 gap-6">
+                  <CodeBlock code={snippets.gateway_init[activeLang]} label={`Request · ${LANG_LABELS[activeLang]}`} />
+                  <ResponseBlock code={RESPONSES.gateway_init_ok} label="Response · 201 Created" />
+                </div>
+              </div>
+
+              {/* Endpoint 2 & 3: Status, OTP, List */}
+              <div className="space-y-4 pt-2">
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <MethodBadge method="GET" />
+                  <code className="text-sm font-mono font-bold text-white/90">/v1/status/:reference</code>
+                  <span className="text-xs text-white/30">or</span>
+                  <MethodBadge method="POST" />
+                  <code className="text-sm font-mono font-bold text-white/90">/v1/verify</code>
+                </div>
+                <p className="text-xs text-white/45">
+                  Verify a collection by SwiftData <code className="text-sky-300">reference</code> (<code className="text-white/60">SWFT_COL_...</code>) or your <code className="text-sky-300">client_reference</code>. If still <code className="text-amber-300">pending</code>, SwiftData performs a live server-side verification against Paystack and settles atomically if paid.
+                  Additional endpoints: <code className="text-sky-300">POST /v1/submit-otp</code> (<code className="text-white/60">{`{ reference, otp }`}</code> when <code className="text-amber-300">next_action === "submit_otp"</code>) and <code className="text-sky-300">GET /v1/collections?limit=25&amp;offset=0&amp;status=settled</code>.
+                </p>
+                <div className="grid lg:grid-cols-2 gap-6">
+                  <CodeBlock code={snippets.gateway_status[activeLang]} label={`Verify Status · ${LANG_LABELS[activeLang]}`} />
+                  <ResponseBlock code={RESPONSES.gateway_status_ok} label="Response · 200 OK" />
+                </div>
+              </div>
+
+              {/* Gateway Webhook Verification */}
+              <div className="space-y-4 pt-2">
+                <div className="flex items-center gap-2">
+                  <Lock className="w-4 h-4 text-emerald-400" />
+                  <h3 className="text-sm font-bold text-white">Verifying Payment Collection Webhooks</h3>
+                </div>
+                <p className="text-xs text-white/45">
+                  SwiftData delivers signed POST webhooks for <code className="text-emerald-300">collection.success</code>, <code className="text-emerald-300">collection.settled</code>, <code className="text-red-300">collection.failed</code>, and <code className="text-rose-300">collection.disputed</code> with header{" "}
+                  <code className="text-amber-300">X-Swift-Webhook-Signature: t=&lt;unix_ts&gt;,v1=&lt;hmac_sha256&gt;</code>. Always verify the signature before fulfilling an order on your site. Failed deliveries retry automatically with exponential backoff and can be replayed from your dashboard.
+                </p>
+                <div className="grid lg:grid-cols-2 gap-6">
+                  <CodeBlock code={snippets.gateway_webhook[activeLang]} label={`Verify Webhook · ${LANG_LABELS[activeLang]}`} />
+                  <ResponseBlock code={RESPONSES.gateway_webhook_event} label="Webhook Payload Example" />
                 </div>
               </div>
             </div>
