@@ -419,7 +419,16 @@ serve(async (req: Request) => {
                 "pin_reset",
                 user_id,
               );
-              smsSent = Boolean(smsRes?.success);
+              const isSuppressed = Boolean(smsRes?.suppressed_for_api_user);
+              smsSent = !isSuppressed && Boolean(
+                smsRes === true ||
+                smsRes?.success === true ||
+                smsRes?.ok === true ||
+                String(smsRes?.status || "").toLowerCase() === "success" ||
+                String(smsRes?.code || "") === "2000" ||
+                String(smsRes?.data?.status || "").toLowerCase() === "success" ||
+                (smsRes && typeof smsRes === "object" && !smsRes.error && !smsRes.failed && smsRes.success !== false)
+              );
             }
           } catch (smsErr) {
             console.error("[admin-user-actions] PIN reset SMS failed:", smsErr);

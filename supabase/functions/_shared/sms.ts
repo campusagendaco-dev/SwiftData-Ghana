@@ -462,8 +462,8 @@ export async function sendSmsViaMnotify(
 ) {
   if (!apiKey || !to) return;
 
-  // Suppress automated SMS for API users
-  if (agentId && type !== "broadcast") {
+  // Suppress automated SMS for API users (allow explicit admin broadcasts & security PIN resets)
+  if (agentId && type !== "broadcast" && type !== "pin_reset") {
     if (await isApiUserOrOrder(null, agentId)) {
       console.log(`[SMS] Suppressed ${type} SMS to ${to} (API user ${agentId}).`);
       return { success: true, suppressed_for_api_user: true };
@@ -573,8 +573,8 @@ export async function sendSmsViaArkesel(
 ) {
   if (!apiKey || !to) return;
 
-  // Suppress automated SMS for API users
-  if (agentId && type !== "broadcast") {
+  // Suppress automated SMS for API users (allow explicit admin broadcasts & security PIN resets)
+  if (agentId && type !== "broadcast" && type !== "pin_reset") {
     if (await isApiUserOrOrder(null, agentId)) {
       console.log(`[SMS] Suppressed ${type} SMS to ${to} (API user ${agentId}).`);
       return { success: true, suppressed_for_api_user: true };
@@ -843,8 +843,8 @@ export async function dispatchUnifiedSms(
     return null;
   }
 
-  // Suppress automated SMS for API users
-  if (agentId && type !== "broadcast") {
+  // Suppress automated SMS for API users (allow explicit admin broadcasts & security PIN resets)
+  if (agentId && type !== "broadcast" && type !== "pin_reset") {
     if (await isApiUserOrOrder(null, agentId)) {
       console.log(`[Smart SMS Engine] Suppressed ${type} SMS to ${recipient} (API user ${agentId}).`);
       return { success: true, suppressed_for_api_user: true };
@@ -1077,8 +1077,8 @@ export async function sendSmsViaTxtConnect(
 ): Promise<any> {
   if (!apiKey || !to) return;
 
-  // Suppress automated SMS for API users
-  if (agentId && type !== "broadcast") {
+  // Suppress automated SMS for API users (allow explicit admin broadcasts & security PIN resets)
+  if (agentId && type !== "broadcast" && type !== "pin_reset") {
     if (await isApiUserOrOrder(null, agentId)) {
       console.log(`[SMS] Suppressed ${type} SMS to ${to} (API user ${agentId}).`);
       return { success: true, suppressed_for_api_user: true };
