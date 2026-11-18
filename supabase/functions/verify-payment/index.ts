@@ -293,8 +293,22 @@ async function fulfillOrder(
     console.error("[verify-payment] Push notification failed:", e);
   }
 
-  // Trigger SMS for Customer
-  if (order.customer_phone) {
+  // Trigger SMS & WhatsApp Receipt for Customer (skip for API orders and API users)
+  const isApiOrderFlow =
+    String(order.order_type || "").toLowerCase() === "api" ||
+    String(order.channel || "").toLowerCase() === "api" ||
+    String(order.payment_method || "").toLowerCase() === "api_wallet";
+  let isApiBuyer = isApiOrderFlow;
+  if (!isApiBuyer && order.agent_id && order.agent_id !== "00000000-0000-0000-0000-000000000000") {
+    const { data: buyerProf } = await supabaseAdmin
+      .from("profiles")
+      .select("api_access_enabled")
+      .eq("user_id", order.agent_id)
+      .maybeSingle();
+    if (buyerProf?.api_access_enabled === true) isApiBuyer = true;
+  }
+
+  if (order.customer_phone && !isApiBuyer) {
     try {
       const isUtility = order.order_type === "utility";
       const networkName = order.network || "";

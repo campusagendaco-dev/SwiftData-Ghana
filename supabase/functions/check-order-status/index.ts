@@ -712,11 +712,24 @@ serve(async (req: Request) => {
       }
     }
 
-    // 6. Send Live Status SMS to user with WhatsApp Channel & Support Number
+    // 6. Send Live Status SMS to user with WhatsApp Channel & Support Number (disabled for API orders/users)
     let smsSent = false;
-    const shouldSendSms = body.send_sms !== false && !isAdmin;
+    const isApiOrder =
+      String(order.order_type || "").toLowerCase() === "api" ||
+      String(order.channel || "").toLowerCase() === "api" ||
+      String(order.payment_method || "").toLowerCase() === "api_wallet";
+    let isApiOwner = isApiOrder;
+    if (!isApiOwner && order.agent_id && order.agent_id !== "00000000-0000-0000-0000-000000000000") {
+      const { data: ownerProf } = await supabaseAdmin
+        .from("profiles")
+        .select("api_access_enabled")
+        .eq("user_id", order.agent_id)
+        .maybeSingle();
+      if (ownerProf?.api_access_enabled === true) isApiOwner = true;
+    }
+    const shouldSendSms = !isApiOwner && body.send_sms !== false && !isAdmin;
 
-    if (shouldSendSms || (isAdmin && body.send_sms === true)) {
+    if (!isApiOwner && (shouldSendSms || (isAdmin && body.send_sms === true))) {
       try {
         const rawTargetPhone = order.customer_phone || (authUser?.phone);
         const targetPhone = normalizePhone(rawTargetPhone);

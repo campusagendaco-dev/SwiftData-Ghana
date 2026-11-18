@@ -248,7 +248,8 @@ function stripHtml(value: string): string {
 
 async function sendWalletTopupSms(supabaseAdmin: any, userId: string, amount: number) {
   try {
-    const { data: profile } = await supabaseAdmin.from("profiles").select("phone").eq("user_id", userId).maybeSingle();
+    const { data: profile } = await supabaseAdmin.from("profiles").select("phone, api_access_enabled").eq("user_id", userId).maybeSingle();
+    if (profile?.api_access_enabled) return;
     const { data: wallet } = await supabaseAdmin.from("wallets").select("balance").eq("agent_id", userId).maybeSingle();
 
     if (!profile?.phone) return;
@@ -263,7 +264,7 @@ async function sendWalletTopupSms(supabaseAdmin: any, userId: string, amount: nu
       balance: (wallet?.balance || 0).toFixed(2)
     });
 
-    await sendSmsViaTxtConnect(apiKey, senderId, recipient, message);
+    await sendSmsViaTxtConnect(apiKey, senderId, recipient, message, "wallet_topup", userId);
   } catch (error) {
     console.error("sendWalletTopupSms error:", error);
   }
@@ -639,11 +640,11 @@ serve(async (req: Request) => {
             // Import sendWithdrawalCompletedSms is in admin-user-actions only; call inline here
             const { data: profile } = await supabaseAdmin
               .from("profiles")
-              .select("momo_number")
+              .select("momo_number, api_access_enabled")
               .eq("user_id", withdrawal.agent_id)
               .maybeSingle();
 
-            const phone = profile?.momo_number;
+            const phone = profile?.api_access_enabled ? null : profile?.momo_number;
             if (phone) {
               try {
                 const smsConfig = await getSmsConfig(supabaseAdmin);
@@ -1144,11 +1145,11 @@ serve(async (req: Request) => {
       try {
         const { data: agentProfile } = await supabaseAdmin
           .from("profiles")
-          .select("phone")
+          .select("phone, api_access_enabled")
           .eq("user_id", existingOrder.agent_id)
           .maybeSingle();
 
-        if (agentProfile?.phone) {
+        if (agentProfile?.phone && !agentProfile?.api_access_enabled) {
           const smsConfig = await getSmsConfig(supabaseAdmin, existingOrder.agent_id);
           if (smsConfig.apiKey) {
             const agentMsg = `Your MTN Mash Up order has been received and processed. Please note that this package might take up to 1 hour or might be instant.`;

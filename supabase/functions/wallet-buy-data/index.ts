@@ -619,30 +619,32 @@ serve(async (req: Request) => {
       (globalThis as any).EdgeRuntime.waitUntil(triggerPromise);
     }
 
-    // 3. TRIGGER SMS & WHATSAPP RECEIPT (NON-BLOCKING)
-    sendPaymentSms(supabaseAdmin, customer_phone, "payment_success", {
-      phone: customer_phone,
-      network: normalizedNet,
-      package: `${networkRaw} ${package_size}`,
-      amount: amountNum,
-      id: orderId
-    }, user.id).catch(e => console.error("[SMS-ERROR]", e));
+    // 3. TRIGGER SMS & WHATSAPP RECEIPT (NON-BLOCKING — skipped for API users)
+    if (!agentProfile?.api_access_enabled) {
+      sendPaymentSms(supabaseAdmin, customer_phone, "payment_success", {
+        phone: customer_phone,
+        network: normalizedNet,
+        package: `${networkRaw} ${package_size}`,
+        amount: amountNum,
+        id: orderId
+      }, user.id).catch(e => console.error("[SMS-ERROR]", e));
 
-    sendWhatsAppOrderReceipt(customer_phone, {
-      id: orderId,
-      network: normalizedNet,
-      package_size: package_size,
-      amount: resolvedChargeAmount,
-      customer_phone: customer_phone
-    }).catch(e => console.error("[WA-PUSH-RECEIPT-ERROR]", e));
+      sendWhatsAppOrderReceipt(customer_phone, {
+        id: orderId,
+        network: normalizedNet,
+        package_size: package_size,
+        amount: resolvedChargeAmount,
+        customer_phone: customer_phone
+      }).catch(e => console.error("[WA-PUSH-RECEIPT-ERROR]", e));
 
-    if (normalizedNet === "MTN Mash Up" && agentProfile?.phone) {
-      getSmsConfig(supabaseAdmin, user.id).then(async (smsConfig) => {
-        if (smsConfig.apiKey) {
-          const agentMsg = `Your MTN Mash Up order has been received and automatically routed for instant delivery via DataMart.`;
-          await sendSmsViaTxtConnect(smsConfig.apiKey, smsConfig.senderId, agentProfile.phone, agentMsg, "mashup_agent_alert", user.id);
-        }
-      }).catch(e => console.error("[MASHUP-AGENT-SMS-ERROR]", e));
+      if (normalizedNet === "MTN Mash Up" && agentProfile?.phone) {
+        getSmsConfig(supabaseAdmin, user.id).then(async (smsConfig) => {
+          if (smsConfig.apiKey) {
+            const agentMsg = `Your MTN Mash Up order has been received and automatically routed for instant delivery via DataMart.`;
+            await sendSmsViaTxtConnect(smsConfig.apiKey, smsConfig.senderId, agentProfile.phone, agentMsg, "mashup_agent_alert", user.id);
+          }
+        }).catch(e => console.error("[MASHUP-AGENT-SMS-ERROR]", e));
+      }
     }
 
     // 4. AUTO-BRIDGE CHECK (NON-BLOCKING)

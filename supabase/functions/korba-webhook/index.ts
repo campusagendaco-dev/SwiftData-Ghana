@@ -33,7 +33,8 @@ async function triggerPushNotification(supabaseAdmin: any, payload: { user_id: s
 
 async function sendWalletTopupSms(supabaseAdmin: any, userId: string, amount: number) {
   try {
-    const { data: profile } = await supabaseAdmin.from("profiles").select("phone").eq("user_id", userId).maybeSingle();
+    const { data: profile } = await supabaseAdmin.from("profiles").select("phone, api_access_enabled").eq("user_id", userId).maybeSingle();
+    if (profile?.api_access_enabled) return;
     const { data: wallet } = await supabaseAdmin.from("wallets").select("balance").eq("agent_id", userId).maybeSingle();
     
     if (!profile?.phone) return;
@@ -48,7 +49,7 @@ async function sendWalletTopupSms(supabaseAdmin: any, userId: string, amount: nu
       balance: (wallet?.balance || 0).toFixed(2)
     });
 
-    await sendSmsViaTxtConnect(apiKey, senderId, recipient, message);
+    await sendSmsViaTxtConnect(apiKey, senderId, recipient, message, "wallet_topup", userId);
   } catch (error) {
     console.error("sendWalletTopupSms error in korba-webhook:", error);
   }

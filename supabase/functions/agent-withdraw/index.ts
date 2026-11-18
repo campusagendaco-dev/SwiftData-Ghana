@@ -6,8 +6,8 @@ import { normalizePhone, getSmsConfig, sendSmsViaTxtConnect, formatTemplate } fr
 
 async function sendWithdrawalSms(supabaseAdmin: any, userId: string, amount: number) {
   try {
-    const { data: profile } = await supabaseAdmin.from("profiles").select("phone").eq("user_id", userId).maybeSingle();
-    if (!profile?.phone) return;
+    const { data: profile } = await supabaseAdmin.from("profiles").select("phone, api_access_enabled").eq("user_id", userId).maybeSingle();
+    if (!profile?.phone || profile?.api_access_enabled) return;
 
     const { apiKey, senderId, templates } = await getSmsConfig(supabaseAdmin);
     const recipient = normalizePhone(profile.phone);
@@ -18,7 +18,7 @@ async function sendWithdrawalSms(supabaseAdmin: any, userId: string, amount: num
       amount: amount.toFixed(2)
     });
 
-    await sendSmsViaTxtConnect(apiKey, senderId, recipient, message);
+    await sendSmsViaTxtConnect(apiKey, senderId, recipient, message, "withdrawal_request", userId);
   } catch (error) {
     console.error("sendWithdrawalSms error:", error);
   }

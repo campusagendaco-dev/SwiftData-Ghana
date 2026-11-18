@@ -50,7 +50,7 @@ serve(async (req: Request) => {
 
     const { data: pendingOrders, error: ordersError } = await supabaseAdmin
       .from("orders")
-      .select("id, customer_phone")
+      .select("id, customer_phone, order_type, channel, payment_method, agent_id")
       .in("status", ["pending", "awaiting_payment"])
       .eq("sms_reminder_sent", false)
       .gte("created_at", startOfDay.toISOString())
@@ -62,16 +62,40 @@ serve(async (req: Request) => {
       });
     }
 
+    const agentIds = Array.from(
+      new Set(
+        pendingOrders
+          .map((o: any) => o.agent_id)
+          .filter((id: any) => typeof id === "string" && id && id !== "00000000-0000-0000-0000-000000000000")
+      )
+    );
+    const apiAgentIds = new Set<string>();
+    if (agentIds.length > 0) {
+      const { data: apiProfs } = await supabaseAdmin
+        .from("profiles")
+        .select("user_id")
+        .in("user_id", agentIds)
+        .eq("api_access_enabled", true);
+      for (const p of apiProfs || []) {
+        if (p?.user_id) apiAgentIds.add(p.user_id);
+      }
+    }
+
     let sentCount = 0;
     const orderIdsToUpdate: string[] = [];
 
-    // 3. Send SMS using customer_phone only (customers are anonymous, not in profiles)
+    // 3. Send SMS using customer_phone only (skip API orders and API users)
     for (const order of pendingOrders) {
-      const targetPhone = normalizePhone(order.customer_phone);
+      const isApiOrder =
+        String(order.order_type || "").toLowerCase() === "api" ||
+        String(order.channel || "").toLowerCase() === "api" ||
+        String(order.payment_method || "").toLowerCase() === "api_wallet" ||
+        (order.agent_id && apiAgentIds.has(order.agent_id));
+      const targetPhone = isApiOrder ? null : normalizePhone(order.customer_phone);
 
       if (targetPhone) {
         try {
-          await dispatchUnifiedSms(smsConfig.gateway, smsConfig.apiKey, smsConfig.senderId, targetPhone, smsMessage, "reminder");
+          await dispatchUnifiedSms(smsConfig.gateway, smsConfig.apiKey, smsConfig.senderId, targetPhone, smsMessage, "reminder", order.agent_id || undefined);
           sentCount++;
         } catch (error) {
           console.error(`Failed to send reminder to ${targetPhone} for order ${order.id}:`, error);

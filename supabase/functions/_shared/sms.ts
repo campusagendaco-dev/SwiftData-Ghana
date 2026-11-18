@@ -483,6 +483,14 @@ export async function sendSmsViaMnotify(
   agentId?: string
 ) {
   if (!apiKey || !to) return;
+
+  // Suppress automated SMS for API users
+  if (agentId && type !== "broadcast") {
+    if (await isApiUserOrOrder(null, agentId)) {
+      console.log(`[SMS] Suppressed ${type} SMS to ${to} (API user ${agentId}).`);
+      return { success: true, suppressed_for_api_user: true };
+    }
+  }
   const endpoint = `https://api.mnotify.com/api/sms/quick?key=${encodeURIComponent(apiKey)}`;
   const cleanPhone = to.trim().replace(/[^\d+]/g, "");
   const payload = {
@@ -586,6 +594,14 @@ export async function sendSmsViaArkesel(
   agentId?: string
 ) {
   if (!apiKey || !to) return;
+
+  // Suppress automated SMS for API users
+  if (agentId && type !== "broadcast") {
+    if (await isApiUserOrOrder(null, agentId)) {
+      console.log(`[SMS] Suppressed ${type} SMS to ${to} (API user ${agentId}).`);
+      return { success: true, suppressed_for_api_user: true };
+    }
+  }
   const endpoint = "https://sms.arkesel.com/api/v2/sms/send";
   const cleanPhone = to.trim().replace(/[^\d+]/g, "");
   const payload = {
@@ -747,6 +763,75 @@ export async function sendBulkSmsViaHubtel(
 // In-memory deduplication cache (holds recent SMS hashes for 45s to prevent duplicate delivery)
 const recentSmsMap = new Map<string, number>();
 
+// Short-lived cache (60s) of API-enabled user IDs so SMS suppression adds negligible DB overhead
+const apiUserStatusCache = new Map<string, { isApi: boolean; expiresAt: number }>();
+const SMS_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export async function isApiUserOrOrder(
+  supabaseClient: any,
+  agentId?: string | null,
+  orderRef?: string | null
+): Promise<boolean> {
+  try {
+    let db = supabaseClient;
+    if (!db) {
+      const url = Deno.env.get("SUPABASE_URL") || "";
+      const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+      if (url && serviceKey) {
+        db = createClient(url, serviceKey);
+      }
+    }
+    if (!db) return false;
+
+    const checkUserId = async (uid?: string | null): Promise<boolean> => {
+      const cleanUid = (uid || "").trim();
+      if (!cleanUid || cleanUid === "00000000-0000-0000-0000-000000000000" || !SMS_UUID_RE.test(cleanUid)) {
+        return false;
+      }
+      const now = Date.now();
+      const cached = apiUserStatusCache.get(cleanUid);
+      if (cached && cached.expiresAt > now) {
+        return cached.isApi;
+      }
+      const { data: prof } = await db
+        .from("profiles")
+        .select("api_access_enabled")
+        .eq("user_id", cleanUid)
+        .maybeSingle();
+      const isApi = Boolean(prof?.api_access_enabled === true);
+      apiUserStatusCache.set(cleanUid, { isApi, expiresAt: now + 60_000 });
+      return isApi;
+    };
+
+    if (await checkUserId(agentId)) {
+      return true;
+    }
+
+    const cleanOrderId = (orderRef || "").trim();
+    if (cleanOrderId && SMS_UUID_RE.test(cleanOrderId)) {
+      const { data: ord } = await db
+        .from("orders")
+        .select("order_type, channel, payment_method, agent_id")
+        .eq("id", cleanOrderId)
+        .maybeSingle();
+      if (ord) {
+        const oType = String(ord.order_type || "").toLowerCase();
+        const oChan = String(ord.channel || "").toLowerCase();
+        const oPay = String(ord.payment_method || "").toLowerCase();
+        if (oType === "api" || oChan === "api" || oPay === "api_wallet") {
+          return true;
+        }
+        if (ord.agent_id && ord.agent_id !== agentId && (await checkUserId(ord.agent_id))) {
+          return true;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("[SMS API Guard] Failed to check API user/order status:", err);
+  }
+  return false;
+}
+
 function isDuplicateSms(recipient: string, type: string, body: string): boolean {
   const now = Date.now();
   // Simple hash for recipient + type + message body
@@ -778,6 +863,14 @@ export async function dispatchUnifiedSms(
   if (!recipient) {
     console.warn(`[Smart SMS Engine] Skipped dispatch to invalid Ghana/International recipient: ${to}`);
     return null;
+  }
+
+  // Suppress automated SMS for API users
+  if (agentId && type !== "broadcast") {
+    if (await isApiUserOrOrder(null, agentId)) {
+      console.log(`[Smart SMS Engine] Suppressed ${type} SMS to ${recipient} (API user ${agentId}).`);
+      return { success: true, suppressed_for_api_user: true };
+    }
   }
 
   // Smart Deduplication Guard
@@ -1005,6 +1098,14 @@ export async function sendSmsViaTxtConnect(
   gateway?: string
 ): Promise<any> {
   if (!apiKey || !to) return;
+
+  // Suppress automated SMS for API users
+  if (agentId && type !== "broadcast") {
+    if (await isApiUserOrOrder(null, agentId)) {
+      console.log(`[SMS] Suppressed ${type} SMS to ${to} (API user ${agentId}).`);
+      return { success: true, suppressed_for_api_user: true };
+    }
+  }
 
   let effectiveGateway = (gateway || "").toLowerCase().trim();
   if (!effectiveGateway) {
@@ -1396,6 +1497,17 @@ export async function sendPaymentSms(
   agentId?: string
 ) {
   try {
+    if (String(vars.order_type || "").toLowerCase() === "api" || String(vars.channel || "").toLowerCase() === "api") {
+      console.log(`[SMS] Suppressed ${type} SMS to ${customerPhone} (API channel order).`);
+      return;
+    }
+
+    const orderRefCandidate = String(vars.id || vars.order_id || vars.reference || "").trim();
+    if (await isApiUserOrOrder(supabaseAdmin, agentId, orderRefCandidate || null)) {
+      console.log(`[SMS] Suppressed ${type} SMS to ${customerPhone} (API user/order).`);
+      return;
+    }
+
     const { apiKey, senderId, templates, gateway, gatewayConfig } = await getSmsConfig(supabaseAdmin, agentId);
     const recipient = normalizePhone(customerPhone);
     

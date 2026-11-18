@@ -25,9 +25,10 @@ const json = (data: unknown, status = 200) =>
 async function sendManualCreditSms(userId: string, amount: number) {
   try {
     const [profileRes, smsConfig] = await Promise.all([
-      supabaseAdmin.from("profiles").select("phone").eq("user_id", userId).maybeSingle(),
+      supabaseAdmin.from("profiles").select("phone, api_access_enabled").eq("user_id", userId).maybeSingle(),
       getSmsConfig(supabaseAdmin),
     ]);
+    if (profileRes.data?.api_access_enabled) return;
     const recipient = normalizePhone(profileRes.data?.phone);
     if (!smsConfig.apiKey || !recipient) return;
     let message = "";
@@ -36,28 +37,15 @@ async function sendManualCreditSms(userId: string, amount: number) {
     } else {
       message = formatTemplate(smsConfig.templates.manual_credit, { amount: amount.toFixed(2) });
     }
-    await sendSmsViaTxtConnect(smsConfig.apiKey, smsConfig.senderId, recipient, message);
+    await sendSmsViaTxtConnect(smsConfig.apiKey, smsConfig.senderId, recipient, message, "manual_credit", userId);
   } catch (error) {
     console.error("sendManualCreditSms error:", error);
   }
 }
 
-async function sendManualApiCreditSms(userId: string, amount: number) {
-  try {
-    const [profileRes, smsConfig] = await Promise.all([
-      supabaseAdmin.from("profiles").select("phone").eq("user_id", userId).maybeSingle(),
-      getSmsConfig(supabaseAdmin),
-    ]);
-    const recipient = normalizePhone(profileRes.data?.phone);
-    if (!smsConfig.apiKey || !recipient) return;
-    const absAmount = Math.abs(amount).toFixed(2);
-    const message = amount < 0
-      ? `Your SwiftData API Wallet has been manually debited with GHS ${absAmount} by admin.`
-      : `Your SwiftData API Wallet has been manually credited with GHS ${absAmount} by admin. Thanks for your business.`;
-    await sendSmsViaTxtConnect(smsConfig.apiKey, smsConfig.senderId, recipient, message);
-  } catch (error) {
-    console.error("sendManualApiCreditSms error:", error);
-  }
+async function sendManualApiCreditSms(_userId: string, _amount: number) {
+  // SMS notifications are disabled for API users / API wallets.
+  return;
 }
 
 async function sha256Hex(input: string): Promise<string> {
@@ -68,13 +56,14 @@ async function sha256Hex(input: string): Promise<string> {
 async function sendWithdrawalCompletedSms(userId: string, amount: number) {
   try {
     const [profileRes, smsConfig] = await Promise.all([
-      supabaseAdmin.from("profiles").select("phone").eq("user_id", userId).maybeSingle(),
+      supabaseAdmin.from("profiles").select("phone, api_access_enabled").eq("user_id", userId).maybeSingle(),
       getSmsConfig(supabaseAdmin),
     ]);
+    if (profileRes.data?.api_access_enabled) return;
     const recipient = normalizePhone(profileRes.data?.phone);
     if (!smsConfig.apiKey || !recipient) return;
     const message = formatTemplate(smsConfig.templates.withdrawal_completed, { amount: amount.toFixed(2) });
-    await sendSmsViaTxtConnect(smsConfig.apiKey, smsConfig.senderId, recipient, message);
+    await sendSmsViaTxtConnect(smsConfig.apiKey, smsConfig.senderId, recipient, message, "withdrawal_completed", userId);
   } catch (error) {
     console.error("sendWithdrawalCompletedSms error:", error);
   }
