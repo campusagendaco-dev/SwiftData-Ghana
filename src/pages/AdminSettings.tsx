@@ -225,6 +225,8 @@ const AdminSettings = () => {
     meta_whatsapp_phone_number_id: "",
   });
 
+  const [maskedSecrets, setMaskedSecrets] = useState<Record<string, string>>({});
+
   const [currentIp, setCurrentIp] = useState("");
   const [allowedIps, setAllowedIps] = useState<string[]>([]);
   const [settlingMatch, setSettlingMatch] = useState<Record<string, boolean>>({});
@@ -475,7 +477,19 @@ const AdminSettings = () => {
             body: JSON.stringify({ action: "get_admin_secrets" })
           });
           const secData = await res.json();
-          if (secData.success) secrets = secData.secrets;
+          if (secData.success && secData.secrets) {
+            secrets = secData.secrets;
+            setMaskedSecrets({
+              paystack_secret_key: String(secrets.paystack_secret_key || ""),
+              hubtel_client_secret: String(secrets.hubtel_client_secret || ""),
+              txtconnect_api_key: String(secrets.txtconnect_api_key || ""),
+              mnotify_api_key: String(secrets.mnotify_api_key || ""),
+              arkesel_api_key: String(secrets.arkesel_api_key || ""),
+              data_provider_api_key: String(secrets.data_provider_api_key || ""),
+              airtime_provider_api_key: String(secrets.airtime_provider_api_key || ""),
+              secondary_data_provider_api_key: String(secrets.secondary_data_provider_api_key || ""),
+            });
+          }
         } catch (e) {
           console.error("Failed to fetch admin secrets", e);
         }
@@ -503,16 +517,17 @@ const AdminSettings = () => {
           support_channel_link: d.support_channel_link || "https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40",
           sub_agent_base_fee: String(d.sub_agent_base_fee || "5.00"),
           active_sms_gateway: d.active_sms_gateway || "txtconnect",
-          txtconnect_api_key: String(secrets.txtconnect_api_key || ""),
+          // Secret credential inputs stay write-only (empty in DOM state; masked previews shown in placeholders)
+          txtconnect_api_key: "",
           txtconnect_sender_id: String(secrets.txtconnect_sender_id || ""),
-          mnotify_api_key: String(secrets.mnotify_api_key || d.mnotify_api_key || ""),
+          mnotify_api_key: "",
           mnotify_sender_id: String(secrets.mnotify_sender_id || ""),
-          arkesel_api_key: String(secrets.arkesel_api_key || ""),
+          arkesel_api_key: "",
           arkesel_sender_id: String(secrets.arkesel_sender_id || ""),
           hubtel_sms_sender_id: String(secrets.hubtel_sms_sender_id || ""),
-          paystack_secret_key: String(secrets.paystack_secret_key || ""),
+          paystack_secret_key: "",
           hubtel_client_id: String(secrets.hubtel_client_id || ""),
-          hubtel_client_secret: String(secrets.hubtel_client_secret || ""),
+          hubtel_client_secret: "",
           mtn_markup_percentage: String(d.mtn_markup_percentage || "0"),
           telecel_markup_percentage: String(d.telecel_markup_percentage || "0"),
           at_markup_percentage: String(d.at_markup_percentage || "0"),
@@ -526,11 +541,11 @@ const AdminSettings = () => {
           manual_credit_sms_message: d.manual_credit_sms_message || "Your account has been manually credited with GHS {amount} by admin.",
           scheduled_success_sms_message: d.scheduled_success_sms_message || "Your scheduled {package} bundle to {phone} has been successfully renewed. Thank you for using SwiftData!",
           scheduled_failed_sms_message: d.scheduled_failed_sms_message || "Failed to renew your scheduled {package} bundle to {phone} due to insufficient wallet balance. Please top up to resume.",
-          data_provider_api_key: String(secrets.data_provider_api_key || ""),
+          data_provider_api_key: "",
           data_provider_base_url: String(secrets.data_provider_base_url || ""),
-          airtime_provider_api_key: String(secrets.airtime_provider_api_key || ""),
+          airtime_provider_api_key: "",
           airtime_provider_base_url: String(secrets.airtime_provider_base_url || ""),
-          secondary_data_provider_api_key: String(secrets.secondary_data_provider_api_key || ""),
+          secondary_data_provider_api_key: "",
           secondary_data_provider_base_url: String(secrets.secondary_data_provider_base_url || ""),
           auto_failover_enabled: d.auto_failover_enabled || false,
           show_announcement: d.show_announcement || false,
@@ -674,6 +689,24 @@ const AdminSettings = () => {
       auto_gateway_switch_by_package: settings.auto_gateway_switch_by_package || false,
     };
 
+    const WRITE_ONLY_SECRET_KEYS = [
+      "paystack_secret_key",
+      "hubtel_client_secret",
+      "txtconnect_api_key",
+      "mnotify_api_key",
+      "arkesel_api_key",
+      "data_provider_api_key",
+      "secondary_data_provider_api_key",
+      "airtime_provider_api_key",
+    ] as const;
+
+    for (const sk of WRITE_ONLY_SECRET_KEYS) {
+      const val = String((payload as any)[sk] || "").trim();
+      if (!val || val.includes("••") || /^\*+$/.test(val)) {
+        delete (payload as any)[sk];
+      }
+    }
+
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const response = await fetch(`${SUPABASE_URL}/functions/v1/system-payout-v1?t=${Date.now()}`, {
@@ -714,6 +747,25 @@ const AdminSettings = () => {
           });
         }
       } else {
+        const formatMask = (raw: string): string => {
+          if (raw.startsWith("sk_live_") && raw.length > 12) return `sk_live_••••••••${raw.slice(-4)}`;
+          if (raw.startsWith("sk_test_") && raw.length > 12) return `sk_test_••••••••${raw.slice(-4)}`;
+          if (raw.length > 8) return `${raw.slice(0, 3)}••••••••${raw.slice(-4)}`;
+          return "••••••••";
+        };
+        const updatedMasks: Record<string, string> = {};
+        const clearedSecrets: Partial<SystemSettings> = {};
+        for (const sk of WRITE_ONLY_SECRET_KEYS) {
+          const val = String((payload as any)[sk] || "").trim();
+          if (val) {
+            updatedMasks[sk] = formatMask(val);
+            clearedSecrets[sk] = "";
+          }
+        }
+        if (Object.keys(updatedMasks).length > 0) {
+          setMaskedSecrets((prev) => ({ ...prev, ...updatedMasks }));
+          setSettings((prev) => ({ ...prev, ...clearedSecrets }));
+        }
         toast({ 
           title: "✨ Settings Locked In",
           description: "Your system configuration has been updated successfully."
@@ -2635,9 +2687,10 @@ const AdminSettings = () => {
                     <Input
                       id="txtconnect-key"
                       type="password"
+                      autoComplete="new-password"
                       value={settings.txtconnect_api_key}
                       onChange={(e) => setSettings((prev) => ({ ...prev, txtconnect_api_key: e.target.value }))}
-                      placeholder="Your TxtConnect API Key"
+                      placeholder={maskedSecrets.txtconnect_api_key ? `Configured (${maskedSecrets.txtconnect_api_key}) — enter new key to rotate` : "Your TxtConnect API Key"}
                     />
                   </div>
                   <div className="space-y-2">
@@ -2696,9 +2749,10 @@ const AdminSettings = () => {
                     <Input
                       id="mnotify-key"
                       type="password"
+                      autoComplete="new-password"
                       value={settings.mnotify_api_key}
                       onChange={(e) => setSettings((prev) => ({ ...prev, mnotify_api_key: e.target.value }))}
-                      placeholder="Enter mNotify API Key (found in Developer > API v2.0)"
+                      placeholder={maskedSecrets.mnotify_api_key ? `Configured (${maskedSecrets.mnotify_api_key}) — enter new key to rotate` : "Enter mNotify API Key (found in Developer > API v2.0)"}
                     />
                   </div>
                   <div className="space-y-2">
@@ -2747,9 +2801,10 @@ const AdminSettings = () => {
                     <Input
                       id="arkesel-key"
                       type="password"
+                      autoComplete="new-password"
                       value={settings.arkesel_api_key}
                       onChange={(e) => setSettings((prev) => ({ ...prev, arkesel_api_key: e.target.value }))}
-                      placeholder="Enter Arkesel API Key"
+                      placeholder={maskedSecrets.arkesel_api_key ? `Configured (${maskedSecrets.arkesel_api_key}) — enter new key to rotate` : "Enter Arkesel API Key"}
                     />
                   </div>
                   <div className="space-y-2">
@@ -3355,12 +3410,13 @@ const AdminSettings = () => {
                   <Label>Paystack Secret Key</Label>
                   <Input 
                     type="password" 
+                    autoComplete="new-password"
                     value={settings.paystack_secret_key || ""} 
                     onChange={(e) => setSettings({ ...settings, paystack_secret_key: e.target.value })} 
-                    placeholder="sk_live_..." 
+                    placeholder={maskedSecrets.paystack_secret_key ? `Configured (${maskedSecrets.paystack_secret_key}) — enter new key to rotate` : "sk_live_..."} 
                   />
                   <p className="text-[10px] text-emerald-500 font-bold uppercase tracking-widest">
-                    Securely managed via Supabase Secrets
+                    {maskedSecrets.paystack_secret_key ? `Active (${maskedSecrets.paystack_secret_key}) · Write-only via Supabase Secrets` : "Securely managed via Supabase Secrets"}
                   </p>
                 </div>
               ) : (

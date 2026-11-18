@@ -40,8 +40,8 @@ const forceAssetRecovery = async (sourceMsg?: string) => {
 // Expose globally so React Error Boundaries can leverage the exact same logic
 (window as any).forceAssetRecovery = forceAssetRecovery;
 
-// Proactively flush any stale Service Worker precached index.html from older builds (v2026.11.16.utility_meter)
-const CURRENT_SW_BUILD_KEY = "swiftdata_sw_build_2026_11_16_utility_meter_v2";
+// Proactively flush any stale Service Worker precached index.html from older builds (v2026.11.18.paystack_lockdown)
+const CURRENT_SW_BUILD_KEY = "swiftdata_sw_build_2026_11_18_paystack_lockdown_v1";
 if (typeof window !== "undefined" && localStorage.getItem(CURRENT_SW_BUILD_KEY) !== CURRENT_SW_BUILD_KEY) {
   localStorage.setItem(CURRENT_SW_BUILD_KEY, CURRENT_SW_BUILD_KEY);
   if ("serviceWorker" in navigator) {

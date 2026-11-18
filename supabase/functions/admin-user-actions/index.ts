@@ -831,9 +831,9 @@ serve(async (req: Request) => {
           });
         }
 
-        // Dynamically fetch existing columns to avoid crashing on missing columns
+        // Dynamically fetch existing non-secret columns from system_settings
         const { data: existing, error: fetchError } = await supabaseAdmin
-          .from("v_system_settings_with_secrets").select("*")
+          .from("system_settings").select("*")
           .limit(1)
           .maybeSingle();
 

@@ -248,20 +248,23 @@ serve(async (req) => {
     }
 
     if (!bypassAmountAndStatusCheck) {
-      if (profile?.vendor_status !== "active" && profile?.vendor_status !== "pending_approval") {
+      if (profile?.vendor_status !== "active") {
         return new Response(
-          JSON.stringify({ error: "KYC PENDING: Your Swift Vendor terminal is not active. Please complete activation first." }),
+          JSON.stringify({
+            error: profile?.vendor_status === "pending_approval"
+              ? "UNDER REVIEW: Your Swift Vendor terminal is awaiting administrator approval before live transactions can be processed."
+              : "KYC PENDING: Your Swift Vendor terminal is not active. Please complete activation and await admin approval first."
+          }),
           { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
-      if (profile?.vendor_status === "pending_approval") {
-        if (amount && amount > 200) {
-          return new Response(
-            JSON.stringify({ error: "RESTRICTED MODE: You are currently under 24-hour review. Transactions are capped at GHS 200.00 until fully activated." }),
-            { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-          );
-        }
+      const numericAmt = Number(amount);
+      if (!Number.isFinite(numericAmt) || numericAmt <= 0) {
+        return new Response(
+          JSON.stringify({ error: "A valid positive transaction amount is required." }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
       }
     }
 

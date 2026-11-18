@@ -1037,7 +1037,7 @@ serve(async (req: Request) => {
           }
         }
 
-        // Handle Secret updates separately
+        // Handle Secret updates separately (write-only for sensitive credential fields: never overwrite with empty or masked values)
         const SECRET_KEYS = new Set([
           "paystack_secret_key", "hubtel_client_id", "hubtel_client_secret",
           "txtconnect_api_key", "txtconnect_sender_id",
@@ -1048,11 +1048,28 @@ serve(async (req: Request) => {
           "secondary_data_provider_api_key", "secondary_data_provider_base_url",
           "airtime_provider_api_key", "airtime_provider_base_url"
         ]);
+        const SENSITIVE_SECRET_FIELDS = new Set([
+          "paystack_secret_key",
+          "hubtel_client_secret",
+          "txtconnect_api_key",
+          "mnotify_api_key",
+          "arkesel_api_key",
+          "data_provider_api_key",
+          "secondary_data_provider_api_key",
+          "airtime_provider_api_key",
+        ]);
 
         const secretUpdates: Record<string, any> = {};
         for (const key of Object.keys(settings)) {
           if (SECRET_KEYS.has(key) && typeof settings[key] === "string") {
-            secretUpdates[key] = settings[key];
+            const trimmedVal = settings[key].trim();
+            if (SENSITIVE_SECRET_FIELDS.has(key)) {
+              // Skip empty or masked placeholder strings so existing secrets are never wiped or corrupted
+              if (!trimmedVal || trimmedVal.includes("••") || /^\*+$/.test(trimmedVal)) {
+                continue;
+              }
+            }
+            secretUpdates[key] = trimmedVal;
           }
         }
 
@@ -1202,7 +1219,45 @@ serve(async (req: Request) => {
 
         if (secretsErr) throw secretsErr;
 
-        return new Response(JSON.stringify({ success: true, secrets: secrets || {} }), {
+        const maskSecret = (val: unknown, envName?: string): string => {
+          const envVal = envName ? (Deno.env.get(envName)?.trim() || "") : "";
+          const raw = envVal || (typeof val === "string" ? val.trim() : "");
+          if (!raw) return "";
+          if (raw.startsWith("sk_live_") && raw.length > 12) {
+            return `sk_live_••••••••${raw.slice(-4)}`;
+          }
+          if (raw.startsWith("sk_test_") && raw.length > 12) {
+            return `sk_test_••••••••${raw.slice(-4)}`;
+          }
+          if (raw.length > 8) {
+            return `${raw.slice(0, 3)}••••••••${raw.slice(-4)}`;
+          }
+          return "••••••••";
+        };
+
+        const rawSecrets: Record<string, any> = secrets || {};
+        const safeSecrets: Record<string, any> = {
+          id: rawSecrets.id ?? 1,
+          txtconnect_sender_id: rawSecrets.txtconnect_sender_id || Deno.env.get("TXTCONNECT_SENDER_ID") || "",
+          mnotify_sender_id: rawSecrets.mnotify_sender_id || "",
+          arkesel_sender_id: rawSecrets.arkesel_sender_id || "",
+          hubtel_sms_sender_id: rawSecrets.hubtel_sms_sender_id || "",
+          hubtel_client_id: rawSecrets.hubtel_client_id || "",
+          data_provider_base_url: rawSecrets.data_provider_base_url || Deno.env.get("DATA_PROVIDER_BASE_URL") || "",
+          secondary_data_provider_base_url: rawSecrets.secondary_data_provider_base_url || Deno.env.get("SECONDARY_DATA_PROVIDER_BASE_URL") || "",
+          airtime_provider_base_url: rawSecrets.airtime_provider_base_url || Deno.env.get("AIRTIME_PROVIDER_BASE_URL") || "",
+          // Sensitive keys are strictly masked before leaving the server
+          paystack_secret_key: maskSecret(rawSecrets.paystack_secret_key, "PAYSTACK_SECRET_KEY"),
+          hubtel_client_secret: maskSecret(rawSecrets.hubtel_client_secret),
+          txtconnect_api_key: maskSecret(rawSecrets.txtconnect_api_key, "TXTCONNECT_API_KEY"),
+          mnotify_api_key: maskSecret(rawSecrets.mnotify_api_key, "MNOTIFY_API_KEY"),
+          arkesel_api_key: maskSecret(rawSecrets.arkesel_api_key),
+          data_provider_api_key: maskSecret(rawSecrets.data_provider_api_key, "DATA_PROVIDER_API_KEY"),
+          secondary_data_provider_api_key: maskSecret(rawSecrets.secondary_data_provider_api_key, "SECONDARY_DATA_PROVIDER_API_KEY"),
+          airtime_provider_api_key: maskSecret(rawSecrets.airtime_provider_api_key, "AIRTIME_PROVIDER_API_KEY"),
+        };
+
+        return new Response(JSON.stringify({ success: true, secrets: safeSecrets }), {
           status: 200,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });

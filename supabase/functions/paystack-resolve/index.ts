@@ -44,16 +44,40 @@ serve(async (req: Request) => {
   }
 
   try {
-    const { account_number, bank_code } = await req.json();
+    const clientIp =
+      req.headers.get("cf-connecting-ip") ||
+      req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+      "unknown";
+    const { data: rateAllowed } = await supabaseAdmin.rpc("check_generic_rate_limit", {
+      p_key: `paystack_resolve:${clientIp}`,
+      p_rate_limit: 15,
+    });
+    if (rateAllowed === false) {
+      return new Response(JSON.stringify({ error: "Too many account verification requests. Please wait a minute." }), {
+        status: 429,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
-    if (!account_number || !bank_code) {
+    const { account_number, bank_code } = await req.json();
+    const cleanAccount = String(account_number ?? "").trim();
+    const cleanBank = String(bank_code ?? "").trim();
+
+    if (!cleanAccount || !cleanBank) {
       return new Response(JSON.stringify({ error: "Account number and bank code are required" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const url = `https://api.paystack.co/bank/resolve?account_number=${account_number}&bank_code=${bank_code}`;
+    if (!/^\d{6,20}$/.test(cleanAccount) || !/^[A-Za-z0-9]{2,12}$/.test(cleanBank)) {
+      return new Response(JSON.stringify({ error: "Invalid account number or bank code format" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const url = `https://api.paystack.co/bank/resolve?account_number=${encodeURIComponent(cleanAccount)}&bank_code=${encodeURIComponent(cleanBank)}`;
     
     const response = await fetch(url, {
       method: "GET",
