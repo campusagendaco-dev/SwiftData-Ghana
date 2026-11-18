@@ -5,7 +5,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { normalizePhone, sendSmsViaTxtConnect, getSmsConfig } from "../_shared/sms.ts";
 import { getActiveProviders, logProviderError } from "../_shared/providers.ts";
-import { notifyWalletCredit } from "../_shared/webhooks.ts";
+import { notifyWalletCredit, notifyApiClient } from "../_shared/webhooks.ts";
 import { StandardAdapter } from "../_shared/providers/standard.ts";
 
 function getEnv(...keys: string[]): string {
@@ -744,7 +744,12 @@ serve(async (req: Request) => {
     let finalAction = action;
     const p = path.toLowerCase();
     
-    if (p.endsWith("/balance")) finalAction = "balance";
+    // Paystack checkout / collection routes for API users' own customers (checked first: "/checkout/status" also contains "/status")
+    if (p.endsWith("/checkout/otp") || action === "checkout_otp") finalAction = "checkout_otp";
+    else if (p.includes("/checkout/status") || action === "checkout_status") finalAction = "checkout_status";
+    else if (p.endsWith("/checkout") || action === "checkout") finalAction = "checkout";
+    else if (p.endsWith("/collect") || action === "collect") finalAction = "collect";
+    else if (p.endsWith("/balance")) finalAction = "balance";
     else if (p.endsWith("/account")) finalAction = "account";
     else if (p.endsWith("/plans") || p.endsWith("/packages") || action === "packages") finalAction = "plans";
     else if (p.endsWith("/buy") || p.endsWith("/purchase") || p.endsWith("/order") || p.endsWith("/buy-data") || p.includes("/buy-data") || p.endsWith("/payment/airtime") || p.endsWith("/payment/data") || action === "purchase" || action === "bulk_buy" || action === "airtime") finalAction = "buy";
@@ -807,6 +812,10 @@ serve(async (req: Request) => {
       order_refund: "orders",
       verify_claim: "orders",
       callback: "orders",
+      checkout: "checkout",
+      checkout_otp: "checkout",
+      checkout_status: "checkout",
+      collect: "collect",
     };
 
     const rawAllowed = profile.allowed_actions ?? profile.api_allowed_actions;
@@ -1385,6 +1394,423 @@ serve(async (req: Request) => {
       }).catch(e => console.error("[developer-api] Background verification trigger failed:", e));
 
       return json(result);
+    }
+
+    // ── Paystack Checkout & Collection (API user's customers pay via SwiftData Paystack) ──
+    if (["checkout", "collect", "checkout_otp", "checkout_status"].includes(finalAction)) {
+      const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+      // Env first, DB fallback (workspace credential rule)
+      let PAYSTACK_KEY = getEnv("PAYSTACK_SECRET_KEY");
+      if (!PAYSTACK_KEY) {
+        const { data: sec } = await supabase
+          .from("v_system_settings_with_secrets")
+          .select("paystack_secret_key")
+          .eq("id", 1)
+          .maybeSingle();
+        PAYSTACK_KEY = String(sec?.paystack_secret_key || "").trim();
+      }
+      if (!PAYSTACK_KEY) return json({ success: false, error: "Payment gateway is not configured." }, 503);
+
+      const paystackPost = async (pathName: string, body: Record<string, unknown>) => {
+        try {
+          const res = await fetch(`https://api.paystack.co${pathName}`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${PAYSTACK_KEY}`, "Content-Type": "application/json", Accept: "application/json" },
+            body: JSON.stringify(body),
+            signal: AbortSignal.timeout(20000),
+          });
+          const data = await res.json().catch(() => ({}));
+          return { ok: res.ok && data?.status === true, data };
+        } catch (e: any) {
+          return { ok: false, data: { message: e?.message || "Could not reach payment gateway" } };
+        }
+      };
+
+      const mapMomoProvider = (raw: unknown): string => {
+        const v = String(raw || "").toLowerCase().trim();
+        if (!v) return "";
+        if (v.includes("mtn") || v === "yello") return "mtn";
+        if (v.includes("telecel") || v.includes("voda") || v === "vod") return "vod";
+        if (v.includes("airtel") || v.includes("tigo") || v === "at" || v === "atl") return "atl";
+        return "";
+      };
+
+      const isValidGhPhone = (raw: string) => /^0(23|24|25|53|54|55|59|20|50|27|57|26|56)\d{7}$/.test(raw);
+
+      const { data: feeSettings } = await supabase
+        .from("system_settings")
+        .select("paystack_deposit_fee_percent")
+        .eq("id", 1)
+        .maybeSingle();
+      const rawRate = Number(feeSettings?.paystack_deposit_fee_percent);
+      const feeRate = Number.isFinite(rawRate) && rawRate >= 0 && rawRate < 0.2 ? rawRate : 0.03;
+      const calcFee = (base: number) => parseFloat(Math.min(base * feeRate, 100).toFixed(2));
+      const round2 = (n: number) => parseFloat(Number(n).toFixed(2));
+
+      const describeOrder = (order: any) => {
+        const meta = order?.metadata || {};
+        const st = String(order?.status || "");
+        const paid = Number(order?.paystack_verified_amount || 0) > 0;
+        let paymentStatus = "pending";
+        if (paid || ["paid", "processing", "fulfilled", "completed"].includes(st)) paymentStatus = "paid";
+        else if (["fulfillment_failed", "failed", "cancelled"].includes(st)) paymentStatus = "failed";
+        const isCollection = order?.order_type === "wallet_topup";
+        let deliveryStatus = "awaiting_payment";
+        if (st === "fulfilled" || st === "completed") deliveryStatus = isCollection ? "credited" : "delivered";
+        else if (st === "processing" || st === "paid") deliveryStatus = isCollection ? "crediting" : "processing";
+        else if (st === "refunded") deliveryStatus = "refunded";
+        else if (paymentStatus === "failed") deliveryStatus = "failed";
+        return {
+          reference: order.id,
+          client_reference: meta.client_reference || null,
+          type: isCollection ? "collection" : "purchase",
+          payment_status: paymentStatus,
+          delivery_status: deliveryStatus,
+          status: st,
+          network: isCollection ? null : order.network,
+          package_size: isCollection ? null : order.package_size,
+          customer_phone: order.customer_phone,
+          amount: {
+            base: Number(meta.selling_price ?? meta.wallet_credit ?? order.amount),
+            fee: Number(meta.fee ?? 0),
+            total: Number(meta.amount_charged ?? order.amount),
+            currency: "GHS",
+          },
+          failure_reason: paymentStatus === "failed" || st === "refunded" ? (order.failure_reason || null) : null,
+          created_at: order.created_at,
+          updated_at: order.updated_at,
+        };
+      };
+
+      const findCheckoutOrder = async (ref: string) => {
+        const cleanRef = String(ref || "").trim();
+        if (!cleanRef) return null;
+        const cols = "id, agent_id, order_type, network, package_size, customer_phone, amount, status, failure_reason, paystack_verified_amount, metadata, created_at, updated_at";
+        if (UUID_RX.test(cleanRef)) {
+          const { data } = await supabase.from("orders").select(cols)
+            .eq("id", cleanRef).eq("agent_id", currentUserId ?? "").eq("metadata->>api_checkout", "true").maybeSingle();
+          if (data) return data;
+        }
+        const { data: byClientRef } = await supabase.from("orders").select(cols)
+          .eq("agent_id", currentUserId ?? "").eq("metadata->>api_checkout", "true")
+          .eq("metadata->>client_reference", cleanRef)
+          .order("created_at", { ascending: false }).limit(1).maybeSingle();
+        return byClientRef || null;
+      };
+
+      // ── GET/POST /checkout/status ─────────────────────────────────────────
+      if (finalAction === "checkout_status") {
+        let ref = url.searchParams.get("reference") || url.searchParams.get("client_reference") || url.searchParams.get("order_id") || "";
+        if (!ref) {
+          const tail = path.split("/checkout/status/")[1];
+          if (tail) ref = decodeURIComponent(tail.split("/")[0]);
+        }
+        if (!ref && req.method === "POST") {
+          const b = await req.json().catch(() => ({}));
+          ref = String(b?.reference || b?.client_reference || b?.order_id || "");
+        }
+        if (!ref) return json({ success: false, error: "reference is required." }, 400);
+
+        let order = await findCheckoutOrder(ref);
+        if (!order) return json({ success: false, error: "Checkout not found." }, 404);
+
+        // If still awaiting payment, actively re-verify with the gateway (covers delayed webhooks)
+        if (["awaiting_payment", "pending"].includes(String(order.status))) {
+          const beforeStatus = order.status;
+          try {
+            await fetch(`${SUPABASE_URL}/functions/v1/verify-payment`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` },
+              body: JSON.stringify({ reference: order.id }),
+              signal: AbortSignal.timeout(25000),
+            });
+          } catch (e) {
+            console.warn("[developer-api] checkout_status verify trigger failed:", e);
+          }
+          const refreshed = await findCheckoutOrder(order.id);
+          if (refreshed) order = refreshed;
+          if (order.status !== beforeStatus) {
+            if (order.order_type === "wallet_topup") {
+              if (order.status === "fulfilled") await notifyWalletCredit(supabase, currentUserId || "", Number(order.amount), "api");
+            } else {
+              await notifyApiClient(supabase, order.id, order.status);
+            }
+          }
+        }
+
+        return json({ success: true, data: describeOrder(order) });
+      }
+
+      // ── POST /checkout/otp ────────────────────────────────────────────────
+      if (finalAction === "checkout_otp") {
+        if (req.method !== "POST") return json({ success: false, error: "Use POST." }, 405);
+        const b = await req.json().catch(() => ({}));
+        const otp = String(b?.otp || "").trim();
+        if (!otp || !/^[0-9A-Za-z]{3,12}$/.test(otp)) return json({ success: false, error: "A valid otp is required." }, 400);
+        const order = await findCheckoutOrder(String(b?.reference || b?.client_reference || ""));
+        if (!order) return json({ success: false, error: "Checkout not found." }, 404);
+        if (!["awaiting_payment", "pending"].includes(String(order.status))) {
+          return json({ success: false, error: "This checkout is no longer awaiting payment.", data: describeOrder(order) }, 409);
+        }
+        const r = await paystackPost("/charge/submit_otp", { otp, reference: order.id });
+        if (!r.ok) return json({ success: false, error: r.data?.message || "OTP submission failed." }, 400);
+        const ps = String(r.data?.data?.status || "");
+        return json({
+          success: true,
+          data: {
+            reference: order.id,
+            client_reference: order.metadata?.client_reference || null,
+            payment_status: ps === "success" ? "paid" : "pending",
+            next_action: ps === "send_otp" ? "submit_otp" : (ps === "success" ? "none" : "approve_on_phone"),
+            message: r.data?.data?.display_text || r.data?.message || "OTP submitted.",
+          },
+        });
+      }
+
+      // ── POST /checkout and POST /collect ──────────────────────────────────
+      if (req.method !== "POST") return json({ success: false, error: "Use POST." }, 405);
+      if (profile.test_mode) return json({ success: false, error: "Paystack checkout is not available in test mode." }, 400);
+
+      const payload = await req.json().catch(() => null);
+      if (!payload) return json({ success: false, error: "Invalid JSON body" }, 400);
+      requestPayload = payload;
+
+      const clientRef = String(payload.client_reference || payload.reference || payload.request_id || req.headers.get("X-Idempotency-Key") || "").trim();
+      if (!clientRef) return json({ success: false, error: "client_reference is required (a unique ID from your system)." }, 400);
+      if (clientRef.length > 100) return json({ success: false, error: "client_reference is too long (max 100 chars)." }, 400);
+
+      // Idempotency: one checkout per client_reference
+      const existingCheckout = await findCheckoutOrder(clientRef);
+      if (existingCheckout) {
+        return json({ success: false, error: "A checkout with this client_reference already exists.", data: describeOrder(existingCheckout) }, 409);
+      }
+
+      const paymentPhoneRaw = String(payload.payment_phone || (finalAction === "checkout" ? (payload.customer_phone || payload.phone || "") : "")).trim();
+      const paymentPhone = paymentPhoneRaw ? normalizeRecipient(paymentPhoneRaw) : "";
+      if (paymentPhone && !isValidGhPhone(paymentPhone)) return json({ success: false, error: "payment_phone must be a valid Ghana mobile number." }, 400);
+      const momoProvider = mapMomoProvider(payload.payment_network);
+      if (payload.payment_network && !momoProvider) {
+        return json({ success: false, error: "payment_network must be one of: MTN, TELECEL, AIRTELTIGO." }, 400);
+      }
+      const usePrompt = Boolean(paymentPhone && momoProvider);
+
+      let redirectUrl = "";
+      if (payload.redirect_url) {
+        try {
+          const ru = new URL(String(payload.redirect_url));
+          if (ru.protocol !== "https:") throw new Error("not https");
+          redirectUrl = ru.toString();
+        } catch {
+          return json({ success: false, error: "redirect_url must be a valid https URL." }, 400);
+        }
+      }
+      if (!usePrompt && !redirectUrl) {
+        return json({ success: false, error: "Provide payment_phone + payment_network for a MoMo prompt, or redirect_url for a hosted payment page." }, 400);
+      }
+
+      // Velocity guards: per API user and per paying phone
+      const { data: userOk } = await supabase.rpc("check_generic_rate_limit", { p_key: `api_checkout:${currentUserId}`, p_rate_limit: 30 });
+      if (userOk === false) return json({ success: false, error: "Too many checkout requests. Please slow down." }, 429);
+      if (paymentPhone) {
+        const { data: phoneOk } = await supabase.rpc("check_generic_rate_limit", { p_key: `api_checkout_phone:${paymentPhone}`, p_rate_limit: 2 });
+        if (phoneOk === false) return json({ success: false, error: "A payment prompt was sent to this number recently. Please wait a minute." }, 429);
+      }
+
+      const orderId = crypto.randomUUID();
+      const customerEmail = (() => {
+        const e = String(payload.customer_email || "").trim();
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e) && e.length <= 120 ? e : `${paymentPhone || "customer"}.${orderId.slice(0, 8)}@pay.swiftdatagh.shop`;
+      })();
+
+      let orderRow: Record<string, unknown>;
+      let paystackOrderType: string;
+      let baseAmount: number;
+      let fee: number;
+      let total: number;
+
+      if (finalAction === "collect") {
+        const amountNum = round2(Number(payload.amount));
+        if (!Number.isFinite(amountNum) || amountNum < 1) return json({ success: false, error: "amount must be at least GHS 1.00." }, 400);
+        if (amountNum > 2000) return json({ success: false, error: "amount cannot exceed GHS 2,000.00 per collection." }, 400);
+        baseAmount = amountNum;
+        fee = calcFee(baseAmount);
+        total = round2(baseAmount + fee);
+        paystackOrderType = "wallet_topup";
+        const description = String(payload.description || "").slice(0, 140);
+        orderRow = {
+          id: orderId,
+          agent_id: currentUserId,
+          order_type: "wallet_topup",
+          amount: baseAmount, // credited to the API user's API wallet once paid
+          paystack_fee: fee,
+          status: "awaiting_payment",
+          payment_method: "paystack",
+          customer_phone: paymentPhone || null,
+          metadata: {
+            api_checkout: true,
+            collection: true,
+            wallet_type: "api",
+            wallet_credit: baseAmount,
+            fee,
+            amount_charged: total,
+            client_reference: clientRef,
+            description,
+            payment_phone: paymentPhone || null,
+          },
+        };
+      } else {
+        let network = String(payload.network || "").trim();
+        let packageSize = String(payload.package_size || payload.package || "").trim();
+        const recipient = normalizeRecipient(String(payload.customer_phone || payload.phone || ""));
+        if (!network || !recipient) return json({ success: false, error: "network and customer_phone are required." }, 400);
+        if (!isValidGhPhone(recipient)) return json({ success: false, error: "customer_phone must be a valid Ghana mobile number." }, 400);
+
+        const netLower = network.toLowerCase();
+        if (netLower === "yello" || netLower === "mtn") network = "MTN";
+        else if (["blue", "at", "airteltigo"].includes(netLower)) network = "AT";
+        else if (["red", "telecel", "vodafone"].includes(netLower)) network = "TELECEL";
+        else if (["mashup", "mtn mash up", "mtn_mash_up"].includes(netLower)) network = "MTN Mash Up";
+        else network = network.toUpperCase();
+
+        const isAirtime = !packageSize || packageSize.toUpperCase() === "AIRTIME";
+        let cost = 0;
+        let costPrice = 0;
+        const extraMeta: Record<string, unknown> = {};
+
+        if (isAirtime) {
+          cost = round2(Number(payload.amount));
+          if (!Number.isFinite(cost) || cost < 1 || cost > 500) return json({ success: false, error: "Airtime amount must be between GHS 1.00 and GHS 500.00." }, 400);
+          packageSize = "AIRTIME";
+        } else {
+          if (isKorbaDataPackagePattern(network, packageSize)) return json({ success: false, error: "Selected package is not available on the developer API." }, 400);
+          const korbaSet = await getKorbaPackageSet(supabase);
+          if (korbaSet.has(`${network.toLowerCase()}-${packageSize.replace(/\s+/g, "").toLowerCase()}`)) {
+            return json({ success: false, error: "Selected package is not available on the developer API." }, 400);
+          }
+          const { data: plans } = await supabase.from("global_package_settings").select("*")
+            .eq("is_unavailable", false).ilike("network", network);
+          const cleanTarget = packageSize.replace(/\s+/g, "").toLowerCase();
+          const plan = (plans ?? []).find((pl: any) => String(pl.package_size || "").replace(/\s+/g, "").toLowerCase() === cleanTarget);
+          if (!plan) return json({ success: false, error: "Invalid or unavailable data bundle." }, 400);
+          network = plan.network;
+          packageSize = plan.package_size;
+          cost = round2(Number(plan.agent_price || plan.api_price || plan.public_price || plan.price || 0));
+          costPrice = Number(plan.cost_price || 0);
+          if (!(cost > 0)) return json({ success: false, error: "Pricing unavailable for selected bundle." }, 400);
+          const isMash = String(network).toLowerCase().includes("mash");
+          Object.assign(extraMeta, {
+            category: isMash ? "mashup" : "sme",
+            package_category: isMash ? "mashup" : "sme",
+            exclude_korba: true,
+          });
+        }
+
+        const selling = payload.selling_price !== undefined && payload.selling_price !== null && payload.selling_price !== ""
+          ? round2(Number(payload.selling_price))
+          : cost;
+        if (!Number.isFinite(selling) || selling < cost) {
+          return json({ success: false, error: `selling_price cannot be below your API price (GHS ${cost.toFixed(2)}).` }, 400);
+        }
+        if (selling > round2(cost * 2 + 20)) {
+          return json({ success: false, error: "selling_price is unreasonably high for this product." }, 400);
+        }
+
+        baseAmount = selling;
+        fee = calcFee(baseAmount);
+        total = round2(baseAmount + fee);
+        paystackOrderType = isAirtime ? "airtime" : "data";
+
+        orderRow = {
+          id: orderId,
+          agent_id: currentUserId,
+          order_type: "api",
+          network,
+          package_size: packageSize,
+          customer_phone: recipient,
+          amount: total, // what the customer pays (bundle price + fee)
+          paystack_fee: fee,
+          cost_price: costPrice > 0 ? costPrice : undefined,
+          profit: round2(selling - cost), // API user's margin, credited only after delivery
+          status: "awaiting_payment",
+          payment_method: "paystack",
+          metadata: {
+            ...extraMeta,
+            api_checkout: true,
+            server_priced: true,
+            client_reference: clientRef,
+            idempotency_key: clientRef,
+            base_price: cost, // value delivered to the provider
+            selling_price: selling,
+            fee,
+            amount_charged: total,
+            payment_phone: paymentPhone || null,
+          },
+        };
+      }
+
+      const { error: insertErr } = await supabase.from("orders").insert(orderRow);
+      if (insertErr) {
+        console.error("[developer-api] checkout order insert failed:", insertErr);
+        return json({ success: false, error: "Could not create checkout. Please try again." }, 500);
+      }
+
+      const paystackMetadata = {
+        order_id: orderId,
+        order_type: paystackOrderType,
+        api_checkout: true,
+        api_user_id: currentUserId,
+        wallet_type: finalAction === "collect" ? "api" : undefined,
+        client_reference: clientRef,
+        custom_fields: [{ display_name: "Payment For", variable_name: "payment_for", value: profile.full_name || "SwiftData Partner" }],
+      };
+
+      const amountPesewas = Math.round(total * 100);
+      const psResult = usePrompt
+        ? await paystackPost("/charge", {
+            email: customerEmail,
+            amount: amountPesewas,
+            currency: "GHS",
+            reference: orderId,
+            metadata: paystackMetadata,
+            mobile_money: { phone: paymentPhone, provider: momoProvider },
+          })
+        : await paystackPost("/transaction/initialize", {
+            email: customerEmail,
+            amount: amountPesewas,
+            currency: "GHS",
+            reference: orderId,
+            callback_url: redirectUrl,
+            channels: ["mobile_money"],
+            metadata: paystackMetadata,
+          });
+
+      if (!psResult.ok) {
+        const reason = psResult.data?.message || "Payment gateway rejected the request.";
+        await supabase.from("orders").update({ status: "fulfillment_failed", failure_reason: `Payment initiation failed: ${reason}` }).eq("id", orderId);
+        return json({ success: false, error: reason, reference: orderId }, 502);
+      }
+
+      const chargeStatus = String(psResult.data?.data?.status || "");
+      const nextAction = !usePrompt
+        ? "redirect"
+        : chargeStatus === "send_otp" ? "submit_otp" : chargeStatus === "success" ? "none" : "approve_on_phone";
+
+      return json({
+        success: true,
+        data: {
+          reference: orderId,
+          client_reference: clientRef,
+          type: finalAction === "collect" ? "collection" : "purchase",
+          payment_status: chargeStatus === "success" ? "paid" : "pending",
+          next_action: nextAction,
+          authorization_url: usePrompt ? null : psResult.data?.data?.authorization_url || null,
+          message: usePrompt
+            ? (psResult.data?.data?.display_text || psResult.data?.data?.otp_message || "A payment prompt has been sent to the customer's phone. Ask them to approve it.")
+            : "Redirect the customer to authorization_url to pay.",
+          amount: { base: baseAmount, fee, total, currency: "GHS" },
+        },
+      }, 201);
     }
 
     if (finalAction === "afa_registration" && req.method === "POST") {

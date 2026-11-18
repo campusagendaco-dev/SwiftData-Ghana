@@ -27,7 +27,7 @@ import { networks, basePackages } from "@/lib/data";
 import { cn } from "@/lib/utils";
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const ALLOWED_ACTION_OPTIONS = ["balance", "plans", "buy", "orders"] as const;
+const ALLOWED_ACTION_OPTIONS = ["balance", "plans", "buy", "orders", "checkout", "collect"] as const;
 type AllowedAction = typeof ALLOWED_ACTION_OPTIONS[number];
 
 interface APIUser {
@@ -947,7 +947,7 @@ const AdminAPIUsers = () => {
                             ))}
                           </div>
                           <p className="text-[10px] text-white/25">
-                            Controls which API endpoints this key can call. <span className="text-amber-400/60">buy</span> lets them purchase data bundles from their wallet. <span className="text-amber-400/60">orders</span> lets them read their order history.
+                            Controls which API endpoints this key can call. <span className="text-amber-400/60">buy</span> lets them purchase data bundles from their wallet. <span className="text-amber-400/60">orders</span> lets them read their order history. <span className="text-amber-400/60">checkout</span> lets their customers pay for bundles/airtime via SwiftData Paystack MoMo (customer pays the fee). <span className="text-amber-400/60">collect</span> lets their customers pay a set amount into the partner's spend-only API wallet.
                           </p>
                         </div>
 

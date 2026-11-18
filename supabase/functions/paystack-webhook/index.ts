@@ -858,6 +858,46 @@ serve(async (req: Request) => {
       });
     }
 
+    // API partner checkouts/collections: verify-payment owns verification + fulfilment
+    // (server-side amount check, provider routing, API-wallet credit), then the partner is notified.
+    const checkoutFlag = (existingOrder?.metadata as any)?.api_checkout;
+    if (existingOrder && (checkoutFlag === true || checkoutFlag === "true")) {
+      let delegatedStatus = "processing";
+      try {
+        const vpRes = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/verify-payment`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+          },
+          body: JSON.stringify({ reference: orderId }),
+        });
+        const vpJson = await vpRes.json().catch(() => ({}));
+        delegatedStatus = String(vpJson?.status || delegatedStatus);
+      } catch (delegateErr) {
+        console.error("[paystack-webhook] API checkout delegation to verify-payment failed:", delegateErr);
+      }
+
+      const { data: freshOrder } = await supabaseAdmin
+        .from("orders")
+        .select("status, amount, agent_id, order_type")
+        .eq("id", orderId)
+        .maybeSingle();
+
+      if (freshOrder?.order_type === "wallet_topup") {
+        if (freshOrder.status === "fulfilled" && freshOrder.agent_id) {
+          await notifyWalletCredit(supabaseAdmin, freshOrder.agent_id, Number(freshOrder.amount), "api");
+        }
+      } else {
+        await notifyApiClient(supabaseAdmin, orderId, freshOrder?.status || delegatedStatus);
+      }
+
+      return new Response(JSON.stringify({ received: true, delegated: true, status: freshOrder?.status || delegatedStatus }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     let shouldSendDataPaymentSms = false;
     let smsPhone = "";
 
