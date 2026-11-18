@@ -312,6 +312,25 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
     }
   };
 
+  const [resettingPin, setResettingPin] = useState(false);
+  const handleResetPin = async () => {
+    if (!user) return;
+    if (!window.confirm(`Clear the 4-digit Transaction PIN for ${user.full_name || user.email}? They will be able to set a new PIN in Account Settings.`)) return;
+    setResettingPin(true);
+    try {
+      const { data: res, error } = await supabase.functions.invoke("admin-user-actions", {
+        body: { action: "reset_transaction_pin", user_id: user.user_id },
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+      if (error || res?.error) throw new Error(await parseEdgeError(error, res));
+      toast({ title: "Transaction PIN Cleared", description: `${user.full_name || user.email} can now set a new PIN in Account Settings.` });
+    } catch (err: any) {
+      toast({ title: "PIN Reset Failed", description: err.message, variant: "destructive" });
+    } finally {
+      setResettingPin(false);
+    }
+  };
+
   const [revokingSessions, setRevokingSessions] = useState(false);
   const handleRevokeSessions = async () => {
     if (!user) return;
@@ -812,6 +831,16 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
             >
               {resetLinkSending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Key className="w-3.5 h-3.5" />}
               Reset Link
+            </Button>
+
+            <Button
+              size="sm"
+              onClick={handleResetPin}
+              disabled={resettingPin}
+              className="h-8 px-3 text-xs gap-1.5 rounded-xl font-bold bg-indigo-500/15 text-indigo-400 border border-indigo-500/30 hover:bg-indigo-500/25 transition-all shadow-md"
+            >
+              {resettingPin ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Key className="w-3.5 h-3.5" />}
+              Reset PIN
             </Button>
 
             <Button

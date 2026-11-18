@@ -109,6 +109,7 @@ type AdminUserAction =
   | "purge_bot_spam"
   | "send_reset_link"
   | "revoke_sessions"
+  | "reset_transaction_pin"
   | "get_user_audit_logs"
   | "update_sub_admin_permissions"
   | "delete_provider";
@@ -374,6 +375,43 @@ serve(async (req: Request) => {
           severity: "warning",
           details: { admin_id: actor.id, reason: "Admin forced session revocation" }
         });
+
+        return json({ success: true, user_id });
+      }
+
+      case "reset_transaction_pin": {
+        if (!isValidUuid(user_id)) throw new Error("Invalid or missing user_id");
+        const { error: pinErr } = await supabaseAdmin
+          .from("profiles")
+          .update({ transaction_pin: null, updated_at: new Date().toISOString() })
+          .eq("user_id", user_id);
+        if (pinErr) throw pinErr;
+
+        await logAdminAudit(supabaseAdmin, {
+          adminId: actor.id,
+          action: "reset_transaction_pin",
+          targetUserId: user_id,
+          details: { message: "Admin cleared user transaction PIN" },
+        });
+
+        await logSecurityEvent(supabaseAdmin, {
+          userId: user_id,
+          eventType: "transaction_pin_reset",
+          severity: "warning",
+          details: { admin_id: actor.id, reason: "Admin cleared transaction PIN" },
+        });
+
+        try {
+          await supabaseAdmin.from("user_notifications").insert({
+            user_id,
+            title: "Transaction PIN Reset",
+            message: "Your 4-digit Transaction PIN has been reset by an administrator. Please set a new PIN in Account Settings.",
+            type: "info",
+            link: "/dashboard/account-settings",
+          });
+        } catch {
+          // non-critical
+        }
 
         return json({ success: true, user_id });
       }
