@@ -104,6 +104,7 @@ const AdminTickets = lazy(() => import("./pages/AdminTickets"));
 const AdminAuditLogs = lazy(() => import("./pages/AdminAuditLogs"));
 const AdminSecurity = lazy(() => import("./pages/AdminSecurity"));
 const AdminAPIUsers = lazy(() => import("./pages/AdminAPIUsers"));
+const AdminPaymentGateway = lazy(() => import("./pages/AdminPaymentGateway"));
 const AdminProfits = lazy(() => import("./pages/AdminProfits"));
 const AdminAgentPerformance = lazy(() => import("./pages/AdminAgentPerformance"));
 const AdminPnL = lazy(() => import("./pages/AdminPnL"));
@@ -126,6 +127,7 @@ const AdminAPINetwork = lazy(() => import("./pages/AdminAPINetwork"));
 const SubAgentSignup = lazy(() => import("./pages/SubAgentSignup"));
 const SubAgentPending = lazy(() => import("./pages/SubAgentPending"));
 const DashboardDeveloperAPI = lazy(() => import("./pages/DashboardDeveloperAPI"));
+const DashboardPaymentGateway = lazy(() => import("./pages/DashboardPaymentGateway"));
 const APIDocumentation = lazy(() => import("./pages/APIDocumentation"));
 const DeveloperPortal = lazy(() => import("./pages/DeveloperPortal"));
 const NotFound = lazy(() => import("./pages/NotFound"));
@@ -509,6 +511,7 @@ const AppContent = () => {
           <Route path="check-numbers" element={<Navigate to="/dashboard/verify-numbers" replace />} />
           <Route path="challenges" element={<ChallengeArena />} />
           <Route path="games" element={<Navigate to="/dashboard/challenges" replace />} />
+          <Route path="gateway" element={<DashboardPaymentGateway />} />
 
           {/* Paid agent-only pages */}
           <Route path="agent-prices" element={<AgentFeatureGuard><DashboardPricing /></AgentFeatureGuard>} />
@@ -573,6 +576,7 @@ const AppContent = () => {
           <Route path="audit-logs" element={<AdminAuditLogs />} />
           <Route path="security" element={<AdminSecurity />} />
           <Route path="api-users" element={<AdminAPIUsers />} />
+          <Route path="payment-gateway" element={<AdminPaymentGateway />} />
           <Route path="profits" element={<AdminProfits />} />
           <Route path="agent-performance" element={<AdminAgentPerformance />} />
           <Route path="pnl" element={<AdminPnL />} />

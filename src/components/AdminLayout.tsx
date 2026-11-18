@@ -126,6 +126,7 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { label: "Users",           icon: Users,       path: "/admin/users", permKey: "users" },
       { label: "API Users",     icon: Key,        path: "/admin/api-users", permKey: "users" },
+      { label: "Payment Gateway", icon: CreditCard, path: "/admin/payment-gateway", permKey: "users" },
     ],
   },
   {
@@ -256,6 +257,7 @@ export const ROUTE_PERM_MAP: Record<string, string> = {
   "/admin/engagement": "support",
   "/admin/users": "users",
   "/admin/api-users": "users",
+  "/admin/payment-gateway": "users",
   "/admin/security": "system",
   "/admin/system-health": "system",
   "/admin/sentinel": "system",

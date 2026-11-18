@@ -6,6 +6,7 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { normalizePhone, getSmsConfig, sendSmsViaTxtConnect, formatTemplate, sendPaymentSms } from "../_shared/sms.ts";
 import { sendWhatsAppMessage } from "../_shared/whatsapp.ts";
 import { notifyApiClient, notifyWalletCredit } from "../_shared/webhooks.ts";
+import { dispatchGatewayWebhook } from "../_shared/gateway-security.ts";
 import { getActiveProviders, getPausedTargetProvider, isOrderPausedFromApi, resolveProvidersForOrder, markAwaitingProvider } from "../_shared/providers.ts";
 import { isUncertainDeliveryError, AWAITING_PROVIDER_REF } from "../_shared/providers/utils.ts";
 import { log, notifyAdmins } from "../_shared/logger.ts";
@@ -710,10 +711,67 @@ serve(async (req: Request) => {
     }
     // ─────────────────────────────────────────────────────────────────────────
 
+    if (body.event === "charge.dispute.create") {
+      const disputeRef = String(body.data?.transaction?.reference || body.data?.reference || "").trim();
+      const disputeReason = String(body.data?.reason || body.data?.category || "Payment dispute opened on Paystack");
+      console.warn(`[paystack-webhook] charge.dispute.create received for reference: ${disputeRef} (${disputeReason})`);
+      if (disputeRef && disputeRef.startsWith("SWFT_COL_")) {
+        const { data: freezeRes } = await supabaseAdmin.rpc("freeze_disputed_gateway_collection", {
+          p_reference: disputeRef,
+          p_reason: disputeReason,
+        });
+        if (freezeRes?.success && freezeRes?.collection_id && freezeRes?.merchant_id) {
+          await notifyAdmins(
+            supabaseAdmin,
+            "Gateway Collection Dispute Alert",
+            `Dispute opened on collection ${disputeRef} (${disputeReason}). Merchant settlements have been automatically frozen.`,
+            "error",
+            { reference: disputeRef, merchant_id: freezeRes.merchant_id, reason: disputeReason },
+          );
+          await dispatchGatewayWebhook(supabaseAdmin, {
+            collectionId: freezeRes.collection_id,
+            merchantId: freezeRes.merchant_id,
+            event: "collection.disputed",
+            data: { reference: disputeRef, status: "disputed", reason: disputeReason },
+          });
+        }
+      }
+      return new Response(JSON.stringify({ received: true }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     if (body.event === "charge.failed") {
       const failedRef = body.data?.reference;
       const failReason = body.data?.gateway_response || body.data?.message || "Payment declined or failed on Mobile Money";
       console.warn(`[paystack-webhook] charge.failed received for reference: ${failedRef} (${failReason})`);
+      if (failedRef && (String(failedRef).startsWith("SWFT_COL_") || body.data?.metadata?.gateway_collection === true)) {
+        const { data: failedCol } = await supabaseAdmin
+          .from("gateway_collections")
+          .update({
+            status: "failed",
+            failure_reason: String(failReason).slice(0, 300),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("reference", failedRef)
+          .eq("status", "pending")
+          .select("id, merchant_id, reference, client_reference, base_amount, customer_fee, total_charged, status, failure_reason")
+          .maybeSingle();
+
+        if (failedCol) {
+          await dispatchGatewayWebhook(supabaseAdmin, {
+            collectionId: failedCol.id,
+            merchantId: failedCol.merchant_id,
+            event: "collection.failed",
+            data: failedCol,
+          });
+        }
+        return new Response(JSON.stringify({ received: true }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
       if (failedRef) {
         await supabaseAdmin
           .from("orders")
@@ -788,6 +846,80 @@ serve(async (req: Request) => {
       ...(webhookMetadata as Record<string, unknown>),
       ...verifiedMetadata,
     };
+
+    // High-Security Payment Gateway Collection handling (isolated from data orders & SwiftData SMS)
+    if (String(reference || "").startsWith("SWFT_COL_") || metadata?.gateway_collection === true) {
+      const psCurrency = String(verifyData?.data?.currency || "").toUpperCase();
+      if (psCurrency !== "GHS") {
+        console.error(`[paystack-webhook] Rejected non-GHS gateway collection ${reference}: ${psCurrency}`);
+        return new Response(JSON.stringify({ error: "Unsupported currency" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const paidGhs = Number(verifyData?.data?.amount || 0) / 100;
+      const psFeeGhs = parseFloat((Number(verifyData?.data?.fees || 0) / 100).toFixed(2));
+      const psChannel = String(verifyData?.data?.channel || "mobile_money");
+
+      const { data: settleRes, error: settleErr } = await supabaseAdmin.rpc("settle_gateway_collection", {
+        p_reference: reference,
+        p_paid_amount: paidGhs,
+        p_paystack_fee: psFeeGhs,
+        p_channel: psChannel,
+      });
+
+      if (settleErr || !settleRes?.success) {
+        console.error(`[paystack-webhook] settle_gateway_collection failed for ${reference}:`, settleErr || settleRes);
+        return new Response(JSON.stringify({ received: true, settled: false, error: settleRes?.error || settleErr?.message }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      if (!settleRes?.duplicate && settleRes?.collection_id && settleRes?.merchant_id) {
+        const { data: col } = await supabaseAdmin
+          .from("gateway_collections")
+          .select("id, merchant_id, reference, client_reference, status, currency, channel, base_amount, customer_fee, platform_fee, total_charged, net_settlement, customer_phone, customer_email, description, paid_at, settle_after, settled_at, created_at")
+          .eq("id", settleRes.collection_id)
+          .maybeSingle();
+
+        if (col) {
+          await dispatchGatewayWebhook(supabaseAdmin, {
+            collectionId: col.id,
+            merchantId: col.merchant_id,
+            event: col.status === "settled" ? "collection.settled" : "collection.success",
+            data: {
+              id: col.id,
+              reference: col.reference,
+              client_reference: col.client_reference,
+              status: col.status,
+              currency: col.currency,
+              channel: col.channel,
+              amount: {
+                base: Number(col.base_amount),
+                fee: Number(col.customer_fee),
+                platform_fee: Number(col.platform_fee || 0),
+                total: Number(col.total_charged),
+                net_settlement: Number(col.net_settlement),
+              },
+              customer_phone: col.customer_phone,
+              customer_email: col.customer_email,
+              description: col.description,
+              paid_at: col.paid_at,
+              settle_after: col.settle_after,
+              settled_at: col.settled_at,
+              created_at: col.created_at,
+            },
+          });
+        }
+      }
+
+      return new Response(JSON.stringify({ received: true, gateway_collection: true, status: settleRes?.status }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     const agentIdForSavedCards = typeof metadata?.agent_id === "string" ? metadata.agent_id : null;
     if (agentIdForSavedCards && paystackCustomerCode) {

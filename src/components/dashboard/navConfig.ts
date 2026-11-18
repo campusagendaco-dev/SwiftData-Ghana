@@ -141,10 +141,10 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     id: "developers",
     label: "Developers",
-    visible: agentOnly,
     items: [
-      { to: "/dashboard/api", label: "API keys", icon: Key, keywords: "api access integration" },
-      { to: "/dashboard/agent-dev-hub", label: "Developer hub", icon: CodeXml, keywords: "docs webhooks" },
+      { to: "/dashboard/gateway", label: "Payment gateway", icon: CreditCard, keywords: "paystack collect checkout merchant", badge: "new" },
+      { to: "/dashboard/api", label: "API keys", icon: Key, keywords: "api access integration", visible: agentOnly },
+      { to: "/dashboard/agent-dev-hub", label: "Developer hub", icon: CodeXml, keywords: "docs webhooks", visible: agentOnly },
     ],
   },
   {
