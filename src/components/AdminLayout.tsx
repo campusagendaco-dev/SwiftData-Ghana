@@ -213,7 +213,6 @@ export const SUPER_ADMIN_ONLY_PATHS = new Set([
   "/admin/system-logs",
   "/admin/feature-flags",
   "/admin/audit-logs",
-  "/admin/settings",
 ]);
 
 export const ROUTE_PERM_MAP: Record<string, string> = {
@@ -298,7 +297,7 @@ const useAllowedSections = () => {
     if (!isRestrictedSubAdmin) return section;
     const items = section.items.filter((item) => {
       if (SUPER_ADMIN_ONLY_PATHS.has(item.path)) return false;
-      if (item.path === "/admin/account-settings") return true;
+      if (item.path === "/admin/account-settings" || item.path === "/admin/settings") return true;
       return item.permKey ? userPerms.includes(item.permKey) : false;
     });
     return { ...section, items };
@@ -795,7 +794,7 @@ const AdminLayout = () => {
   const allowedNavItems = NAV_SECTIONS.flatMap((s) => s.items).filter((item) => {
     if (!isRestrictedSubAdmin) return true;
     if (SUPER_ADMIN_ONLY_PATHS.has(item.path)) return false;
-    if (item.path === "/admin/account-settings") return true;
+    if (item.path === "/admin/account-settings" || item.path === "/admin/settings") return true;
     return item.permKey ? userPerms.includes(item.permKey) : false;
   });
 
@@ -803,7 +802,7 @@ const AdminLayout = () => {
     if (!isRestrictedSubAdmin) return true;
     const cleanPath = location.pathname.split("?")[0].replace(/\/$/, "");
     if (SUPER_ADMIN_ONLY_PATHS.has(cleanPath) || SUPER_ADMIN_ONLY_PATHS.has(location.pathname)) return false;
-    if (location.pathname === "/admin/account-settings") return true;
+    if (cleanPath === "/admin/account-settings" || cleanPath === "/admin/settings") return true;
     const mappedKey = ROUTE_PERM_MAP[cleanPath];
     if (mappedKey) return userPerms.includes(mappedKey);
     const currentItem = NAV_SECTIONS.flatMap((s) => s.items).find((i) => i.path === cleanPath);
