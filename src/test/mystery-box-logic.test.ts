@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { prizeOrderGuard, toLocalGhPhone } from "../../supabase/functions/_shared/mystery_box";
+import { mysteryBoxError, prizeOrderGuard, toLocalGhPhone } from "../../supabase/functions/_shared/mystery_box";
 import {
   boxState,
   dismissKey,
@@ -104,5 +104,24 @@ describe("dismissal", () => {
     expect(shouldAutoShow("c1", 0, throwing)).toBe(true);
     expect(() => rememberDismiss("c1", 0, throwing)).not.toThrow();
     expect(shouldAutoShow("c1", 0, null)).toBe(true);
+  });
+});
+
+describe("mysteryBoxError", () => {
+  it("maps database exceptions to a code and friendly message", () => {
+    expect(mysteryBoxError("not_eligible")).toEqual({
+      error: "not_eligible",
+      message: "You don't have a box to open yet. Keep ordering to unlock one!",
+    });
+    expect(mysteryBoxError("out_of_stock").error).toBe("out_of_stock");
+    expect(mysteryBoxError("campaign_closed").message).toBe("This Mystery Box campaign has ended.");
+    expect(mysteryBoxError("invalid_phone").message).toBe("Enter a valid Ghana number, e.g. 024 123 4567.");
+  });
+  it("falls back for unknown errors", () => {
+    expect(mysteryBoxError("duplicate key value violates unique constraint")).toEqual({
+      error: "open_failed",
+      message: "We couldn't open your box right now. Please try again.",
+    });
+    expect(mysteryBoxError(undefined).error).toBe("open_failed");
   });
 });

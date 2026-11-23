@@ -33,3 +33,17 @@ export function prizeOrderGuard(order: PrizeOrderLike, open: MysteryBoxOpenLike 
   }
   return null;
 }
+
+const ERROR_MESSAGES: Record<string, string> = {
+  not_eligible: "You don't have a box to open yet. Keep ordering to unlock one!",
+  out_of_stock: "All the prizes for this campaign have been claimed. Watch out for the next one!",
+  campaign_closed: "This Mystery Box campaign has ended.",
+  invalid_phone: "Enter a valid Ghana number, e.g. 024 123 4567.",
+  open_failed: "We couldn't open your box right now. Please try again.",
+};
+
+/** Map a mystery_box_open exception message to a client error code + friendly text. */
+export function mysteryBoxError(raw: string | null | undefined): { error: string; message: string } {
+  const code = Object.keys(ERROR_MESSAGES).find((k) => k !== "open_failed" && String(raw ?? "").includes(k)) ?? "open_failed";
+  return { error: code, message: ERROR_MESSAGES[code] };
+}

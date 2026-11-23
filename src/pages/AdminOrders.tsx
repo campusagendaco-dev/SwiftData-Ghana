@@ -2190,6 +2190,7 @@ export default function AdminOrders() {
                          order.order_type === "airtime" ? "Airtime Purchase" :
                          order.order_type === "utility" ? "Utility Bill" :
                          order.order_type === "free_data_claim" ? "Free Promo" :
+                         order.order_type === "mystery_box_prize" ? "Mystery Box" :
                          order.order_type === "sub_agent_activation" ? "Sub Activation" :
                          order.order_type === "agent_activation" ? "Agent Activation" :
                          "Data Purchase"}
