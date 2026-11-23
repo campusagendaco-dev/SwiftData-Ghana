@@ -101,6 +101,7 @@ const AdminSettings = lazy(() => import("./pages/AdminSettings"));
 const AdminAnalytics = lazy(() => import("./pages/AdminAnalytics"));
 const AdminPromotions = lazy(() => import("./pages/AdminPromotions"));
 const AdminMysteryBox = lazy(() => import("./pages/AdminMysteryBox"));
+const AdminDatabaseSpace = lazy(() => import("./pages/AdminDatabaseSpace"));
 const AdminTickets = lazy(() => import("./pages/AdminTickets"));
 const AdminAuditLogs = lazy(() => import("./pages/AdminAuditLogs"));
 const AdminSecurity = lazy(() => import("./pages/AdminSecurity"));
@@ -594,6 +595,7 @@ const AppContent = () => {
           <Route path="banners" element={<AdminBanners />} />
           <Route path="engagement" element={<AdminEngagement />} />
           <Route path="system-logs" element={<AdminSystemLogs />} />
+          <Route path="database-space" element={<AdminDatabaseSpace />} />
           <Route path="broadcast" element={<AdminBroadcast />} />
           <Route path="stickers" element={<AdminStickers />} />
           <Route path="whatsapp-stickers" element={<AdminStickers />} />
