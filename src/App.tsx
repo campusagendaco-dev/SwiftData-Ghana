@@ -23,7 +23,6 @@ import { SecurityGuard } from "@/components/SecurityGuard";
 import { UpdatePrompt } from "@/components/UpdatePrompt";
 import { ChunkErrorBoundary } from "@/components/ChunkErrorBoundary";
 import { getActiveStoreDomain } from "@/lib/app-base-url";
-import { SpeedInsights } from "@vercel/speed-insights/react";
 
 // Code-split heavy dashboard/admin shells and non-critical modals
 const DashboardLayout = lazy(() => import("@/components/DashboardLayout"));
@@ -696,7 +695,6 @@ const App = () => {
               <InstallPrompt />
             </AuthProvider>
           </BrowserRouter>
-          <SpeedInsights />
         </TooltipProvider>
       </ThemeProvider>
     </QueryClientProvider>
