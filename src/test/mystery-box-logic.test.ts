@@ -2,11 +2,13 @@ import { describe, it, expect } from "vitest";
 import { allowsSiblingDedup, mysteryBoxError, prizeOrderGuard, routingOrderType, toLocalGhPhone } from "../../supabase/functions/_shared/mystery_box";
 import {
   boxState,
-  dismissKey,
+  DONE_TODAY_TEXT,
   lockedButtonLabel,
+  packageSizeGb,
   progressLine,
-  rememberDismiss,
-  shouldAutoShow,
+  rememberSeen,
+  seenKey,
+  shouldPopUp,
   type MysteryProgress,
 } from "@/lib/mysteryBox";
 
@@ -46,53 +48,55 @@ describe("toLocalGhPhone", () => {
   });
 });
 
-const p0: MysteryProgress = { qualifying_orders: 0, boxes_earned: 0, boxes_opened: 0, boxes_available: 0, orders_to_next: 2 };
+const p0: MysteryProgress = {
+  qualifying_orders: 0, boxes_earned: 0, boxes_opened: 0, boxes_available: 0, orders_to_next: 5, today: "2026-11-23",
+};
 
 describe("progress copy", () => {
-  it("shows the starting progress line", () => {
-    expect(progressLine(p0, 2)).toBe("Progress: 0/2 qualifying orders · 2 more to unlock");
+  it("shows today's progress toward the daily target", () => {
+    expect(progressLine(p0, 5)).toBe("Today: 0/5 orders · 5 more to unlock");
+    expect(progressLine({ ...p0, qualifying_orders: 1, orders_to_next: 4 }, 5)).toBe("Today: 1/5 orders · 4 more to unlock");
   });
-  it("counts progress toward the next box after one is earned", () => {
-    expect(progressLine({ ...p0, qualifying_orders: 3, boxes_earned: 1, orders_to_next: 1 }, 2)).toBe(
-      "Progress: 1/2 qualifying orders · 1 more to unlock",
-    );
+  it("tells the customer how many more orders today earn the reward", () => {
+    expect(lockedButtonLabel(4, "5GB or more")).toBe("Complete 4 more orders today to earn 5GB or more");
+    expect(lockedButtonLabel(1, "5GB or more")).toBe("Complete 1 more order today to earn 5GB or more");
   });
-  it("pluralises the locked button", () => {
-    expect(lockedButtonLabel(2)).toBe("Place 2 orders to unlock");
-    expect(lockedButtonLabel(1)).toBe("Place 1 order to unlock");
+  it("has the opened-today text", () => {
+    expect(DONE_TODAY_TEXT).toBe("You've opened today's box. Come back tomorrow!");
   });
 });
 
 describe("boxState", () => {
-  it("is locked with no boxes earned", () => {
-    expect(boxState(p0, 3)).toBe("locked");
+  it("is locked with no box earned today", () => {
+    expect(boxState(p0, 1)).toBe("locked");
   });
-  it("is available when an unopened box exists", () => {
-    expect(boxState({ ...p0, boxes_earned: 1, boxes_available: 1 }, 3)).toBe("available");
+  it("is available when today's box is unopened", () => {
+    expect(boxState({ ...p0, qualifying_orders: 5, boxes_earned: 1, boxes_available: 1, orders_to_next: 0 }, 1)).toBe("available");
   });
-  it("is done when every box is opened", () => {
-    expect(boxState({ ...p0, boxes_earned: 3, boxes_opened: 3 }, 3)).toBe("done");
+  it("is done once today's boxes are opened", () => {
+    expect(boxState({ ...p0, qualifying_orders: 6, boxes_earned: 1, boxes_opened: 1, orders_to_next: 0 }, 1)).toBe("done");
   });
 });
 
-describe("dismissal", () => {
+describe("pop-up memory", () => {
   const makeStore = () => {
     const mem = new Map<string, string>();
     return { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, v) };
   };
 
-  it("uses a per-campaign key", () => {
-    expect(dismissKey("c1")).toBe("swift_mystery_box_dismissed_c1");
+  it("uses a per-campaign, per-day key", () => {
+    expect(seenKey("c1", "2026-11-23")).toBe("swift_mystery_box_seen_c1_2026-11-23");
   });
-  it("shows until dismissed, then again only when a new box is earned", () => {
+  it("pops up only when today's count rises above what was last seen", () => {
     const s = makeStore();
-    expect(shouldAutoShow("c1", 0, s)).toBe(true);
-    rememberDismiss("c1", 0, s);
-    expect(shouldAutoShow("c1", 0, s)).toBe(false);
-    expect(shouldAutoShow("c1", 1, s)).toBe(true);
-    expect(shouldAutoShow("c2", 0, s)).toBe(true);
+    expect(shouldPopUp("c1", "2026-11-23", 0, s)).toBe(false);
+    expect(shouldPopUp("c1", "2026-11-23", 1, s)).toBe(true);
+    rememberSeen("c1", "2026-11-23", 1, s);
+    expect(shouldPopUp("c1", "2026-11-23", 1, s)).toBe(false);
+    expect(shouldPopUp("c1", "2026-11-23", 2, s)).toBe(true);
+    expect(shouldPopUp("c1", "2026-11-24", 1, s)).toBe(true);
   });
-  it("survives storage that throws", () => {
+  it("falls back to memory when storage throws or is missing", () => {
     const throwing = {
       getItem: () => {
         throw new Error("blocked");
@@ -101,9 +105,22 @@ describe("dismissal", () => {
         throw new Error("blocked");
       },
     };
-    expect(shouldAutoShow("c1", 0, throwing)).toBe(true);
-    expect(() => rememberDismiss("c1", 0, throwing)).not.toThrow();
-    expect(shouldAutoShow("c1", 0, null)).toBe(true);
+    expect(shouldPopUp("mem1", "2026-11-23", 1, throwing)).toBe(true);
+    expect(() => rememberSeen("mem1", "2026-11-23", 1, throwing)).not.toThrow();
+    expect(shouldPopUp("mem1", "2026-11-23", 1, throwing)).toBe(false);
+    expect(shouldPopUp("mem2", "2026-11-23", 1, null)).toBe(true);
+    rememberSeen("mem2", "2026-11-23", 1, null);
+    expect(shouldPopUp("mem2", "2026-11-23", 1, null)).toBe(false);
+  });
+});
+
+describe("packageSizeGb", () => {
+  it("parses bundle sizes into GB", () => {
+    expect(packageSizeGb("5GB")).toBe(5);
+    expect(packageSizeGb("10 GB")).toBe(10);
+    expect(packageSizeGb("512MB")).toBe(0.5);
+    expect(packageSizeGb("1TB")).toBe(1024);
+    expect(packageSizeGb("abc")).toBeNull();
   });
 });
 

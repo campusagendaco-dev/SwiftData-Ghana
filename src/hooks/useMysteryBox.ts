@@ -9,7 +9,8 @@ export type MysteryCampaign = {
   title: string;
   image_url: string | null;
   orders_per_box: number;
-  max_boxes_per_user: number;
+  boxes_per_day: number;
+  reward_text: string;
   bullets: string[];
   ends_at: string;
 };
@@ -28,7 +29,7 @@ async function fetchMysteryBox(): Promise<{ campaign: MysteryCampaign; progress:
   const nowIso = new Date().toISOString();
   const { data: row, error } = await supabase
     .from("mystery_box_campaigns")
-    .select("id, title, image_url, orders_per_box, max_boxes_per_user, bullets, ends_at")
+    .select("id, title, image_url, orders_per_box, boxes_per_day, reward_text, bullets, ends_at")
     .eq("is_active", true)
     .lte("starts_at", nowIso)
     .gt("ends_at", nowIso)
@@ -56,6 +57,7 @@ export function useMysteryBox(): {
   state: BoxState | null;
   isLoading: boolean;
   open: (phone: string) => Promise<OpenResult>;
+  refresh: () => void;
 } {
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -92,11 +94,16 @@ export function useMysteryBox(): {
     [campaign, queryClient, user?.id],
   );
 
+  const refresh = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["mystery-box", user?.id] });
+  }, [queryClient, user?.id]);
+
   return {
     campaign,
     progress,
-    state: campaign && progress ? boxState(progress, campaign.max_boxes_per_user) : null,
+    state: campaign && progress ? boxState(progress, campaign.boxes_per_day) : null,
     isLoading,
     open,
+    refresh,
   };
 }

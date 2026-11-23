@@ -1,5 +1,6 @@
--- Mystery Box campaigns: customers earn a box for every N fulfilled data orders inside a campaign
--- window and open it for a random, weighted, stock-limited data prize.
+-- Mystery Box campaigns (daily): customers earn a box by completing N delivered data orders TODAY
+-- (Ghana time = UTC, resets at midnight) inside the campaign window, up to boxes_per_day boxes a day,
+-- and open it for a random, weighted, stock-limited data prize.
 -- Apply in the Supabase SQL editor (never `supabase db push`). Safe to re-run.
 
 -- ---------------------------------------------------------------------------
@@ -13,10 +14,11 @@ CREATE TABLE IF NOT EXISTS public.mystery_box_campaigns (
   starts_at timestamptz NOT NULL DEFAULT now(),
   ends_at timestamptz NOT NULL,
   is_active boolean NOT NULL DEFAULT false,
-  orders_per_box integer NOT NULL DEFAULT 2 CHECK (orders_per_box >= 1),
-  max_boxes_per_user integer NOT NULL DEFAULT 3 CHECK (max_boxes_per_user >= 1),
+  orders_per_box integer NOT NULL DEFAULT 5 CHECK (orders_per_box >= 1),
+  boxes_per_day integer NOT NULL DEFAULT 1 CHECK (boxes_per_day >= 1),
+  reward_text text NOT NULL DEFAULT '5GB or more',
   min_order_amount numeric NOT NULL DEFAULT 0 CHECK (min_order_amount >= 0),
-  bullets jsonb NOT NULL DEFAULT '["Every order on your account during the campaign counts toward your box.","Open your box when you qualify.","Discover the surprise prize waiting inside!"]'::jsonb,
+  bullets jsonb NOT NULL DEFAULT '["Complete 5 successful orders today to unlock your box.","Open it to win 5GB or more.","New box every day: progress resets at midnight."]'::jsonb,
   created_at timestamptz NOT NULL DEFAULT now(),
   CHECK (ends_at > starts_at)
 );
@@ -40,13 +42,14 @@ CREATE TABLE IF NOT EXISTS public.mystery_box_opens (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   campaign_id uuid NOT NULL REFERENCES public.mystery_box_campaigns(id) ON DELETE RESTRICT,
   user_id uuid NOT NULL,
+  box_day date NOT NULL,
   box_number integer NOT NULL CHECK (box_number >= 1),
   prize_id uuid REFERENCES public.mystery_box_prizes(id) ON DELETE SET NULL,
   prize_label text NOT NULL,
   recipient_phone text NOT NULL,
   order_id uuid NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (campaign_id, user_id, box_number)
+  UNIQUE (campaign_id, user_id, box_day, box_number)
 );
 CREATE INDEX IF NOT EXISTS idx_mystery_box_opens_order ON public.mystery_box_opens (order_id);
 CREATE INDEX IF NOT EXISTS idx_mystery_box_opens_campaign_created ON public.mystery_box_opens (campaign_id, created_at DESC);
@@ -88,7 +91,7 @@ CREATE POLICY "mystery_box_opens_read_own" ON public.mystery_box_opens
 -- Progress (internal helper + caller-scoped wrapper)
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public._mystery_box_progress_for(p_campaign_id uuid, p_user_id uuid)
-RETURNS TABLE(qualifying_orders integer, boxes_earned integer, boxes_opened integer, boxes_available integer, orders_to_next integer)
+RETURNS TABLE(qualifying_orders integer, boxes_earned integer, boxes_opened integer, boxes_available integer, orders_to_next integer, today date)
 LANGUAGE plpgsql
 STABLE
 SECURITY DEFINER
@@ -97,10 +100,13 @@ AS $$
 DECLARE
   c public.mystery_box_campaigns%ROWTYPE;
   v_open boolean;
+  v_day_start timestamptz;
 BEGIN
+  today := (now() AT TIME ZONE 'UTC')::date;  -- Ghana time is UTC
+  v_day_start := today::timestamp AT TIME ZONE 'UTC';
   SELECT * INTO c FROM public.mystery_box_campaigns WHERE id = p_campaign_id;
   IF NOT FOUND OR p_user_id IS NULL THEN
-    RETURN QUERY SELECT 0, 0, 0, 0, 0;
+    RETURN QUERY SELECT 0, 0, 0, 0, 0, today;
     RETURN;
   END IF;
 
@@ -111,18 +117,18 @@ BEGIN
     AND o.order_type = 'data'
     AND o.amount > 0
     AND o.amount >= c.min_order_amount
-    AND o.created_at >= c.starts_at
-    AND o.created_at < c.ends_at;
+    AND o.created_at >= GREATEST(c.starts_at, v_day_start)
+    AND o.created_at < LEAST(c.ends_at, v_day_start + interval '1 day');
 
   SELECT count(*)::int INTO boxes_opened
   FROM public.mystery_box_opens m
-  WHERE m.campaign_id = p_campaign_id AND m.user_id = p_user_id;
+  WHERE m.campaign_id = p_campaign_id AND m.user_id = p_user_id AND m.box_day = today;
 
-  boxes_earned := LEAST(qualifying_orders / c.orders_per_box, c.max_boxes_per_user);
+  boxes_earned := LEAST(qualifying_orders / c.orders_per_box, c.boxes_per_day);
   v_open := c.is_active AND now() >= c.starts_at AND now() < c.ends_at;
   boxes_available := CASE WHEN v_open THEN GREATEST(boxes_earned - boxes_opened, 0) ELSE 0 END;
   orders_to_next := CASE
-    WHEN boxes_earned >= c.max_boxes_per_user THEN 0
+    WHEN boxes_earned >= c.boxes_per_day THEN 0
     ELSE c.orders_per_box - (qualifying_orders % c.orders_per_box)
   END;
   RETURN NEXT;
@@ -133,7 +139,7 @@ REVOKE ALL ON FUNCTION public._mystery_box_progress_for(uuid, uuid) FROM PUBLIC,
 GRANT EXECUTE ON FUNCTION public._mystery_box_progress_for(uuid, uuid) TO service_role;
 
 CREATE OR REPLACE FUNCTION public.mystery_box_progress(p_campaign_id uuid)
-RETURNS TABLE(qualifying_orders integer, boxes_earned integer, boxes_opened integer, boxes_available integer, orders_to_next integer)
+RETURNS TABLE(qualifying_orders integer, boxes_earned integer, boxes_opened integer, boxes_available integer, orders_to_next integer, today date)
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
@@ -259,8 +265,8 @@ BEGIN
       || CASE WHEN v_prize.is_mashup THEN jsonb_build_object('category', 'mashup') ELSE '{}'::jsonb END
   );
 
-  INSERT INTO public.mystery_box_opens (id, campaign_id, user_id, box_number, prize_id, prize_label, recipient_phone, order_id)
-  VALUES (v_open_id, p_campaign_id, p_user_id, v_box, v_prize.id, v_prize.label, p_phone, v_order_id);
+  INSERT INTO public.mystery_box_opens (id, campaign_id, user_id, box_day, box_number, prize_id, prize_label, recipient_phone, order_id)
+  VALUES (v_open_id, p_campaign_id, p_user_id, v_progress.today, v_box, v_prize.id, v_prize.label, p_phone, v_order_id);
 
   RETURN QUERY SELECT v_open_id, v_order_id, v_box, v_prize.label;
 END;

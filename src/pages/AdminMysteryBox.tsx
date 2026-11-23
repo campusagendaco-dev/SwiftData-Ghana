@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
-import { oddsPercent } from "@/lib/mysteryBox";
+import { oddsPercent, packageSizeGb } from "@/lib/mysteryBox";
 
 type Campaign = {
   id: string;
@@ -20,7 +20,8 @@ type Campaign = {
   ends_at: string;
   is_active: boolean;
   orders_per_box: number;
-  max_boxes_per_user: number;
+  boxes_per_day: number;
+  reward_text: string;
   min_order_amount: number;
   bullets: string[];
 };
@@ -51,10 +52,17 @@ type OpenRow = {
 type Pkg = { network: string; package_size: string };
 
 const DEFAULT_BULLETS = [
-  "Every order on your account during the campaign counts toward your box.",
-  "Open your box when you qualify.",
-  "Discover the surprise prize waiting inside!",
+  "Complete 5 successful orders today to unlock your box.",
+  "Open it to win 5GB or more.",
+  "New box every day: progress resets at midnight.",
 ];
+
+/** Prizes should be at least this big (owner's rule: "5GB or more"). */
+const MIN_PRIZE_GB = 5;
+const isUnderMinimum = (packageSize: string) => {
+  const gb = packageSizeGb(packageSize);
+  return gb !== null && gb < MIN_PRIZE_GB;
+};
 
 const toLocalInput = (iso: string) => {
   const d = new Date(iso);
@@ -73,8 +81,9 @@ const blankCampaign = (): Omit<Campaign, "id"> => {
     starts_at: start.toISOString(),
     ends_at: end.toISOString(),
     is_active: false,
-    orders_per_box: 2,
-    max_boxes_per_user: 3,
+    orders_per_box: 5,
+    boxes_per_day: 1,
+    reward_text: "5GB or more",
     min_order_amount: 0,
     bullets: [...DEFAULT_BULLETS],
   };
@@ -172,10 +181,11 @@ export default function AdminMysteryBox() {
     if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
       return toast.error("The end date must be after the start date.");
     }
-    if (!Number.isInteger(form.orders_per_box) || form.orders_per_box < 1) return toast.error("Orders per box must be 1 or more.");
-    if (!Number.isInteger(form.max_boxes_per_user) || form.max_boxes_per_user < 1) {
-      return toast.error("Max boxes per customer must be 1 or more.");
+    if (!Number.isInteger(form.orders_per_box) || form.orders_per_box < 1) return toast.error("Orders needed per day must be 1 or more.");
+    if (!Number.isInteger(form.boxes_per_day) || form.boxes_per_day < 1) {
+      return toast.error("Boxes per customer per day must be 1 or more.");
     }
+    if (!form.reward_text.trim()) return toast.error("Add the reward wording, e.g. 5GB or more.");
     if (!(form.min_order_amount >= 0)) return toast.error("Minimum order amount can't be negative.");
 
     setSaving(true);
@@ -191,6 +201,7 @@ export default function AdminMysteryBox() {
       const payload = {
         ...form,
         title: form.title.trim(),
+        reward_text: form.reward_text.trim(),
         image_url: imageUrl,
         starts_at: start.toISOString(),
         ends_at: end.toISOString(),
@@ -230,6 +241,9 @@ export default function AdminMysteryBox() {
       stock_remaining: stock,
     });
     if (error) return toast.error(error.message);
+    if (isUnderMinimum(newPrize.package_size)) {
+      toast.warning(`${newPrize.package_size} is under ${MIN_PRIZE_GB}GB — customers are promised "${form.reward_text}".`);
+    }
     setNewPrize({ label: "", network: newPrize.network, package_size: "", weight: "1", stock: "" });
     loadPrizesAndOpens(selectedId);
   };
@@ -262,8 +276,8 @@ export default function AdminMysteryBox() {
           <Gift className="h-6 w-6 text-amber-500" /> Mystery Box
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Customers earn a box for every few completed data orders, then open it for a random prize from the pool.
-          Only the newest active campaign is shown to customers.
+          Customers earn a box by completing a number of delivered data orders in one day (resets at midnight Ghana time),
+          then open it for a random prize from the pool. Only the newest active campaign is shown to customers.
         </p>
       </div>
 
@@ -293,7 +307,7 @@ export default function AdminMysteryBox() {
                     {live ? <Badge className="bg-emerald-600 text-white">Live</Badge> : <Badge variant="secondary">{c.is_active ? "Scheduled/ended" : "Off"}</Badge>}
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {new Date(c.starts_at).toLocaleDateString()} – {new Date(c.ends_at).toLocaleDateString()} · {c.orders_per_box} orders/box · max {c.max_boxes_per_user}
+                    {new Date(c.starts_at).toLocaleDateString()} – {new Date(c.ends_at).toLocaleDateString()} · {c.orders_per_box} orders/day · {c.boxes_per_day} box{c.boxes_per_day === 1 ? "" : "es"}/day
                   </p>
                 </button>
               );
@@ -305,7 +319,7 @@ export default function AdminMysteryBox() {
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle className="text-base">{selectedId ? "Edit campaign" : "New campaign"}</CardTitle>
-            <CardDescription>Only fulfilled data orders inside the window count. Free and prize orders never count.</CardDescription>
+            <CardDescription>Only delivered data orders placed today (inside the campaign dates) count. Free and prize orders never count.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
@@ -326,12 +340,17 @@ export default function AdminMysteryBox() {
                 <Input id="mb-end" type="datetime-local" value={toLocalInput(form.ends_at)} onChange={(e) => setForm({ ...form, ends_at: new Date(e.target.value).toISOString() })} />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="mb-per">Orders per box</Label>
+                <Label htmlFor="mb-per">Orders needed per day</Label>
                 <Input id="mb-per" type="number" min={1} value={form.orders_per_box} onChange={(e) => setForm({ ...form, orders_per_box: Number(e.target.value) })} />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="mb-max">Max boxes per customer</Label>
-                <Input id="mb-max" type="number" min={1} value={form.max_boxes_per_user} onChange={(e) => setForm({ ...form, max_boxes_per_user: Number(e.target.value) })} />
+                <Label htmlFor="mb-max">Boxes per customer per day</Label>
+                <Input id="mb-max" type="number" min={1} value={form.boxes_per_day} onChange={(e) => setForm({ ...form, boxes_per_day: Number(e.target.value) })} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="mb-reward">Reward wording</Label>
+                <Input id="mb-reward" placeholder="5GB or more" value={form.reward_text} onChange={(e) => setForm({ ...form, reward_text: e.target.value })} />
+                <p className="text-xs text-muted-foreground">Shown as "Complete 4 more orders today to earn …"</p>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="mb-min">Minimum order amount (GH₵)</Label>
@@ -400,7 +419,8 @@ export default function AdminMysteryBox() {
                         <tr key={p.id} className="border-t border-border">
                           <td className="py-2 pr-3 font-medium text-foreground">{p.label}</td>
                           <td className="py-2 pr-3 text-muted-foreground">
-                            {p.network} {p.package_size} {p.is_mashup && <Badge variant="secondary">Mashup</Badge>}
+                            {p.network} {p.package_size} {p.is_mashup && <Badge variant="secondary">Mashup</Badge>}{" "}
+                            {isUnderMinimum(p.package_size) && <Badge variant="destructive">Under {MIN_PRIZE_GB}GB</Badge>}
                           </td>
                           <td className="py-2 pr-3">
                             <Input

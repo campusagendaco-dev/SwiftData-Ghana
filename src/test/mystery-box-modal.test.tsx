@@ -19,18 +19,20 @@ const campaign = {
   id: "c1",
   title: "Mystery Box",
   image_url: null,
-  orders_per_box: 2,
-  max_boxes_per_user: 3,
+  orders_per_box: 5,
+  boxes_per_day: 1,
+  reward_text: "5GB or more",
   bullets: [
-    "Every order on your account during the campaign counts toward your box.",
-    "Open your box when you qualify.",
-    "Discover the surprise prize waiting inside!",
+    "Complete 5 successful orders today to unlock your box.",
+    "Open it to win 5GB or more.",
+    "New box every day: progress resets at midnight.",
   ],
   ends_at: "2099-01-01T00:00:00Z",
 };
-const p0: MysteryProgress = { qualifying_orders: 0, boxes_earned: 0, boxes_opened: 0, boxes_available: 0, orders_to_next: 2 };
-const available: MysteryProgress = { qualifying_orders: 2, boxes_earned: 1, boxes_opened: 0, boxes_available: 1, orders_to_next: 2 };
-const done: MysteryProgress = { qualifying_orders: 6, boxes_earned: 3, boxes_opened: 3, boxes_available: 0, orders_to_next: 0 };
+const today = "2026-11-23";
+const p1: MysteryProgress = { qualifying_orders: 1, boxes_earned: 0, boxes_opened: 0, boxes_available: 0, orders_to_next: 4, today };
+const available: MysteryProgress = { qualifying_orders: 5, boxes_earned: 1, boxes_opened: 0, boxes_available: 1, orders_to_next: 0, today };
+const done: MysteryProgress = { qualifying_orders: 6, boxes_earned: 1, boxes_opened: 1, boxes_available: 0, orders_to_next: 0, today };
 
 type HookValue = {
   campaign: typeof campaign | null;
@@ -38,9 +40,10 @@ type HookValue = {
   state: "locked" | "available" | "done" | null;
   isLoading: boolean;
   open: typeof openBox;
+  refresh: () => void;
 };
 const hook: { current: HookValue } = {
-  current: { campaign, progress: p0, state: "locked", isLoading: false, open: openBox },
+  current: { campaign, progress: p1, state: "locked", isLoading: false, open: openBox, refresh: vi.fn() },
 };
 vi.mock("@/hooks/useMysteryBox", () => ({ useMysteryBox: () => hook.current }));
 
@@ -48,7 +51,7 @@ import { MysteryBoxModal } from "@/components/MysteryBoxModal";
 import { MysteryBoxCard } from "@/components/MysteryBoxCard";
 
 const setHook = (progress: MysteryProgress | null, state: HookValue["state"], c: typeof campaign | null = campaign) => {
-  hook.current = { campaign: c, progress, state, isLoading: false, open: openBox };
+  hook.current = { campaign: c, progress, state, isLoading: false, open: openBox, refresh: vi.fn() };
 };
 
 beforeEach(() => {
@@ -56,7 +59,7 @@ beforeEach(() => {
   toastError.mockReset();
   openBox.mockReset();
   auth.current = { user: { id: "u1" }, profile: { phone: "0241234567" }, isAdmin: false };
-  setHook(p0, "locked");
+  setHook(p1, "locked");
   window.sessionStorage.clear();
 });
 
@@ -66,12 +69,13 @@ afterEach(() => {
 });
 
 describe("MysteryBoxModal", () => {
-  it("shows locked progress and sends the user to buy data", () => {
+  it("shows today's progress and sends the user to buy data", () => {
     const onOpenChange = vi.fn();
     render(<MysteryBoxModal open onOpenChange={onOpenChange} revealDelayMs={0} />);
-    expect(screen.getByText("Progress: 0/2 qualifying orders · 2 more to unlock")).toBeInTheDocument();
-    expect(screen.getByText("Open your box when you qualify.")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Place 2 orders to unlock" }));
+    expect(screen.getByText("Today: 1/5 orders · 4 more to unlock")).toBeInTheDocument();
+    expect(screen.getByText("Open it to win 5GB or more.")).toBeInTheDocument();
+    expect(screen.queryByText(/Box \d of/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Complete 4 more orders today to earn 5GB or more" }));
     expect(navigate).toHaveBeenCalledWith("/dashboard/buy-data/mtn");
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
@@ -113,11 +117,11 @@ describe("MysteryBoxModal", () => {
     expect(screen.queryByText(/You won/)).not.toBeInTheDocument();
   });
 
-  it("shows the done state when every box is opened", () => {
+  it("shows the come-back-tomorrow state once today's box is opened", () => {
     setHook(done, "done");
     render(<MysteryBoxModal open onOpenChange={vi.fn()} revealDelayMs={0} />);
-    expect(screen.getAllByText("You've opened all your boxes. Thanks!").length).toBeGreaterThan(0);
-    expect(screen.queryByRole("button", { name: /Place .* to unlock/ })).not.toBeInTheDocument();
+    expect(screen.getAllByText("You've opened today's box. Come back tomorrow!").length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: /Complete .* today/ })).not.toBeInTheDocument();
   });
 });
 
@@ -134,33 +138,17 @@ describe("MysteryBoxCard", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("auto-opens once, stays dismissed, and re-opens when a new box is earned", async () => {
-    render(<MysteryBoxCard />);
-    expect(await screen.findByRole("dialog")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Close" }));
-    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-
-    cleanup();
+  it("does not open by itself on the dashboard, but opens from its button", async () => {
+    setHook(available, "available");
     render(<MysteryBoxCard />);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(screen.getByText("Progress: 0/2 qualifying orders · 2 more to unlock")).toBeInTheDocument();
-
-    setHook(available, "available");
-    cleanup();
-    render(<MysteryBoxCard />);
+    expect(screen.getByText("Your box is ready to open! 🎁")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Open now" }));
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
   });
 
-  it("still works when sessionStorage throws", async () => {
-    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
-      throw new Error("blocked");
-    });
-    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
-      throw new Error("blocked");
-    });
+  it("shows today's progress while locked", () => {
     render(<MysteryBoxCard />);
-    expect(await screen.findByRole("dialog")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Close" }));
-    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(screen.getByText("Today: 1/5 orders · 4 more to unlock")).toBeInTheDocument();
   });
 });

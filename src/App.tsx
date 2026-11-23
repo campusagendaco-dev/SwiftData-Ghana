@@ -31,6 +31,7 @@ const AdminLayout = lazy(() => import("@/components/AdminLayout"));
 const AdminWalletLedger = lazy(() => import("./pages/AdminWalletLedger"));
 const TutorialModal = lazy(() => import("@/components/TutorialModal"));
 const DataPromoPopupModal = lazy(() => import("@/components/DataPromoPopupModal").then(m => ({ default: m.DataPromoPopupModal })));
+const MysteryBoxWatcher = lazy(() => import("@/components/MysteryBoxWatcher"));
 const LocationAlertPrompt = lazy(() => import("@/components/LocationAlertPrompt").then(m => ({ default: m.LocationAlertPrompt })));
 const AccountSwitcherModal = lazy(() => import("@/components/AccountSwitcherModal").then(m => ({ default: m.AccountSwitcherModal })));
 const AIConcierge = lazy(() => import("@/components/AIConcierge"));
@@ -625,6 +626,7 @@ const AppContent = () => {
           <AccountSwitcherModal />
           {!isAgentStore && !isChallengeArenaPage && !isAdmin && <FreeDataButton />}
           {!isAgentStore && !isChallengeArenaPage && !isAdmin && <DataPromoPopupModal />}
+          {!isAgentStore && !isChallengeArenaPage && !isAdmin && <MysteryBoxWatcher />}
           {!isAgentStore && !isChallengeArenaPage && !isAdmin && <LocationAlertPrompt />}
         </Suspense>
         {!isAgentStore && !isChallengeArenaPage && !isAdmin && <WhatsAppButton />}

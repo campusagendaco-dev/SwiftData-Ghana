@@ -1,6 +1,7 @@
 -- Checks for migration 20261123120000_mystery_box_campaigns.sql.
 -- Everything runs inside a transaction that is rolled back, so it is safe to run on production
--- after the migration is applied. It needs one auth.users row with no orders in the last 2 hours.
+-- after the migration is applied. It needs one auth.users row with no orders in the last 2 hours,
+-- and must run at least 10 minutes after midnight UTC (Ghana time) so its seed orders fall "today".
 -- It acts as the service role (like the open-mystery-box function), so the client-insert trigger
 -- (tr_force_order_pending) stays out of the way, and it keeps real opens to 2 so the
 -- 5-orders-a-minute guard (trg_rapid_order_rate_limit_guard) never fires. Prize odds are
@@ -11,7 +12,8 @@ BEGIN;
 DO $$
 DECLARE
   v_user uuid;
-  c1 uuid; c2 uuid; c3 uuid; c4 uuid; c5 uuid;
+  c1 uuid; c2 uuid; c3 uuid; c4 uuid; c5 uuid; c6 uuid; c7 uuid;
+  v_today date := (now() AT TIME ZONE 'UTC')::date;
   pa uuid; pb uuid; pc uuid;
   v_seed timestamptz := now() - interval '5 minutes';
   v_start timestamptz := now() - interval '1 hour';
@@ -24,6 +26,9 @@ DECLARE
   v_c int := 0;
   i int;
 BEGIN
+  IF now() - (v_today::timestamp AT TIME ZONE 'UTC') < interval '10 minutes' THEN
+    RAISE EXCEPTION 'run these checks at least 10 minutes after midnight UTC';
+  END IF;
   SELECT u.id INTO v_user FROM auth.users u
   WHERE NOT EXISTS (SELECT 1 FROM public.orders o WHERE o.agent_id = u.id AND o.created_at > now() - interval '2 hours')
   LIMIT 1;
@@ -31,8 +36,8 @@ BEGIN
   PERFORM set_config('request.jwt.claims', json_build_object('sub', v_user, 'role', 'service_role')::text, true);
 
   -- (a) only fulfilled orders count --------------------------------------------------------
-  INSERT INTO public.mystery_box_campaigns (title, starts_at, ends_at, is_active, orders_per_box, max_boxes_per_user)
-  VALUES ('check c1', v_start, now() + interval '1 day', true, 2, 2) RETURNING id INTO c1;
+  INSERT INTO public.mystery_box_campaigns (title, starts_at, ends_at, is_active, orders_per_box, boxes_per_day)
+  VALUES ('check c1', v_start, now() + interval '1 day', true, 2, 1) RETURNING id INTO c1;
   INSERT INTO public.mystery_box_prizes (campaign_id, label, network, package_size, weight)
   VALUES (c1, '1GB MTN', 'MTN', '1GB', 1);
 
@@ -47,7 +52,8 @@ BEGIN
   UPDATE public.orders SET status = 'fulfilled'
    WHERE agent_id = v_user AND order_type = 'data' AND status = 'paid' AND created_at = v_seed;
   SELECT * INTO pr FROM public.mystery_box_progress(c1);
-  IF pr.qualifying_orders <> 2 OR pr.boxes_earned <> 1 OR pr.boxes_available <> 1 OR pr.orders_to_next <> 2 THEN
+  IF pr.qualifying_orders <> 2 OR pr.boxes_earned <> 1 OR pr.boxes_available <> 1 OR pr.orders_to_next <> 0
+     OR pr.today <> v_today THEN
     RAISE EXCEPTION 'FAIL (a) fulfilled orders not counted: %', row_to_json(pr);
   END IF;
   RAISE NOTICE 'PASS (a) only fulfilled orders count';
@@ -59,6 +65,29 @@ BEGIN
   SELECT * INTO pr FROM public.mystery_box_progress(c1);
   IF pr.qualifying_orders <> 2 THEN RAISE EXCEPTION 'FAIL (b) counted %', pr.qualifying_orders; END IF;
   RAISE NOTICE 'PASS (b) zero-amount and free-data orders ignored';
+
+  -- (i) yesterday's orders and yesterday's open don't count today ----------------------------
+  INSERT INTO public.mystery_box_campaigns (title, starts_at, ends_at, is_active, orders_per_box, boxes_per_day)
+  VALUES ('check c6', now() - interval '3 days', now() + interval '1 day', true, 2, 1) RETURNING id INTO c6;
+  INSERT INTO public.orders (agent_id, order_type, network, package_size, customer_phone, amount, status, created_at)
+  SELECT v_user, 'data', 'MTN', '1GB', '0200000000', 5, 'fulfilled', (v_today::timestamp AT TIME ZONE 'UTC') - interval '2 hours'
+  FROM generate_series(1, 3);
+  INSERT INTO public.mystery_box_opens (campaign_id, user_id, box_day, box_number, prize_label, recipient_phone, order_id)
+  VALUES (c6, v_user, v_today - 1, 1, 'yesterday prize', '0241234567', gen_random_uuid());
+  SELECT * INTO pr FROM public.mystery_box_progress(c6);
+  IF pr.qualifying_orders <> 2 OR pr.boxes_opened <> 0 OR pr.boxes_available <> 1 THEN
+    RAISE EXCEPTION 'FAIL (i) yesterday leaked into today: %', row_to_json(pr);
+  END IF;
+  RAISE NOTICE 'PASS (i) yesterday''s orders and open do not count today';
+
+  -- (j) boxes_per_day caps today's boxes ------------------------------------------------------
+  INSERT INTO public.mystery_box_campaigns (title, starts_at, ends_at, is_active, orders_per_box, boxes_per_day)
+  VALUES ('check c7', v_start, now() + interval '1 day', true, 1, 1) RETURNING id INTO c7;
+  SELECT * INTO pr FROM public.mystery_box_progress(c7);
+  IF pr.qualifying_orders <> 2 OR pr.boxes_earned <> 1 OR pr.orders_to_next <> 0 THEN
+    RAISE EXCEPTION 'FAIL (j) daily cap not applied: %', row_to_json(pr);
+  END IF;
+  RAISE NOTICE 'PASS (j) boxes_per_day caps today''s boxes';
 
   -- (c) first open succeeds and creates a paid prize order (real open #1) ---------------------
   SELECT * INTO r FROM public.mystery_box_open(c1, v_user, '0241234567');
@@ -101,7 +130,7 @@ BEGIN
   RAISE NOTICE 'PASS (d2) invalid phone and closed campaign refused';
 
   -- (e) a sold-out prize is never picked again -----------------------------------------------
-  INSERT INTO public.mystery_box_campaigns (title, starts_at, ends_at, is_active, orders_per_box, max_boxes_per_user)
+  INSERT INTO public.mystery_box_campaigns (title, starts_at, ends_at, is_active, orders_per_box, boxes_per_day)
   VALUES ('check c3', v_start, now() + interval '1 day', true, 1, 1000) RETURNING id INTO c3;
   INSERT INTO public.mystery_box_prizes (campaign_id, label, network, package_size, weight, stock_total, stock_remaining)
   VALUES (c3, 'rare', 'MTN', '5GB', 9, 1, 1) RETURNING id INTO pa;
@@ -117,7 +146,7 @@ BEGIN
   RAISE NOTICE 'PASS (e) sold-out prize never picked again';
 
   -- (f) everything sold out -> out_of_stock, stock never negative (real open #2) --------------
-  INSERT INTO public.mystery_box_campaigns (title, starts_at, ends_at, is_active, orders_per_box, max_boxes_per_user)
+  INSERT INTO public.mystery_box_campaigns (title, starts_at, ends_at, is_active, orders_per_box, boxes_per_day)
   VALUES ('check c4', v_start, now() + interval '1 day', true, 1, 5) RETURNING id INTO c4;
   INSERT INTO public.mystery_box_prizes (campaign_id, label, network, package_size, weight, stock_total, stock_remaining)
   VALUES (c4, 'only one', 'MTN', '1GB', 1, 1, 1) RETURNING id INTO pa;
@@ -135,7 +164,7 @@ BEGIN
   RAISE NOTICE 'PASS (f) out_of_stock when sold out, stock stays at 0';
 
   -- (g) weights 1:9 give roughly 10% / 90% -----------------------------------------------------
-  INSERT INTO public.mystery_box_campaigns (title, starts_at, ends_at, is_active, orders_per_box, max_boxes_per_user)
+  INSERT INTO public.mystery_box_campaigns (title, starts_at, ends_at, is_active, orders_per_box, boxes_per_day)
   VALUES ('check c2', v_start, now() + interval '1 day', true, 1, 1000) RETURNING id INTO c2;
   INSERT INTO public.mystery_box_prizes (campaign_id, label, network, package_size, weight)
   VALUES (c2, 'A', 'MTN', '2GB', 1), (c2, 'B', 'MTN', '1GB', 9);
@@ -148,7 +177,7 @@ BEGIN
   RAISE NOTICE 'PASS (g) weighted pick 1:9: A = %/200', v_a;
 
   -- (g2) three prizes 8:1:1 give roughly 80% / 10% / 10% --------------------------------------
-  INSERT INTO public.mystery_box_campaigns (title, starts_at, ends_at, is_active, orders_per_box, max_boxes_per_user)
+  INSERT INTO public.mystery_box_campaigns (title, starts_at, ends_at, is_active, orders_per_box, boxes_per_day)
   VALUES ('check c5', v_start, now() + interval '1 day', true, 1, 1000) RETURNING id INTO c5;
   -- Fixed ids put the heavy prize first in running-weight order, the order in which a pick that
   -- re-draws random() per row is most visibly wrong (it gives about 80/18/2).
@@ -186,8 +215,8 @@ BEGIN
   END;
   BEGIN
     EXECUTE 'SET LOCAL ROLE authenticated';
-    INSERT INTO public.mystery_box_opens (campaign_id, user_id, box_number, prize_label, recipient_phone, order_id)
-    VALUES (c2, v_user, 999, 'x', '0241234567', gen_random_uuid());
+    INSERT INTO public.mystery_box_opens (campaign_id, user_id, box_day, box_number, prize_label, recipient_phone, order_id)
+    VALUES (c2, v_user, v_today, 999, 'x', '0241234567', gen_random_uuid());
     RAISE EXCEPTION 'FAIL (h) authenticated could insert an open';
   EXCEPTION WHEN insufficient_privilege THEN
     NULL;

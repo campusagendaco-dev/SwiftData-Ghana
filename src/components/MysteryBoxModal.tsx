@@ -7,10 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/compone
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/useAuth";
 import { useMysteryBox } from "@/hooks/useMysteryBox";
-import { lockedButtonLabel, progressLine } from "@/lib/mysteryBox";
-
-const DONE_TEXT = "You've opened all your boxes. Thanks!";
-const READY_TEXT = "Your box is ready to open! 🎁";
+import { DONE_TODAY_TEXT, READY_TEXT, lockedButtonLabel, progressLine } from "@/lib/mysteryBox";
 
 type Phase = "idle" | "opening" | "revealed";
 
@@ -88,7 +85,7 @@ export function MysteryBoxModal({
     navigate("/dashboard/buy-data/mtn");
   };
 
-  const showBoxCount = campaign.max_boxes_per_user > 1 && state !== "done" && phase !== "revealed";
+  const showBoxCount = campaign.boxes_per_day > 1 && state !== "done" && phase !== "revealed";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -147,7 +144,7 @@ export function MysteryBoxModal({
           ) : (
             <>
               <DialogDescription className="text-[13px] text-muted-foreground">
-                {state === "done" ? DONE_TEXT : state === "available" ? READY_TEXT : progressLine(progress, campaign.orders_per_box)}
+                {state === "done" ? DONE_TODAY_TEXT : state === "available" ? READY_TEXT : progressLine(progress, campaign.orders_per_box)}
               </DialogDescription>
 
               <ul className="space-y-2">
@@ -161,7 +158,7 @@ export function MysteryBoxModal({
 
               {showBoxCount && (
                 <p className="text-xs font-medium text-muted-foreground">
-                  Box {Math.min(progress.boxes_opened + 1, campaign.max_boxes_per_user)} of {campaign.max_boxes_per_user}
+                  Today's box {Math.min(progress.boxes_opened + 1, campaign.boxes_per_day)} of {campaign.boxes_per_day}
                 </p>
               )}
 
@@ -204,7 +201,7 @@ export function MysteryBoxModal({
                   onClick={goBuy}
                   className="h-12 w-full rounded-xl bg-foreground text-sm font-semibold text-background transition hover:opacity-90"
                 >
-                  {lockedButtonLabel(progress.orders_to_next)}
+                  {lockedButtonLabel(progress.orders_to_next, campaign.reward_text)}
                 </button>
               )}
 
@@ -214,7 +211,7 @@ export function MysteryBoxModal({
                   disabled
                   className="h-12 w-full rounded-xl bg-muted text-sm font-semibold text-muted-foreground"
                 >
-                  {DONE_TEXT}
+                  {DONE_TODAY_TEXT}
                 </button>
               )}
             </>
