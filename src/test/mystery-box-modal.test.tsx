@@ -86,6 +86,13 @@ describe("MysteryBoxModal", () => {
     expect(await screen.findByText("You won 1GB MTN Data! 🎉")).toBeInTheDocument();
   });
 
+  it("says the box is ready instead of showing unlock progress", () => {
+    setHook(available, "available");
+    render(<MysteryBoxModal open onOpenChange={vi.fn()} revealDelayMs={0} />);
+    expect(screen.getByText("Your box is ready to open! 🎁")).toBeInTheDocument();
+    expect(screen.queryByText(/more to unlock/)).not.toBeInTheDocument();
+  });
+
   it("lets the user clear and retype the prize phone", () => {
     setHook(available, "available");
     render(<MysteryBoxModal open onOpenChange={vi.fn()} revealDelayMs={0} />);

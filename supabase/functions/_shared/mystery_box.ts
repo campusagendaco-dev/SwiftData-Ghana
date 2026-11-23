@@ -47,3 +47,17 @@ export function mysteryBoxError(raw: string | null | undefined): { error: string
   const code = Object.keys(ERROR_MESSAGES).find((k) => k !== "open_failed" && String(raw ?? "").includes(k)) ?? "open_failed";
   return { error: code, message: ERROR_MESSAGES[code] };
 }
+
+/** Order type to use when choosing a provider/product: prizes are delivered as ordinary data bundles. */
+export function routingOrderType(orderType: string | null | undefined): string {
+  const t = String(orderType || "data");
+  return t.toLowerCase() === "mystery_box_prize" ? "data" : t;
+}
+
+/**
+ * Whether verify-payment's "identical sibling order in the last 60s" shortcut may mark this order done.
+ * Two prize orders with the same bundle and phone are distinct wins (each has its own open record).
+ */
+export function allowsSiblingDedup(orderType: string | null | undefined): boolean {
+  return String(orderType || "").toLowerCase() !== "mystery_box_prize";
+}

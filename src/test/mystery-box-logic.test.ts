@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mysteryBoxError, prizeOrderGuard, toLocalGhPhone } from "../../supabase/functions/_shared/mystery_box";
+import { allowsSiblingDedup, mysteryBoxError, prizeOrderGuard, routingOrderType, toLocalGhPhone } from "../../supabase/functions/_shared/mystery_box";
 import {
   boxState,
   dismissKey,
@@ -123,5 +123,23 @@ describe("mysteryBoxError", () => {
       message: "We couldn't open your box right now. Please try again.",
     });
     expect(mysteryBoxError(undefined).error).toBe("open_failed");
+  });
+});
+
+describe("routingOrderType", () => {
+  it("routes mystery box prizes as data and leaves other types alone", () => {
+    expect(routingOrderType("mystery_box_prize")).toBe("data");
+    expect(routingOrderType("MYSTERY_BOX_PRIZE")).toBe("data");
+    expect(routingOrderType("free_data_claim")).toBe("free_data_claim");
+    expect(routingOrderType("airtime")).toBe("airtime");
+    expect(routingOrderType(null)).toBe("data");
+  });
+});
+
+describe("allowsSiblingDedup", () => {
+  it("never treats two distinct prize orders as duplicates of each other", () => {
+    expect(allowsSiblingDedup("mystery_box_prize")).toBe(false);
+    expect(allowsSiblingDedup("data")).toBe(true);
+    expect(allowsSiblingDedup("free_data_claim")).toBe(true);
   });
 });

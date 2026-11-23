@@ -10,6 +10,7 @@ import { useMysteryBox } from "@/hooks/useMysteryBox";
 import { lockedButtonLabel, progressLine } from "@/lib/mysteryBox";
 
 const DONE_TEXT = "You've opened all your boxes. Thanks!";
+const READY_TEXT = "Your box is ready to open! 🎁";
 
 type Phase = "idle" | "opening" | "revealed";
 
@@ -146,7 +147,7 @@ export function MysteryBoxModal({
           ) : (
             <>
               <DialogDescription className="text-[13px] text-muted-foreground">
-                {state === "done" ? DONE_TEXT : progressLine(progress, campaign.orders_per_box)}
+                {state === "done" ? DONE_TEXT : state === "available" ? READY_TEXT : progressLine(progress, campaign.orders_per_box)}
               </DialogDescription>
 
               <ul className="space-y-2">

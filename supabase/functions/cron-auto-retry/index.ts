@@ -7,6 +7,7 @@ import { isNonRetryableTerminalError, isDuplicateOrderError } from "../_shared/p
 import { log } from "../_shared/logger.ts";
 import { sendPaymentSms, normalizePhone } from "../_shared/sms.ts";
 import { verifyAdmin } from "../_shared/auth.ts";
+import { routingOrderType } from "../_shared/mystery_box.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -19,7 +20,7 @@ const corsHeaders = {
  * that must NEVER be routed or failed over to Korba.
  */
 function isSmeDataBundle(order: any): boolean {
-  const orderType = String(order?.order_type || "data").toLowerCase();
+  const orderType = routingOrderType(order?.order_type).toLowerCase();
   const isDataOrder = orderType === "data" || !orderType || orderType === "sme";
   if (!isDataOrder) return false;
 

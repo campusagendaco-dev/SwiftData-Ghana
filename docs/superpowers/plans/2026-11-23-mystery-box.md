@@ -151,11 +151,12 @@ expect(() => rememberDismiss("c1", 0, throwing)).not.toThrow();
 **Weighted pick** (the signature doesn't decide this):
 
 ```sql
+-- (corrected after review: random() in the WHERE clause is re-drawn per row and skews odds with 3+ prizes)
+SELECT sum(weight) INTO v_total FROM mystery_box_prizes WHERE <eligible>;
+v_r := floor(random() * v_total);            -- one draw per pick
 SELECT * INTO v_prize FROM (
-  SELECT p.*, sum(weight) OVER (ORDER BY id) AS cum, sum(weight) OVER () AS total
-  FROM mystery_box_prizes p
-  WHERE campaign_id = p_campaign_id AND is_active AND (stock_remaining IS NULL OR stock_remaining > 0)
-) t WHERE cum > floor(random() * total) ORDER BY cum LIMIT 1;
+  SELECT p.*, sum(weight) OVER (ORDER BY id) AS cum FROM mystery_box_prizes p WHERE <eligible>
+) t WHERE cum > v_r ORDER BY cum LIMIT 1;
 -- then: UPDATE … SET stock_remaining = stock_remaining - 1 WHERE id = v_prize.id AND stock_remaining > 0
 -- (skip when NULL); if 0 rows updated, RAISE 'out_of_stock'.
 ```

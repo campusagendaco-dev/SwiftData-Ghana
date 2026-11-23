@@ -15,7 +15,7 @@ import { sendWhatsAppOrderReceipt, checkAndTriggerDeliveryOnFire } from "../_sha
 import { isDuplicateOrderError, isBeneficiaryFailure, isUncertainDeliveryError, isAwaitingProviderRef, AWAITING_PROVIDER_REF } from "../_shared/providers/utils.ts";
 import { verifyAdmin } from "../_shared/auth.ts";
 import { autoSubmitBeneficiaryNumber } from "../_shared/beneficiary_auto_submit.ts";
-import { prizeOrderGuard } from "../_shared/mystery_box.ts";
+import { allowsSiblingDedup, prizeOrderGuard, routingOrderType } from "../_shared/mystery_box.ts";
 
 // --- Utilities ---
 
@@ -1969,7 +1969,7 @@ serve(async (req: any) => {
     // --- SIBLING DUPLICATE PROTECTION ---
     // Look for any identical order submitted in the last 60 seconds for the same phone, network, package, and amount.
     // We check if an active sibling order for identical details is currently processing (e.g. rapid double-click or webhook race condition within 60 seconds).
-    if (isProviderOrder && customerPhone && network && packageSize) {
+    if (isProviderOrder && allowsSiblingDedup(currentOrderType) && customerPhone && network && packageSize) {
       const sixtySecondsAgo = new Date(Date.now() - 60 * 1000).toISOString();
       const { data: rawSiblings } = await supabaseAdmin
         .from("orders")
@@ -2281,7 +2281,7 @@ serve(async (req: any) => {
         package_size: packageSize,
         amount: deliveryAmount,
         price: deliveryAmount,
-        order_type: currentOrderType || effectiveOrderType || "data",
+        order_type: (currentOrderType ? routingOrderType(currentOrderType) : "") || effectiveOrderType || "data",
         reference: targetReference,
         order_id: targetReference,
         metadata: claimedOrder.metadata,

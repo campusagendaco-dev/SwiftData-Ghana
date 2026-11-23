@@ -146,6 +146,70 @@ REVOKE ALL ON FUNCTION public.mystery_box_progress(uuid) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.mystery_box_progress(uuid) TO authenticated, service_role;
 
 -- ---------------------------------------------------------------------------
+-- Weighted pick (service role only): one active prize with stock left, chosen with probability
+-- weight / total weight, and its stock lowered. Raises out_of_stock when nothing is left.
+-- Callers must hold the campaign row lock (mystery_box_open does).
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public._mystery_box_pick(p_campaign_id uuid)
+RETURNS public.mystery_box_prizes
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_prize public.mystery_box_prizes%ROWTYPE;
+  v_rows integer;
+  v_total bigint;
+  v_r bigint;
+BEGIN
+  SELECT sum(p.weight) INTO v_total
+  FROM public.mystery_box_prizes p
+  WHERE p.campaign_id = p_campaign_id
+    AND p.is_active
+    AND (p.stock_remaining IS NULL OR p.stock_remaining > 0);
+  IF v_total IS NULL OR v_total <= 0 THEN
+    RAISE EXCEPTION 'out_of_stock';
+  END IF;
+
+  -- Draw ONE number in [0, total) and take the first prize whose running weight passes it.
+  -- (random() must not appear in the WHERE clause: it would be re-drawn for every row.)
+  v_r := floor(random() * v_total)::bigint;
+  SELECT t.id, t.campaign_id, t.label, t.network, t.package_size, t.is_mashup, t.weight,
+         t.stock_total, t.stock_remaining, t.is_active, t.created_at
+    INTO v_prize
+  FROM (
+    SELECT p.*, sum(p.weight) OVER (ORDER BY p.id) AS cum
+    FROM public.mystery_box_prizes p
+    WHERE p.campaign_id = p_campaign_id
+      AND p.is_active
+      AND (p.stock_remaining IS NULL OR p.stock_remaining > 0)
+  ) t
+  WHERE t.cum > v_r
+  ORDER BY t.cum
+  LIMIT 1;
+
+  IF v_prize.id IS NULL THEN
+    RAISE EXCEPTION 'out_of_stock';
+  END IF;
+
+  IF v_prize.stock_remaining IS NOT NULL THEN
+    UPDATE public.mystery_box_prizes
+       SET stock_remaining = stock_remaining - 1
+     WHERE id = v_prize.id AND stock_remaining > 0;
+    GET DIAGNOSTICS v_rows = ROW_COUNT;
+    IF v_rows = 0 THEN
+      RAISE EXCEPTION 'out_of_stock';
+    END IF;
+  END IF;
+
+  RETURN v_prize;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public._mystery_box_pick(uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public._mystery_box_pick(uuid) TO service_role;
+
+-- ---------------------------------------------------------------------------
 -- Open a box (service role only): eligibility, weighted pick, stock, prize order, open record —
 -- all in one transaction, serialised per campaign by the row lock.
 -- Raises: campaign_closed | invalid_phone | not_eligible | out_of_stock
@@ -163,7 +227,6 @@ DECLARE
   v_box integer;
   v_order_id uuid := gen_random_uuid();
   v_open_id uuid := gen_random_uuid();
-  v_rows integer;
 BEGIN
   SELECT * INTO c FROM public.mystery_box_campaigns WHERE id = p_campaign_id FOR UPDATE;
   IF NOT FOUND OR NOT c.is_active OR now() < c.starts_at OR now() >= c.ends_at THEN
@@ -184,36 +247,7 @@ BEGIN
     RAISE EXCEPTION 'not_eligible';
   END IF;
 
-  -- Weighted random pick among active prizes with stock left.
-  SELECT t.id, t.campaign_id, t.label, t.network, t.package_size, t.is_mashup, t.weight,
-         t.stock_total, t.stock_remaining, t.is_active, t.created_at
-    INTO v_prize
-  FROM (
-    SELECT p.*,
-           sum(p.weight) OVER (ORDER BY p.id) AS cum,
-           sum(p.weight) OVER () AS total
-    FROM public.mystery_box_prizes p
-    WHERE p.campaign_id = p_campaign_id
-      AND p.is_active
-      AND (p.stock_remaining IS NULL OR p.stock_remaining > 0)
-  ) t
-  WHERE t.cum > floor(random() * t.total)
-  ORDER BY t.cum
-  LIMIT 1;
-
-  IF v_prize.id IS NULL THEN
-    RAISE EXCEPTION 'out_of_stock';
-  END IF;
-
-  IF v_prize.stock_remaining IS NOT NULL THEN
-    UPDATE public.mystery_box_prizes
-       SET stock_remaining = stock_remaining - 1
-     WHERE id = v_prize.id AND stock_remaining > 0;
-    GET DIAGNOSTICS v_rows = ROW_COUNT;
-    IF v_rows = 0 THEN
-      RAISE EXCEPTION 'out_of_stock';
-    END IF;
-  END IF;
+  v_prize := public._mystery_box_pick(p_campaign_id);
 
   INSERT INTO public.orders (
     id, agent_id, order_type, payment_method, network, package_size,
