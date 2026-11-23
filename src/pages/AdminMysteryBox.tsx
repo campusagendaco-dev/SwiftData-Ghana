@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Gift, Loader2, Plus, Save, Trash2, Upload } from "lucide-react";
+import { Eye, Gift, Loader2, Plus, Save, Trash2, Upload } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,6 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { oddsPercent, packageSizeGb } from "@/lib/mysteryBox";
+import { MysteryBoxPreview, previewSamplePrize } from "@/components/MysteryBoxPreview";
 
 type Campaign = {
   id: string;
@@ -101,6 +102,19 @@ export default function AdminMysteryBox() {
   const [prizes, setPrizes] = useState<Prize[]>([]);
   const [packages, setPackages] = useState<Pkg[]>([]);
   const [opens, setOpens] = useState<(OpenRow & { status?: string; name?: string })[]>([]);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
+
+  // Show a newly chosen (not yet uploaded) image in the preview; release it when it changes.
+  useEffect(() => {
+    if (!imageFile) {
+      setPreviewImage(null);
+      return;
+    }
+    const url = URL.createObjectURL(imageFile);
+    setPreviewImage(url);
+    return () => URL.revokeObjectURL(url);
+  }, [imageFile]);
   const [newPrize, setNewPrize] = useState({ label: "", network: "", package_size: "", weight: "1", stock: "" });
 
   const loadCampaigns = useCallback(async () => {
@@ -379,11 +393,22 @@ export default function AdminMysteryBox() {
               <label className="flex items-center gap-2 text-sm text-foreground">
                 <Switch checked={form.is_active} onCheckedChange={(v) => setForm({ ...form, is_active: v })} /> Active
               </label>
-              <Button onClick={saveCampaign} disabled={saving}>
-                {saving ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Save className="mr-1 h-4 w-4" />}
-                {selectedId ? "Save campaign" : "Create campaign"}
-              </Button>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button variant="outline" onClick={() => setPreviewOpen(true)}>
+                  <Eye className="mr-1 h-4 w-4" /> Preview
+                </Button>
+                <Button onClick={saveCampaign} disabled={saving}>
+                  {saving ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Save className="mr-1 h-4 w-4" />}
+                  {selectedId ? "Save campaign" : "Create campaign"}
+                </Button>
+              </div>
             </div>
+            <MysteryBoxPreview
+              open={previewOpen}
+              onOpenChange={setPreviewOpen}
+              campaign={{ ...form, image_url: previewImage ?? form.image_url }}
+              samplePrize={previewSamplePrize(prizes)}
+            />
           </CardContent>
         </Card>
       </div>

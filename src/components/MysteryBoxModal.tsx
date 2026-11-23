@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
@@ -59,6 +59,9 @@ export function MysteryBoxDialog({
   defaultPhone = "",
   revealDelayMs = 900,
   preview = false,
+  revealedPrize,
+  toolbar,
+  resetSignal,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -70,10 +73,17 @@ export function MysteryBoxDialog({
   defaultPhone?: string;
   revealDelayMs?: number;
   preview?: boolean;
+  /** Preview only: show the reveal screen straight away with this prize. */
+  revealedPrize?: string;
+  /** Preview only: controls shown inside the popup (outside it, the modal blocks clicks). */
+  toolbar?: ReactNode;
+  /** Preview only: any change returns the popup to its first screen. */
+  resetSignal?: unknown;
 }) {
   const [phone, setPhone] = useState<string>(defaultPhone);
   const [phase, setPhase] = useState<Phase>("idle");
-  const [prize, setPrize] = useState<string>("");
+  const [revealed, setRevealed] = useState<string>("");
+  const prize = revealedPrize ?? revealed;
 
   // Prefill from the profile when the popup opens (or the profile loads) without overwriting typing.
   useEffect(() => {
@@ -81,9 +91,14 @@ export function MysteryBoxDialog({
       setPhone((current) => current || defaultPhone);
     } else {
       setPhase("idle");
-      setPrize("");
+      setRevealed("");
     }
   }, [open, defaultPhone]);
+
+  useEffect(() => {
+    setPhase("idle");
+    setRevealed("");
+  }, [resetSignal]);
 
   const handleOpen = async () => {
     setPhase("opening");
@@ -93,7 +108,7 @@ export function MysteryBoxDialog({
     if (wait > 0) await new Promise((r) => setTimeout(r, wait));
     // `in` narrowing: this project's tsconfig isn't strict, so `success` alone doesn't narrow the union.
     if ("prize_label" in result) {
-      setPrize(result.prize_label);
+      setRevealed(result.prize_label);
       setPhase("revealed");
     } else {
       setPhase("idle");
@@ -101,11 +116,13 @@ export function MysteryBoxDialog({
     }
   };
 
-  const showBoxCount = campaign.boxes_per_day > 1 && state !== "done" && phase !== "revealed";
+  const shownPhase: Phase = revealedPrize ? "revealed" : phase;
+  const showBoxCount = campaign.boxes_per_day > 1 && state !== "done" && shownPhase !== "revealed";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[400px] w-[calc(100%-2rem)] p-0 gap-0 overflow-hidden rounded-[1.5rem] border border-border bg-card shadow-2xl [&>button:last-child]:z-20 [&>button:last-child]:rounded-full [&>button:last-child]:bg-black/45 [&>button:last-child]:p-1.5 [&>button:last-child]:text-white [&>button:last-child]:opacity-100">
+        {toolbar}
         {/* Hero */}
         <div className="relative h-56 overflow-hidden bg-gradient-to-b from-violet-950 via-purple-800 to-fuchsia-700">
           <div className="pointer-events-none absolute left-1/2 top-1/2 h-64 w-64 -translate-x-1/2 -translate-y-1/2 rounded-full bg-amber-400/25 blur-3xl" />
@@ -119,7 +136,7 @@ export function MysteryBoxDialog({
             </span>
           )}
           <AnimatePresence mode="wait">
-            {phase === "revealed" ? (
+            {shownPhase === "revealed" ? (
               <motion.div
                 key="prize"
                 initial={{ scale: 0.3, opacity: 0 }}
@@ -150,7 +167,7 @@ export function MysteryBoxDialog({
         {/* Body */}
         <div className="space-y-3 p-4">
           <DialogTitle className="sr-only">{campaign.title}</DialogTitle>
-          {phase === "revealed" ? (
+          {shownPhase === "revealed" ? (
             <>
               <DialogDescription className="text-sm text-muted-foreground">
                 Your prize is on its way to {phone.trim()}. It usually arrives within a few minutes.
