@@ -15,11 +15,13 @@ vi.mock("@/hooks/useAuth", () => ({ useAuth: () => auth.current }));
 
 type Handler = (payload: { new: { status?: string } }) => void;
 const channelOn = vi.fn();
+const channelNames: string[] = [];
 const removeChannel = vi.fn();
 let handler: Handler | null = null;
 vi.mock("@/integrations/supabase/client", () => ({
   supabase: {
-    channel: () => {
+    channel: (name: string) => {
+      channelNames.push(name);
       const ch = {
         on: (...args: unknown[]) => {
           channelOn(...args);
@@ -46,13 +48,15 @@ const campaign = {
   bullets: ["Open it to win 5GB or more."],
   ends_at: "2099-01-01T00:00:00Z",
 };
+// The watcher's in-memory fallback lives for the whole test file, so each test uses its own day.
+let testDay = 0;
 const prog = (q: number): MysteryProgress => ({
   qualifying_orders: q,
   boxes_earned: q >= 5 ? 1 : 0,
   boxes_opened: 0,
   boxes_available: q >= 5 ? 1 : 0,
   orders_to_next: q >= 5 ? 0 : 5 - q,
-  today: "2026-11-23",
+  today: `2026-12-${String(testDay).padStart(2, "0")}`,
 });
 const hook = {
   current: { campaign, progress: prog(0), state: "locked", isLoading: false, open: vi.fn(), refresh },
@@ -76,8 +80,10 @@ const memoryStorage = () => {
 };
 
 beforeEach(() => {
+  testDay += 1;
   vi.stubGlobal("localStorage", memoryStorage());
   channelOn.mockReset();
+  channelNames.length = 0;
   removeChannel.mockReset();
   refresh.mockReset();
   handler = null;
@@ -126,6 +132,35 @@ describe("MysteryBoxWatcher", () => {
     expect(refresh).toHaveBeenCalledTimes(1);
     cleanup();
     expect(removeChannel).toHaveBeenCalled();
+  });
+
+  it("keeps pop-up memory separate for each account on the device", async () => {
+    setCount(1);
+    render(<MysteryBoxWatcher />);
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    cleanup();
+    auth.current = { ...auth.current, user: { id: "u2" } };
+    render(<MysteryBoxWatcher />);
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("does not pop up again after today's box is opened", () => {
+    hook.current = {
+      ...hook.current,
+      progress: { ...prog(7), boxes_opened: 1, boxes_available: 0 },
+      state: "done",
+    };
+    render(<MysteryBoxWatcher />);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("uses a fresh realtime channel name on every mount", () => {
+    render(<MysteryBoxWatcher />);
+    cleanup();
+    render(<MysteryBoxWatcher />);
+    expect(channelNames).toHaveLength(2);
+    expect(channelNames[0]).not.toBe(channelNames[1]);
+    expect(channelNames[0]).toMatch(/^mystery-box-orders-u1-/);
   });
 
   it("does nothing for admins or signed-out visitors", () => {

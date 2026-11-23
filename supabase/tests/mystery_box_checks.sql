@@ -1,6 +1,6 @@
 -- Checks for migration 20261123120000_mystery_box_campaigns.sql.
 -- Everything runs inside a transaction that is rolled back, so it is safe to run on production
--- after the migration is applied. It needs one auth.users row with no orders in the last 2 hours,
+-- after the migration is applied. It needs one auth.users row with no orders since yesterday,
 -- and must run at least 10 minutes after midnight UTC (Ghana time) so its seed orders fall "today".
 -- It acts as the service role (like the open-mystery-box function), so the client-insert trigger
 -- (tr_force_order_pending) stays out of the way, and it keeps real opens to 2 so the
@@ -30,9 +30,12 @@ BEGIN
     RAISE EXCEPTION 'run these checks at least 10 minutes after midnight UTC';
   END IF;
   SELECT u.id INTO v_user FROM auth.users u
-  WHERE NOT EXISTS (SELECT 1 FROM public.orders o WHERE o.agent_id = u.id AND o.created_at > now() - interval '2 hours')
+  WHERE NOT EXISTS (
+    SELECT 1 FROM public.orders o
+    WHERE o.agent_id = u.id AND o.created_at >= ((v_today - 1)::timestamp AT TIME ZONE 'UTC')
+  )
   LIMIT 1;
-  IF v_user IS NULL THEN RAISE EXCEPTION 'checks need an auth.users row with no orders in the last 2 hours'; END IF;
+  IF v_user IS NULL THEN RAISE EXCEPTION 'checks need an auth.users row with no orders since yesterday (UTC)'; END IF;
   PERFORM set_config('request.jwt.claims', json_build_object('sub', v_user, 'role', 'service_role')::text, true);
 
   -- (a) only fulfilled orders count --------------------------------------------------------

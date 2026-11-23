@@ -84,17 +84,18 @@ describe("pop-up memory", () => {
     return { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, v) };
   };
 
-  it("uses a per-campaign, per-day key", () => {
-    expect(seenKey("c1", "2026-11-23")).toBe("swift_mystery_box_seen_c1_2026-11-23");
+  it("uses a per-user, per-campaign, per-day key", () => {
+    expect(seenKey("u1", "c1", "2026-11-23")).toBe("swift_mystery_box_seen_u1_c1_2026-11-23");
   });
   it("pops up only when today's count rises above what was last seen", () => {
     const s = makeStore();
-    expect(shouldPopUp("c1", "2026-11-23", 0, s)).toBe(false);
-    expect(shouldPopUp("c1", "2026-11-23", 1, s)).toBe(true);
-    rememberSeen("c1", "2026-11-23", 1, s);
-    expect(shouldPopUp("c1", "2026-11-23", 1, s)).toBe(false);
-    expect(shouldPopUp("c1", "2026-11-23", 2, s)).toBe(true);
-    expect(shouldPopUp("c1", "2026-11-24", 1, s)).toBe(true);
+    expect(shouldPopUp("u1", "c1", "2026-11-23", 0, s)).toBe(false);
+    expect(shouldPopUp("u1", "c1", "2026-11-23", 1, s)).toBe(true);
+    rememberSeen("u1", "c1", "2026-11-23", 1, s);
+    expect(shouldPopUp("u1", "c1", "2026-11-23", 1, s)).toBe(false);
+    expect(shouldPopUp("u1", "c1", "2026-11-23", 2, s)).toBe(true);
+    expect(shouldPopUp("u1", "c1", "2026-11-24", 1, s)).toBe(true);
+    expect(shouldPopUp("u2", "c1", "2026-11-23", 1, s)).toBe(true);
   });
   it("falls back to memory when storage throws or is missing", () => {
     const throwing = {
@@ -105,12 +106,13 @@ describe("pop-up memory", () => {
         throw new Error("blocked");
       },
     };
-    expect(shouldPopUp("mem1", "2026-11-23", 1, throwing)).toBe(true);
-    expect(() => rememberSeen("mem1", "2026-11-23", 1, throwing)).not.toThrow();
-    expect(shouldPopUp("mem1", "2026-11-23", 1, throwing)).toBe(false);
-    expect(shouldPopUp("mem2", "2026-11-23", 1, null)).toBe(true);
-    rememberSeen("mem2", "2026-11-23", 1, null);
-    expect(shouldPopUp("mem2", "2026-11-23", 1, null)).toBe(false);
+    expect(shouldPopUp("u1", "mem1", "2026-11-23", 1, throwing)).toBe(true);
+    expect(() => rememberSeen("u1", "mem1", "2026-11-23", 1, throwing)).not.toThrow();
+    expect(shouldPopUp("u1", "mem1", "2026-11-23", 1, throwing)).toBe(false);
+    expect(shouldPopUp("u2", "mem1", "2026-11-23", 1, throwing)).toBe(true);
+    expect(shouldPopUp("u1", "mem2", "2026-11-23", 1, null)).toBe(true);
+    rememberSeen("u1", "mem2", "2026-11-23", 1, null);
+    expect(shouldPopUp("u1", "mem2", "2026-11-23", 1, null)).toBe(false);
   });
 });
 

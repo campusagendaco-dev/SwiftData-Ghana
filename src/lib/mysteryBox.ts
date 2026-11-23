@@ -30,8 +30,9 @@ export function lockedButtonLabel(y: number, rewardText: string): string {
   return `Complete ${y} more order${y === 1 ? "" : "s"} today to earn ${rewardText}`;
 }
 
-export function seenKey(campaignId: string, day: string): string {
-  return `swift_mystery_box_seen_${campaignId}_${day}`;
+/** Per user (shared shop phones switch accounts), per campaign, per day. */
+export function seenKey(userId: string, campaignId: string, day: string): string {
+  return `swift_mystery_box_seen_${userId}_${campaignId}_${day}`;
 }
 
 // Fallback for when storage is missing or blocked (private mode), so the popup doesn't reopen
@@ -52,22 +53,24 @@ function readSeen(key: string, storage: Pick<Storage, "getItem"> | null): number
 
 /** Pop up when today's delivered-order count is above what the customer last saw. */
 export function shouldPopUp(
+  userId: string,
   campaignId: string,
   day: string,
   count: number,
   storage: Pick<Storage, "getItem"> | null,
 ): boolean {
   if (count <= 0) return false;
-  return count > readSeen(seenKey(campaignId, day), storage);
+  return count > readSeen(seenKey(userId, campaignId, day), storage);
 }
 
 export function rememberSeen(
+  userId: string,
   campaignId: string,
   day: string,
   count: number,
   storage: Pick<Storage, "setItem"> | null,
 ): void {
-  const key = seenKey(campaignId, day);
+  const key = seenKey(userId, campaignId, day);
   seenInMemory.set(key, Math.max(count, seenInMemory.get(key) ?? 0));
   try {
     storage?.setItem(key, String(count));

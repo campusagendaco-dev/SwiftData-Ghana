@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { safeRemoveChannel } from "@/lib/safe-realtime";
 import { useAuth } from "@/hooks/useAuth";
 import { useMysteryBox } from "@/hooks/useMysteryBox";
-import { rememberSeen, shouldPopUp } from "@/lib/mysteryBox";
+import { boxState, rememberSeen, shouldPopUp } from "@/lib/mysteryBox";
 import { MysteryBoxModal } from "@/components/MysteryBoxModal";
 
 function localStore(): Storage | null {
@@ -30,7 +30,8 @@ export function MysteryBoxWatcher() {
   useEffect(() => {
     if (!active || !hasCampaign) return;
     const channel = supabase
-      .channel(`mystery-box-orders-${userId}`)
+      // Unique name per mount: realtime-js reuses a same-named channel that may still be leaving.
+      .channel(`mystery-box-orders-${userId}-${Math.random().toString(36).slice(2, 8)}`)
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "orders", filter: `agent_id=eq.${userId}` },
@@ -48,14 +49,22 @@ export function MysteryBoxWatcher() {
   const campaignId = campaign?.id;
   const day = progress?.today;
   const count = progress?.qualifying_orders ?? 0;
+  // Once today's boxes are all opened, more orders shouldn't keep interrupting with "come back tomorrow".
+  const doneToday = Boolean(campaign && progress && boxState(progress, campaign.boxes_per_day) === "done");
+
+  // A different account on the same device starts with the popup closed.
   useEffect(() => {
-    if (!active || !campaignId || !day) return;
+    setOpen(false);
+  }, [userId]);
+
+  useEffect(() => {
+    if (!active || !userId || !campaignId || !day) return;
     const store = localStore();
-    if (shouldPopUp(campaignId, day, count, store)) {
-      rememberSeen(campaignId, day, count, store);
-      setOpen(true);
+    if (shouldPopUp(userId, campaignId, day, count, store)) {
+      rememberSeen(userId, campaignId, day, count, store);
+      if (!doneToday) setOpen(true);
     }
-  }, [active, campaignId, day, count]);
+  }, [active, userId, campaignId, day, count, doneToday]);
 
   if (!active || !campaign || !progress) return null;
   return <MysteryBoxModal open={open} onOpenChange={setOpen} />;
