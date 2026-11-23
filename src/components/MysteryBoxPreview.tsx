@@ -20,12 +20,16 @@ export type PreviewCampaign = Pick<
 >;
 
 /** The prize shown on the preview's reveal screen: the first active prize, or a stand-in. */
-export function previewSamplePrize(prizes: { label: string; is_active: boolean }[]): string {
-  return prizes.find((p) => p.is_active && p.label.trim())?.label ?? FALLBACK_PRIZE;
+export function previewSamplePrize(
+  prizes: { label: string; is_active: boolean; stock_remaining?: number | null }[],
+): string {
+  return prizes.find((p) => p.is_active && p.label.trim() && p.stock_remaining !== 0)?.label ?? FALLBACK_PRIZE;
 }
 
-function sampleProgress(mode: PreviewMode, ordersPerBox: number): MysteryProgress {
-  const target = Math.max(1, Math.floor(ordersPerBox) || 1);
+/** A whole number of at least 1 (the form can hold 0 or NaN while the admin is typing). */
+const atLeastOne = (n: number) => Math.max(1, Math.floor(n) || 1);
+
+function sampleProgress(mode: PreviewMode, target: number): MysteryProgress {
   const today = new Date().toISOString().slice(0, 10);
   if (mode === "locked") {
     const done = target > 1 ? 1 : 0;
@@ -44,11 +48,13 @@ export function MysteryBoxPreview({
   onOpenChange,
   campaign,
   samplePrize,
+  revealDelayMs,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   campaign: PreviewCampaign;
   samplePrize: string;
+  revealDelayMs?: number;
 }) {
   const [mode, setMode] = useState<PreviewMode>("locked");
   const [switches, setSwitches] = useState(0);
@@ -57,9 +63,11 @@ export function MysteryBoxPreview({
     id: "preview",
     ends_at: new Date(Date.now() + 86_400_000).toISOString(),
     ...campaign,
+    orders_per_box: atLeastOne(campaign.orders_per_box),
+    boxes_per_day: atLeastOne(campaign.boxes_per_day),
     bullets: campaign.bullets.filter((b) => typeof b === "string" && b.trim()),
   };
-  const progress = sampleProgress(mode, campaign.orders_per_box);
+  const progress = sampleProgress(mode, previewCampaign.orders_per_box);
   const state: BoxState = mode === "locked" ? "locked" : "available";
   const fakeOpen = async (): Promise<OpenResult> => ({ success: true, prize_label: samplePrize, order_id: "preview" });
 
@@ -94,6 +102,7 @@ export function MysteryBoxPreview({
       onOpenBox={fakeOpen}
       onGoBuy={() => undefined}
       defaultPhone={SAMPLE_PHONE}
+      revealDelayMs={revealDelayMs}
       preview
       revealedPrize={mode === "opened" ? samplePrize : undefined}
       toolbar={toolbar}

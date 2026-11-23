@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Eye, Gift, Loader2, Plus, Save, Trash2, Upload } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -104,6 +104,9 @@ export default function AdminMysteryBox() {
   const [opens, setOpens] = useState<(OpenRow & { status?: string; name?: string })[]>([]);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [newPrize, setNewPrize] = useState({ label: "", network: "", package_size: "", weight: "1", stock: "" });
+  // The campaign whose prizes and opens should be on screen; slower loads for another one are dropped.
+  const shownCampaignRef = useRef<string | null>(null);
 
   // Show a newly chosen (not yet uploaded) image in the preview; release it when it changes.
   useEffect(() => {
@@ -115,7 +118,6 @@ export default function AdminMysteryBox() {
     setPreviewImage(url);
     return () => URL.revokeObjectURL(url);
   }, [imageFile]);
-  const [newPrize, setNewPrize] = useState({ label: "", network: "", package_size: "", weight: "1", stock: "" });
 
   const loadCampaigns = useCallback(async () => {
     const { data, error } = await supabase.from("mystery_box_campaigns").select("*").order("created_at", { ascending: false });
@@ -138,6 +140,7 @@ export default function AdminMysteryBox() {
         .order("created_at", { ascending: false })
         .limit(50),
     ]);
+    if (shownCampaignRef.current !== campaignId) return;
     setPrizes((prizeRows as Prize[]) || []);
     const rows = (openRows as OpenRow[]) || [];
     if (rows.length === 0) {
@@ -148,6 +151,7 @@ export default function AdminMysteryBox() {
       supabase.from("orders").select("id, status").in("id", rows.map((r) => r.order_id)),
       supabase.from("profiles").select("user_id, full_name").in("user_id", [...new Set(rows.map((r) => r.user_id))]),
     ]);
+    if (shownCampaignRef.current !== campaignId) return;
     const statusById = new Map((orderRows || []).map((o: any) => [o.id, o.status]));
     const nameById = new Map((profileRows || []).map((p: any) => [p.user_id, p.full_name]));
     setOpens(rows.map((r) => ({ ...r, status: statusById.get(r.order_id), name: nameById.get(r.user_id) })));
@@ -162,11 +166,10 @@ export default function AdminMysteryBox() {
   }, [loadCampaigns]);
 
   useEffect(() => {
+    shownCampaignRef.current = selectedId;
+    setPrizes([]);
+    setOpens([]);
     if (selectedId) loadPrizesAndOpens(selectedId);
-    else {
-      setPrizes([]);
-      setOpens([]);
-    }
   }, [selectedId, loadPrizesAndOpens]);
 
   const networks = useMemo(() => [...new Set(packages.map((p) => p.network))].sort(), [packages]);

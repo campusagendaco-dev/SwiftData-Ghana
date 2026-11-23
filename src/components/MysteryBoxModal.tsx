@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
@@ -84,28 +84,34 @@ export function MysteryBoxDialog({
   const [phase, setPhase] = useState<Phase>("idle");
   const [revealed, setRevealed] = useState<string>("");
   const prize = revealedPrize ?? revealed;
+  // Bumped on close and on every reset, so a slow open that finishes afterwards is ignored.
+  const runRef = useRef(0);
 
   // Prefill from the profile when the popup opens (or the profile loads) without overwriting typing.
   useEffect(() => {
     if (open) {
       setPhone((current) => current || defaultPhone);
     } else {
+      runRef.current += 1;
       setPhase("idle");
       setRevealed("");
     }
   }, [open, defaultPhone]);
 
   useEffect(() => {
+    runRef.current += 1;
     setPhase("idle");
     setRevealed("");
   }, [resetSignal]);
 
   const handleOpen = async () => {
     setPhase("opening");
+    const run = runRef.current;
     const started = Date.now();
     const result = await onOpenBox(phone.trim());
     const wait = Math.max(revealDelayMs - (Date.now() - started), 0);
     if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    if (run !== runRef.current) return;
     // `in` narrowing: this project's tsconfig isn't strict, so `success` alone doesn't narrow the union.
     if ("prize_label" in result) {
       setRevealed(result.prize_label);
