@@ -11,7 +11,7 @@ const from = vi.fn((table: string) => {
 });
 vi.mock("@/integrations/supabase/client", () => ({ supabase: { rpc: (...a: unknown[]) => rpc(...a), from: (t: string) => from(t) } }));
 
-import { formatBytes, addDeleted, COMPACT_SQL } from "@/lib/dbSpace";
+import { formatBytes, addDeleted, COMPACT_STEPS } from "@/lib/dbSpace";
 import AdminDatabaseSpace from "@/pages/AdminDatabaseSpace";
 
 const MB = 1024 * 1024;
@@ -51,14 +51,35 @@ describe("dbSpace helpers", () => {
   it("adds deleted counts per table", () => {
     expect(addDeleted({ a: 1, b: 2 }, { b: 3, c: 4 })).toEqual({ a: 1, b: 5, c: 4 });
   });
-  it("compacts exactly the six cleaned tables", () => {
-    expect(COMPACT_SQL.match(/VACUUM FULL/g)).toHaveLength(6);
-    expect(COMPACT_SQL).toContain("VACUUM FULL cron.job_run_details;");
-    expect(COMPACT_SQL).not.toMatch(/orders|wallet|profiles/);
+  it("compacts exactly the six cleaned tables, one statement per step", () => {
+    expect(COMPACT_STEPS).toHaveLength(6);
+    for (const step of COMPACT_STEPS) expect(step.sql).toMatch(/^VACUUM FULL [a-z_]+\.[a-z_]+;$/);
+    expect(COMPACT_STEPS[0].sql).toBe("VACUUM FULL cron.job_run_details;");
+    expect(COMPACT_STEPS.map((s) => s.sql).join(" ")).not.toMatch(/orders|wallet|profiles/);
   });
 });
 
 describe("AdminDatabaseSpace", () => {
+  it("tells admins to run the compact steps one at a time, and that they block reads and writes", async () => {
+    rpc.mockResolvedValue({ data: space, error: null });
+    render(<AdminDatabaseSpace />);
+    await screen.findByText("2.55 GB");
+    expect(screen.getAllByRole("button", { name: /^Copy step/ })).toHaveLength(6);
+    expect(screen.getByText(/one at a time/i)).toBeInTheDocument();
+    expect(screen.getByText(/reading and writing/i)).toBeInTheDocument();
+    expect(screen.getByText(/TRUNCATE cron\.job_run_details;/)).toBeInTheDocument();
+  });
+
+  it("names tables the cleanup couldn't clean", async () => {
+    const cleanups = [
+      { data: { deleted: { "public.sms_logs": 0 }, more_remaining: false, errors: { "public.sms_logs": "permission denied for table sms_logs" } }, error: null },
+    ];
+    rpc.mockImplementation(async (name: string) => (name === "admin_db_space" ? { data: space, error: null } : cleanups.shift()));
+    render(<AdminDatabaseSpace />);
+    fireEvent.click(await screen.findByRole("button", { name: /Clean now/ }));
+    expect(await screen.findByText(/Couldn't clean SMS logs: permission denied for table sms_logs/)).toBeInTheDocument();
+  });
+
   it("shows the total, each table (biggest first) and the last cleanup", async () => {
     rpc.mockResolvedValue({ data: space, error: null });
     render(<AdminDatabaseSpace />);

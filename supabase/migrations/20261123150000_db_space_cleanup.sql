@@ -19,8 +19,10 @@ CREATE TABLE IF NOT EXISTS public.db_cleanup_runs (
   source text NOT NULL CHECK (source IN ('nightly', 'manual')),
   triggered_by uuid,
   deleted jsonb NOT NULL DEFAULT '{}'::jsonb,
-  more_remaining boolean NOT NULL DEFAULT false
+  more_remaining boolean NOT NULL DEFAULT false,
+  errors jsonb NOT NULL DEFAULT '{}'::jsonb
 );
+ALTER TABLE public.db_cleanup_runs ADD COLUMN IF NOT EXISTS errors jsonb NOT NULL DEFAULT '{}'::jsonb;
 CREATE INDEX IF NOT EXISTS idx_db_cleanup_runs_started ON public.db_cleanup_runs (started_at DESC);
 
 ALTER TABLE public.db_cleanup_runs ENABLE ROW LEVEL SECURITY;
@@ -47,8 +49,65 @@ AS $$
     ('public.user_notifications', 'Customer notifications', 60, 'Read, and older than 60 days')
 $$;
 
--- ── One batch of deletes for one table (fixed SQL per table, no dynamic SQL) ──
-CREATE OR REPLACE FUNCTION public._db_retention_delete_batch(p_target text, p_batch int)
+-- Lets the notification cleanup find old read rows without scanning the whole table.
+-- (A short write pause on user_notifications while it builds.)
+CREATE INDEX IF NOT EXISTS idx_user_notifications_read_created
+  ON public.user_notifications (created_at) WHERE read = true;
+
+-- ── Where scheduled-job history becomes "recent" ───────────────────────────
+-- cron.job_run_details is indexed only by runid, which grows with time. Binary-search runid
+-- (primary-key lookups only, no table scan) for the first run of the last 7 days; every run
+-- before it is old. Runs with no start/end time count as old. Returns NULL when there is
+-- nothing to delete.
+CREATE OR REPLACE FUNCTION public._db_retention_cron_cut()
+RETURNS bigint
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_cutoff timestamptz := now() - interval '7 days';
+  v_lo bigint;   -- the first run at or after v_lo is old
+  v_hi bigint;   -- the first run at or after v_hi is recent
+  v_mid bigint;
+  v_at timestamptz;
+  v_steps int := 0;
+BEGIN
+  SELECT min(runid), max(runid) INTO v_lo, v_hi FROM cron.job_run_details;
+  IF v_lo IS NULL THEN
+    RETURN NULL;
+  END IF;
+  SELECT coalesce(start_time, end_time, '-infinity') INTO v_at FROM cron.job_run_details WHERE runid = v_hi;
+  IF v_at < v_cutoff THEN
+    RETURN v_hi + 1;                       -- every run is old
+  END IF;
+  SELECT coalesce(start_time, end_time, '-infinity') INTO v_at FROM cron.job_run_details WHERE runid = v_lo;
+  IF v_at >= v_cutoff THEN
+    RETURN NULL;                           -- nothing is old
+  END IF;
+  WHILE v_hi - v_lo > 1 LOOP
+    v_steps := v_steps + 1;
+    IF v_steps > 64 THEN
+      RAISE EXCEPTION 'cron history search did not finish';   -- never loop forever
+    END IF;
+    v_mid := v_lo + (v_hi - v_lo) / 2;
+    SELECT coalesce(start_time, end_time, '-infinity') INTO v_at
+    FROM cron.job_run_details WHERE runid >= v_mid ORDER BY runid LIMIT 1;
+    IF v_at < v_cutoff THEN
+      v_lo := v_mid;
+    ELSE
+      v_hi := v_mid;
+    END IF;
+  END LOOP;
+  RETURN (SELECT runid FROM cron.job_run_details WHERE runid >= v_hi ORDER BY runid LIMIT 1);
+END;
+$$;
+
+-- ── Delete old rows from one table (fixed SQL per table, no dynamic SQL) ──
+-- p_limit NULL: one plain DELETE (nightly). Otherwise up to p_limit rows, oldest first, using
+-- each table's time index; the outer DELETE restates the rule.
+CREATE OR REPLACE FUNCTION public._db_retention_delete(p_target text, p_limit int)
 RETURNS int
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -56,26 +115,72 @@ SET search_path = public
 AS $$
 DECLARE
   n int := 0;
+  v_cut bigint;
 BEGIN
   IF p_target = 'cron.job_run_details' THEN
-    DELETE FROM cron.job_run_details WHERE ctid = ANY (ARRAY(
-      SELECT ctid FROM cron.job_run_details WHERE start_time < now() - interval '7 days' LIMIT p_batch));
+    v_cut := public._db_retention_cron_cut();
+    IF v_cut IS NULL THEN
+      RETURN 0;
+    END IF;
+    IF p_limit IS NULL THEN
+      DELETE FROM cron.job_run_details WHERE runid < v_cut;
+    ELSE
+      DELETE FROM cron.job_run_details WHERE runid < v_cut AND runid = ANY (ARRAY(
+        SELECT runid FROM cron.job_run_details WHERE runid < v_cut ORDER BY runid LIMIT p_limit));
+    END IF;
+
   ELSIF p_target = 'public.system_logs' THEN
-    DELETE FROM public.system_logs WHERE ctid = ANY (ARRAY(
-      SELECT ctid FROM public.system_logs WHERE ts < now() - interval '30 days' LIMIT p_batch));
+    -- logs still referenced by sentinel_actions (no ON DELETE action) are kept
+    IF p_limit IS NULL THEN
+      DELETE FROM public.system_logs l WHERE l.ts < now() - interval '30 days'
+        AND NOT EXISTS (SELECT 1 FROM public.sentinel_actions s WHERE s.log_id = l.id);
+    ELSE
+      DELETE FROM public.system_logs l WHERE l.ts < now() - interval '30 days'
+        AND NOT EXISTS (SELECT 1 FROM public.sentinel_actions s WHERE s.log_id = l.id)
+        AND l.ctid = ANY (ARRAY(
+          SELECT x.ctid FROM public.system_logs x
+          WHERE x.ts < now() - interval '30 days'
+            AND NOT EXISTS (SELECT 1 FROM public.sentinel_actions s WHERE s.log_id = x.id)
+          ORDER BY x.ts LIMIT p_limit));
+    END IF;
+
   ELSIF p_target = 'public.push_notification_logs' THEN
-    DELETE FROM public.push_notification_logs WHERE ctid = ANY (ARRAY(
-      SELECT ctid FROM public.push_notification_logs WHERE created_at < now() - interval '30 days' LIMIT p_batch));
+    IF p_limit IS NULL THEN
+      DELETE FROM public.push_notification_logs WHERE created_at < now() - interval '30 days';
+    ELSE
+      DELETE FROM public.push_notification_logs WHERE created_at < now() - interval '30 days' AND ctid = ANY (ARRAY(
+        SELECT ctid FROM public.push_notification_logs WHERE created_at < now() - interval '30 days'
+        ORDER BY created_at LIMIT p_limit));
+    END IF;
+
   ELSIF p_target = 'public.sms_logs' THEN
-    DELETE FROM public.sms_logs WHERE ctid = ANY (ARRAY(
-      SELECT ctid FROM public.sms_logs WHERE created_at < now() - interval '90 days' LIMIT p_batch));
+    IF p_limit IS NULL THEN
+      DELETE FROM public.sms_logs WHERE created_at < now() - interval '90 days';
+    ELSE
+      DELETE FROM public.sms_logs WHERE created_at < now() - interval '90 days' AND ctid = ANY (ARRAY(
+        SELECT ctid FROM public.sms_logs WHERE created_at < now() - interval '90 days'
+        ORDER BY created_at LIMIT p_limit));
+    END IF;
+
   ELSIF p_target = 'public.security_logs' THEN
-    DELETE FROM public.security_logs WHERE ctid = ANY (ARRAY(
-      SELECT ctid FROM public.security_logs WHERE created_at < now() - interval '90 days' LIMIT p_batch));
+    IF p_limit IS NULL THEN
+      DELETE FROM public.security_logs WHERE created_at < now() - interval '90 days';
+    ELSE
+      DELETE FROM public.security_logs WHERE created_at < now() - interval '90 days' AND ctid = ANY (ARRAY(
+        SELECT ctid FROM public.security_logs WHERE created_at < now() - interval '90 days'
+        ORDER BY created_at LIMIT p_limit));
+    END IF;
+
   ELSIF p_target = 'public.user_notifications' THEN
-    DELETE FROM public.user_notifications WHERE ctid = ANY (ARRAY(
-      SELECT ctid FROM public.user_notifications
-      WHERE read = true AND created_at < now() - interval '60 days' LIMIT p_batch));
+    IF p_limit IS NULL THEN
+      DELETE FROM public.user_notifications WHERE read = true AND created_at < now() - interval '60 days';
+    ELSE
+      DELETE FROM public.user_notifications WHERE read = true AND created_at < now() - interval '60 days'
+        AND ctid = ANY (ARRAY(
+          SELECT ctid FROM public.user_notifications WHERE read = true AND created_at < now() - interval '60 days'
+          ORDER BY created_at LIMIT p_limit));
+    END IF;
+
   ELSE
     RAISE EXCEPTION 'unknown cleanup target %', p_target;
   END IF;
@@ -85,8 +190,10 @@ END;
 $$;
 
 -- ── The cleanup run (internal: nightly cron and the admin RPC) ─────────────
--- p_budget_ms > 0 stops after roughly that long and reports more_remaining, so a request
--- stays under PostgREST's statement timeout; 0 runs to the end (nightly).
+-- p_budget_ms = 0 (nightly): one plain DELETE per table. p_budget_ms > 0 (admin): batches of
+-- 2000, checking the time before every batch, then reports more_remaining so the page calls
+-- again (keeps each request under PostgREST's statement timeout). Each table runs in its own
+-- sub-transaction: if one fails, its error is recorded and the other tables are still cleaned.
 CREATE OR REPLACE FUNCTION public.run_db_retention(
   p_source text DEFAULT 'nightly',
   p_budget_ms int DEFAULT 0,
@@ -102,6 +209,7 @@ DECLARE
   v_deadline timestamptz := CASE WHEN p_budget_ms > 0
     THEN clock_timestamp() + make_interval(secs => p_budget_ms / 1000.0) END;
   v_deleted jsonb := '{}'::jsonb;
+  v_errors jsonb := '{}'::jsonb;
   v_more boolean := false;
   v_run uuid;
   v_total bigint;
@@ -114,24 +222,34 @@ BEGIN
 
   FOR r IN SELECT target FROM public._db_retention_rules() LOOP
     v_total := 0;
-    LOOP
-      v_n := public._db_retention_delete_batch(r.target, v_batch);
-      v_total := v_total + v_n;
-      EXIT WHEN v_n < v_batch;
-      IF v_deadline IS NOT NULL AND clock_timestamp() >= v_deadline THEN
-        v_more := true;
-        EXIT;
+    BEGIN
+      IF v_deadline IS NULL THEN
+        v_total := public._db_retention_delete(r.target, NULL);
+      ELSE
+        LOOP
+          IF clock_timestamp() >= v_deadline THEN
+            v_more := true;
+            EXIT;
+          END IF;
+          v_n := public._db_retention_delete(r.target, v_batch);
+          v_total := v_total + v_n;
+          EXIT WHEN v_n < v_batch;
+        END LOOP;
       END IF;
-    END LOOP;
+    EXCEPTION WHEN OTHERS THEN
+      -- this table's deletes in this run are rolled back; carry on with the rest
+      v_errors := v_errors || jsonb_build_object(r.target, SQLERRM);
+      v_total := 0;
+    END;
     v_deleted := v_deleted || jsonb_build_object(r.target, v_total);
     EXIT WHEN v_more;
   END LOOP;
 
   UPDATE public.db_cleanup_runs
-  SET finished_at = now(), deleted = v_deleted, more_remaining = v_more
+  SET finished_at = now(), deleted = v_deleted, more_remaining = v_more, errors = v_errors
   WHERE id = v_run;
 
-  RETURN jsonb_build_object('deleted', v_deleted, 'more_remaining', v_more);
+  RETURN jsonb_build_object('deleted', v_deleted, 'more_remaining', v_more, 'errors', v_errors);
 END;
 $$;
 
@@ -191,7 +309,7 @@ BEGIN
     ),
     'last_run', (
       SELECT to_jsonb(x) FROM (
-        SELECT started_at, finished_at, source, deleted, more_remaining
+        SELECT started_at, finished_at, source, deleted, more_remaining, errors
         FROM public.db_cleanup_runs
         ORDER BY started_at DESC
         LIMIT 1
@@ -203,7 +321,8 @@ $$;
 
 -- ── Grants: only the two admin RPCs are callable by signed-in users ────────
 REVOKE ALL ON FUNCTION public._db_retention_rules() FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public._db_retention_delete_batch(text, int) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public._db_retention_cron_cut() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public._db_retention_delete(text, int) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.run_db_retention(text, int, uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public._db_space_require_admin() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.admin_db_cleanup_now() FROM PUBLIC, anon;

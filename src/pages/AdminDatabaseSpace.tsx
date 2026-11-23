@@ -5,7 +5,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  COMPACT_SQL,
+  COMPACT_STEPS,
+  CRON_HISTORY_FALLBACK_SQL,
   addDeleted,
   formatBytes,
   sumDeleted,
@@ -27,6 +28,7 @@ export default function AdminDatabaseSpace() {
   const [cleaning, setCleaning] = useState(false);
   const [progress, setProgress] = useState(0);
   const [result, setResult] = useState<number | null>(null);
+  const [failures, setFailures] = useState<Record<string, string>>({});
 
   const loadSpace = useCallback(async () => {
     setLoading(true);
@@ -46,8 +48,10 @@ export default function AdminDatabaseSpace() {
   const cleanNow = async () => {
     setCleaning(true);
     setResult(null);
+    setFailures({});
     setProgress(0);
     let deleted: Record<string, number> = {};
+    let errors: Record<string, string> = {};
     try {
       for (let i = 0; i < MAX_CLEANUP_CALLS; i++) {
         const { data, error } = await supabase.rpc("admin_db_cleanup_now" as any);
@@ -57,20 +61,22 @@ export default function AdminDatabaseSpace() {
         }
         const res = data as unknown as DbCleanupResult;
         deleted = addDeleted(deleted, res.deleted || {});
+        errors = { ...errors, ...(res.errors || {}) };
         setProgress(sumDeleted(deleted));
         if (!res.more_remaining) break;
       }
     } finally {
       setResult(sumDeleted(deleted));
+      setFailures(errors);
       setCleaning(false);
       await loadSpace();
     }
   };
 
-  const copyCompact = async () => {
+  const copySql = async (sql: string) => {
     try {
-      await navigator.clipboard.writeText(COMPACT_SQL);
-      toast.success("Copied. Paste it into the Supabase SQL editor and run it.");
+      await navigator.clipboard.writeText(sql);
+      toast.success("Copied. Paste it into a new Supabase SQL editor query and run it on its own.");
     } catch {
       toast.error("Couldn't copy — select the text and copy it by hand.");
     }
@@ -79,6 +85,8 @@ export default function AdminDatabaseSpace() {
   const tables = [...(space?.tables ?? [])].sort((a, b) => b.total_bytes - a.total_bytes);
   const cleanable = tables.reduce((s, t) => s + t.total_bytes, 0);
   const last = space?.last_run ?? null;
+  const labelFor = (target: string) => tables.find((t) => t.target === target)?.label ?? target;
+  const lastErrors = Object.keys(last?.errors ?? {});
 
   return (
     <div className="space-y-6 pb-10">
@@ -116,6 +124,11 @@ export default function AdminDatabaseSpace() {
                     {sumDeleted(last.deleted).toLocaleString()} rows removed
                     {last.more_remaining ? " (more left — runs again tonight)" : ""}
                   </span>
+                  {lastErrors.length > 0 && (
+                    <span className="mt-1 block text-sm font-normal text-destructive">
+                      Couldn't clean: {lastErrors.map(labelFor).join(", ")}
+                    </span>
+                  )}
                 </>
               ) : (
                 <span className="text-sm font-normal text-muted-foreground">Not run yet</span>
@@ -147,6 +160,11 @@ export default function AdminDatabaseSpace() {
               Deleted {result.toLocaleString()} old rows
             </p>
           )}
+          {Object.entries(failures).map(([target, message]) => (
+            <p key={target} className="rounded-lg border border-destructive/40 px-3 py-2 text-sm text-destructive">
+              Couldn't clean {labelFor(target)}: {message}
+            </p>
+          ))}
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -184,15 +202,38 @@ export default function AdminDatabaseSpace() {
           <CardTitle className="text-base">Give the space back to disk (one time)</CardTitle>
           <CardDescription>
             Deleting rows lets the database reuse the space, but the size Supabase reports only drops after a
-            "compact". Run this once in the Supabase SQL editor after the first big cleanup. Each line pauses writes to
-            that table for a few seconds, so pick a quiet time. If a line says permission denied, skip it.
+            "compact". Do this once, after the first big cleanup has finished.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          <pre className="overflow-x-auto rounded-lg border border-border bg-muted p-3 text-xs text-foreground">{COMPACT_SQL}</pre>
-          <Button variant="outline" size="sm" onClick={copyCompact}>
-            <Copy className="mr-1 h-4 w-4" /> Copy
-          </Button>
+          <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+            <li>
+              Run the steps <strong className="text-foreground">one at a time</strong>: paste one line into a new SQL
+              editor query, run it, then do the next. Pasting them together fails.
+            </li>
+            <li>
+              Each step stops <strong className="text-foreground">reading and writing</strong> to that table until it
+              finishes (seconds to a few minutes), so customers may see delays. Do it at a quiet hour.
+            </li>
+            <li>
+              If the first step says it skipped the table or permission was denied, run{" "}
+              <code className="rounded bg-muted px-1 text-foreground">{CRON_HISTORY_FALLBACK_SQL}</code> instead — it
+              only clears scheduled-job history.
+            </li>
+          </ul>
+          <ol className="space-y-2">
+            {COMPACT_STEPS.map((step, i) => (
+              <li key={step.sql} className="flex flex-wrap items-center gap-2">
+                <span className="w-5 text-xs font-semibold text-muted-foreground">{i + 1}.</span>
+                <code className="flex-1 overflow-x-auto rounded-lg border border-border bg-muted px-3 py-2 text-xs text-foreground">
+                  {step.sql}
+                </code>
+                <Button variant="outline" size="sm" onClick={() => copySql(step.sql)} aria-label={`Copy step ${i + 1}: ${step.label}`}>
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </li>
+            ))}
+          </ol>
         </CardContent>
       </Card>
 
