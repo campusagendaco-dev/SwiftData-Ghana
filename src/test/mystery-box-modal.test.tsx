@@ -47,7 +47,7 @@ const hook: { current: HookValue } = {
 };
 vi.mock("@/hooks/useMysteryBox", () => ({ useMysteryBox: () => hook.current }));
 
-import { MysteryBoxModal } from "@/components/MysteryBoxModal";
+import { MysteryBoxModal, MysteryBoxDialog } from "@/components/MysteryBoxModal";
 import { MysteryBoxCard } from "@/components/MysteryBoxCard";
 
 const setHook = (progress: MysteryProgress | null, state: HookValue["state"], c: typeof campaign | null = campaign) => {
@@ -150,5 +150,31 @@ describe("MysteryBoxCard", () => {
   it("shows today's progress while locked", () => {
     render(<MysteryBoxCard />);
     expect(screen.getByText("Today: 1/5 orders · 4 more to unlock")).toBeInTheDocument();
+  });
+});
+
+describe("MysteryBoxDialog", () => {
+  it("MysteryBoxDialog in preview mode reveals via onOpenBox and never uses the live hook", async () => {
+    const onOpenBox = vi.fn().mockResolvedValue({ success: true, prize_label: "10GB MTN", order_id: "x" });
+    render(
+      <MysteryBoxDialog
+        open
+        onOpenChange={vi.fn()}
+        campaign={campaign}
+        progress={available}
+        state="available"
+        onOpenBox={onOpenBox}
+        onGoBuy={vi.fn()}
+        defaultPhone="0241234567"
+        revealDelayMs={0}
+        preview
+      />,
+    );
+    expect(screen.getByText("Preview — nothing is sent")).toBeInTheDocument();
+    expect(screen.queryByText("LIVE")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Open your box 🎁" }));
+    expect(await screen.findByText("You won 10GB MTN! 🎉")).toBeInTheDocument();
+    expect(onOpenBox).toHaveBeenCalledWith("0241234567");
+    expect(openBox).not.toHaveBeenCalled();
   });
 });

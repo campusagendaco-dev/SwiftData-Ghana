@@ -6,8 +6,15 @@ import { Loader2 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/useAuth";
-import { useMysteryBox } from "@/hooks/useMysteryBox";
-import { DONE_TODAY_TEXT, READY_TEXT, lockedButtonLabel, progressLine } from "@/lib/mysteryBox";
+import { useMysteryBox, type MysteryCampaign, type OpenResult } from "@/hooks/useMysteryBox";
+import {
+  DONE_TODAY_TEXT,
+  READY_TEXT,
+  lockedButtonLabel,
+  progressLine,
+  type BoxState,
+  type MysteryProgress,
+} from "@/lib/mysteryBox";
 
 type Phase = "idle" | "opening" | "revealed";
 
@@ -36,38 +43,52 @@ function GiftBoxArt() {
   );
 }
 
-export function MysteryBoxModal({
+/**
+ * The customer popup itself, driven entirely by props. The connected MysteryBoxModal below feeds it
+ * live data; the admin preview feeds it form values and fake callbacks, so a preview can never reach
+ * the server.
+ */
+export function MysteryBoxDialog({
   open,
   onOpenChange,
+  campaign,
+  progress,
+  state,
+  onOpenBox,
+  onGoBuy,
+  defaultPhone = "",
   revealDelayMs = 900,
+  preview = false,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
+  campaign: MysteryCampaign;
+  progress: MysteryProgress;
+  state: BoxState;
+  onOpenBox: (phone: string) => Promise<OpenResult>;
+  onGoBuy: () => void;
+  defaultPhone?: string;
   revealDelayMs?: number;
+  preview?: boolean;
 }) {
-  const navigate = useNavigate();
-  const { profile } = useAuth();
-  const { campaign, progress, state, open: openBox } = useMysteryBox();
-  const [phone, setPhone] = useState<string>(profile?.phone || "");
+  const [phone, setPhone] = useState<string>(defaultPhone);
   const [phase, setPhase] = useState<Phase>("idle");
   const [prize, setPrize] = useState<string>("");
 
   // Prefill from the profile when the popup opens (or the profile loads) without overwriting typing.
   useEffect(() => {
     if (open) {
-      setPhone((current) => current || profile?.phone || "");
+      setPhone((current) => current || defaultPhone);
     } else {
       setPhase("idle");
       setPrize("");
     }
-  }, [open, profile?.phone]);
-
-  if (!campaign || !progress || !state) return null;
+  }, [open, defaultPhone]);
 
   const handleOpen = async () => {
     setPhase("opening");
     const started = Date.now();
-    const result = await openBox(phone.trim());
+    const result = await onOpenBox(phone.trim());
     const wait = Math.max(revealDelayMs - (Date.now() - started), 0);
     if (wait > 0) await new Promise((r) => setTimeout(r, wait));
     // `in` narrowing: this project's tsconfig isn't strict, so `success` alone doesn't narrow the union.
@@ -80,11 +101,6 @@ export function MysteryBoxModal({
     }
   };
 
-  const goBuy = () => {
-    onOpenChange(false);
-    navigate("/dashboard/buy-data/mtn");
-  };
-
   const showBoxCount = campaign.boxes_per_day > 1 && state !== "done" && phase !== "revealed";
 
   return (
@@ -93,9 +109,15 @@ export function MysteryBoxModal({
         {/* Hero */}
         <div className="relative h-56 overflow-hidden bg-gradient-to-b from-violet-950 via-purple-800 to-fuchsia-700">
           <div className="pointer-events-none absolute left-1/2 top-1/2 h-64 w-64 -translate-x-1/2 -translate-y-1/2 rounded-full bg-amber-400/25 blur-3xl" />
-          <span className="absolute left-3 top-3 z-10 inline-flex items-center gap-1.5 rounded-full bg-emerald-600 px-2.5 py-1 text-[11px] font-bold text-white shadow">
-            <span className="h-2 w-2 animate-pulse rounded-full bg-white" /> LIVE
-          </span>
+          {preview ? (
+            <span className="absolute left-3 top-3 z-10 inline-flex items-center rounded-full bg-amber-500 px-2.5 py-1 text-[11px] font-bold text-black shadow">
+              Preview — nothing is sent
+            </span>
+          ) : (
+            <span className="absolute left-3 top-3 z-10 inline-flex items-center gap-1.5 rounded-full bg-emerald-600 px-2.5 py-1 text-[11px] font-bold text-white shadow">
+              <span className="h-2 w-2 animate-pulse rounded-full bg-white" /> LIVE
+            </span>
+          )}
           <AnimatePresence mode="wait">
             {phase === "revealed" ? (
               <motion.div
@@ -198,7 +220,7 @@ export function MysteryBoxModal({
               {state === "locked" && (
                 <button
                   type="button"
-                  onClick={goBuy}
+                  onClick={onGoBuy}
                   className="h-12 w-full rounded-xl bg-foreground text-sm font-semibold text-background transition hover:opacity-90"
                 >
                   {lockedButtonLabel(progress.orders_to_next, campaign.reward_text)}
@@ -219,6 +241,41 @@ export function MysteryBoxModal({
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+export function MysteryBoxModal({
+  open,
+  onOpenChange,
+  revealDelayMs = 900,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  revealDelayMs?: number;
+}) {
+  const navigate = useNavigate();
+  const { profile } = useAuth();
+  const { campaign, progress, state, open: openBox } = useMysteryBox();
+
+  if (!campaign || !progress || !state) return null;
+
+  const goBuy = () => {
+    onOpenChange(false);
+    navigate("/dashboard/buy-data/mtn");
+  };
+
+  return (
+    <MysteryBoxDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      campaign={campaign}
+      progress={progress}
+      state={state}
+      onOpenBox={openBox}
+      onGoBuy={goBuy}
+      defaultPhone={profile?.phone || ""}
+      revealDelayMs={revealDelayMs}
+    />
   );
 }
 
