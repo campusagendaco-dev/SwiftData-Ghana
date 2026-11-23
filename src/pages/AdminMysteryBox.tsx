@@ -143,8 +143,8 @@ export default function AdminMysteryBox() {
     loadCampaigns();
     supabase
       .from("global_package_settings")
-      .select("network, package_size, is_enabled")
-      .then(({ data }) => setPackages(((data || []) as any[]).filter((p) => p.is_enabled !== false)));
+      .select("network, package_size, is_unavailable")
+      .then(({ data }) => setPackages(((data || []) as any[]).filter((p) => p.is_unavailable !== true)));
   }, [loadCampaigns]);
 
   useEffect(() => {
