@@ -325,3 +325,43 @@ SELECT * INTO v_prize FROM (
   - The Dashboard popup shows `Open your box 🎁`. Open it: the prize is revealed, a `mystery_box_prize` order appears in AdminOrders labelled "Mystery Box" and reaches `fulfilled`, and the opens table lists it.
   - Then turn the test campaign off.
 - [ ] **Step 6: Finish.** Use superpowers:finishing-a-development-branch.
+
+---
+
+### Task 7: Daily box rework (spec section "Change (2026-11-23…)")
+
+**Files:**
+- Migration and checks
+- `src/lib/mysteryBox.ts`
+- `useMysteryBox`, `MysteryBoxModal`, `MysteryBoxCard`
+- new `src/components/MysteryBoxWatcher.tsx`, mounted in `src/App.tsx` next to `DataPromoPopupModal`
+- `AdminMysteryBox.tsx`
+- tests
+
+The migration is not applied yet, so it is edited in place.
+
+**Interfaces:**
+- **`mystery_box_progress`** now also returns `today date`.
+- **`MysteryProgress`** gains `today: string`.
+- **`MysteryCampaign`** gains `reward_text`, and `boxes_per_day` replaces `max_boxes_per_user`.
+- **Display helpers:**
+  - `progressLine(p, target)`
+  - `lockedButtonLabel(y, rewardText)`
+  - `DONE_TODAY_TEXT`
+- **Popup memory:**
+  - `seenKey(campaignId, day)`
+  - `shouldPopUp(campaignId, day, count, storage)`, which is true when `count > 0` and `count >` the stored count
+  - `rememberSeen(campaignId, day, count, storage)`
+  - both fall back to an in-memory map when storage is missing or throws
+- **`packageSizeGb(size)`** returns `number | null`, for the admin under-5GB warning.
+
+**Steps:**
+1. Write the failing Vitest and SQL checks:
+   - yesterday's orders don't count
+   - yesterday's open doesn't block today
+   - `boxes_per_day` cap
+   - the watcher pops up on a count increase only
+2. Implement.
+3. Run the suite, `tsc`, the build and the PGlite checks.
+4. Commit.
+5. Run a fresh whole-branch review.

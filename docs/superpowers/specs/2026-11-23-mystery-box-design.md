@@ -131,3 +131,31 @@ Exact animation timing, copy wording, and the default illustration's details. Fa
   - with weights 1:9, roughly 10%/90% over 200 simulated picks in a rolled-back transaction
 - **Security check:** insert a fake `mystery_box_prize` order with no open record and call verify-payment. It must end as `fulfillment_failed`.
 - **End to end:** deploying the function and verify-payment is outward-facing, so confirm with the user first. Create a campaign with orders_per_box=1 and one cheap prize, place one real order, watch it reach fulfilled, open the box in the app, and confirm the prize order is delivered and shows in the admin opens table.
+
+## Change (2026-11-23, approved by the owner): daily box, pops up after a purchase
+
+This section replaces the earlier rules wherever they conflict.
+
+- **Counting:** orders count only **today** (Ghana time = UTC; resets at midnight) and inside the campaign window. Only delivered orders count (`fulfilled`/`completed`, `order_type='data'`, `amount > 0` and ≥ the minimum).
+- **Target and limit:**
+  - `orders_per_box` is the daily target (default **5**).
+  - `boxes_per_day` replaces `max_boxes_per_user` (default **1**).
+  - One box per person, per campaign, per day: opens get a `box_day` column and are unique on `(campaign_id, user_id, box_day, box_number)`.
+- **Prizes:** random from the weighted pool. Every prize should be **5GB or more**; the admin page warns when one is smaller.
+- **New campaign column:** `reward_text` (default `5GB or more`).
+- **Copy:**
+
+  | Where | Text |
+  |---|---|
+  | Locked progress | `Today: {x}/{target} orders · {y} more to unlock` |
+  | Locked button | `Complete {y} more order{s} today to earn {reward_text}` (goes to Buy Data) |
+  | Ready | `Your box is ready to open! 🎁` |
+  | Opened today | `You've opened today's box. Come back tomorrow!` |
+
+- **Default bullets:**
+  - `Complete 5 successful orders today to unlock your box.`
+  - `Open it to win 5GB or more.`
+  - `New box every day: progress resets at midnight.`
+- **Popup trigger:** a page-wide `MysteryBoxWatcher` (signed-in, non-admin customers) listens with Supabase realtime for updates to the customer's own orders. When one is delivered, it refreshes progress.
+  - The popup opens whenever today's count is higher than the count the customer last saw. The last-seen count is stored per campaign per day in localStorage, with an in-memory fallback.
+  - It no longer opens just because the customer visited the Dashboard. The Dashboard card stays for reopening.
