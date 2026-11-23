@@ -12,7 +12,7 @@ import {
   BarChart3, Ticket, LifeBuoy, FileSearch, Key, TrendingUp, Sun, Moon,
   Sparkles, Image as ImageIcon, Users2, ScrollText,
   Megaphone, Flag, MessageSquare, Banknote, UserCheck, LineChart, Brain,
-  ShieldAlert, Search, Zap, Phone, Lightbulb, RotateCcw, ListCheck, Send, PhoneCall, GraduationCap, Bot, RefreshCw, Loader2, X,
+  ShieldAlert, Search, Zap, Phone, Lightbulb, RotateCcw, ListCheck, Send, PhoneCall, GraduationCap, Bot, RefreshCw, Loader2, X, Gift,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -84,6 +84,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: "Korba Hub",    icon: Activity,     path: "/admin/korba", permKey: "packages" },
       { label: "Korba Packages", icon: Package,    path: "/admin/korba/packages", permKey: "packages" },
       { label: "Promo Codes",  icon: Ticket,       path: "/admin/promotions", permKey: "packages" },
+      { label: "Mystery Box",  icon: Gift,         path: "/admin/mystery-box", permKey: "packages" },
     ],
   },
   {

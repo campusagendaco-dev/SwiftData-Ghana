@@ -56,3 +56,9 @@ export function rememberDismiss(
     /* storage blocked — nothing to remember */
   }
 }
+
+/** Each prize's chance (%) of being picked, to one decimal; inactive prizes get 0. */
+export function oddsPercent(prizes: { weight: number; is_active: boolean }[]): number[] {
+  const total = prizes.reduce((sum, p) => sum + (p.is_active ? Math.max(p.weight, 0) : 0), 0);
+  return prizes.map((p) => (p.is_active && total > 0 ? Math.round((Math.max(p.weight, 0) / total) * 1000) / 10 : 0));
+}
