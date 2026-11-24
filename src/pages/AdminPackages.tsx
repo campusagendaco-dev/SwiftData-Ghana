@@ -21,6 +21,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { useConfirmedCall } from "@/components/admin/ConfirmActionProvider";
 
 async function getValidSession() {
   const { data: { session } } = await supabase.auth.getSession();
@@ -41,6 +42,7 @@ interface PackageSetting {
 }
 
 const AdminPackages = () => {
+  const confirmed = useConfirmedCall();
   const { toast } = useToast();
   const { user: currentUser } = useAuth();
   const [settings, setSettings] = useState<Record<string, PackageSetting>>({});
@@ -536,16 +538,23 @@ const AdminPackages = () => {
         ? "Dear customer, MTN Mash Up bundles are temporarily ON HOLD. We will notify you once they are resumed. Thank you!"
         : "Dear customer, MTN Mash Up bundles have been RESUMED and are now active! You can place your orders now. Thank you!";
 
-      supabase.functions.invoke("admin-send-sms", {
-        body: {
-          target_type: "all",
-          title: targetHold ? "MTN Mash Up On Hold ⏸️" : "MTN Mash Up Active ⚡",
-          message: smsMessage
-        },
-        headers: { Authorization: `Bearer ${session.access_token}` }
-      }).catch(err => {
-        console.error("SMS notification failed to send:", err);
-      });
+      if (await confirmed.confirm({
+        title: "Also text all customers about this?",
+        description: smsMessage,
+        kind: "message",
+        confirmLabel: "Yes, send SMS to everyone",
+      })) {
+        supabase.functions.invoke("admin-send-sms", {
+          body: {
+            target_type: "all",
+            title: targetHold ? "MTN Mash Up On Hold ⏸️" : "MTN Mash Up Active ⚡",
+            message: smsMessage
+          },
+          headers: { Authorization: `Bearer ${session.access_token}` }
+        }).catch(err => {
+          console.error("SMS notification failed to send:", err);
+        });
+      }
 
       toast({ 
         title: "Success", 

@@ -13,6 +13,7 @@ import { Loader2, Search, RefreshCw, Phone, User, ShieldCheck, Users2, ShoppingC
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import UserDetailDrawer from "@/components/UserDetailDrawer";
 import AdminRoleModal from "@/components/AdminRoleModal";
+import { useConfirmedCall } from "@/components/admin/ConfirmActionProvider";
 
 interface UserRow {
   user_id: string;
@@ -52,6 +53,7 @@ export type UserSortOption =
   | "name_asc";
 
 const AdminUsers = () => {
+  const confirmed = useConfirmedCall();
   const { isDark } = useAppTheme();
   const { toast } = useToast();
   const { user: currentUser, session } = useAuth();
@@ -493,6 +495,13 @@ const AdminUsers = () => {
         toast({ title: "No phone numbers", description: "Selected users don't have phone numbers.", variant: "destructive" });
         return;
       }
+      if (!(await confirmed.confirm({
+        title: `Send this SMS to ${selectedProfiles.length} user(s)?`,
+        description: msg,
+        kind: "message",
+        orders: selectedProfiles.length,
+        confirmLabel: "Yes, send SMS",
+      }))) return;
       const { error } = await supabase.functions.invoke("admin-send-sms", {
         body: { 
           recipients: selectedProfiles.map(u => u.phone),

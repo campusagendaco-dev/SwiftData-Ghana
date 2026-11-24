@@ -22,6 +22,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { BulkPushBroadcaster } from "@/components/BulkPushBroadcaster";
+import { useConfirmedCall } from "@/components/admin/ConfirmActionProvider";
 
 type Segment = "all_agents" | "active_sessions" | "all_users" | "top_agents" | "dormant_agents" | "sub_agents" | "active_7d";
 type Channel = "notification" | "push" | "sms" | "whatsapp" | "both";
@@ -66,6 +67,7 @@ interface BroadcastLog {
 }
 
 export default function AdminBroadcast() {
+  const confirmed = useConfirmedCall();
   const { toast } = useToast();
   const { user } = useAuth();
 
@@ -114,6 +116,7 @@ export default function AdminBroadcast() {
   const fetchWaSessionStatus = useCallback(async () => {
     setLoadingWaStatus(true);
     try {
+      // read-only: session_status reads session status
       const { data, error } = await supabase.functions.invoke("admin-broadcast-whatsapp", {
         body: { action: "session_status" }
       });
@@ -129,6 +132,7 @@ export default function AdminBroadcast() {
   const fetchWaGroups = useCallback(async () => {
     setLoadingGroups(true);
     try {
+      // read-only: get_groups lists WhatsApp groups
       const { data, error } = await supabase.functions.invoke("admin-broadcast-whatsapp", {
         body: { action: "get_groups" }
       });
@@ -159,6 +163,7 @@ export default function AdminBroadcast() {
         localStorage.setItem("wasender_session_id", sessionId.trim());
       }
 
+      // read-only: connect_session connects the WhatsApp session
       const { data, error } = await supabase.functions.invoke("admin-broadcast-whatsapp", {
         body: {
           action: "connect_session",
@@ -203,6 +208,7 @@ export default function AdminBroadcast() {
     const interval = setInterval(async () => {
       if (handled) return;
       try {
+        // read-only: session_status reads session status
         const { data } = await supabase.functions.invoke("admin-broadcast-whatsapp", {
           body: { action: "session_status" }
         });
@@ -232,6 +238,7 @@ export default function AdminBroadcast() {
     if (!confirm("Are you sure you want to disconnect this WhatsApp session? You will need to scan QR code again to reconnect.")) return;
     setDisconnecting(true);
     try {
+      // read-only: disconnect_session disconnects the WhatsApp session
       const { data, error } = await supabase.functions.invoke("admin-broadcast-whatsapp", {
         body: {
           action: "disconnect_session",
@@ -315,6 +322,14 @@ export default function AdminBroadcast() {
       toast({ title: "Missing fields", description: "Title and message are required.", variant: "destructive" });
       return;
     }
+    const isGroups = broadcastMode === "groups";
+    if (!(await confirmed.confirm({
+      title: isGroups ? `Send this to ${selectedGroups.length} WhatsApp group(s)?` : `Send this ${channel} broadcast?`,
+      description: `"${title.trim()}": ${body.trim().slice(0, 160)}${body.trim().length > 160 ? "…" : ""}`,
+      kind: "message",
+      orders: isGroups ? selectedGroups.length : recipientCount ?? undefined,
+      confirmLabel: "Yes, send broadcast",
+    }))) return;
     setSending(true);
 
     try {
@@ -409,7 +424,7 @@ export default function AdminBroadcast() {
       if ((channel === "push" || channel === "both") && recipientIds.length > 0) {
         const PUSH_BATCH_SIZE = 50;
         for (let pOffset = 0; pOffset < recipientIds.length; pOffset += PUSH_BATCH_SIZE) {
-          supabase.functions.invoke("send-push-notification", {
+          confirmed.invokeAlreadyConfirmed("send-push-notification", {
             body: {
               user_ids: recipientIds,
               offset: pOffset,
@@ -426,7 +441,7 @@ export default function AdminBroadcast() {
       let waResultMsg = "";
       if (channel === "whatsapp" || channel === "both") {
         try {
-          const { data: waData, error: waError } = await supabase.functions.invoke("admin-broadcast-whatsapp", {
+          const { data: waData, error: waError } = await confirmed.invokeAlreadyConfirmed("admin-broadcast-whatsapp", {
             body: {
               recipients: phones,
               segment: segment,
@@ -464,7 +479,7 @@ export default function AdminBroadcast() {
       let smsResultMsg = "";
       if (channel === "sms" && phones.length > 0) {
         try {
-          const { data: smsData, error: smsError } = await supabase.functions.invoke("admin-send-sms", {
+          const { data: smsData, error: smsError } = await confirmed.invokeAlreadyConfirmed("admin-send-sms", {
             body: { 
               retry_phones: phones, 
               message: `${title}\n${body}`,
@@ -1040,6 +1055,7 @@ export default function AdminBroadcast() {
                   setTestingContact(true);
                   setContactResult(null);
                   try {
+                    // read-only: check_on_whatsapp checks whether numbers are on WhatsApp
                     const { data, error } = await supabase.functions.invoke("admin-broadcast-whatsapp", {
                       body: { action: "check_on_whatsapp", contact: testContact.trim() }
                     });

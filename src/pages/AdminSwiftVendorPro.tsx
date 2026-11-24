@@ -22,8 +22,10 @@ import {
   SheetTrigger
 } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useConfirmedCall } from "@/components/admin/ConfirmActionProvider";
 
 const AdminSwiftVendorPro = () => {
+  const confirmed = useConfirmedCall();
   const [vendors, setVendors] = useState<any[]>([]);
   const [pendingApprovals, setPendingApprovals] = useState<any[]>([]);
   const [ledger, setLedger] = useState<any[]>([]);
@@ -318,9 +320,17 @@ const AdminSwiftVendorPro = () => {
           ? `Congratulations! Your Swift Vendor terminal is fully activated and limits are removed.`
           : `Your Swift Vendor application requires attention. Reason: ${reason || 'Information does not match records.'}`;
         
-        await supabase.functions.invoke("admin-send-sms", {
-          body: { phone: vendorInfo.profiles.phone, message: smsMessage }
-        });
+        if (await confirmed.confirm({
+          title: "Text the vendor about this decision?",
+          description: smsMessage,
+          kind: "message",
+          orders: 1,
+          confirmLabel: "Yes, send SMS",
+        })) {
+          await supabase.functions.invoke("admin-send-sms", {
+            body: { phone: vendorInfo.profiles.phone, message: smsMessage }
+          });
+        }
       }
 
       toast.success(`Vendor ${action}d successfully.`, { id: "kyc-review" });

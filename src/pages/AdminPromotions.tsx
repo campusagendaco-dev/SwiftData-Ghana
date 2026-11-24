@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/dialog";
 import { logAudit } from "@/utils/auditLogger";
 import { useAuth } from "@/hooks/useAuth";
+import { useConfirmedCall } from "@/components/admin/ConfirmActionProvider";
 
 interface PromoCode {
   id: string;
@@ -42,6 +43,7 @@ const NETWORKS = ["MTN", "Telecel", "AirtelTigo"];
 const NETWORK_COLORS: Record<string, string> = { MTN: "#FFC107", Telecel: "#E53935", AirtelTigo: "#6366f1" };
 
 const AdminPromotions = () => {
+  const confirmed = useConfirmedCall();
   const { toast } = useToast();
   const { user: currentUser } = useAuth();
 
@@ -359,19 +361,26 @@ const AdminPromotions = () => {
 
         const smsMessage = `${newPromoPopup.title.trim()}\n${newPromoPopup.description.trim() || `Special ${newPromoPopup.network} ${newPromoPopup.package_size} bundle deal!`}\nOnly GH₵ ${promoPrice.toFixed(2)}${discountPct > 0 ? ` (Save ${discountPct}%)` : ""}.\nBuy on Pop-up now: https://swiftdatagh.shop`;
 
-        supabase.functions.invoke("admin-send-sms", {
-          body: {
-            target_type: smsTarget,
-            message: smsMessage,
-            sender_id: newPromoPopup.sender_id.trim() || "swiftupdate"
-          }
-        }).then(({ error: smsErr }) => {
-          if (smsErr) {
-            console.error("SMS Broadcast trigger error:", smsErr);
-          } else {
-            toast({ title: "📢 SMS Broadcast Triggered!", description: `Sender ID: ${newPromoPopup.sender_id || 'swiftupdate'}` });
-          }
-        }).catch(err => console.error("SMS Trigger failed:", err));
+        if (await confirmed.confirm({
+          title: "Also send this promo by SMS?",
+          description: smsMessage,
+          kind: "message",
+          confirmLabel: "Yes, send SMS",
+        })) {
+          supabase.functions.invoke("admin-send-sms", {
+            body: {
+              target_type: smsTarget,
+              message: smsMessage,
+              sender_id: newPromoPopup.sender_id.trim() || "swiftupdate"
+            }
+          }).then(({ error: smsErr }) => {
+            if (smsErr) {
+              console.error("SMS Broadcast trigger error:", smsErr);
+            } else {
+              toast({ title: "📢 SMS Broadcast Triggered!", description: `Sender ID: ${newPromoPopup.sender_id || 'swiftupdate'}` });
+            }
+          }).catch(err => console.error("SMS Trigger failed:", err));
+        }
       }
 
       fetchDataPromoPopups();
@@ -380,7 +389,12 @@ const AdminPromotions = () => {
   };
 
   const handleTriggerPromoSMS = async (promo: any) => {
-    if (!confirm(`Trigger SMS announcement to users for "${promo.title}" using Sender ID: swiftupdate?`)) return;
+    if (!(await confirmed.confirm({
+      title: `Send the SMS announcement for "${promo.title}"?`,
+      description: "An SMS goes to the promo's audience from Sender ID swiftupdate and uses SMS credit.",
+      kind: "message",
+      confirmLabel: "Yes, send SMS",
+    }))) return;
 
     const promoPrice = Number(promo.promo_price) || 0;
     const smsTarget = promo.target_audience === "agents"
