@@ -9,6 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import AmaProposalCard, { type AmaProposal } from "@/components/ama/AmaProposalCard";
+import { TOUR_START_EVENT } from "@/lib/amaTour";
 
 interface Message {
   id?: string;
@@ -19,7 +20,9 @@ interface Message {
   proposal?: AmaProposal | null;
 }
 
+const TOUR_ACTION = "Take the tour";
 const QUICK_ACTIONS = [
+  TOUR_ACTION,
   "Check my balance",
   "Order failed",
   "How to withdraw?",
@@ -475,7 +478,7 @@ function QuickBar({ onSend, disabled }: QuickBarProps) {
         <button
           key={q}
           type="button"
-          onClick={() => onSend(q)}
+          onClick={() => (q === TOUR_ACTION ? window.dispatchEvent(new Event(TOUR_START_EVENT)) : onSend(q))}
           disabled={disabled}
           className="shrink-0 px-3 py-2 rounded-xl text-[11px] font-bold whitespace-nowrap transition-all
                      text-indigo-300 hover:text-white disabled:opacity-30 active:scale-95"
