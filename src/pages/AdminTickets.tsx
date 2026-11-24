@@ -113,7 +113,22 @@ const AdminTickets = () => {
     setLoading(false);
   }, [toast]);
 
-  useEffect(() => { fetchTickets(); }, [fetchTickets]);
+  useEffect(() => {
+    fetchTickets();
+    const channel = supabase
+      .channel("admin-tickets-page-live")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "support_tickets" },
+        () => {
+          void fetchTickets();
+        }
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fetchTickets]);
 
   const handleUpdateStatus = async (id: string, status: Ticket["status"]) => {
     setUpdatingStatus(id);
@@ -170,24 +185,28 @@ Keep the response concise (2-4 sentences), highly empathetic, and direct. Do not
     if (!text) { toast({ title: "Enter a response first", variant: "destructive" }); return; }
 
     setSubmitting(ticket.id);
-    const { error } = await (supabase as any)
-      .from("support_tickets")
-      .update({
-        admin_response: text,
-        status: "resolved",
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", ticket.id);
+    try {
+      const { data, error } = await supabase.functions.invoke("auto-ticket-resolver", {
+        body: {
+          action: "admin_reply",
+          ticket_id: ticket.id,
+          response: text,
+          status: "resolved",
+        },
+      });
+      if (error || data?.error) {
+        throw new Error(data?.error || error?.message || "Failed to send reply");
+      }
 
-    if (error) {
-      toast({ title: "Failed to reply", description: error.message, variant: "destructive" });
-    } else {
-      toast({ title: "Reply sent & ticket resolved" });
+      toast({ title: "Reply sent, ticket resolved & user notified!" });
       setReplyText(prev => { const n = { ...prev }; delete n[ticket.id]; return n; });
       setActiveTicket(null);
       fetchTickets();
+    } catch (err: any) {
+      toast({ title: "Failed to reply", description: err.message, variant: "destructive" });
+    } finally {
+      setSubmitting(null);
     }
-    setSubmitting(null);
   };
 
   const handleCopySQL = async () => {

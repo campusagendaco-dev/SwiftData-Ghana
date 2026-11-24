@@ -34,7 +34,10 @@ const itemVariants: Variants = {
 const AuthPage = () => {
   const [isSignUp, setIsSignUp] = useState(true);
   const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
+  const [phone, setPhone] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return new URLSearchParams(window.location.search).get("phone") || "";
+  });
   const [verifiedPhone, setVerifiedPhone] = useState<string | null>(null);
   const [supportNumber, setSupportNumber] = useState("0598170947");
   const [isDeviceBlocked, setIsDeviceBlocked] = useState(false);

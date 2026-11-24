@@ -72,6 +72,39 @@ const DashboardReportIssue = () => {
     fetchRecentOrders();
   }, [fetchTickets, fetchRecentOrders]);
 
+  // Real-time updates when AI or an Admin replies to / resolves a ticket
+  useEffect(() => {
+    if (!user?.id) return;
+    const channel = supabase
+      .channel(`user-tickets-live-${user.id}`)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "support_tickets", filter: `user_id=eq.${user.id}` },
+        (payload: any) => {
+          const updated = payload.new;
+          if (!updated?.id) return;
+          setTickets((prev) => prev.map((t) => (t.id === updated.id ? { ...t, ...updated } : t)));
+          if (updated.status === "resolved") {
+            setEtaSeconds(null);
+            toast({
+              title: "✅ Ticket Resolved!",
+              description: updated.admin_response || "Our support team has resolved your ticket.",
+            });
+          } else if (updated.admin_response) {
+            toast({
+              title: "💬 Support Update",
+              description: updated.admin_response,
+            });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id, toast]);
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const selectedFile = e.target.files[0];
@@ -158,17 +191,33 @@ const DashboardReportIssue = () => {
       }
 
       // Create Ticket
-      const { error: ticketError } = await supabase.from("support_tickets").insert({
-        user_id: user.id,
-        subject: subject.trim(),
-        description: details.trim(),
-        attachment_url: attachmentUrl,
-        status: "open"
-      });
+      const { data: createdTicket, error: ticketError } = await supabase
+        .from("support_tickets")
+        .insert({
+          user_id: user.id,
+          subject: subject.trim(),
+          description: details.trim(),
+          attachment_url: attachmentUrl,
+          status: "open"
+        })
+        .select("id")
+        .single();
 
       if (ticketError) throw ticketError;
 
-      toast({ title: "Ticket submitted successfully!", description: "AI Agent has initiated auto-resolution." });
+      // Immediately invoke AI auto-triage + instant admin alert (non-blocking)
+      if (createdTicket?.id) {
+        void supabase.functions
+          .invoke("auto-ticket-resolver", {
+            body: { ticket_id: createdTicket.id },
+          })
+          .then(() => {
+            void fetchTickets();
+          })
+          .catch(() => {});
+      }
+
+      toast({ title: "Ticket submitted successfully!", description: "Ama AI is checking it now & our support team has been alerted." });
       setSubject("");
       setDetails("");
       setFile(null);

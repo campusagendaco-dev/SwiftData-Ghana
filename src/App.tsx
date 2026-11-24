@@ -701,12 +701,14 @@ const App = () => {
           <Toaster />
           <Sonner />
           <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-            <AuthProvider>
-              <SecurityGuard>
-                <AppContent />
-              </SecurityGuard>
-              <InstallPrompt />
-            </AuthProvider>
+            <ChunkErrorBoundary>
+              <AuthProvider>
+                <SecurityGuard>
+                  <AppContent />
+                </SecurityGuard>
+                <InstallPrompt />
+              </AuthProvider>
+            </ChunkErrorBoundary>
           </BrowserRouter>
         </TooltipProvider>
       </ThemeProvider>

@@ -8,6 +8,7 @@ import { safeRemoveChannel } from "@/lib/safe-realtime";
 import { toast } from "sonner";
 import AdminNotifications from "@/components/AdminNotifications";
 import AdminUnsuspendPopup from "@/components/AdminUnsuspendPopup";
+import AdminTicketAlertPopup from "@/components/AdminTicketAlertPopup";
 import {
   LayoutDashboard, Users, ShieldCheck, ShoppingCart, LogOut, Menu,
   Wallet, Bell, Package, CreditCard, Activity, Settings, ChevronRight, ChevronDown, ChevronsLeft, ChevronsRight,
@@ -864,6 +865,7 @@ const AdminLayoutInner = () => {
       />
       <AdminNotifications />
       <AdminUnsuspendPopup />
+      <AdminTicketAlertPopup />
       <AdminCommandPalette open={cmdOpen} setOpen={setCmdOpen} onNavigate={(path) => navigate(path)} allowedItems={allowedNavItems} />
 
       <AdminSidebar

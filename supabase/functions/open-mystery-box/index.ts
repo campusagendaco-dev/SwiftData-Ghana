@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { mysteryBoxError, toLocalGhPhone } from "../_shared/mystery_box.ts";
+import { dispatchUnifiedSms, getSmsConfig } from "../_shared/sms.ts";
 
 // Opens the caller's next Mystery Box: the DB function checks eligibility, picks the prize,
 // lowers stock and writes the open record + zero-cost prize order in one transaction.
@@ -74,6 +75,50 @@ serve(async (req) => {
       }
     } catch (e) {
       console.error("[open-mystery-box] delivery trigger error:", opened.order_id, e);
+    }
+
+    // Send celebratory SMS + Web Push encouraging them to keep ordering & winning more free data
+    try {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("full_name")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      const firstName = (profile?.full_name || "").trim().split(/\s+/)[0] || "Champion";
+      const prizeText = opened.prize_label || "FREE DATA";
+      const boxLabel = opened.box_number ? ` (Box #${opened.box_number})` : "";
+      const smsMsg = `Congrats ${firstName}! You just won ${prizeText} from the SwiftData Mystery Box${boxLabel}! Keep ordering on swiftdatagh.shop to unlock more boxes and win even more FREE data!`;
+
+      const notifyTasks: Promise<unknown>[] = [
+        // 1. Web Push Congratulations
+        fetch(`${SUPABASE_URL}/functions/v1/send-push-notification`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+          },
+          body: JSON.stringify({
+            user_id: user.id,
+            title: `🎉 Congrats ${firstName}! You Won ${prizeText}!`,
+            body: `Your Mystery Box${boxLabel} reward is on its way! Keep ordering on SwiftData to unlock more boxes and win even more free data.`,
+            url: "/dashboard",
+            tag: `mystery-box-win-${opened.order_id}`,
+            requireInteraction: true,
+          }),
+        }).catch((e) => console.warn("[open-mystery-box] congrats push error:", e)),
+        // 2. SMS Congratulations
+        (async () => {
+          const cfg = await getSmsConfig(supabase);
+          if (cfg?.apiKey && phone) {
+            await dispatchUnifiedSms(cfg.gateway, cfg.apiKey, cfg.senderId, phone, smsMsg, "mystery_box_win");
+          }
+        })().catch((e) => console.warn("[open-mystery-box] congrats SMS error:", e)),
+      ];
+
+      await Promise.allSettled(notifyTasks);
+    } catch (notifyErr) {
+      console.warn("[open-mystery-box] congrats notification error:", notifyErr);
     }
 
     return json({
