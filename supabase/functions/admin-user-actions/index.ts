@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { normalizePhone, getSmsConfig, sendSmsViaTxtConnect, formatTemplate } from "../_shared/sms.ts";
 import { verifyAdmin } from "../_shared/auth.ts";
+import { listAdminsWith2fa } from "../_shared/admin_list.ts";
 import { logAdminAudit, logSecurityEvent } from "../_shared/audit.ts";
 
 declare const Deno: any;
@@ -1703,51 +1704,8 @@ serve(async (req: Request) => {
       }
 
       case "get_admins": {
-        const { data: admins, error: fetchErr } = await supabaseAdmin
-          .from("user_roles")
-          .select("user_id, role, allowed_ips")
-          .eq("role", "admin");
-
-        if (fetchErr) throw fetchErr;
-
-        const ids = (admins || []).map((a: any) => a.user_id);
-        let profilesMap: Record<string, any> = {};
-        let mfaMap: Record<string, boolean> = {};
-
-        if (ids.length > 0) {
-          const [profilesRes, mfaRes] = await Promise.all([
-            supabaseAdmin
-              .from("profiles")
-              .select("user_id, email, full_name, last_seen_at")
-              .in("user_id", ids),
-            supabaseAdmin
-              .from("user_mfa_status")
-              .select("user_id, has_mfa")
-              .in("user_id", ids)
-          ]);
-
-          if (profilesRes.data) {
-            profilesMap = Object.fromEntries(profilesRes.data.map((p: any) => [p.user_id, p]));
-          }
-          if (mfaRes.data) {
-            mfaMap = Object.fromEntries(mfaRes.data.map((m: any) => [m.user_id, !!m.has_mfa]));
-          }
-        }
-
-        const enriched = (admins || []).map((a: any) => {
-          const profile = profilesMap[a.user_id] || {};
-          return {
-            user_id: a.user_id,
-            role: a.role,
-            allowed_ips: a.allowed_ips,
-            email: profile.email || "",
-            full_name: profile.full_name || "",
-            last_seen_at: profile.last_seen_at || null,
-            is_mfa_verified: !!mfaMap[a.user_id]
-          };
-        });
-
-        return new Response(JSON.stringify({ admins: enriched }), {
+        const admins = await listAdminsWith2fa(supabaseAdmin);
+        return new Response(JSON.stringify({ admins }), {
           status: 200,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
