@@ -13,6 +13,27 @@ CREATE POLICY "Admins read (fn)" ON public.stub_t FOR SELECT TO authenticated
 CREATE POLICY "Admins read (has_role)" ON public.stub_t FOR SELECT TO authenticated
   USING (public.has_role(auth.uid(), 'admin'));
 
+-- functions: one with its own inline admin check (listed), one using is_admin() (not listed),
+-- one with an inline check that only the service key may run (not listed)
+CREATE FUNCTION public.stub_inline_admin() RETURNS void LANGUAGE plpgsql AS $f$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin') THEN
+    RAISE EXCEPTION 'no';
+  END IF;
+END $f$;
+GRANT EXECUTE ON FUNCTION public.stub_inline_admin() TO authenticated;
+CREATE FUNCTION public.stub_uses_is_admin() RETURNS void LANGUAGE plpgsql AS $f$
+BEGIN
+  IF NOT public.is_admin() THEN RAISE EXCEPTION 'no'; END IF;
+END $f$;
+CREATE FUNCTION public.stub_service_only(p uuid) RETURNS void LANGUAGE plpgsql AS $f$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = p AND role = 'admin') THEN
+    RAISE EXCEPTION 'no';
+  END IF;
+END $f$;
+REVOKE ALL ON FUNCTION public.stub_service_only(uuid) FROM PUBLIC;
+
 DO $$
 DECLARE
   v_admin uuid;
@@ -47,6 +68,16 @@ BEGIN
   IF (v_res->'policies') @> '[{"policy":"Admins read (fn)"}]'::jsonb
      OR (v_res->'policies') @> '[{"policy":"Admins read (has_role)"}]'::jsonb THEN
     RAISE EXCEPTION 'FAIL (c): policy using is_admin()/has_role() listed: %', v_res;
+  END IF;
+
+  -- (e) only the callable function with its own admin check is listed
+  IF NOT coalesce(v_res->'functions', '[]'::jsonb) @> '[{"function":"public.stub_inline_admin()"}]'::jsonb THEN
+    RAISE EXCEPTION 'FAIL (e): inline admin function not listed: %', v_res->'functions';
+  END IF;
+  IF (v_res->'functions') @> '[{"function":"public.stub_uses_is_admin()"}]'::jsonb
+     OR (v_res->'functions') @> '[{"function":"public.stub_service_only(p uuid)"}]'::jsonb
+     OR (v_res->'functions') @> '[{"function":"public.admin_security_2fa_report()"}]'::jsonb THEN
+    RAISE EXCEPTION 'FAIL (e): function listed that should not be: %', v_res->'functions';
   END IF;
 
   -- (d) the 2FA flags match whether the restore migration was applied

@@ -7,7 +7,7 @@ vi.mock("@/integrations/supabase/client", () => ({ supabase: { rpc: (...a: unkno
 import Database2faCheckCard from "@/components/admin/Database2faCheckCard";
 
 const ok = (over: Record<string, unknown> = {}) => ({
-  data: { is_admin_requires_2fa: true, has_role_requires_2fa: true, policies: [], ...over },
+  data: { is_admin_requires_2fa: true, has_role_requires_2fa: true, policies: [], functions: [], ...over },
   error: null,
 });
 
@@ -21,6 +21,7 @@ describe("Database 2FA check card", () => {
     expect(await screen.findByText("Admin check requires 2FA: Yes")).toBeInTheDocument();
     expect(screen.getByText("Role check requires 2FA: Yes")).toBeInTheDocument();
     expect(screen.getByText("Policies with their own admin check: 0")).toBeInTheDocument();
+    expect(screen.getByText("Functions with their own admin check: 0")).toBeInTheDocument();
     expect(screen.getByText("Admins without 2FA: 0")).toBeInTheDocument();
     expect(rpc).toHaveBeenCalledWith("admin_security_2fa_report");
   });
@@ -31,6 +32,19 @@ describe("Database 2FA check card", () => {
     expect(await screen.findByText("public.stub_t / Admins read (SELECT)")).toBeInTheDocument();
     expect(screen.getByText("Policies with their own admin check: 1")).toBeInTheDocument();
     expect(screen.getByText("Admins without 2FA: —")).toBeInTheDocument();
+  });
+
+  it("lists functions that check admin rights themselves", async () => {
+    rpc.mockResolvedValue(ok({ functions: [{ function: "public.reset_promo_claims(p_promo_id uuid)" }] }));
+    render(<Database2faCheckCard adminsWithout2fa={0} />);
+    expect(await screen.findByText("public.reset_promo_claims(p_promo_id uuid)")).toBeInTheDocument();
+    expect(screen.getByText("Functions with their own admin check: 1")).toBeInTheDocument();
+  });
+
+  it("treats a report without functions (older database function) as 0", async () => {
+    rpc.mockResolvedValue({ data: { is_admin_requires_2fa: true, has_role_requires_2fa: true, policies: [] }, error: null });
+    render(<Database2faCheckCard adminsWithout2fa={0} />);
+    expect(await screen.findByText("Functions with their own admin check: 0")).toBeInTheDocument();
   });
 
   it("shows No when a check does not require 2FA", async () => {

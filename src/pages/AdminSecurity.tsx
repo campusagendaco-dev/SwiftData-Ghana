@@ -6,7 +6,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useConfirmedCall } from "@/components/admin/ConfirmActionProvider";
-import AdminTwoFactorBadge, { type AdminMfaStatus } from "@/components/admin/AdminTwoFactorBadge";
+import AdminTwoFactorBadge, { adminRowMfaStatus, type AdminMfaStatus } from "@/components/admin/AdminTwoFactorBadge";
 import Database2faCheckCard from "@/components/admin/Database2faCheckCard";
 import {
   Shield, Globe, RefreshCw, Loader2, CheckCircle2,
@@ -54,8 +54,7 @@ interface SystemAdmin {
   /** Missing until the backend functions are redeployed. */
   mfa_status?: AdminMfaStatus; last_sign_in_at?: string | null;
 }
-const adminMfaStatus = (a: SystemAdmin): AdminMfaStatus =>
-  a.mfa_status ?? (a.is_mfa_verified ? "verified" : "none");
+const adminMfaStatus = (a: SystemAdmin): AdminMfaStatus => adminRowMfaStatus(a);
 interface SignupDay { date: string; count: number }
 interface AdminAction {
   id: string; admin_email: string; action: string;
@@ -660,10 +659,18 @@ const AdminSecurity = () => {
   useEffect(() => { if (tab === "admins") void fetchAdmins(); }, [tab, fetchAdmins]);
 
   const handleAddAdmin = async () => {
-    if (!newAdminEmail.trim()) return;
+    const email = newAdminEmail.trim();
+    if (!email) return;
+    const ok = await confirmed.confirm({
+      title: `Make ${email} an admin?`,
+      description: "They get full access to wallets, providers and user management. Check the email is exactly right.",
+      kind: "access",
+      confirmLabel: "Make admin",
+    });
+    if (!ok) return;
     setAddingAdmin(true);
     try {
-      await invoke({ action: "grant_admin_role", email: newAdminEmail.trim() });
+      await invoke({ action: "grant_admin_role", email });
       toast({ title: "Success", description: "Administrator granted!" });
       setNewAdminEmail(""); void fetchAdmins();
     } catch (e: any) {

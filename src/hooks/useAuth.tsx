@@ -2,6 +2,7 @@ import { computeMfaStatus } from "@/lib/mfaStatus";
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { User, Session, Provider } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
+import { syncRealtimeTokenAfterMfa } from "@/lib/realtimeAuth";
 import { getOrCreateDeviceId, getBrowserFingerprint } from "@/utils/device";
 
 export interface Profile {
@@ -284,6 +285,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       (event, session) => {
         try {
           if (!mounted) return;
+          syncRealtimeTokenAfterMfa(event, session, supabase.realtime);
           setSession(session);
           setUser(session?.user ?? null);
           if (session?.user) {

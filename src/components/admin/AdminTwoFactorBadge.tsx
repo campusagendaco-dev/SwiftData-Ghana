@@ -2,6 +2,13 @@ import { AlertCircle, HelpCircle, Shield } from "lucide-react";
 
 export type AdminMfaStatus = "verified" | "none" | "unknown";
 
+/**
+ * A row's 2FA status. Without mfa_status the backend hasn't been redeployed, and its old
+ * is_mfa_verified came from a view that was always false — so that reads as unknown.
+ */
+export const adminRowMfaStatus = (row: { mfa_status?: AdminMfaStatus; is_mfa_verified?: boolean }): AdminMfaStatus =>
+  row.mfa_status ?? "unknown";
+
 /** 2FA badge for the Administrators table. "unknown" (lookup failed) never reads as NO 2FA. */
 export default function AdminTwoFactorBadge({ status }: { status: AdminMfaStatus }) {
   if (status === "verified") {

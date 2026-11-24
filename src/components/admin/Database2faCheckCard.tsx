@@ -6,6 +6,8 @@ type Report = {
   is_admin_requires_2fa: boolean;
   has_role_requires_2fa: boolean;
   policies: { table: string; policy: string; command: string }[];
+  /** Missing from reports made before the function scan was added. */
+  functions?: { function: string }[];
 };
 
 type State =
@@ -74,6 +76,14 @@ export default function Database2faCheckCard({ adminsWithout2fa }: { adminsWitho
             <ul className="ml-4 list-disc space-y-0.5 font-mono text-xs text-muted-foreground">
               {state.report.policies.map((p) => (
                 <li key={`${p.table}/${p.policy}`}>{`${p.table} / ${p.policy} (${p.command})`}</li>
+              ))}
+            </ul>
+          )}
+          <p>Functions with their own admin check: {(state.report.functions ?? []).length}</p>
+          {(state.report.functions ?? []).length > 0 && (
+            <ul className="ml-4 list-disc space-y-0.5 font-mono text-xs text-muted-foreground">
+              {(state.report.functions ?? []).map((f) => (
+                <li key={f.function}>{f.function}</li>
               ))}
             </ul>
           )}

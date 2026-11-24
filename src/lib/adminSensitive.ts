@@ -54,7 +54,7 @@ export const SENSITIVE_PAYOUT_ACTIONS = new Set([
 ]);
 
 /** Actions that change who can use the admin pages. */
-export const SENSITIVE_ACCESS_ACTIONS = new Set(["revoke_admin_role"]);
+export const SENSITIVE_ACCESS_ACTIONS = new Set(["revoke_admin_role", "grant_admin_role"]);
 
 export type ConfirmKind = "money" | "refund" | "payout" | "send" | "message" | "access";
 
