@@ -13,6 +13,7 @@ import { useAppTheme } from "@/contexts/ThemeContext";
 import { invokePublicFunction } from "@/lib/public-function-client";
 import { getFunctionErrorMessage } from "@/lib/function-errors";
 import { Switch } from "@/components/ui/switch";
+import { useConfirmedCall } from "@/components/admin/ConfirmActionProvider";
 
 interface BeneficiaryOrder {
   id: string;
@@ -50,6 +51,7 @@ function fmt(dateStr: string) {
 }
 
 export default function AdminBeneficiaryOrders() {
+  const confirmed = useConfirmedCall();
   const { isDark } = useAppTheme();
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
@@ -227,6 +229,14 @@ export default function AdminBeneficiaryOrders() {
 
   // RETRY SINGLE ORDER WITH BENEFICIARY CHECK FIRST
   const handleRetrySingle = useCallback(async (ord: BeneficiaryOrder) => {
+    if (!(await confirmed.confirm({
+      title: "Re-submit this order?",
+      description: `If ${ord.customer_phone} is now verified, the order is sent to a data provider (beneficiary check bypassed).`,
+      kind: "send",
+      orders: 1,
+      amountGhs: Number(ord.amount) || undefined,
+      confirmLabel: "Yes, re-submit",
+    }))) return;
     setProcessingId(ord.id);
     try {
       // 1. Verify beneficiary status first
@@ -256,7 +266,7 @@ export default function AdminBeneficiaryOrders() {
       setAllBeneficiaryOrders((prev) => prev.filter((o) => o.id !== ord.id));
 
       // 3. Invoke verify-payment Edge function (with automatic retry for transient 429/502/503/504)
-      let res = await supabase.functions.invoke("verify-payment", {
+      let res = await confirmed.invokeAlreadyConfirmed("verify-payment", {
         body: { reference: ord.id, order_id: ord.id, force: true, action: "retry_order" }
       });
 
@@ -269,7 +279,7 @@ export default function AdminBeneficiaryOrders() {
 
       if (isTransientError(res.error)) {
         await new Promise((r) => setTimeout(r, 2000));
-        res = await supabase.functions.invoke("verify-payment", {
+        res = await confirmed.invokeAlreadyConfirmed("verify-payment", {
           body: { reference: ord.id, order_id: ord.id, force: true, action: "retry_order" }
         });
       }
@@ -302,7 +312,7 @@ export default function AdminBeneficiaryOrders() {
     } finally {
       setProcessingId(null);
     }
-  }, [toast]);
+  }, [toast, confirmed]);
 
   // Shared "this number is confirmed on the beneficiary list right now" path —
   // flips the badge to In Queue and immediately retries its pending orders.
@@ -576,9 +586,14 @@ export default function AdminBeneficiaryOrders() {
     const chosenProv = dataProviders.find(p => p.id === provId);
     const provName = chosenProv?.name || "selected provider";
 
-    if (!confirm(`Are you sure you want to FORCE-ROUTE all ${allBeneficiaryOrders.length} non-beneficiary orders to ${provName}?`)) {
-      return;
-    }
+    if (!(await confirmed.confirm({
+      title: `Force-route ${allBeneficiaryOrders.length} order(s) to ${provName}?`,
+      description: "Every non-beneficiary order in this queue is sent to this provider now.",
+      kind: "send",
+      orders: allBeneficiaryOrders.length,
+      amountGhs: allBeneficiaryOrders.reduce((s, o) => s + (Number(o.amount) || 0), 0) || undefined,
+      confirmLabel: "Yes, route them",
+    }))) return;
 
     setRoutingDatamart(true);
     toast({ title: `Routing Orders to ${provName}...`, description: `Connecting and submitting orders...` });
@@ -617,6 +632,14 @@ export default function AdminBeneficiaryOrders() {
     const chosenProv = dataProviders.find(p => p.id === provId);
     const provName = chosenProv?.name || "selected provider";
     const orderIds = grp.orders.map(o => o.id);
+    if (!(await confirmed.confirm({
+      title: `Send ${orderIds.length} order(s) for ${grp.phone} to ${provName}?`,
+      description: "These orders are sent to this provider now.",
+      kind: "send",
+      orders: orderIds.length,
+      amountGhs: grp.orders.reduce((s, o) => s + (Number(o.amount) || 0), 0) || undefined,
+      confirmLabel: "Yes, send them",
+    }))) return;
 
     setRoutingPhone(grp.phone);
     toast({ title: `Routing ${grp.phone}...`, description: `Submitting ${orderIds.length} orders to ${provName}...` });
@@ -804,9 +827,16 @@ export default function AdminBeneficiaryOrders() {
 
     const isGuest = !ord.agent_id || ord.agent_id === "00000000-0000-0000-0000-000000000000" || ord.metadata?.is_guest_order;
 
-    if (!confirm(`Are you sure you want to cancel and refund GH₵ ${Number(ord.amount).toFixed(2)} to ${isGuest ? "customer's Mobile Money/payment account" : ord.agent_email}?`)) {
-      return;
-    }
+    if (!(await confirmed.confirm({
+      title: "Cancel and refund this order?",
+      description: isGuest
+        ? "The customer's Mobile Money / card payment is refunded."
+        : "The amount is refunded to the agent's wallet.",
+      kind: "refund",
+      orders: 1,
+      amountGhs: Number(ord.amount) || undefined,
+      confirmLabel: "Yes, refund",
+    }))) return;
 
     setProcessingId(ord.id);
     try {
@@ -831,7 +861,7 @@ export default function AdminBeneficiaryOrders() {
       let statusMsg = "";
 
       try {
-        const { data: edgeData, error: edgeErr } = await supabase.functions.invoke("verify-and-refund", {
+        const { data: edgeData, error: edgeErr } = await confirmed.invokeAlreadyConfirmed("verify-and-refund", {
           body: { order_id: ord.id, reference: ord.id, mode: "cancel", reason: "Cancelled by administrator from Beneficiary Queue" }
         });
         if (!edgeErr && edgeData?.success) {
@@ -903,9 +933,14 @@ export default function AdminBeneficiaryOrders() {
       return;
     }
 
-    if (!confirm(`Are you sure you want to RE-SUBMIT all ${targetOrders.length} non-beneficiary orders with beneficiary bypass?`)) {
-      return;
-    }
+    if (!(await confirmed.confirm({
+      title: `Re-submit ${targetOrders.length} order(s)?`,
+      description: "Every non-beneficiary order in this queue is sent to a data provider with the beneficiary check bypassed.",
+      kind: "send",
+      orders: targetOrders.length,
+      amountGhs: targetOrders.reduce((s, o) => s + (Number(o.amount) || 0), 0) || undefined,
+      confirmLabel: "Yes, re-submit all",
+    }))) return;
 
     setProcessingBatch(true);
     toast({ title: "Batch Retrying Orders...", description: `Re-submitting ${targetOrders.length} orders in parallel batches...` });
@@ -926,7 +961,7 @@ export default function AdminBeneficiaryOrders() {
               metadata: { ...(ord.metadata || {}), bypass_beneficiary: true }
             }).eq("id", ord.id);
 
-            let res = await supabase.functions.invoke("verify-payment", {
+            let res = await confirmed.invokeAlreadyConfirmed("verify-payment", {
               body: { reference: ord.id, order_id: ord.id, force: true, action: "retry_order" }
             });
             const isTransientError = (err: any) => {
@@ -937,7 +972,7 @@ export default function AdminBeneficiaryOrders() {
             };
             if (isTransientError(res.error)) {
               await new Promise((r) => setTimeout(r, 2000));
-              res = await supabase.functions.invoke("verify-payment", {
+              res = await confirmed.invokeAlreadyConfirmed("verify-payment", {
                 body: { reference: ord.id, order_id: ord.id, force: true, action: "retry_order" }
               });
             }
@@ -970,9 +1005,14 @@ export default function AdminBeneficiaryOrders() {
 
     const totalUnrefundedAmount = unrefunded.reduce((sum, o) => sum + Number(o.amount || 0), 0);
 
-    if (!confirm(`Are you sure you want to REFUND all ${unrefunded.length} unrefunded orders totaling GH₵ ${totalUnrefundedAmount.toFixed(2)} to agent wallets?`)) {
-      return;
-    }
+    if (!(await confirmed.confirm({
+      title: `Refund ${unrefunded.length} order(s) to agent wallets?`,
+      description: "Every unrefunded order in this queue is refunded.",
+      kind: "refund",
+      orders: unrefunded.length,
+      amountGhs: totalUnrefundedAmount,
+      confirmLabel: "Yes, refund all",
+    }))) return;
 
     setProcessingBatch(true);
     toast({ title: "Processing Batch Refunds...", description: `Refunding ${unrefunded.length} orders to agent wallets...` });
@@ -982,7 +1022,7 @@ export default function AdminBeneficiaryOrders() {
 
     for (const ord of unrefunded) {
       try {
-        const { data } = await supabase.functions.invoke("verify-and-refund", {
+        const { data } = await confirmed.invokeAlreadyConfirmed("verify-and-refund", {
           body: { order_id: ord.id }
         });
         if (data?.success) {

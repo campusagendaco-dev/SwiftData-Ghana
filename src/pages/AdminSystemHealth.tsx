@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirmedCall } from "@/components/admin/ConfirmActionProvider";
 
 type ChecklistItem = {
   name: string;
@@ -19,6 +20,7 @@ type ChecklistItem = {
 };
 
 const AdminSystemHealth = () => {
+  const confirmed = useConfirmedCall();
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [tableStats, setTableStats] = useState<Record<string, number>>({});
@@ -102,6 +104,12 @@ const AdminSystemHealth = () => {
   };
 
   const handleTriggerSelfHealWorker = async () => {
+    if (!(await confirmed.confirm({
+      title: "Run the self-healing worker?",
+      description: "Failed orders are retried and may be sent to other providers (auto-failover).",
+      kind: "send",
+      confirmLabel: "Yes, run it",
+    }))) return;
     setRunningHealWorker(true);
     toast({ title: "Hybrid Self-Healing Engine Started", description: "Scanning orders and executing auto-failovers..." });
     try {

@@ -41,6 +41,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { useConfirmedCall } from "@/components/admin/ConfirmActionProvider";
 
 interface OrderRow {
   id: string;
@@ -191,6 +192,7 @@ const PAGE_SIZE = 50;
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export default function AdminOrders() {
+  const confirmed = useConfirmedCall();
   const { toast } = useToast();
   const { user: currentUser } = useAuth();
   const [allOrders, setAllOrders] = useState<OrderRow[]>([]);
@@ -341,6 +343,7 @@ export default function AdminOrders() {
 
   const fetchAutoRouterQueueCount = useCallback(async () => {
     try {
+      // read-only: count_only only counts the queue, nothing is sent
       const { data } = await supabase.functions.invoke("admin-retry-autorouter", {
         body: { count_only: true }
       });
@@ -383,6 +386,12 @@ export default function AdminOrders() {
   const handleTogglePauseProvider = async (prov: any) => {
     const currentlyPaused = prov?.settings?.is_paused === true;
     const nextPaused = !currentlyPaused;
+    if (!nextPaused && !(await confirmed.confirm({
+      title: `Resume ${prov?.name || "this provider"}?`,
+      description: "Any orders held for this provider are released and sent to it now.",
+      kind: "send",
+      confirmLabel: "Yes, resume and send",
+    }))) return;
     setPausingProviderId(prov.id);
     try {
       const nextSettings = {
@@ -417,7 +426,7 @@ export default function AdminOrders() {
           description: `Releasing any orders held for ${prov.name}...`,
         });
         try {
-          await supabase.functions.invoke("admin-retry-autorouter", {
+          await confirmed.invokeAlreadyConfirmed("admin-retry-autorouter", {
             body: { resume_api: true, resume_provider_id: prov.id },
           });
           await fetchOrders(true);
@@ -439,6 +448,14 @@ export default function AdminOrders() {
 
   const handleTogglePauseOrder = async (order: OrderRow) => {
     const currentlyPaused = isOrderApiPaused(order);
+    if (currentlyPaused && !(await confirmed.confirm({
+      title: "Resume and send this order?",
+      description: "The order is released and sent to an active data provider now.",
+      kind: "send",
+      orders: 1,
+      amountGhs: Number(order.amount) || undefined,
+      confirmLabel: "Yes, resume and send",
+    }))) return;
     setPausingOrderId(order.id);
     try {
       if (currentlyPaused) {
@@ -531,6 +548,14 @@ export default function AdminOrders() {
       return;
     }
 
+    if (!shouldPause && !(await confirmed.confirm({
+      title: `Resume and send ${selectedEligible.length} order(s)?`,
+      description: "The selected orders are released and sent to active data providers now.",
+      kind: "send",
+      orders: selectedEligible.length,
+      amountGhs: selectedEligible.reduce((s, o) => s + (Number(o.amount) || 0), 0) || undefined,
+      confirmLabel: "Yes, resume and send",
+    }))) return;
     setBulkPausing(true);
     try {
       const ids = selectedEligible.map((o) => o.id);
@@ -566,7 +591,7 @@ export default function AdminOrders() {
         await fetchOrders(true);
         await fetchAutoRouterQueueCount();
       } else {
-        const { data, error } = await supabase.functions.invoke("admin-retry-autorouter", {
+        const { data, error } = await confirmed.invokeAlreadyConfirmed("admin-retry-autorouter", {
           body: { order_ids: ids, resume_api: true },
         });
         if (error) throw error;
@@ -872,7 +897,15 @@ export default function AdminOrders() {
       ? `Retry ${selectedIds.size} selected verified order(s) through the 3-tier cascade (DataHub -> Spendless -> SKPlug)?`
       : `Retry all verified orders in Auto-Router queue (${autoRouterQueueCount} pending) through the 3-tier cascade (DataHub -> Spendless -> SKPlug)?`;
 
-    if (!confirm(confirmMsg)) return;
+    const selectedRows = isSelected ? allOrders.filter((o) => selectedIds.has(o.id)) : [];
+    if (!(await confirmed.confirm({
+      title: isSelected ? `Send ${targetCount} selected order(s) to providers?` : `Send all ${targetCount} queued order(s) to providers?`,
+      description: confirmMsg,
+      kind: "send",
+      orders: targetCount,
+      amountGhs: isSelected ? selectedRows.reduce((s, o) => s + (Number(o.amount) || 0), 0) || undefined : undefined,
+      confirmLabel: "Yes, send them",
+    }))) return;
 
     setRetryingAutoRouter(true);
     toast({
@@ -883,7 +916,7 @@ export default function AdminOrders() {
     try {
       if (isSelected) {
         const ids = Array.from(selectedIds);
-        const { data, error } = await supabase.functions.invoke("admin-retry-autorouter", {
+        const { data, error } = await confirmed.invokeAlreadyConfirmed("admin-retry-autorouter", {
           body: { order_ids: ids }
         });
         if (error) throw error;
@@ -906,7 +939,7 @@ export default function AdminOrders() {
 
         while (hasMore && iteration < maxIterations) {
           iteration++;
-          const { data, error } = await supabase.functions.invoke("admin-retry-autorouter", {
+          const { data, error } = await confirmed.invokeAlreadyConfirmed("admin-retry-autorouter", {
             body: { limit: batchLimit }
           });
           if (error) throw error;
@@ -962,6 +995,17 @@ export default function AdminOrders() {
   };
 
   const handleRetry = async (orderId: string, confirmRedispatch = false) => {
+    const retryOrder = allOrders.find((o) => o.id === orderId);
+    if (!(await confirmed.confirm({
+      title: confirmRedispatch ? "Send this order again?" : "Retry this order?",
+      description: confirmRedispatch
+        ? "The order is sent to a data provider again."
+        : "The order is checked and, if paid, sent to a data provider.",
+      kind: "send",
+      orders: 1,
+      amountGhs: Number(retryOrder?.amount) || undefined,
+      confirmLabel: "Yes, retry",
+    }))) return;
     setRetrying(orderId);
     try {
       const { data, error } = await invokePublicFunctionAsUser("verify-payment", {
@@ -1021,9 +1065,14 @@ export default function AdminOrders() {
     const promptMsg = mode === "refund_and_reroute"
       ? `Verify & re-route order ${orderId.slice(0, 8)} away from ${provLabel} and immediately dispatch to the next available active API provider?`
       : `Are you sure you want to refund GH₵ ${amount.toFixed(2)} for order ${orderId.slice(0, 8)}?`;
-    if (!confirm(promptMsg)) {
-      return;
-    }
+    if (!(await confirmed.confirm({
+      title: mode === "refund_and_reroute" ? "Re-route this order to another provider?" : "Refund this order?",
+      description: promptMsg,
+      kind: mode === "refund_and_reroute" ? "send" : "refund",
+      orders: 1,
+      amountGhs: amount,
+      confirmLabel: mode === "refund_and_reroute" ? "Yes, re-route" : "Yes, refund",
+    }))) return;
     setRefunding(orderId);
     try {
       if (targetOrder?.status === "processing" || targetOrder?.status === "pending" || Boolean(targetOrder?.provider_id) || mode === "refund_and_reroute") {
@@ -1164,6 +1213,13 @@ export default function AdminOrders() {
   };
 
   const handleCheckProviderStatus = async (orderId: string) => {
+    if (!(await confirmed.confirm({
+      title: "Check this order with the provider?",
+      description: "If the provider reports it failed, the order is automatically sent to another provider.",
+      kind: "send",
+      orders: 1,
+      confirmLabel: "Yes, check",
+    }))) return;
     setCheckingStatusId(orderId);
     try {
       const { data, error } = await supabase.functions.invoke("check-order-status", {
@@ -1212,6 +1268,14 @@ export default function AdminOrders() {
       toast({ title: "No pending orders", description: "All orders on this page are already fulfilled." });
       return;
     }
+    if (!(await confirmed.confirm({
+      title: `Retry ${actionable.length} order(s)?`,
+      description: "Every pending, paid, processing or failed order on this page is checked and, if paid, sent to a data provider.",
+      kind: "send",
+      orders: actionable.length,
+      amountGhs: actionable.reduce((s, o) => s + (Number(o.amount) || 0), 0) || undefined,
+      confirmLabel: "Yes, retry all",
+    }))) return;
     setRetryingAll(true);
     toast({ title: "Processing…", description: `Retrying ${actionable.length} orders in batches…` });
 
@@ -1241,6 +1305,14 @@ export default function AdminOrders() {
       toast({ title: "No processing orders", description: "Nothing to heal." });
       return;
     }
+    if (!(await confirmed.confirm({
+      title: `Heal ${processingOrders.length} processing order(s)?`,
+      description: "Orders a provider has no record of are put back in the queue and sent again.",
+      kind: "send",
+      orders: processingOrders.length,
+      amountGhs: processingOrders.reduce((s, o) => s + (Number(o.amount) || 0), 0) || undefined,
+      confirmLabel: "Yes, heal",
+    }))) return;
     setHealingProcessing(true);
     toast({ title: "Polling provider…", description: `Checking ${processingOrders.length} stuck orders against DataHub.` });
     try {
@@ -1389,6 +1461,13 @@ export default function AdminOrders() {
       return;
     }
 
+    if (!(await confirmed.confirm({
+      title: `Check ${ids.length} order(s) with providers?`,
+      description: "Delivered orders are marked fulfilled. Orders a provider reports as failed are automatically sent to another provider.",
+      kind: "send",
+      orders: ids.length,
+      confirmLabel: "Yes, check",
+    }))) return;
     setBulkCheckingStatus(true);
     if (!isSilent) {
       toast({
@@ -1455,17 +1534,10 @@ export default function AdminOrders() {
     } finally {
       setBulkCheckingStatus(false);
     }
-  }, [allOrders, currentUser, fetchOrders, selectedIds, toast]);
+  }, [allOrders, confirmed, currentUser, fetchOrders, selectedIds, toast]);
 
-  // Automated Bulk Status Check every 3 minutes (180,000 ms)
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (!bulkCheckingStatus) {
-        handleBulkCheckStatus(undefined, true);
-      }
-    }, 3 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, [bulkCheckingStatus, handleBulkCheckStatus]);
+  // (The automatic 3-minute bulk status check was removed on 2026-11-24: it could re-send orders
+  // with no admin click. Status checks now run only from the button, after confirmation.)
 
   // Full CSV / Excel Export
   const handleExportCSV = () => {
@@ -1557,9 +1629,12 @@ export default function AdminOrders() {
 
   const handleLiveSmsBlast = async () => {
     const msg = "SwiftData Alert: Delivery is currently ongoing and we are LIVE! Order now at https://swiftdatagh.shop or join our official WhatsApp channel for live updates: https://whatsapp.com/channel/0029Vb81tu4HVvTdqauPgU0Z";
-    if (!confirm(`Are you sure you want to send the "Delivery Live" SMS blast to all order recipients?`)) {
-      return;
-    }
+    if (!(await confirmed.confirm({
+      title: 'Send the "Delivery Live" SMS to all order recipients?',
+      description: msg,
+      kind: "message",
+      confirmLabel: "Yes, send SMS blast",
+    }))) return;
     setSendingLiveSms(true);
     toast({ title: "Initiating SMS Broadcast…", description: "Dispatching 'Delivery Live' SMS via SwiftData gateway…" });
     try {

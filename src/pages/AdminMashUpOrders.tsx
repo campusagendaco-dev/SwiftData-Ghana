@@ -20,6 +20,7 @@ import PhoneOrderTracker from "@/components/PhoneOrderTracker";
 import { invokePublicFunctionAsUser } from "@/lib/public-function-client";
 import { logAudit } from "@/utils/auditLogger";
 import { useAuth } from "@/hooks/useAuth";
+import { useConfirmedCall } from "@/components/admin/ConfirmActionProvider";
 
 interface OrderRow {
   id: string;
@@ -73,6 +74,7 @@ const PAGE_SIZE = 50;
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const AdminMashUpOrders = () => {
+  const confirmed = useConfirmedCall();
   const { toast } = useToast();
   const { user: currentUser } = useAuth();
   const [allOrders, setAllOrders] = useState<OrderRow[]>([]);
@@ -257,6 +259,15 @@ const AdminMashUpOrders = () => {
   });
 
   const handleRetry = async (orderId: string) => {
+    const retryOrder = allOrders.find((o) => o.id === orderId);
+    if (!(await confirmed.confirm({
+      title: "Retry this order?",
+      description: "The order is checked and, if paid, sent to a data provider.",
+      kind: "send",
+      orders: 1,
+      amountGhs: Number(retryOrder?.amount) || undefined,
+      confirmLabel: "Yes, retry",
+    }))) return;
     setRetrying(orderId);
     try {
       const { data, error } = await invokePublicFunctionAsUser("verify-payment", {
@@ -290,9 +301,14 @@ const AdminMashUpOrders = () => {
   };
 
   const handleRefund = async (orderId: string, amount: number) => {
-    if (!confirm(`Are you sure you want to manually refund GH₵ ${amount.toFixed(2)} for order ${orderId}?`)) {
-      return;
-    }
+    if (!(await confirmed.confirm({
+      title: "Refund this order?",
+      description: `Order ${orderId.slice(0, 8)} is refunded to the customer's wallet.`,
+      kind: "refund",
+      orders: 1,
+      amountGhs: amount,
+      confirmLabel: "Yes, refund",
+    }))) return;
     setRefunding(orderId);
     try {
       const { data, error } = await supabase.rpc("refund_failed_order", { p_order_id: orderId });
@@ -325,6 +341,14 @@ const AdminMashUpOrders = () => {
       });
       return;
     }
+    if (!(await confirmed.confirm({
+      title: `Send ${targets.length} Mash Up order(s) to DataMart?`,
+      description: "These orders are sent to DataMart now. Delivered ones are marked fulfilled and profits credited.",
+      kind: "send",
+      orders: targets.length,
+      amountGhs: targets.reduce((s, o) => s + (Number(o.amount) || 0), 0) || undefined,
+      confirmLabel: "Yes, send them",
+    }))) return;
 
     setAutoRouting(true);
     toast({
@@ -404,7 +428,7 @@ const AdminMashUpOrders = () => {
         batch.map(async (order) => {
           try {
             // First attempt verify-payment edge function
-            const { data: verifyData, error: verifyErr } = await invokePublicFunctionAsUser("verify-payment", {
+            const { data: verifyData, error: verifyErr } = await confirmed.invokeAlreadyConfirmed("verify-payment", {
               body: { reference: order.id }
             });
 
@@ -460,7 +484,7 @@ const AdminMashUpOrders = () => {
                   })
                   .eq("id", order.id);
 
-                await Promise.resolve(supabase.rpc("credit_order_profits", { p_order_id: order.id })).catch(() => {});
+                await Promise.resolve(confirmed.rpcAlreadyConfirmed("credit_order_profits", { p_order_id: order.id })).catch(() => {});
                 fulfilledCount++;
                 return;
               } else {
@@ -596,6 +620,13 @@ const AdminMashUpOrders = () => {
       return;
     }
 
+    if (!(await confirmed.confirm({
+      title: `Check ${ids.length} order(s) with providers?`,
+      description: "Delivered orders are marked fulfilled. Orders a provider reports as failed are automatically sent to another provider.",
+      kind: "send",
+      orders: ids.length,
+      confirmLabel: "Yes, check",
+    }))) return;
     setBulkCheckingStatus(true);
     if (!isSilent) {
       toast({
@@ -659,17 +690,10 @@ const AdminMashUpOrders = () => {
     } finally {
       setBulkCheckingStatus(false);
     }
-  }, [allOrders, currentUser, fetchOrders, selectedIds, toast]);
+  }, [allOrders, confirmed, currentUser, fetchOrders, selectedIds, toast]);
 
-  // Automated Bulk Status Check every 3 minutes (180,000 ms)
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (!bulkCheckingStatus) {
-        handleBulkCheckStatus(undefined, true);
-      }
-    }, 3 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, [bulkCheckingStatus, handleBulkCheckStatus]);
+  // (The automatic 3-minute bulk status check was removed on 2026-11-24: it could re-send orders
+  // with no admin click. Status checks now run only from the button, after confirmation.)
 
   const handleHealProcessingOrders = async () => {
     const processingOrders = allOrders.filter(o => o.status === "processing");
@@ -677,6 +701,14 @@ const AdminMashUpOrders = () => {
       toast({ title: "No processing orders", description: "Nothing to heal." });
       return;
     }
+    if (!(await confirmed.confirm({
+      title: `Heal ${processingOrders.length} processing order(s)?`,
+      description: "Orders a provider has no record of are put back in the queue and sent again.",
+      kind: "send",
+      orders: processingOrders.length,
+      amountGhs: processingOrders.reduce((s, o) => s + (Number(o.amount) || 0), 0) || undefined,
+      confirmLabel: "Yes, heal",
+    }))) return;
     setHealingProcessing(true);
     toast({ title: "Polling provider…", description: `Checking ${processingOrders.length} stuck orders against DataHub.` });
     try {

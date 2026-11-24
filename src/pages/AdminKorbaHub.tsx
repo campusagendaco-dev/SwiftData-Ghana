@@ -12,6 +12,7 @@ import {
   ShieldCheck, Smartphone, DollarSign, HelpCircle
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useConfirmedCall } from "@/components/admin/ConfirmActionProvider";
 
 interface KorbaBundle {
   name: string;
@@ -47,6 +48,7 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 const AdminKorbaHub = () => {
+  const confirmed = useConfirmedCall();
   const { toast } = useToast();
   
   // OVA Balance state
@@ -235,6 +237,13 @@ const AdminKorbaHub = () => {
 
   // Verify/Query Korba Transaction status
   const verifyKorbaTransaction = async (orderId: string) => {
+    if (!(await confirmed.confirm({
+      title: "Verify this Korba payment?",
+      description: "If the payment is confirmed, the order is sent to a data provider (or the wallet credited).",
+      kind: "send",
+      orders: 1,
+      confirmLabel: "Yes, verify",
+    }))) return;
     setVerifyingOrderId(orderId);
     try {
       const { data, error } = await supabase.functions.invoke("verify-payment", {
@@ -285,7 +294,13 @@ const AdminKorbaHub = () => {
     }
 
     const confirmMsg = `Are you sure you want to reconcile this transaction? This will find the matching local order, mark it as fulfilled, and credit any agent commission.`;
-    if (!window.confirm(confirmMsg)) return;
+    if (!(await confirmed.confirm({
+      title: "Reconcile and mark this order fulfilled?",
+      description: confirmMsg,
+      kind: "money",
+      orders: 1,
+      confirmLabel: "Yes, reconcile",
+    }))) return;
 
     try {
       // 1. Find the matching local order
@@ -315,7 +330,7 @@ const AdminKorbaHub = () => {
         throw new Error("Unauthorized session. Please log in again.");
       }
 
-      const { data: fulfillRes, error: fulfillError } = await supabase.functions.invoke("admin-user-actions", {
+      const { data: fulfillRes, error: fulfillError } = await confirmed.invokeAlreadyConfirmed("admin-user-actions", {
         body: { action: "force_fulfill_order", orderId: order.id },
         headers: { Authorization: `Bearer ${session.access_token}` }
       });
