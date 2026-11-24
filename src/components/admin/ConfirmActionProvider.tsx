@@ -28,6 +28,7 @@ const KIND_NOTE: Record<ConfirmOptions["kind"], string> = {
   promo: "People who already claimed this promo can claim it again.",
   account: "This suspends or restricts user accounts.",
   ops: "This changes how orders are routed or handled, or which networks are on.",
+  receipt: "This records a MoMo receipt decision. It credits nothing by itself.",
 };
 
 function summary(opts: ConfirmOptions): string {

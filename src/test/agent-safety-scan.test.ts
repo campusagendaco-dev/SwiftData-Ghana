@@ -19,6 +19,9 @@ const AGENT_FILES = [
   "aml-scanner/index.ts",
   "account-cloner/index.ts",
   "auto-ticket-resolver/index.ts",
+  // MoMo receipt checker: reads receipts and records decisions; must never touch orders or wallets
+  "verify-momo-receipt/index.ts",
+  "_shared/momo_receipt_service.ts",
 ];
 
 const FORBIDDEN: { name: string; re: RegExp }[] = [

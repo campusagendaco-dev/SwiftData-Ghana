@@ -113,6 +113,7 @@ const AdminPnL = lazy(() => import("./pages/AdminPnL"));
 const AdminBanners = lazy(() => import("./pages/AdminBanners"));
 const AdminEngagement = lazy(() => import("./pages/AdminEngagement"));
 const AdminReconciliation = lazy(() => import("./pages/AdminReconciliation"));
+const AdminMomoReceipts = lazy(() => import("./pages/AdminMomoReceipts"));
 const AdminSubAgents = lazy(() => import("./pages/AdminSubAgents"));
 const AdminSystemLogs = lazy(() => import("./pages/AdminSystemLogs"));
 const AdminAPIOrders = lazy(() => import("./pages/AdminAPIOrders"));
@@ -573,6 +574,7 @@ const AppContent = () => {
           <Route path="api-orders" element={<AdminAPIOrders />} />
           <Route path="users" element={<AdminUsers />} />
           <Route path="reconciliation" element={<AdminReconciliation />} />
+          <Route path="momo-receipts" element={<AdminMomoReceipts />} />
           <Route path="withdrawals" element={<AdminWithdrawals />} />
           <Route path="notifications" element={<AdminNotificationsPage />} />
           <Route path="packages" element={<AdminPackages />} />
