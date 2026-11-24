@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
+import { useLocation } from "react-router-dom";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { useAppTheme } from "@/contexts/ThemeContext";
 import { 
@@ -17,7 +18,11 @@ export interface PushNotificationPromptProps {
   className?: string;
 }
 
-const STORAGE_KEY = "swift_push_prompt_dismissed_until";
+const STORAGE_KEY = "swift_push_prompt_dismissed_until_v2";
+const SNOOZE_DEFAULT_MINUTES = 10;
+const SNOOZE_LATER_MINUTES = 15;
+const SNOOZE_DENIED_MINUTES = 30;
+const RECHECK_INTERVAL_MS = 60 * 1000;
 
 export const PushNotificationPrompt: React.FC<PushNotificationPromptProps> = ({ 
   variant = "floating",
@@ -29,36 +34,45 @@ export const PushNotificationPrompt: React.FC<PushNotificationPromptProps> = ({
 }) => {
   const { supported, permissionState, subscribeUser, loading } = usePushNotifications();
   const { isDark } = useAppTheme();
+  const location = useLocation();
   
   const [dismissed, setDismissed] = useState(true);
   const [isIosNotStandalone, setIsIosNotStandalone] = useState(false);
   const [showIosGuide, setShowIosGuide] = useState(false);
 
-  useEffect(() => {
-    // Check iOS PWA status
-    if (typeof window !== "undefined") {
-      const isIos = /ipad|iphone|ipod/.test(navigator.userAgent.toLowerCase()) && !(window as any).MSStream;
-      const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true;
-      if (isIos && !isStandalone) {
-        setIsIosNotStandalone(true);
-      }
-
-      // Check snooze expiration for floating variant
-      const dismissedUntil = localStorage.getItem(STORAGE_KEY);
-      if (dismissedUntil) {
-        const time = parseInt(dismissedUntil, 10);
-        if (Date.now() < time) {
-          setDismissed(true);
-          return;
-        }
-      }
-      setDismissed(false);
+  const checkSnooze = useCallback(() => {
+    if (typeof window === "undefined") return;
+    if (permissionState === "granted") {
+      setDismissed(true);
+      return;
     }
-  }, []);
+    const dismissedUntil = localStorage.getItem(STORAGE_KEY);
+    if (dismissedUntil) {
+      const time = parseInt(dismissedUntil, 10);
+      if (!Number.isNaN(time) && Date.now() < time) {
+        setDismissed(true);
+        return;
+      }
+    }
+    setDismissed(false);
+  }, [permissionState]);
 
-  const handleDismiss = (days = 3) => {
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const isIos = /ipad|iphone|ipod/.test(navigator.userAgent.toLowerCase()) && !(window as any).MSStream;
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true;
+    if (isIos && !isStandalone) {
+      setIsIosNotStandalone(true);
+    }
+
+    checkSnooze();
+    const timer = window.setInterval(checkSnooze, RECHECK_INTERVAL_MS);
+    return () => window.clearInterval(timer);
+  }, [checkSnooze, location.pathname]);
+
+  const handleDismiss = (minutes = SNOOZE_DEFAULT_MINUTES) => {
     setDismissed(true);
-    const snoozeUntil = Date.now() + days * 24 * 60 * 60 * 1000;
+    const snoozeUntil = Date.now() + minutes * 60 * 1000;
     localStorage.setItem(STORAGE_KEY, snoozeUntil.toString());
   };
 
@@ -118,7 +132,54 @@ export const PushNotificationPrompt: React.FC<PushNotificationPromptProps> = ({
         </div>
       );
     }
-    return null;
+
+    return (
+      <AnimatePresence>
+        <motion.div
+          initial={{ opacity: 0, y: 30, scale: 0.95 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 20, scale: 0.95 }}
+          transition={{ duration: 0.3, ease: "easeOut" }}
+          data-dash-float="high"
+          role="dialog"
+          aria-label="Enable blocked notifications"
+          className={`fixed z-50 bottom-4 right-4 left-4 sm:left-auto sm:right-28 sm:bottom-6 sm:w-[380px] rounded-2xl border border-amber-500/40 bg-popover text-popover-foreground p-4 shadow-[0_24px_48px_-16px_rgba(0,0,0,0.35)] ${className}`}
+        >
+          <div className="flex items-start gap-3">
+            <span className="h-9 w-9 shrink-0 rounded-xl bg-amber-500/15 text-amber-500 flex items-center justify-center">
+              <AlertCircle className="h-[18px] w-[18px]" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-[14px] font-semibold leading-snug">Notifications are currently blocked</p>
+              <p className="mt-0.5 text-[12.5px] leading-relaxed text-muted-foreground">
+                Tap the <strong className="text-foreground">lock / site settings icon</strong> in your browser bar and set <strong className="text-foreground">Notifications → Allow</strong> so you get instant delivery & wallet alerts.
+              </p>
+            </div>
+            <button
+              onClick={() => handleDismiss(SNOOZE_DENIED_MINUTES)}
+              aria-label="Remind me later"
+              className="-mr-1 -mt-1 h-8 w-8 shrink-0 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <div className="mt-3 flex items-center justify-end gap-2">
+            <button
+              onClick={() => handleDismiss(SNOOZE_DENIED_MINUTES)}
+              className="h-8 px-3 rounded-xl text-[12.5px] font-semibold text-muted-foreground hover:text-foreground hover:bg-muted"
+            >
+              Remind me later
+            </button>
+            <button
+              onClick={() => window.location.reload()}
+              className="h-8 px-3.5 rounded-xl bg-primary text-primary-foreground text-[12.5px] font-semibold hover:brightness-105"
+            >
+              I enabled it
+            </button>
+          </div>
+        </motion.div>
+      </AnimatePresence>
+    );
   }
 
   // ==================== INLINE VARIANT ====================
@@ -213,7 +274,7 @@ export const PushNotificationPrompt: React.FC<PushNotificationPromptProps> = ({
             </p>
           </div>
           <button
-            onClick={() => handleDismiss(3)}
+            onClick={() => handleDismiss(SNOOZE_DEFAULT_MINUTES)}
             aria-label="Dismiss"
             className="-mr-1 -mt-1 h-8 w-8 shrink-0 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted"
           >
@@ -236,10 +297,10 @@ export const PushNotificationPrompt: React.FC<PushNotificationPromptProps> = ({
 
         <div className="mt-3.5 flex items-center justify-end gap-2">
           <button
-            onClick={() => handleDismiss(7)}
+            onClick={() => handleDismiss(SNOOZE_LATER_MINUTES)}
             className="h-9 px-3 rounded-xl text-[13px] font-semibold text-muted-foreground hover:text-foreground hover:bg-muted"
           >
-            Not now
+            Later
           </button>
           <button
             onClick={handleEnable}
