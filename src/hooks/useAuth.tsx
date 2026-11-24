@@ -277,6 +277,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
       const verified = Boolean(data.has_valid_session);
       setIsAdminOtpVerified(verified);
+      if (verified && user?.id) {
+        await checkAdminRole(user.id);
+      }
       return verified;
     } catch {
       setIsAdminOtpVerified(false);

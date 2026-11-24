@@ -82,6 +82,9 @@ serve(async (req: Request) => {
       return json({ error: "Session identifier missing. Please sign in again." }, 401);
     }
 
+    const body = await Promise.resolve(req.json()).catch(() => ({}));
+    const action = String(body?.action || "status").toLowerCase();
+
     // Strict Approved-Admin Check
     const { data: roleRow } = await db
       .from("user_roles")
@@ -91,10 +94,16 @@ serve(async (req: Request) => {
       .maybeSingle();
 
     if (!roleRow) {
+      if (action === "status") {
+        return json({ success: true, eligible: false, has_valid_session: false }, 200);
+      }
       return json({ error: "Forbidden: Admin privileges required", eligible: false }, 403);
     }
 
     if (roleRow.otp_login_approved === false) {
+      if (action === "status") {
+        return json({ success: true, eligible: false, has_valid_session: false }, 200);
+      }
       return json({ error: "Admin SMS OTP is disabled for this account. Please use your Authenticator App (2FA).", eligible: false }, 403);
     }
 
@@ -105,8 +114,6 @@ serve(async (req: Request) => {
       .maybeSingle();
 
     const adminPhone = normalizePhone(profile?.phone || "");
-    const body = await Promise.resolve(req.json()).catch(() => ({}));
-    const action = String(body?.action || "status").toLowerCase();
 
     // ── ACTION: STATUS ───────────────────────────────────────────────────────
     if (action === "status") {
