@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
+import PhoneOtpField, { normalizeGhanaPhoneInput } from "@/components/PhoneOtpField";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,6 +16,7 @@ const AuthAgent = () => {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
+  const [verifiedPhone, setVerifiedPhone] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [oauthLoading, setOauthLoading] = useState<"google" | null>(null);
   const [showPassword, setShowPassword] = useState(false);
@@ -33,17 +35,20 @@ const AuthAgent = () => {
         return;
       }
 
-      const digits = phone.replace(/\D+/g, "");
-      const normalizedPhone =
-        digits.length === 12 && digits.startsWith("233")
-          ? `0${digits.slice(3)}`
-          : digits.length === 9
-            ? `0${digits}`
-            : digits;
+      const normalizedPhone = normalizeGhanaPhoneInput(phone);
       if (!/^0\d{9}$/.test(normalizedPhone)) {
         toast({
           title: "Valid phone number required",
           description: "Please enter a valid 10-digit Ghana phone number (e.g. 0541234567).",
+          variant: "destructive",
+        });
+        setLoading(false);
+        return;
+      }
+      if (verifiedPhone !== normalizedPhone) {
+        toast({
+          title: "Phone verification required",
+          description: "Please click 'Send OTP' and verify your phone number with the 6-digit SMS code first.",
           variant: "destructive",
         });
         setLoading(false);
@@ -125,19 +130,17 @@ const AuthAgent = () => {
                     required
                   />
                 </div>
-                <div>
-                  <Label htmlFor="phone">Phone Number <span className="text-red-500">*</span></Label>
-                  <Input
-                    id="phone"
-                    type="tel"
-                    inputMode="tel"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    placeholder="0541234567"
-                    className="mt-1 bg-secondary"
-                    required
-                  />
-                </div>
+                <PhoneOtpField
+                  phone={phone}
+                  onPhoneChange={setPhone}
+                  verifiedPhone={verifiedPhone}
+                  onVerified={(norm) => {
+                    setPhone(norm);
+                    setVerifiedPhone(norm);
+                  }}
+                  onResetVerification={() => setVerifiedPhone(null)}
+                  inputClassName="bg-secondary"
+                />
               </>
             )}
 
