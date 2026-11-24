@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { Outlet, Link, useLocation, useNavigate } from "react-router-dom";
+import { ConfirmActionProvider } from "@/components/admin/ConfirmActionProvider";
 import { useAuth } from "@/hooks/useAuth";
 import { useAppTheme } from "@/contexts/ThemeContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -10,9 +11,9 @@ import {
   LayoutDashboard, Users, ShieldCheck, ShoppingCart, LogOut, Menu,
   Wallet, Bell, Package, CreditCard, Activity, Settings, ChevronRight, ChevronDown, ChevronsLeft, ChevronsRight,
   BarChart3, Ticket, LifeBuoy, FileSearch, Key, TrendingUp, Sun, Moon,
-  Sparkles, Image as ImageIcon, Users2, ScrollText,
+  Sparkles, Image as ImageIcon, Users2, ScrollText, Database,
   Megaphone, Flag, MessageSquare, Banknote, UserCheck, LineChart, Brain,
-  ShieldAlert, Search, Zap, Phone, Lightbulb, RotateCcw, ListCheck, Send, PhoneCall, GraduationCap, Bot, RefreshCw, Loader2, X,
+  ShieldAlert, Search, Zap, Phone, Lightbulb, RotateCcw, ListCheck, Send, PhoneCall, GraduationCap, Bot, RefreshCw, Loader2, X, Gift,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -24,6 +25,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { useConfirmedCall } from "@/components/admin/ConfirmActionProvider";
 
 export interface NavItem {
   label: string;
@@ -84,6 +86,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: "Korba Hub",    icon: Activity,     path: "/admin/korba", permKey: "packages" },
       { label: "Korba Packages", icon: Package,    path: "/admin/korba/packages", permKey: "packages" },
       { label: "Promo Codes",  icon: Ticket,       path: "/admin/promotions", permKey: "packages" },
+      { label: "Mystery Box",  icon: Gift,         path: "/admin/mystery-box", permKey: "packages" },
     ],
   },
   {
@@ -139,6 +142,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: "AI Intelligence Hub", icon: Brain, path: "/admin/ai-strategy", permKey: "system" },
       { label: "API Network Intelligence", icon: Activity, path: "/admin/api-network", permKey: "system" },
       { label: "System Logs",    icon: ScrollText,    path: "/admin/system-logs", permKey: "system" },
+      { label: "Database Space", icon: Database,      path: "/admin/database-space", permKey: "system" },
       { label: "Feature Flags",  icon: Flag,          path: "/admin/feature-flags", permKey: "system" },
       { label: "Audit Logs",     icon: FileSearch,    path: "/admin/audit-logs", permKey: "system" },
       { label: "Settings",      icon: Settings,   path: "/admin/settings", permKey: "system" },
@@ -263,6 +267,7 @@ export const ROUTE_PERM_MAP: Record<string, string> = {
   "/admin/ai-strategy": "system",
   "/admin/api-network": "system",
   "/admin/system-logs": "system",
+  "/admin/database-space": "system",
   "/admin/feature-flags": "system",
   "/admin/audit-logs": "system",
   "/admin/settings": "system",
@@ -673,7 +678,8 @@ const OrdersHubTabs = ({ items, activeQueueCount }: { items: NavItem[]; activeQu
 
 /* ───────────── Layout ───────────── */
 
-const AdminLayout = () => {
+const AdminLayoutInner = () => {
+  const confirmed = useConfirmedCall();
   const [open, setOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<boolean>(() => readJson<boolean>(COLLAPSE_KEY, false));
   const [cmdOpen, setCmdOpen] = useState(false);
@@ -755,12 +761,20 @@ const AdminLayout = () => {
 
   const handleQuickReconcileAndSync = async () => {
     if (syncingNow) return;
+    const ok = await confirmed.confirm({
+      title: "Reconcile and sync orders?",
+      description:
+        "Retries failed orders (they are sent to a data provider again) and checks processing orders with providers, which can re-send orders a provider reports as failed.",
+      kind: "send",
+      confirmLabel: "Yes, retry and sync",
+    });
+    if (!ok) return;
     setSyncingNow(true);
     const toastId = toast.loading("Reconciling orders and syncing providers…");
     try {
       const [retryRes, bulkCheckRes] = await Promise.allSettled([
-        supabase.functions.invoke("cron-auto-retry", { body: {} }),
-        supabase.functions.invoke("check-order-status", { body: { auto_bulk: true } }),
+        confirmed.invokeAlreadyConfirmed("cron-auto-retry", { body: {} }),
+        confirmed.invokeAlreadyConfirmed("check-order-status", { body: { auto_bulk: true } }),
         supabase.functions.invoke("system-payout-v1", { body: { action: "get_provider_balance" } }),
       ]);
       await fetchLiveHeaderTelemetry();
@@ -1015,5 +1029,12 @@ const AdminLayout = () => {
     </div>
   );
 };
+
+/** Every admin page (and the header) can ask the admin to confirm money/send actions. */
+const AdminLayout = () => (
+  <ConfirmActionProvider>
+    <AdminLayoutInner />
+  </ConfirmActionProvider>
+);
 
 export default AdminLayout;

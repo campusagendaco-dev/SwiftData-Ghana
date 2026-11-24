@@ -19,6 +19,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import OrderJourneyModal from "@/components/OrderJourneyModal";
 import ProviderHealthPanel from "@/components/ProviderHealthPanel";
+import { useConfirmedCall } from "@/components/admin/ConfirmActionProvider";
 
 interface SystemLog {
   id: string;
@@ -87,6 +88,7 @@ const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 type Tab = "logs" | "health";
 
 export default function AdminSystemLogs() {
+  const confirmed = useConfirmedCall();
   const { toast } = useToast();
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -208,6 +210,13 @@ export default function AdminSystemLogs() {
   // Actions
   const handleRetry = async (log: SystemLog) => {
     if (!log.order_id) return;
+    if (!(await confirmed.confirm({
+      title: "Retry this order?",
+      description: `Order ${log.order_id.slice(0, 8)} is checked and, if paid, sent to a data provider.`,
+      kind: "send",
+      orders: 1,
+      confirmLabel: "Yes, retry",
+    }))) return;
     setRetrying(log.id);
     try {
       const { data, error } = await supabase.functions.invoke("verify-payment", {

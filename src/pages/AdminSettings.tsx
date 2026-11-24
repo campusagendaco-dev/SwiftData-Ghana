@@ -16,6 +16,7 @@ import { playSound, playSuccessSound } from "@/lib/sound";
 import { getFlagUrl } from "@/lib/utils";
 import { AdminLocationAlertsCard } from "@/components/AdminLocationAlertsCard";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useConfirmedCall } from "@/components/admin/ConfirmActionProvider";
 
 interface SystemSettings {
   allow_duplicate_purchases: boolean;
@@ -119,6 +120,7 @@ interface SystemSettings {
 }
 
 const AdminSettings = () => {
+  const confirmed = useConfirmedCall();
   const { toast } = useToast();
   const { session } = useAuth();
   const [loading, setLoading] = useState(true);
@@ -421,6 +423,13 @@ const AdminSettings = () => {
       toast({ title: "Phone number required", description: "Please enter a test phone number to test SMS delivery.", variant: "destructive" });
       return;
     }
+    if (!(await confirmed.confirm({
+      title: "Send a test SMS?",
+      description: `One test message goes to ${testSmsPhone.trim()} and uses SMS credit.`,
+      kind: "message",
+      orders: 1,
+      confirmLabel: "Yes, send test",
+    }))) return;
     setTestingSms(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -921,6 +930,13 @@ const AdminSettings = () => {
   const handleTogglePauseProvider = async (provider: any) => {
     const currentlyPaused = provider?.settings?.is_paused === true;
     const nextPaused = !currentlyPaused;
+    // Resuming releases held orders to the provider, so it needs the admin's say-so.
+    if (!nextPaused && !(await confirmed.confirm({
+      title: `Resume ${provider?.name || "this provider"}?`,
+      description: "Any orders held for this provider are released and sent to it now.",
+      kind: "send",
+      confirmLabel: "Yes, resume and send",
+    }))) return;
     const nextSettings = {
       ...(provider.settings || {}),
       is_paused: nextPaused,
@@ -947,7 +963,7 @@ const AdminSettings = () => {
             title: `▶ ${provider.name} API Resumed`,
             description: `Releasing any orders held for ${provider.name}...`,
           });
-          await supabase.functions.invoke("admin-retry-autorouter", {
+          await confirmed.invokeAlreadyConfirmed("admin-retry-autorouter", {
             body: { resume_api: true, resume_provider_id: provider.id },
           });
         }

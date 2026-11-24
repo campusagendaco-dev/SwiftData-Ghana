@@ -1,0 +1,331 @@
+-- Database space cleanup: nightly retention for log/history tables, plus admin RPCs for the
+-- admin "Database Space" page. Apply by pasting this file into the Supabase SQL editor
+-- (never `supabase db push`). Safe to run more than once.
+--
+-- Only these tables are ever cleaned (owner-approved periods, 2026-11-23):
+--   cron.job_run_details         runs older than 7 days
+--   public.system_logs           older than 30 days
+--   public.push_notification_logs older than 30 days
+--   public.sms_logs              older than 90 days
+--   public.security_logs         older than 90 days
+-- Customer notifications are left to the existing cleanup-old-notifications job (03:30 UTC),
+-- by the owner's choice on 2026-11-24. Orders, payments, wallets and profiles are never touched.
+
+-- ── Run log ────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.db_cleanup_runs (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  started_at timestamptz NOT NULL DEFAULT now(),
+  finished_at timestamptz,
+  source text NOT NULL CHECK (source IN ('nightly', 'manual')),
+  triggered_by uuid,
+  deleted jsonb NOT NULL DEFAULT '{}'::jsonb,
+  more_remaining boolean NOT NULL DEFAULT false,
+  errors jsonb NOT NULL DEFAULT '{}'::jsonb
+);
+ALTER TABLE public.db_cleanup_runs ADD COLUMN IF NOT EXISTS errors jsonb NOT NULL DEFAULT '{}'::jsonb;
+CREATE INDEX IF NOT EXISTS idx_db_cleanup_runs_started ON public.db_cleanup_runs (started_at DESC);
+
+ALTER TABLE public.db_cleanup_runs ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.db_cleanup_runs FROM PUBLIC, anon, authenticated;
+GRANT SELECT ON public.db_cleanup_runs TO authenticated;
+GRANT ALL ON public.db_cleanup_runs TO service_role;
+DROP POLICY IF EXISTS "db_cleanup_runs_admin_read" ON public.db_cleanup_runs;
+CREATE POLICY "db_cleanup_runs_admin_read" ON public.db_cleanup_runs
+  FOR SELECT TO authenticated USING (public.is_admin());
+
+-- ── The rules (display) ────────────────────────────────────────────────────
+CREATE OR REPLACE FUNCTION public._db_retention_rules()
+RETURNS TABLE (target text, label text, keep_days int, rule text)
+LANGUAGE sql
+IMMUTABLE
+SET search_path = public
+AS $$
+  VALUES
+    ('cron.job_run_details'::text, 'Scheduled job history'::text, 7, 'Runs older than 7 days'::text),
+    ('public.system_logs', 'System logs', 30, 'Older than 30 days'),
+    ('public.push_notification_logs', 'Push notification logs', 30, 'Older than 30 days'),
+    ('public.sms_logs', 'SMS logs', 90, 'Older than 90 days'),
+    ('public.security_logs', 'Security logs', 90, 'Older than 90 days')
+$$;
+
+-- ── Where scheduled-job history becomes "recent" ───────────────────────────
+-- cron.job_run_details is indexed only by runid, which grows with time. Binary-search runid
+-- (primary-key lookups only, no table scan) for the first run of the last 7 days; every run
+-- before it is old. Runs with no start/end time count as old. Returns NULL when there is
+-- nothing to delete.
+CREATE OR REPLACE FUNCTION public._db_retention_cron_cut()
+RETURNS bigint
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_cutoff timestamptz := now() - interval '7 days';
+  v_lo bigint;   -- the first run at or after v_lo is old
+  v_hi bigint;   -- the first run at or after v_hi is recent
+  v_mid bigint;
+  v_at timestamptz;
+  v_steps int := 0;
+BEGIN
+  SELECT min(runid), max(runid) INTO v_lo, v_hi FROM cron.job_run_details;
+  IF v_lo IS NULL THEN
+    RETURN NULL;
+  END IF;
+  SELECT coalesce(start_time, end_time, '-infinity') INTO v_at FROM cron.job_run_details WHERE runid = v_hi;
+  IF v_at < v_cutoff THEN
+    RETURN v_hi + 1;                       -- every run is old
+  END IF;
+  SELECT coalesce(start_time, end_time, '-infinity') INTO v_at FROM cron.job_run_details WHERE runid = v_lo;
+  IF v_at >= v_cutoff THEN
+    RETURN NULL;                           -- nothing is old
+  END IF;
+  WHILE v_hi - v_lo > 1 LOOP
+    v_steps := v_steps + 1;
+    IF v_steps > 64 THEN
+      RAISE EXCEPTION 'cron history search did not finish';   -- never loop forever
+    END IF;
+    v_mid := v_lo + (v_hi - v_lo) / 2;
+    SELECT coalesce(start_time, end_time, '-infinity') INTO v_at
+    FROM cron.job_run_details WHERE runid >= v_mid ORDER BY runid LIMIT 1;
+    IF v_at < v_cutoff THEN
+      v_lo := v_mid;
+    ELSE
+      v_hi := v_mid;
+    END IF;
+  END LOOP;
+  RETURN (SELECT runid FROM cron.job_run_details WHERE runid >= v_hi ORDER BY runid LIMIT 1);
+END;
+$$;
+
+-- ── Delete old rows from one table (fixed SQL per table, no dynamic SQL) ──
+-- p_limit NULL: one plain DELETE (nightly). Otherwise up to p_limit rows, oldest first, using
+-- each table's time index; the outer DELETE restates the rule.
+CREATE OR REPLACE FUNCTION public._db_retention_delete(p_target text, p_limit int)
+RETURNS int
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  n int := 0;
+  v_cut bigint;
+BEGIN
+  IF p_target = 'cron.job_run_details' THEN
+    v_cut := public._db_retention_cron_cut();
+    IF v_cut IS NULL THEN
+      RETURN 0;
+    END IF;
+    IF p_limit IS NULL THEN
+      DELETE FROM cron.job_run_details WHERE runid < v_cut;
+    ELSE
+      DELETE FROM cron.job_run_details WHERE runid < v_cut AND runid = ANY (ARRAY(
+        SELECT runid FROM cron.job_run_details WHERE runid < v_cut ORDER BY runid LIMIT p_limit));
+    END IF;
+
+  ELSIF p_target = 'public.system_logs' THEN
+    -- logs still referenced by sentinel_actions (no ON DELETE action) are kept
+    IF p_limit IS NULL THEN
+      DELETE FROM public.system_logs l WHERE l.ts < now() - interval '30 days'
+        AND NOT EXISTS (SELECT 1 FROM public.sentinel_actions s WHERE s.log_id = l.id);
+    ELSE
+      DELETE FROM public.system_logs l WHERE l.ts < now() - interval '30 days'
+        AND NOT EXISTS (SELECT 1 FROM public.sentinel_actions s WHERE s.log_id = l.id)
+        AND l.ctid = ANY (ARRAY(
+          SELECT x.ctid FROM public.system_logs x
+          WHERE x.ts < now() - interval '30 days'
+            AND NOT EXISTS (SELECT 1 FROM public.sentinel_actions s WHERE s.log_id = x.id)
+          ORDER BY x.ts LIMIT p_limit));
+    END IF;
+
+  ELSIF p_target = 'public.push_notification_logs' THEN
+    IF p_limit IS NULL THEN
+      DELETE FROM public.push_notification_logs WHERE created_at < now() - interval '30 days';
+    ELSE
+      DELETE FROM public.push_notification_logs WHERE created_at < now() - interval '30 days' AND ctid = ANY (ARRAY(
+        SELECT ctid FROM public.push_notification_logs WHERE created_at < now() - interval '30 days'
+        ORDER BY created_at LIMIT p_limit));
+    END IF;
+
+  ELSIF p_target = 'public.sms_logs' THEN
+    IF p_limit IS NULL THEN
+      DELETE FROM public.sms_logs WHERE created_at < now() - interval '90 days';
+    ELSE
+      DELETE FROM public.sms_logs WHERE created_at < now() - interval '90 days' AND ctid = ANY (ARRAY(
+        SELECT ctid FROM public.sms_logs WHERE created_at < now() - interval '90 days'
+        ORDER BY created_at LIMIT p_limit));
+    END IF;
+
+  ELSIF p_target = 'public.security_logs' THEN
+    IF p_limit IS NULL THEN
+      DELETE FROM public.security_logs WHERE created_at < now() - interval '90 days';
+    ELSE
+      DELETE FROM public.security_logs WHERE created_at < now() - interval '90 days' AND ctid = ANY (ARRAY(
+        SELECT ctid FROM public.security_logs WHERE created_at < now() - interval '90 days'
+        ORDER BY created_at LIMIT p_limit));
+    END IF;
+
+  ELSE
+    RAISE EXCEPTION 'unknown cleanup target %', p_target;
+  END IF;
+  GET DIAGNOSTICS n = ROW_COUNT;
+  RETURN n;
+END;
+$$;
+
+-- ── The cleanup run (internal: nightly cron and the admin RPC) ─────────────
+-- p_budget_ms = 0 (nightly): one plain DELETE per table. p_budget_ms > 0 (admin): batches of
+-- 2000, checking the time before every batch (after the first batch that removed rows), then
+-- reports more_remaining so the page calls
+-- again (keeps each request under PostgREST's statement timeout). Each table runs in its own
+-- sub-transaction: if one fails, its error is recorded and the other tables are still cleaned.
+CREATE OR REPLACE FUNCTION public.run_db_retention(
+  p_source text DEFAULT 'nightly',
+  p_budget_ms int DEFAULT 0,
+  p_triggered_by uuid DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_batch CONSTANT int := 2000;
+  v_deadline timestamptz := CASE WHEN p_budget_ms > 0
+    THEN clock_timestamp() + make_interval(secs => p_budget_ms / 1000.0) END;
+  v_deleted jsonb := '{}'::jsonb;
+  v_errors jsonb := '{}'::jsonb;
+  v_more boolean := false;
+  v_progressed boolean := false;   -- has this run deleted anything yet?
+  v_run uuid;
+  v_total bigint;
+  v_n int;
+  r record;
+BEGIN
+  INSERT INTO public.db_cleanup_runs (source, triggered_by)
+  VALUES (p_source, p_triggered_by)
+  RETURNING id INTO v_run;
+
+  FOR r IN SELECT target FROM public._db_retention_rules() LOOP
+    v_total := 0;
+    BEGIN
+      IF v_deadline IS NULL THEN
+        v_total := public._db_retention_delete(r.target, NULL);
+      ELSE
+        LOOP
+          -- stop at the deadline, but only once this run has removed something, so every call
+          -- makes progress even when the budget is used up early
+          IF v_progressed AND clock_timestamp() >= v_deadline THEN
+            v_more := true;
+            EXIT;
+          END IF;
+          v_n := public._db_retention_delete(r.target, v_batch);
+          v_total := v_total + v_n;
+          IF v_n > 0 THEN
+            v_progressed := true;
+          END IF;
+          EXIT WHEN v_n < v_batch;
+        END LOOP;
+      END IF;
+    EXCEPTION WHEN OTHERS THEN
+      -- this table's deletes in this run are rolled back; carry on with the rest
+      v_errors := v_errors || jsonb_build_object(r.target, SQLERRM);
+      v_total := 0;
+    END;
+    v_deleted := v_deleted || jsonb_build_object(r.target, v_total);
+    EXIT WHEN v_more;
+  END LOOP;
+
+  UPDATE public.db_cleanup_runs
+  SET finished_at = now(), deleted = v_deleted, more_remaining = v_more, errors = v_errors
+  WHERE id = v_run;
+
+  RETURN jsonb_build_object('deleted', v_deleted, 'more_remaining', v_more, 'errors', v_errors);
+END;
+$$;
+
+-- ── Admin guard: full admin, and a 2FA-verified session (production is_admin() no
+--    longer checks 2FA itself) ──────────────────────────────────────────────
+CREATE OR REPLACE FUNCTION public._db_space_require_admin()
+RETURNS void
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF coalesce(auth.jwt()->>'role', '') = 'service_role' THEN
+    RETURN;
+  END IF;
+  IF NOT public.is_admin() OR coalesce(auth.jwt()->>'aal', '') <> 'aal2' THEN
+    RAISE EXCEPTION 'not_authorized' USING ERRCODE = '42501';
+  END IF;
+END;
+$$;
+
+-- ── Admin RPCs ─────────────────────────────────────────────────────────────
+CREATE OR REPLACE FUNCTION public.admin_db_cleanup_now()
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  PERFORM public._db_space_require_admin();
+  RETURN public.run_db_retention('manual', 5000, auth.uid());
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.admin_db_space()
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  PERFORM public._db_space_require_admin();
+  RETURN jsonb_build_object(
+    'database_bytes', pg_database_size(current_database()),
+    'tables', (
+      SELECT coalesce(jsonb_agg(jsonb_build_object(
+        'target', r.target,
+        'label', r.label,
+        'keep_days', r.keep_days,
+        'rule', r.rule,
+        'total_bytes', coalesce(pg_total_relation_size(to_regclass(r.target)), 0),
+        'approx_rows', coalesce((SELECT greatest(c.reltuples, 0)::bigint FROM pg_class c WHERE c.oid = to_regclass(r.target)), 0)
+      )), '[]'::jsonb)
+      FROM public._db_retention_rules() r
+    ),
+    'last_run', (
+      SELECT to_jsonb(x) FROM (
+        SELECT started_at, finished_at, source, deleted, more_remaining, errors
+        FROM public.db_cleanup_runs
+        ORDER BY started_at DESC
+        LIMIT 1
+      ) x
+    )
+  );
+END;
+$$;
+
+-- ── Grants: only the two admin RPCs are callable by signed-in users ────────
+REVOKE ALL ON FUNCTION public._db_retention_rules() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public._db_retention_cron_cut() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public._db_retention_delete(text, int) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.run_db_retention(text, int, uuid) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public._db_space_require_admin() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.admin_db_cleanup_now() FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.admin_db_space() FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.admin_db_cleanup_now() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_db_space() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.run_db_retention(text, int, uuid) TO service_role;
+
+-- ── Nightly schedule (03:20 UTC = Ghana time), replaced if it already exists ──
+DO $$
+BEGIN
+  PERFORM cron.unschedule(jobid) FROM cron.job WHERE jobname = 'db-retention-nightly';
+  PERFORM cron.schedule('db-retention-nightly', '20 3 * * *', $cmd$SELECT public.run_db_retention('nightly', 0, NULL)$cmd$);
+END;
+$$;

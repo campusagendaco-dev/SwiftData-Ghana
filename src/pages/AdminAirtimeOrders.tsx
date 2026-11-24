@@ -27,6 +27,7 @@ import { invokePublicFunctionAsUser } from "@/lib/public-function-client";
 import { logAudit } from "@/utils/auditLogger";
 import { useAuth } from "@/hooks/useAuth";
 import { motion } from "framer-motion";
+import { useConfirmedCall } from "@/components/admin/ConfirmActionProvider";
 
 interface OrderRow {
   id: string;
@@ -81,6 +82,7 @@ const PAGE_SIZE = 50;
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const AdminAirtimeOrders = () => {
+  const confirmed = useConfirmedCall();
   const { toast } = useToast();
   const { user: currentUser } = useAuth();
   const [allOrders, setAllOrders] = useState<OrderRow[]>([]);
@@ -241,7 +243,15 @@ const AdminAirtimeOrders = () => {
   });
 
   const handleRetryOrder = async (orderId: string) => {
-    if (!window.confirm("Are you sure you want to retry this order manually?")) return;
+    const retryOrder = allOrders.find((o: any) => o.id === orderId);
+    if (!(await confirmed.confirm({
+      title: "Retry this order?",
+      description: "The order is sent to a provider again.",
+      kind: "send",
+      orders: 1,
+      amountGhs: Number(retryOrder?.amount) || undefined,
+      confirmLabel: "Yes, retry",
+    }))) return;
     setRetrying(orderId);
     try {
       const { data, error } = await supabase.functions.invoke("verify-payment", {
@@ -262,7 +272,14 @@ const AdminAirtimeOrders = () => {
   };
 
   const handleForceFulfill = async (orderId: string) => {
-    if (!window.confirm("CRITICAL: This marks the order as fulfilled without hitting any provider gateway API. Verify that the customer has indeed received the airtime before continuing. Proceed?")) {
+    if (!(await confirmed.confirm({
+      title: "Mark this order as fulfilled without sending it?",
+      description: "No provider is contacted. Only do this if the customer has already received the airtime. Profits are credited.",
+      kind: "money",
+      orders: 1,
+      amountGhs: Number(allOrders.find((o: any) => o.id === orderId)?.amount) || undefined,
+      confirmLabel: "Yes, mark fulfilled",
+    }))) {
       return;
     }
     setForcingFulfill(true);
@@ -304,6 +321,14 @@ const AdminAirtimeOrders = () => {
       return;
     }
 
+    if (!(await confirmed.confirm({
+      title: "Refund this order?",
+      description: `Reason: ${reason.trim()}`,
+      kind: "refund",
+      orders: 1,
+      amountGhs: Number(allOrders.find((o: any) => o.id === orderId)?.amount) || undefined,
+      confirmLabel: "Yes, refund",
+    }))) return;
     setRefunding(orderId);
     try {
       const sessionRes = await supabase.auth.getSession();
@@ -342,7 +367,14 @@ const AdminAirtimeOrders = () => {
       return;
     }
 
-    if (!window.confirm(`Are you sure you want to retry all ${failedOrders.length} failed orders on this page?`)) return;
+    if (!(await confirmed.confirm({
+      title: `Retry ${failedOrders.length} failed order(s)?`,
+      description: "Every failed order on this page is sent to a provider again.",
+      kind: "send",
+      orders: failedOrders.length,
+      amountGhs: failedOrders.reduce((s: number, o: any) => s + (Number(o.amount) || 0), 0) || undefined,
+      confirmLabel: "Yes, retry all",
+    }))) return;
 
     setRetryingAll(true);
     let successCount = 0;
@@ -350,7 +382,7 @@ const AdminAirtimeOrders = () => {
 
     for (const order of failedOrders) {
       try {
-        const { data, error } = await supabase.functions.invoke("verify-payment", {
+        const { data, error } = await confirmed.invokeAlreadyConfirmed("verify-payment", {
           body: { action: "retry_order", orderId: order.id },
         });
         if (!error && !data?.error) {
@@ -372,7 +404,12 @@ const AdminAirtimeOrders = () => {
   };
 
   const handleHealProcessingOrders = async () => {
-    if (!window.confirm("This action heals stuck 'processing' or 'paid' orders older than 5 minutes by querying their status with their providers. Run scan?")) return;
+    if (!(await confirmed.confirm({
+      title: "Heal stuck airtime orders?",
+      description: "Stuck 'processing' or 'paid' orders older than 5 minutes are checked with their providers; some may be sent again.",
+      kind: "send",
+      confirmLabel: "Yes, heal",
+    }))) return;
     setHealingProcessing(true);
     try {
       const sessionRes = await supabase.auth.getSession();
@@ -411,7 +448,15 @@ const AdminAirtimeOrders = () => {
       return;
     }
 
-    if (!window.confirm(`Are you sure you want to change the status of ${selectedIds.size} selected orders to '${bulkStatus}'?`)) {
+    const chosen = allOrders.filter((o: any) => selectedIds.has(o.id));
+    if (!(await confirmed.confirm({
+      title: `Set ${selectedIds.size} order(s) to '${bulkStatus}'?`,
+      description: "Setting orders to failed can refund wallets and text customers; setting them to fulfilled credits profits.",
+      kind: "money",
+      orders: selectedIds.size,
+      amountGhs: chosen.reduce((s: number, o: any) => s + (Number(o.amount) || 0), 0) || undefined,
+      confirmLabel: "Yes, change status",
+    }))) {
       return;
     }
 

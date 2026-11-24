@@ -64,6 +64,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { useConfirmedCall } from "@/components/admin/ConfirmActionProvider";
 
 interface MnotifyTemplate {
   id?: string | number;
@@ -222,6 +223,7 @@ const CURATED_SYSTEM_TEMPLATES: MnotifyTemplate[] = [
 ];
 
 export default function AdminVoiceSMS() {
+  const confirmed = useConfirmedCall();
   const { session } = useAuth();
   const { isDark } = useAppTheme();
   const { toast } = useToast();
@@ -333,6 +335,7 @@ export default function AdminVoiceSMS() {
   const fetchAudienceCounts = useCallback(async () => {
     if (!session?.access_token) return;
     try {
+      // read-only: get_audience_counts counts audiences
       const { data } = await supabase.functions.invoke("mnotify-voice", {
         body: { action: "get_audience_counts" },
         headers: { Authorization: `Bearer ${session.access_token}` }
@@ -357,10 +360,12 @@ export default function AdminVoiceSMS() {
     setLoadingTemplates(true);
     try {
       const [balRes, tmplRes] = await Promise.all([
+        // read-only: check_balance reads the voice credit balance
         supabase.functions.invoke("mnotify-voice", {
           body: { action: "check_balance", api_key: apiKey.trim() || undefined },
           headers: { Authorization: `Bearer ${session.access_token}` }
         }),
+        // read-only: get_templates lists voice templates
         supabase.functions.invoke("mnotify-voice", {
           body: { action: "get_templates", api_key: apiKey.trim() || undefined },
           headers: { Authorization: `Bearer ${session.access_token}` }
@@ -520,6 +525,7 @@ export default function AdminVoiceSMS() {
 
       setCreatingTemplate(true);
       try {
+        // read-only: create_template saves a template (sends nothing)
         const { data, error } = await supabase.functions.invoke("mnotify-voice", {
           body: {
             action: "create_template",
@@ -576,6 +582,7 @@ export default function AdminVoiceSMS() {
 
     if (!confirm("Are you sure you want to delete this template from mNotify?")) return;
     try {
+      // read-only: delete_template deletes a template (sends nothing)
       const { data, error } = await supabase.functions.invoke("mnotify-voice", {
         body: {
           action: "delete_template",
@@ -721,7 +728,13 @@ export default function AdminVoiceSMS() {
       return;
     }
 
-    if (!confirm(`Are you sure you want to ${isSchedule ? "SCHEDULE" : "BROADCAST"} this Voice Call to ${getTargetRecipientCount()} recipients?`)) {
+    if (!(await confirmed.confirm({
+      title: `${isSchedule ? "Schedule" : "Send"} this voice call campaign?`,
+      description: "Each recipient gets a voice call through mNotify, which uses voice credit.",
+      kind: "message",
+      orders: getTargetRecipientCount() || undefined,
+      confirmLabel: isSchedule ? "Yes, schedule calls" : "Yes, call them",
+    }))) {
       return;
     }
 
@@ -756,7 +769,7 @@ export default function AdminVoiceSMS() {
         payload.voice_id = voiceId.trim();
       }
 
-      const { data, error } = await supabase.functions.invoke("mnotify-voice", {
+      const { data, error } = await confirmed.invokeAlreadyConfirmed("mnotify-voice", {
         body: payload,
         headers: { Authorization: `Bearer ${session?.access_token}` }
       });
@@ -797,7 +810,13 @@ export default function AdminVoiceSMS() {
       return;
     }
 
-    if (!confirm(`Are you sure you want to ${isSchedule ? "SCHEDULE" : "BROADCAST"} this SMS via mNotify to ${getTargetRecipientCount()} recipients?`)) {
+    if (!(await confirmed.confirm({
+      title: `${isSchedule ? "Schedule" : "Send"} this SMS campaign?`,
+      description: "Each recipient gets an SMS through mNotify, which uses SMS credit.",
+      kind: "message",
+      orders: getTargetRecipientCount() || undefined,
+      confirmLabel: isSchedule ? "Yes, schedule SMS" : "Yes, send SMS",
+    }))) {
       return;
     }
 
@@ -818,7 +837,7 @@ export default function AdminVoiceSMS() {
       } else {
         payload.target_group = targetType;
       }
-      const { data, error } = await supabase.functions.invoke("mnotify-voice", {
+      const { data, error } = await confirmed.invokeAlreadyConfirmed("mnotify-voice", {
         body: payload,
         headers: { Authorization: `Bearer ${session?.access_token}` }
       });
@@ -848,6 +867,7 @@ export default function AdminVoiceSMS() {
     }
     setRegisteringSender(true);
     try {
+      // read-only: register_sender_id submits a sender ID for approval (sends nothing)
       const { data, error } = await supabase.functions.invoke("mnotify-voice", {
         body: {
           action: "register_sender_id",
@@ -872,6 +892,7 @@ export default function AdminVoiceSMS() {
     setRegisteringSender(true);
     setSenderCheckResult(null);
     try {
+      // read-only: check_sender_id reads sender ID status
       const { data, error } = await supabase.functions.invoke("mnotify-voice", {
         body: {
           action: "check_sender_id",

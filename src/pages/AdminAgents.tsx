@@ -13,6 +13,7 @@ import {
   CheckCircle, AlertTriangle, Clock, Search, Wallet, Users2, Phone,
   ChevronDown, ChevronUp, Loader2, RefreshCw, Store, MessageCircle, ShoppingCart
 } from "lucide-react";
+import { useConfirmedCall } from "@/components/admin/ConfirmActionProvider";
 
 interface AgentRow {
   user_id: string;
@@ -55,6 +56,7 @@ interface StuckActivation {
 }
 
 const AdminAgents = () => {
+  const confirmed = useConfirmedCall();
   const [agents, setAgents] = useState<AgentRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -349,6 +351,13 @@ const AdminAgents = () => {
     if (!amount || amount <= 0) {
       toast({ title: "Enter a valid amount", variant: "destructive" }); return;
     }
+    if (!(await confirmed.confirm({
+      title: "Top up this agent's wallet?",
+      description: `Adds money to ${agent.full_name || agent.email || "this agent"}'s wallet.`,
+      kind: "money",
+      amountGhs: amount,
+      confirmLabel: "Yes, top up",
+    }))) return;
     setToppingUp(agent.user_id);
 
     const { data, error } = await supabase.functions.invoke("system-payout-v1", {
@@ -384,6 +393,13 @@ const AdminAgents = () => {
     if (isNaN(limit) || limit < 0) {
       toast({ title: "Enter a valid limit amount", variant: "destructive" }); return;
     }
+    if (!(await confirmed.confirm({
+      title: "Change this agent's credit limit?",
+      description: "The agent will be able to buy on credit up to this amount.",
+      kind: "money",
+      amountGhs: limit,
+      confirmLabel: "Yes, set the limit",
+    }))) return;
     setUpdatingLimit(agentId);
 
     const { data, error } = await supabase.functions.invoke("system-payout-v1", {

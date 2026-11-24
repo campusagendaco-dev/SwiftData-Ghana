@@ -11,6 +11,7 @@ import {
   TrendingUp, AlertTriangle, DollarSign, RotateCcw,
 } from "lucide-react";
 import { format } from "date-fns";
+import { useConfirmedCall } from "@/components/admin/ConfirmActionProvider";
 
 interface AgentCredit {
   agent_id: string;
@@ -36,6 +37,7 @@ interface CreditTx {
 }
 
 export default function AdminCreditManagement() {
+  const confirmed = useConfirmedCall();
   const { toast } = useToast();
   const [agents, setAgents] = useState<AgentCredit[]>([]);
   const [loading, setLoading] = useState(true);
@@ -112,6 +114,13 @@ export default function AdminCreditManagement() {
     if (!selectedAgent) return;
     const limit = parseFloat(editLimit);
     if (isNaN(limit) || limit < 0) { toast({ title: "Invalid limit", variant: "destructive" }); return; }
+    if (!(await confirmed.confirm({
+      title: "Change this agent's credit limit?",
+      description: `${selectedAgent.full_name || "This agent"} will be able to buy on credit up to this amount.`,
+      kind: "money",
+      amountGhs: limit,
+      confirmLabel: "Yes, set the limit",
+    }))) return;
     setSaving(true);
     
     const { data: { session } } = await supabase.auth.getSession();
@@ -134,6 +143,13 @@ export default function AdminCreditManagement() {
     if (!selectedAgent) return;
     const amount = parseFloat(repayAmount);
     if (isNaN(amount) || amount <= 0) { toast({ title: "Invalid amount", variant: "destructive" }); return; }
+    if (!(await confirmed.confirm({
+      title: "Record a credit repayment?",
+      description: `Records a manual repayment from ${selectedAgent.full_name || "this agent"} against their credit balance.`,
+      kind: "money",
+      amountGhs: amount,
+      confirmLabel: "Yes, record repayment",
+    }))) return;
     setSaving(true);
     const { data, error } = await (supabase as any).rpc("repay_agent_credit", {
       p_agent_id: selectedAgent.agent_id, p_amount: amount, p_note: "Manual repayment by admin",

@@ -17,6 +17,7 @@ import {
   Bell, Radio
 } from "lucide-react";
 import AdminRoleModal from "@/components/AdminRoleModal";
+import { useConfirmedCall } from "@/components/admin/ConfirmActionProvider";
 
 interface UserRow {
   user_id: string;
@@ -161,6 +162,7 @@ interface Props {
 }
 
 const UserDetailDrawer = ({ user, onClose }: Props) => {
+  const confirmed = useConfirmedCall();
   const { toast } = useToast();
   const { session } = useAuth();
   const [data, setData] = useState<DrawerData | null>(null);
@@ -401,6 +403,13 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
       toast({ title: "Message Required", description: "Please enter an SMS message.", variant: "destructive" });
       return;
     }
+    if (!(await confirmed.confirm({
+      title: "Send this SMS?",
+      description: `One SMS goes to ${targetPhone} and uses SMS credit.`,
+      kind: "message",
+      orders: 1,
+      confirmLabel: "Yes, send SMS",
+    }))) return;
 
     setSmsSending(true);
     try {
@@ -449,6 +458,13 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
       toast({ title: "Message Required", description: "Please enter a notification message.", variant: "destructive" });
       return;
     }
+    if (!(await confirmed.confirm({
+      title: "Send this push notification?",
+      description: `It goes to ${user.full_name || "this user"}'s registered devices.`,
+      kind: "message",
+      orders: 1,
+      confirmLabel: "Yes, send",
+    }))) return;
 
     setPushSending(true);
     try {

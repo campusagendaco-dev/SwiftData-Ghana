@@ -3,6 +3,7 @@ import { CheckCircle2, Loader2, RefreshCw, Search, ShieldAlert, ShieldCheck, XCi
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
+import { useConfirmedCall } from "@/components/admin/ConfirmActionProvider";
 
 type Run = { id: number; run_at: string; kind: "ledger" | "paystack"; ok: boolean; issues: number | null; details: any };
 type Req = {
@@ -21,6 +22,7 @@ async function authHeader() {
 }
 
 export default function AdminWalletLedger() {
+  const confirmed = useConfirmedCall();
   const [runs, setRuns] = useState<{ ledger?: Run; paystack?: Run }>({});
   const [checking, setChecking] = useState<"" | "ledger" | "paystack">("");
   const [pending, setPending] = useState<Req[]>([]);
@@ -70,6 +72,7 @@ export default function AdminWalletLedger() {
 
   const runPaystackCheck = async () => {
     setChecking("paystack");
+    // read-only: wallet-reconcile only records a check run and notifies admins; it never credits wallets
     const { data, error } = await supabase.functions.invoke("wallet-reconcile", { body: {}, headers: await authHeader() });
     setChecking("");
     if (error || data?.error) return toast.error(data?.error || error?.message || "Check failed");
@@ -78,6 +81,16 @@ export default function AdminWalletLedger() {
   };
 
   const decide = async (r: Req, approve: boolean) => {
+    if (!(await confirmed.confirm({
+      title: approve ? "Approve this wallet adjustment?" : "Reject this wallet adjustment?",
+      description: approve
+        ? `The wallet balance changes by GH₵ ${Number(r.amount || 0).toFixed(2)}. Reason: ${r.reason || "-"}`
+        : "The adjustment is declined and no balance changes.",
+      kind: "money",
+      orders: 1,
+      amountGhs: approve ? Math.abs(Number(r.amount)) || undefined : undefined,
+      confirmLabel: approve ? "Yes, approve" : "Yes, reject",
+    }))) return;
     setDeciding(r.id + (approve ? ":a" : ":r"));
     const { data, error } = await supabase.functions.invoke("admin-user-actions", {
       body: { action: "decide_wallet_adjustment", request_id: r.id, approve },

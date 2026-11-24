@@ -20,6 +20,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { invokePublicFunctionAsUser } from "@/lib/public-function-client";
 import { logAudit } from "@/utils/auditLogger";
 import { ProviderBadge } from "@/components/ProviderBadge";
+import { useConfirmedCall } from "@/components/admin/ConfirmActionProvider";
 
 interface OrderRow {
   id: string;
@@ -69,6 +70,7 @@ const PAGE_SIZE = 50;
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export default function AdminAPIOrders() {
+  const confirmed = useConfirmedCall();
   const { toast } = useToast();
   const navigate = useNavigate();
   const { user: currentUser } = useAuth();
@@ -349,6 +351,13 @@ export default function AdminAPIOrders() {
 
   // Actions
   const handleRetry = async (orderId: string) => {
+    if (!(await confirmed.confirm({
+      title: "Retry this order?",
+      description: "The order is checked and, if paid, sent to a data provider.",
+      kind: "send",
+      orders: 1,
+      confirmLabel: "Yes, retry",
+    }))) return;
     setRetrying(orderId);
     try {
       const { data, error } = await invokePublicFunctionAsUser("verify-payment", {
@@ -389,9 +398,14 @@ export default function AdminAPIOrders() {
   };
 
   const handleRefund = async (orderId: string, amount: number) => {
-    if (!confirm(`Are you sure you want to manually refund GH₵ ${amount.toFixed(2)} for order ${orderId}?`)) {
-      return;
-    }
+    if (!(await confirmed.confirm({
+      title: "Refund this order?",
+      description: `Order ${orderId.slice(0, 8)} is refunded to the customer's wallet.`,
+      kind: "refund",
+      orders: 1,
+      amountGhs: amount,
+      confirmLabel: "Yes, refund",
+    }))) return;
     setRefunding(orderId);
     try {
       const { data, error } = await supabase.rpc("refund_failed_order", { p_order_id: orderId });

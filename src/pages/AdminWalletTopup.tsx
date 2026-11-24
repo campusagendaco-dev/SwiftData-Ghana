@@ -16,6 +16,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { invokePublicFunctionAsUser } from "@/lib/public-function-client";
+import { useConfirmedCall } from "@/components/admin/ConfirmActionProvider";
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -47,6 +48,7 @@ interface DepositRecord {
 const QUICK_AMOUNTS = [10, 20, 50, 100, 200, 500];
 
 const AdminWalletTopup = () => {
+  const confirmed = useConfirmedCall();
   const { toast } = useToast();
   const { user: currentUser } = useAuth();
   
@@ -291,6 +293,13 @@ const AdminWalletTopup = () => {
 
   // Verify / retry payment using edge function (for automated deposits)
   const handleVerifyPayment = async (orderId: string) => {
+    if (!(await confirmed.confirm({
+      title: "Verify this payment and credit the wallet?",
+      description: "If the payment is confirmed, the wallet is credited (or the order is sent).",
+      kind: "money",
+      orders: 1,
+      confirmLabel: "Yes, verify",
+    }))) return;
     setProcessingId(orderId);
     try {
       const { data, error } = await invokePublicFunctionAsUser("verify-payment", {

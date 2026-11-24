@@ -1,4 +1,5 @@
 import { parseCapacity, AWAITING_PROVIDER_REF } from "./providers/utils.ts";
+import { routingOrderType } from "./mystery_box.ts";
 
 export interface Provider {
   id: string;
@@ -174,7 +175,7 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
     console.log(`[resolveProvidersForOrder] Order ${order?.id} is paused by admin from entering API provider.`);
     return [];
   }
-  let orderType = (order?.order_type || "data") as string;
+  let orderType = routingOrderType(order?.order_type);
   if (orderType.toLowerCase() === "api") {
     if (String(order?.package_size).toUpperCase() === "AIRTIME") {
       orderType = "airtime";

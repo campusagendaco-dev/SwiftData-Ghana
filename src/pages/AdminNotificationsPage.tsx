@@ -20,6 +20,7 @@ import {
   Radio, Smartphone, Laptop, Globe, Zap
 } from "lucide-react";
 import { BulkPushBroadcaster } from "@/components/BulkPushBroadcaster";
+import { useConfirmedCall } from "@/components/admin/ConfirmActionProvider";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -152,6 +153,7 @@ const TYPE_COLORS: Record<string, string> = {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 const AdminNotificationsPage = () => {
+  const confirmed = useConfirmedCall();
   const { user, session } = useAuth();
   const { toast } = useToast();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -355,6 +357,13 @@ const AdminNotificationsPage = () => {
 
   const handleSendTestPush = async (targetUserId: string | null, targetName: string, endpoint?: string) => {
     const pushKey = targetUserId || endpoint || "test";
+    if (!(await confirmed.confirm({
+      title: "Send a test push notification?",
+      description: `It goes to ${targetName || "this device"}.`,
+      kind: "message",
+      orders: 1,
+      confirmLabel: "Yes, send test",
+    }))) return;
     setSendingTestPushId(pushKey);
     try {
       const { data, error } = await supabase.functions.invoke("send-push-notification", {
@@ -388,6 +397,12 @@ const AdminNotificationsPage = () => {
   };
 
   const handleTriggerMissedYouBlast = async () => {
+    if (!(await confirmed.confirm({
+      title: 'Send the "We missed you" push blast?',
+      description: "A win-back push notification goes to inactive customers now.",
+      kind: "message",
+      confirmLabel: "Yes, send blast",
+    }))) return;
     setTriggeringWinback(true);
     toast({
       title: "Launching 'We Missed You' Blast... 🚀",
@@ -409,7 +424,7 @@ const AdminNotificationsPage = () => {
         });
       } else {
         // Fallback to direct RPC
-        const { data, error } = await supabase.rpc("dispatch_missed_you_push_broadcast", {
+        const { data, error } = await confirmed.rpcAlreadyConfirmed("dispatch_missed_you_push_broadcast", {
           p_inactive_hours: 24,
         });
         if (error) throw error;
@@ -503,6 +518,7 @@ const AdminNotificationsPage = () => {
   const handleEstimate = async () => {
     setEstimating(true);
     setEstimate(null);
+    // read-only: dry_run only estimates the audience, nothing is sent
     const { data, error } = await supabase.functions.invoke("admin-send-sms", {
       body: {
         message: message || "estimate",
@@ -523,6 +539,13 @@ const AdminNotificationsPage = () => {
   const handleTestSms = async () => {
     if (!testPhone.trim()) { toast({ title: "Enter a test phone number", variant: "destructive" }); return; }
     if (!message.trim()) { toast({ title: "Write a message first", variant: "destructive" }); return; }
+    if (!(await confirmed.confirm({
+      title: "Send a test SMS?",
+      description: `One test message goes to ${testPhone.trim()} and uses SMS credit.`,
+      kind: "message",
+      orders: 1,
+      confirmLabel: "Yes, send test",
+    }))) return;
     setTestSending(true);
     const { data, error } = await supabase.functions.invoke("admin-send-sms", {
       body: { title: title.trim(), message: message.trim(), target_type: "test", test_phone: testPhone.trim() },
@@ -537,6 +560,13 @@ const AdminNotificationsPage = () => {
   };
 
   const handleSend = async () => {
+    if (title.trim() && message.trim() && !(await confirmed.confirm({
+      title: scheduleEnabled ? "Schedule this broadcast?" : "Send this broadcast now?",
+      description: `"${title.trim()}": ${message.trim().slice(0, 160)}${message.trim().length > 160 ? "…" : ""}`,
+      kind: "message",
+      orders: estimate?.count ?? undefined,
+      confirmLabel: scheduleEnabled ? "Yes, schedule" : "Yes, send now",
+    }))) return;
     if (!title.trim() || !message.trim()) {
       toast({ title: "Title and message are required", variant: "destructive" }); return;
     }
@@ -588,7 +618,7 @@ const AdminNotificationsPage = () => {
     let pushResultText = "";
     if (sendWebPush) {
       try {
-        const { data: pushData, error: pushError } = await supabase.functions.invoke("send-push-notification", {
+        const { data: pushData, error: pushError } = await confirmed.invokeAlreadyConfirmed("send-push-notification", {
           body: {
             broadcast: true,
             title: title.trim(),
@@ -607,7 +637,7 @@ const AdminNotificationsPage = () => {
     }
 
     if (sendSms) {
-      const { data: smsData, error: smsError } = await supabase.functions.invoke("admin-send-sms", {
+      const { data: smsData, error: smsError } = await confirmed.invokeAlreadyConfirmed("admin-send-sms", {
         body: {
           title: title.trim(),
           message: message.trim(),
@@ -643,6 +673,13 @@ const AdminNotificationsPage = () => {
 
   const handleRetryFailed = async () => {
     if (!lastResult?.failures?.length) return;
+    if (!(await confirmed.confirm({
+      title: `Resend to ${lastResult.failures.length} failed number(s)?`,
+      description: "The message is sent again to every number that failed last time.",
+      kind: "message",
+      orders: lastResult.failures.length,
+      confirmLabel: "Yes, resend",
+    }))) return;
     setRetrying(true);
     const phones = lastResult.failures.map((f) => f.phone);
     const { data, error } = await supabase.functions.invoke("admin-send-sms", {
@@ -717,6 +754,14 @@ const AdminNotificationsPage = () => {
   const [runningScheduler, setRunningScheduler] = useState(false);
 
   const handleRunScheduler = async (broadcastId?: string) => {
+    if (!(await confirmed.confirm({
+      title: broadcastId ? "Send this scheduled broadcast now?" : "Run the broadcast scheduler now?",
+      description: broadcastId
+        ? "This broadcast is sent straight away."
+        : "Every scheduled broadcast that is due is sent now.",
+      kind: "message",
+      confirmLabel: "Yes, send",
+    }))) return;
     setRunningScheduler(true);
     toast({
       title: broadcastId ? "Blasting broadcast..." : "Triggering scheduler...",

@@ -2,6 +2,7 @@ import { resolveProvidersForOrder, getPausedTargetProvider, isOrderPausedFromApi
 import { getProviderAdapter } from "./providers/registry.ts";
 import { isNonRetryableTerminalError, isDuplicateOrderError, isBeneficiaryFailure, isUncertainDeliveryError, AWAITING_PROVIDER_REF } from "./providers/utils.ts";
 import { autoSubmitBeneficiaryNumber } from "./beneficiary_auto_submit.ts";
+import { routingOrderType } from "./mystery_box.ts";
 
 export interface DispatchResult {
   ok: boolean;
@@ -61,6 +62,10 @@ export async function dispatchOrderWithFailover(
   supabaseAdmin: any,
   order: any
 ): Promise<DispatchResult> {
+  // Mystery Box prizes are delivered as ordinary data bundles.
+  if (order && routingOrderType(order.order_type) !== order.order_type) {
+    order = { ...order, order_type: routingOrderType(order.order_type) };
+  }
   if (isOrderPausedFromApi(order)) {
     console.log(`[HybridRouter] Order ${order?.id} is paused by admin from entering API provider. Skipping dispatch.`);
     return {

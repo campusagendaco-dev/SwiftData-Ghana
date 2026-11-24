@@ -17,6 +17,7 @@ import {
   Smartphone, Filter, Radio, Image as ImageIcon, Flame, Zap, Shield, Play
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useConfirmedCall } from "@/components/admin/ConfirmActionProvider";
 
 interface StickerItem {
   name: string;
@@ -90,6 +91,7 @@ const PRESET_MESSAGES = [
 ];
 
 export default function AdminStickers() {
+  const confirmed = useConfirmedCall();
   const { user } = useAuth();
   const { toast } = useToast();
 
@@ -217,6 +219,7 @@ export default function AdminStickers() {
   const fetchQueue = async () => {
     setLoadingQueue(true);
     try {
+      // read-only: list_scheduled_stickers lists scheduled posts
       const { data, error } = await supabase.functions.invoke("admin-broadcast-whatsapp", {
         body: { action: "list_scheduled_stickers" }
       });
@@ -368,6 +371,14 @@ export default function AdminStickers() {
   // Send Single Sticker Now (Quick Action)
   const handleQuickSend = async () => {
     if (!targetSticker) return;
+    if (!(await confirmed.confirm({
+      title: "Send this sticker now?",
+      description: quickDestination === "channel"
+        ? "It is posted to the WhatsApp channel straight away."
+        : `It is sent to ${quickCustomPhone.trim() || "this number"} on WhatsApp straight away.`,
+      kind: "message",
+      confirmLabel: "Yes, send",
+    }))) return;
     setIsSendingQuick(true);
     try {
       const destination = quickDestination === "channel" ? "120363425720623850@newsletter" : quickCustomPhone.trim();
@@ -408,6 +419,16 @@ export default function AdminStickers() {
       toast({ title: "Select a Sticker", description: "Please choose a sticker from the library", variant: "destructive" });
       return;
     }
+    if (!(await confirmed.confirm({
+      title: schedTiming === "now" ? "Send this sticker post now?" : "Schedule this sticker post?",
+      description: schedTarget === "all_customers"
+        ? "It goes to all customers on WhatsApp."
+        : schedTarget === "channel"
+          ? "It is posted to the WhatsApp channel."
+          : "It is sent on WhatsApp.",
+      kind: "message",
+      confirmLabel: schedTiming === "now" ? "Yes, send now" : "Yes, schedule",
+    }))) return;
 
     setIsSubmittingSchedule(true);
     try {
@@ -434,7 +455,7 @@ export default function AdminStickers() {
       } else {
         // Scheduled Post
         const scheduledTime = new Date(schedDateTime).toISOString();
-        const { data, error } = await supabase.functions.invoke("admin-broadcast-whatsapp", {
+        const { data, error } = await confirmed.invokeAlreadyConfirmed("admin-broadcast-whatsapp", {
           body: {
             action: "schedule_sticker_post",
             title: schedTitle.trim(),
@@ -463,6 +484,7 @@ export default function AdminStickers() {
   // Cancel Scheduled Post
   const handleCancelScheduled = async (id: string) => {
     try {
+      // read-only: cancel_scheduled_sticker cancels a scheduled post (sends nothing)
       await supabase.functions.invoke("admin-broadcast-whatsapp", {
         body: { action: "cancel_scheduled_sticker", id }
       });
@@ -1128,8 +1150,14 @@ export default function AdminStickers() {
                           <Button
                             size="sm"
                             onClick={async () => {
+                              if (!(await confirmed.confirm({
+                                title: "Send this scheduled post now?",
+                                description: "It is sent on WhatsApp straight away instead of at its scheduled time.",
+                                kind: "message",
+                                confirmLabel: "Yes, send now",
+                              }))) return;
                               try {
-                                await supabase.functions.invoke("admin-broadcast-whatsapp", {
+                                await confirmed.invokeAlreadyConfirmed("admin-broadcast-whatsapp", {
                                   body: {
                                     action: "send_sticker_instant",
                                     to: item.recipient_phone,

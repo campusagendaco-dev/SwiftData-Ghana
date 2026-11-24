@@ -30,6 +30,7 @@ const AdminLayout = lazy(() => import("@/components/AdminLayout"));
 const AdminWalletLedger = lazy(() => import("./pages/AdminWalletLedger"));
 const TutorialModal = lazy(() => import("@/components/TutorialModal"));
 const DataPromoPopupModal = lazy(() => import("@/components/DataPromoPopupModal").then(m => ({ default: m.DataPromoPopupModal })));
+const MysteryBoxWatcher = lazy(() => import("@/components/MysteryBoxWatcher"));
 const LocationAlertPrompt = lazy(() => import("@/components/LocationAlertPrompt").then(m => ({ default: m.LocationAlertPrompt })));
 const AccountSwitcherModal = lazy(() => import("@/components/AccountSwitcherModal").then(m => ({ default: m.AccountSwitcherModal })));
 const AIConcierge = lazy(() => import("@/components/AIConcierge"));
@@ -99,6 +100,8 @@ const AdminSystemHealth = lazy(() => import("./pages/AdminSystemHealth"));
 const AdminSettings = lazy(() => import("./pages/AdminSettings"));
 const AdminAnalytics = lazy(() => import("./pages/AdminAnalytics"));
 const AdminPromotions = lazy(() => import("./pages/AdminPromotions"));
+const AdminMysteryBox = lazy(() => import("./pages/AdminMysteryBox"));
+const AdminDatabaseSpace = lazy(() => import("./pages/AdminDatabaseSpace"));
 const AdminTickets = lazy(() => import("./pages/AdminTickets"));
 const AdminAuditLogs = lazy(() => import("./pages/AdminAuditLogs"));
 const AdminSecurity = lazy(() => import("./pages/AdminSecurity"));
@@ -580,6 +583,7 @@ const AppContent = () => {
           <Route path="settings" element={<AdminSettings />} />
           <Route path="analytics" element={<AdminAnalytics />} />
           <Route path="promotions" element={<AdminPromotions />} />
+          <Route path="mystery-box" element={<AdminMysteryBox />} />
           <Route path="tickets" element={<AdminTickets />} />
           <Route path="audit-logs" element={<AdminAuditLogs />} />
           <Route path="security" element={<AdminSecurity />} />
@@ -591,6 +595,7 @@ const AppContent = () => {
           <Route path="banners" element={<AdminBanners />} />
           <Route path="engagement" element={<AdminEngagement />} />
           <Route path="system-logs" element={<AdminSystemLogs />} />
+          <Route path="database-space" element={<AdminDatabaseSpace />} />
           <Route path="broadcast" element={<AdminBroadcast />} />
           <Route path="stickers" element={<AdminStickers />} />
           <Route path="whatsapp-stickers" element={<AdminStickers />} />
@@ -622,6 +627,7 @@ const AppContent = () => {
           <AccountSwitcherModal />
           {!isAgentStore && !isChallengeArenaPage && !isAdmin && <FreeDataButton />}
           {!isAgentStore && !isChallengeArenaPage && !isAdmin && <DataPromoPopupModal />}
+          {!isAgentStore && !isChallengeArenaPage && !isAdmin && <MysteryBoxWatcher />}
           {!isAgentStore && !isChallengeArenaPage && !isAdmin && <LocationAlertPrompt />}
         </Suspense>
         {!isAgentStore && !isChallengeArenaPage && !isAdmin && <WhatsAppButton />}

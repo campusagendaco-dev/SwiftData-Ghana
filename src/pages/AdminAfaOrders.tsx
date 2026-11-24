@@ -38,6 +38,7 @@ import UserDetailDrawer from "@/components/UserDetailDrawer";
 import { logAudit } from "@/utils/auditLogger";
 import { useAuth } from "@/hooks/useAuth";
 import { invokePublicFunctionAsUser } from "@/lib/public-function-client";
+import { useConfirmedCall } from "@/components/admin/ConfirmActionProvider";
 
 export interface AfaOrderRow {
   id: string;
@@ -125,6 +126,7 @@ function resolveApplicant(order: AfaOrderRow) {
 }
 
 export default function AdminAfaOrders() {
+  const confirmed = useConfirmedCall();
   const { toast } = useToast();
   const { user: currentUser } = useAuth();
   const [allOrders, setAllOrders] = useState<AfaOrderRow[]>([]);
@@ -542,6 +544,13 @@ export default function AdminAfaOrders() {
 
   // Provider verification & retry
   const handleRetryOrder = async (orderId: string, confirmRedispatch = false) => {
+    if (!(await confirmed.confirm({
+      title: confirmRedispatch ? "Send this AFA registration again?" : "Retry this AFA registration?",
+      description: "The order is checked and, if paid, sent to the provider.",
+      kind: "send",
+      orders: 1,
+      confirmLabel: "Yes, retry",
+    }))) return;
     setRetryingId(orderId);
     try {
       const { data, error } = await invokePublicFunctionAsUser("verify-payment", {
@@ -591,6 +600,13 @@ export default function AdminAfaOrders() {
 
   // Provider Check Status
   const handleCheckProviderStatus = async (orderId: string) => {
+    if (!(await confirmed.confirm({
+      title: "Check this order with the provider?",
+      description: "If the provider reports it failed, the order is automatically sent to another provider.",
+      kind: "send",
+      orders: 1,
+      confirmLabel: "Yes, check",
+    }))) return;
     setCheckingStatusId(orderId);
     try {
       const { data, error } = await supabase.functions.invoke("check-order-status", {

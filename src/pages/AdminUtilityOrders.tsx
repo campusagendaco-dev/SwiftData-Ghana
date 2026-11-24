@@ -25,6 +25,7 @@ import { getFunctionErrorMessage } from "@/lib/function-errors";
 import { logAudit } from "@/utils/auditLogger";
 import { useAuth } from "@/hooks/useAuth";
 import { motion } from "framer-motion";
+import { useConfirmedCall } from "@/components/admin/ConfirmActionProvider";
 
 interface OrderRow {
   id: string;
@@ -68,6 +69,7 @@ const PAGE_SIZE = 50;
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const AdminUtilityOrders = () => {
+  const confirmed = useConfirmedCall();
   const { toast } = useToast();
   const { user: currentUser } = useAuth();
   const [allOrders, setAllOrders] = useState<OrderRow[]>([]);
@@ -213,7 +215,14 @@ const AdminUtilityOrders = () => {
   });
 
   const handleRetryOrder = async (orderId: string) => {
-    if (!window.confirm("Are you sure you want to retry this utility order?")) return;
+    if (!(await confirmed.confirm({
+      title: "Retry this utility order?",
+      description: "The order is sent to a provider again.",
+      kind: "send",
+      orders: 1,
+      amountGhs: Number(allOrders.find((o) => o.id === orderId)?.amount) || undefined,
+      confirmLabel: "Yes, retry",
+    }))) return;
     setRetrying(orderId);
     try {
       const { data, error } = await supabase.functions.invoke("verify-payment", {
@@ -280,6 +289,14 @@ const AdminUtilityOrders = () => {
       return;
     }
 
+    if (!(await confirmed.confirm({
+      title: "Refund this order?",
+      description: `Reason: ${reason.trim()}`,
+      kind: "refund",
+      orders: 1,
+      amountGhs: Number(allOrders.find((o) => o.id === orderId)?.amount) || undefined,
+      confirmLabel: "Yes, refund",
+    }))) return;
     setRefunding(orderId);
     try {
       const sessionRes = await supabase.auth.getSession();

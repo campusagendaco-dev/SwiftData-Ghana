@@ -15,6 +15,7 @@ import { sendWhatsAppOrderReceipt, checkAndTriggerDeliveryOnFire } from "../_sha
 import { isDuplicateOrderError, isBeneficiaryFailure, isUncertainDeliveryError, isAwaitingProviderRef, AWAITING_PROVIDER_REF } from "../_shared/providers/utils.ts";
 import { verifyAdmin } from "../_shared/auth.ts";
 import { autoSubmitBeneficiaryNumber } from "../_shared/beneficiary_auto_submit.ts";
+import { allowsSiblingDedup, prizeOrderGuard, routingOrderType } from "../_shared/mystery_box.ts";
 
 // --- Utilities ---
 
@@ -1256,7 +1257,26 @@ serve(async (req: any) => {
       }
     }
 
-    if (isInternalPayment || orderType.toLowerCase() === "free_data_claim") {
+    // Mystery Box prizes are zero-cost orders. Orders can be inserted by anyone, so only deliver one
+    // that matches a server-written open record (created by the mystery_box_open DB function).
+    const isMysteryBoxPrize = orderType.toLowerCase() === "mystery_box_prize";
+    if (isMysteryBoxPrize) {
+      const { data: openRow } = await supabaseAdmin
+        .from("mystery_box_opens")
+        .select("order_id, user_id, recipient_phone")
+        .eq("order_id", targetReference)
+        .maybeSingle();
+      const guardReason = existingOrder
+        ? prizeOrderGuard(existingOrder, openRow)
+        : "No mystery box record for this order";
+      if (guardReason) {
+        console.warn(`[SECURITY] Blocked mystery box prize order ${targetReference}: ${guardReason}`);
+        await supabaseAdmin.from("orders").update({ status: "fulfillment_failed", failure_reason: guardReason }).eq("id", targetReference);
+        return new Response(JSON.stringify({ status: "fulfillment_failed", error: guardReason }), { status: 200, headers: corsHeaders });
+      }
+    }
+
+    if (isInternalPayment || orderType.toLowerCase() === "free_data_claim" || isMysteryBoxPrize) {
       console.log(`[verify-payment] Internal/Free payment confirmed for ${targetReference}`);
       verifiedAmount = Number(existingOrder?.amount || 0);
     } else if (paymentMethod === "korba") {
@@ -1869,7 +1889,7 @@ serve(async (req: any) => {
     const customerPhone = claimedOrder.customer_phone || metadata?.customer_phone || "";
     const packageSize = claimedOrder.package_size || metadata?.package_size || "";
     const recipient = normalizeRecipient(customerPhone);
-    const effectiveOrderType = currentOrderType === "free_data_claim" ? "data" : currentOrderType;
+    const effectiveOrderType = currentOrderType === "free_data_claim" || currentOrderType === "mystery_box_prize" ? "data" : currentOrderType;
 
     // Check per-provider / per-order admin pause BEFORE dispatching to any external provider
     const pausedTargetProv = await getPausedTargetProvider(
@@ -1949,7 +1969,7 @@ serve(async (req: any) => {
     // --- SIBLING DUPLICATE PROTECTION ---
     // Look for any identical order submitted in the last 60 seconds for the same phone, network, package, and amount.
     // We check if an active sibling order for identical details is currently processing (e.g. rapid double-click or webhook race condition within 60 seconds).
-    if (isProviderOrder && customerPhone && network && packageSize) {
+    if (isProviderOrder && allowsSiblingDedup(currentOrderType) && customerPhone && network && packageSize) {
       const sixtySecondsAgo = new Date(Date.now() - 60 * 1000).toISOString();
       const { data: rawSiblings } = await supabaseAdmin
         .from("orders")
@@ -2261,7 +2281,7 @@ serve(async (req: any) => {
         package_size: packageSize,
         amount: deliveryAmount,
         price: deliveryAmount,
-        order_type: currentOrderType || effectiveOrderType || "data",
+        order_type: (currentOrderType ? routingOrderType(currentOrderType) : "") || effectiveOrderType || "data",
         reference: targetReference,
         order_id: targetReference,
         metadata: claimedOrder.metadata,

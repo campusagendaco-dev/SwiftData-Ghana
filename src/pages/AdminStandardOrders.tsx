@@ -26,6 +26,7 @@ import { logAudit } from "@/utils/auditLogger";
 import { useAuth } from "@/hooks/useAuth";
 import { motion } from "framer-motion";
 import { ProviderBadge } from "@/components/ProviderBadge";
+import { useConfirmedCall } from "@/components/admin/ConfirmActionProvider";
 
 interface OrderRow {
   id: string;
@@ -71,6 +72,7 @@ const PAGE_SIZE = 50;
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const AdminStandardOrders = () => {
+  const confirmed = useConfirmedCall();
   const { toast } = useToast();
   const { user: currentUser } = useAuth();
   const [allOrders, setAllOrders] = useState<OrderRow[]>([]);
@@ -92,6 +94,7 @@ const AdminStandardOrders = () => {
 
   const fetchAutoRouterQueueCount = useCallback(async () => {
     try {
+      // read-only: count_only only counts the queue, nothing is sent
       const { data } = await supabase.functions.invoke("admin-retry-autorouter", {
         body: { count_only: true }
       });
@@ -267,7 +270,15 @@ const AdminStandardOrders = () => {
       ? `Retry ${selectedIds.size} selected verified order(s) through the 3-tier cascade (DataHub -> Spendless -> SKPlug)?`
       : `Retry all verified orders in Auto-Router queue (${autoRouterQueueCount} pending) through the 3-tier cascade (DataHub -> Spendless -> SKPlug)?`;
 
-    if (!confirm(confirmMsg)) return;
+    const selectedRows = isSelected ? allOrders.filter((o) => selectedIds.has(o.id)) : [];
+    if (!(await confirmed.confirm({
+      title: isSelected ? `Send ${targetCount} selected order(s) to providers?` : `Send all ${targetCount} queued order(s) to providers?`,
+      description: confirmMsg,
+      kind: "send",
+      orders: targetCount,
+      amountGhs: isSelected ? selectedRows.reduce((s, o) => s + (Number(o.amount) || 0), 0) || undefined : undefined,
+      confirmLabel: "Yes, send them",
+    }))) return;
 
     setRetryingAutoRouter(true);
     toast({
@@ -278,7 +289,7 @@ const AdminStandardOrders = () => {
     try {
       if (isSelected) {
         const ids = Array.from(selectedIds);
-        const { data, error } = await supabase.functions.invoke("admin-retry-autorouter", {
+        const { data, error } = await confirmed.invokeAlreadyConfirmed("admin-retry-autorouter", {
           body: { order_ids: ids }
         });
         if (error) throw error;
@@ -301,7 +312,7 @@ const AdminStandardOrders = () => {
 
         while (hasMore && iteration < maxIterations) {
           iteration++;
-          const { data, error } = await supabase.functions.invoke("admin-retry-autorouter", {
+          const { data, error } = await confirmed.invokeAlreadyConfirmed("admin-retry-autorouter", {
             body: { limit: batchLimit }
           });
           if (error) throw error;
@@ -353,7 +364,14 @@ const AdminStandardOrders = () => {
   };
 
   const handleRetryOrder = async (orderId: string) => {
-    if (!window.confirm("Are you sure you want to retry this standard data order?")) return;
+    if (!(await confirmed.confirm({
+      title: "Retry this standard data order?",
+      description: "The order is sent to a provider again.",
+      kind: "send",
+      orders: 1,
+      amountGhs: Number(allOrders.find((o) => o.id === orderId)?.amount) || undefined,
+      confirmLabel: "Yes, retry",
+    }))) return;
     setRetrying(orderId);
     try {
       const { data, error } = await supabase.functions.invoke("verify-payment", {
@@ -406,6 +424,14 @@ const AdminStandardOrders = () => {
       return;
     }
 
+    if (!(await confirmed.confirm({
+      title: "Refund this order?",
+      description: `Reason: ${reason.trim()}`,
+      kind: "refund",
+      orders: 1,
+      amountGhs: Number(allOrders.find((o) => o.id === orderId)?.amount) || undefined,
+      confirmLabel: "Yes, refund",
+    }))) return;
     setRefunding(orderId);
     try {
       const sessionRes = await supabase.auth.getSession();

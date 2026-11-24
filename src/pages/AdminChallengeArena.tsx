@@ -18,8 +18,10 @@ import {
   XCircle,
   Loader2,
 } from "lucide-react";
+import { useConfirmedCall } from "@/components/admin/ConfirmActionProvider";
 
 export default function AdminChallengeArena() {
+  const confirmed = useConfirmedCall();
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -68,6 +70,12 @@ export default function AdminChallengeArena() {
   }, [fetchAdminData]);
 
   const handleCloseStakedRooms = async () => {
+    if (!(await confirmed.confirm({
+      title: "Close all staked rooms?",
+      description: "Open cash-stake rooms are closed and their stakes are returned to players' wallets.",
+      kind: "money",
+      confirmLabel: "Yes, close and refund stakes",
+    }))) return;
     setClosingRooms(true);
     try {
       const { data, error } = await supabase.functions.invoke("challenge-arena", {
@@ -121,6 +129,15 @@ export default function AdminChallengeArena() {
   };
 
   const handleUpdateClaimStatus = async (claimId: string, status: "fulfilled" | "rejected") => {
+    if (!(await confirmed.confirm({
+      title: status === "fulfilled" ? "Mark this prize claim as paid?" : "Reject this prize claim?",
+      description: status === "fulfilled"
+        ? "Only confirm once the prize has actually been given to the player."
+        : "The player's claim is declined.",
+      kind: status === "fulfilled" ? "payout" : "money",
+      orders: 1,
+      confirmLabel: status === "fulfilled" ? "Yes, mark as paid" : "Yes, reject",
+    }))) return;
     try {
       const { data, error } = await supabase.functions.invoke("challenge-arena", {
         body: { action: "admin_update_claim", claim_id: claimId, status },

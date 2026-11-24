@@ -12,6 +12,7 @@ import {
   CheckCircle, Clock, Search, Wallet, Phone,
   Loader2, RefreshCw, Store, MessageCircle, ShoppingCart, Users2, ChevronDown, User
 } from "lucide-react";
+import { useConfirmedCall } from "@/components/admin/ConfirmActionProvider";
 
 interface SubAgentRow {
   user_id: string;
@@ -37,6 +38,7 @@ interface SubAgentRow {
 }
 
 const AdminSubAgents = () => {
+  const confirmed = useConfirmedCall();
   const [agents, setAgents] = useState<SubAgentRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -145,6 +147,13 @@ const AdminSubAgents = () => {
     if (!amount || amount <= 0) {
       toast({ title: "Enter a valid amount", variant: "destructive" }); return;
     }
+    if (!(await confirmed.confirm({
+      title: "Top up this sub-agent's wallet?",
+      description: `Adds money to ${agent.full_name || agent.email || "this sub-agent"}'s wallet.`,
+      kind: "money",
+      amountGhs: amount,
+      confirmLabel: "Yes, top up",
+    }))) return;
     setToppingUp(agent.user_id);
 
     const { data, error } = await supabase.functions.invoke("system-payout-v1", {

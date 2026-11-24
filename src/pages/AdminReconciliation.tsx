@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { invokePublicFunctionAsUser } from "@/lib/public-function-client";
 import { logAudit } from "@/utils/auditLogger";
 import { useAuth } from "@/hooks/useAuth";
+import { useConfirmedCall } from "@/components/admin/ConfirmActionProvider";
 
 interface PaystackTransaction {
   id: number;
@@ -45,6 +46,7 @@ interface ReconciliationRow {
 }
 
 const AdminReconciliation = () => {
+  const confirmed = useConfirmedCall();
   const { toast } = useToast();
   const { user: currentUser } = useAuth();
   const [loading, setLoading] = useState(true);
@@ -118,6 +120,13 @@ const AdminReconciliation = () => {
   }, []);
 
   const handleRetryFulfillment = async (reference: string) => {
+    if (!(await confirmed.confirm({
+      title: "Retry fulfilment for this payment?",
+      description: `Payment ${reference.slice(0, 8)} is verified and, if paid, its order is sent to a data provider.`,
+      kind: "send",
+      orders: 1,
+      confirmLabel: "Yes, retry",
+    }))) return;
     try {
       const { data, error } = await invokePublicFunctionAsUser("verify-payment", {
         body: { reference },

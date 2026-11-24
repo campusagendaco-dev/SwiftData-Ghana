@@ -37,6 +37,7 @@ import { safeRemoveChannel } from "@/lib/safe-realtime";
 import { useMaskedBalance } from "@/hooks/useMaskedBalance";
 import { cn } from "@/lib/utils";
 import FreeDataClaimBanner from "@/components/FreeDataClaimBanner";
+import MysteryBoxCard from "@/components/MysteryBoxCard";
 import WelcomeAnnouncement from "@/components/WelcomeAnnouncement";
 import ReferAndEarn from "@/components/ReferAndEarn";
 import DailyCheckIn from "@/components/DailyCheckIn";
@@ -302,6 +303,7 @@ const Dashboard = () => {
   return (
     <PageContainer>
       <FreeDataClaimBanner />
+      <MysteryBoxCard />
       <CompleteProfileBanner />
 
       <PageHeader
