@@ -308,7 +308,7 @@ const PurchaseSuccess = () => {
 
             {phase !== "failed" && (
               <div className="pt-1 space-y-2.5">
-                <GuestMysteryBoxBanner phone={phone} />
+                <GuestMysteryBoxBanner reference={reference} phone={phone} />
                 <PushNotificationPrompt variant="inline" title="Get a delivery alert" description="We’ll ping your lock screen for this and future deliveries." buttonText="Alert me" />
               </div>
             )}

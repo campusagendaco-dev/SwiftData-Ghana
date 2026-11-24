@@ -18,22 +18,35 @@ interface GuestProgressRow {
 }
 
 interface GuestMysteryBoxBannerProps {
+  /** Reference of the guest's order from today; progress is looked up from it, never from a typed number. */
+  reference?: string | null;
+  /** The order's phone, for display and the signup link only. */
   phone?: string | null;
   className?: string;
 }
 
+/** Progress shown on the bar: completed purchases only (pending ones are mentioned separately). */
+export function guestBoxProgress(row: Pick<GuestProgressRow, "orders_per_box" | "qualifying_orders" | "boxes_available" | "orders_to_next" | "pending_orders">) {
+  const target = Math.max(1, row.orders_per_box || 1);
+  const isReady = row.boxes_available > 0;
+  const done = isReady ? target : Math.max(0, row.qualifying_orders) % target;
+  const remaining = isReady ? 0 : Math.max(0, row.orders_to_next ?? target - done);
+  return { target, isReady, done, remaining, pending: Math.max(0, row.pending_orders || 0), pct: Math.round((done / target) * 100) };
+}
+
 /**
  * Animated Mystery Box progress & signup CTA for guest (non-account) buyers.
- * Credits their guest orders automatically once they verify the same phone number via SMS OTP.
+ * Today's guest purchases count for the first account that verifies the same phone number.
  */
-export function GuestMysteryBoxBanner({ phone, className = "" }: GuestMysteryBoxBannerProps) {
+export function GuestMysteryBoxBanner({ reference, phone, className = "" }: GuestMysteryBoxBannerProps) {
   const { user } = useAuth();
   const [data, setData] = useState<GuestProgressRow | null>(null);
 
   const normalized = normalizeGhanaPhoneInput(phone || "");
+  const ref = (reference || "").trim();
 
   useEffect(() => {
-    if (user || !/^0\d{9}$/.test(normalized)) {
+    if (user || !ref) {
       setData(null);
       return;
     }
@@ -41,8 +54,8 @@ export function GuestMysteryBoxBanner({ phone, className = "" }: GuestMysteryBox
     let cancelled = false;
     (async () => {
       try {
-        const { data: rows, error } = await (supabase as any).rpc("guest_mystery_box_progress", {
-          p_phone: normalized,
+        const { data: rows, error } = await (supabase as any).rpc("guest_mystery_box_progress_for_order", {
+          p_reference: ref,
         });
         if (cancelled || error) return;
         const row = Array.isArray(rows) ? rows[0] : rows;
@@ -57,17 +70,15 @@ export function GuestMysteryBoxBanner({ phone, className = "" }: GuestMysteryBox
     return () => {
       cancelled = true;
     };
-  }, [user, normalized]);
+  }, [user, ref]);
 
   if (user || !data) return null;
 
-  const target = Math.max(1, data.orders_per_box || 1);
-  const effectiveCount = data.qualifying_orders + data.pending_orders;
-  const isReady = data.boxes_available > 0;
-  const shownCount = isReady ? target : Math.min(effectiveCount % target || (effectiveCount > 0 ? target : 0), target);
-  const progressPct = isReady ? 100 : Math.min(100, Math.round((shownCount / target) * 100));
-  const remaining = isReady ? 0 : Math.max(0, target - shownCount);
-  const signupUrl = `/signup?phone=${encodeURIComponent(normalized)}&mystery_box=1`;
+  const { target, isReady, done: shownCount, remaining, pending, pct: progressPct } = guestBoxProgress(data);
+  const numberText = /^0\d{9}$/.test(normalized) ? normalized : "this number";
+  const signupUrl = /^0\d{9}$/.test(normalized)
+    ? `/signup?phone=${encodeURIComponent(normalized)}&mystery_box=1`
+    : "/signup?mystery_box=1";
 
   return (
     <motion.div
@@ -130,14 +141,13 @@ export function GuestMysteryBoxBanner({ phone, className = "" }: GuestMysteryBox
             <p className="text-[13.5px] font-bold text-foreground leading-snug mt-0.5">
               {isReady
                 ? "Your FREE Data Mystery Box is ready to open!"
-                : `${shownCount}/${target} orders today toward FREE data!`}
+                : `${shownCount}/${target} delivered orders today toward FREE data!`}
             </p>
             <p className="text-[12px] text-muted-foreground leading-relaxed mt-0.5">
               {isReady
-                ? `Create a free account with ${normalized} (verified via SMS OTP) to open your box immediately.`
-                : remaining > 0
-                  ? `Complete ${remaining} more order${remaining === 1 ? "" : "s"} today with ${normalized} — sign up free to save your progress & claim.`
-                  : `Once your order delivers, verify ${normalized} on a free account to open your Mystery Box!`}
+                ? `Create a free account with ${numberText} (verified by SMS code) and open your box before midnight.`
+                : `Complete ${remaining} more order${remaining === 1 ? "" : "s"} today with ${numberText}, then sign up free to open your box. Only today's purchases count; progress resets at midnight.`}
+              {!isReady && pending > 0 && ` ${pending} order${pending === 1 ? " is" : "s are"} still on the way and will count once delivered.`}
             </p>
           </div>
 

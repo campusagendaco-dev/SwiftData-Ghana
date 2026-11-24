@@ -1350,7 +1350,7 @@ const OrderStatus = () => {
 
             {(phoneParam || orderPhone || orderData?.customer_phone) && !isFailed && (
               <div className="px-5 pb-4">
-                <GuestMysteryBoxBanner phone={phoneParam || orderPhone || orderData?.customer_phone || ""} />
+                <GuestMysteryBoxBanner reference={reference || orderData?.id || ""} phone={phoneParam || orderPhone || orderData?.customer_phone || ""} />
               </div>
             )}
 

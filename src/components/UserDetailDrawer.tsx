@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import AdminRoleModal from "@/components/AdminRoleModal";
 import { useConfirmedCall } from "@/components/admin/ConfirmActionProvider";
+import { GuestPhoneOwnerCard } from "@/components/admin/GuestPhoneOwnerCard";
 
 interface UserRow {
   user_id: string;
@@ -1029,6 +1030,10 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
               </div>
             </div>
           )}
+        </div>
+
+        <div className="px-6">
+          <GuestPhoneOwnerCard userId={user.user_id} userName={user.full_name} />
         </div>
 
         {/* ── System Security Flags ── */}

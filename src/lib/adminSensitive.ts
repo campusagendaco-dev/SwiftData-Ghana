@@ -38,6 +38,8 @@ export const SENSITIVE_RPCS = new Set([
   "dispatch_missed_you_push_broadcast",
   // lets everyone claim a promo again (free data / discounts)
   "reset_promo_claims",
+  // moves whose account a number's Mystery Box guest purchases count for (free data prizes)
+  "admin_set_guest_phone_owner",
 ]);
 
 /** admin-user-actions actions that move money, fulfil, fail or re-send orders. */

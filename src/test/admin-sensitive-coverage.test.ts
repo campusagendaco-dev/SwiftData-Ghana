@@ -26,6 +26,7 @@ const files = [
   join(root, "components", "AdminLayout.tsx"),
   join(root, "components", "admin", "AgentApprovalQueue.tsx"),
   join(root, "components", "AdminUnsuspendPopup.tsx"),
+  join(root, "components", "admin", "GuestPhoneOwnerCard.tsx"),
 ];
 
 const ACTION_SETS: Record<string, Set<string>> = {
@@ -35,10 +36,17 @@ const ACTION_SETS: Record<string, Set<string>> = {
   "admin-otp-auth": SENSITIVE_SMS_LOGIN_ACTIONS,
 };
 
+// A call that starts on line i, even when its name is on the next line (".rpc(\n  'name'").
+function startsHere(lines: string[], i: number, re: RegExp): RegExpMatchArray | null {
+  const joined = `${lines[i]}\n${lines[i + 1] ?? ""}`;
+  const m = joined.match(re);
+  return m && (m.index ?? 0) < lines[i].length ? m : null;
+}
+
 function coveredCallAt(lines: string[], i: number): string | null {
   const line = lines[i];
   const fn =
-    line.match(/(?<!confirmed\.)(?:functions\s*\.invoke|invokePublicFunctionAsUser)\(\s*["'`]([a-z0-9-]+)["'`]/) ||
+    startsHere(lines, i, /(?<!confirmed\.)(?:functions\s*\.invoke|invokePublicFunctionAsUser)\(\s*["'`]([a-z0-9-]+)["'`]/) ||
     line.match(/fetch\(\s*`[^`]*\/functions\/v1\/([a-z0-9-]+)/);
   if (fn) {
     if (SENSITIVE_FUNCTIONS.has(fn[1])) return fn[1];
@@ -52,7 +60,7 @@ function coveredCallAt(lines: string[], i: number): string | null {
   // page-local wrappers such as AdminSecurity's invoke({ action: "revoke_admin_role" })
   const wrapped = line.match(/\binvoke\(\{\s*action:\s*["'`]([a-z_]+)["'`]/);
   if (wrapped && SENSITIVE_ACCESS_ACTIONS.has(wrapped[1])) return `access:${wrapped[1]}`;
-  const rpc = line.match(/(?<!confirmed)\.rpc\(\s*["'`]([a-z0-9_]+)["'`]/);
+  const rpc = startsHere(lines, i, /(?<!confirmed)\.rpc\(\s*["'`]([a-z0-9_]+)["'`]/);
   if (rpc && SENSITIVE_RPCS.has(rpc[1])) return `rpc:${rpc[1]}`;
   return null;
 }
