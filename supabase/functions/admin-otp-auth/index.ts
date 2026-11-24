@@ -113,7 +113,7 @@ serve(async (req: Request) => {
       .eq("user_id", userId)
       .maybeSingle();
 
-    const adminPhone = normalizePhone(profile?.phone || userData.user.phone || "");
+    const adminPhone = normalizePhone(profile?.phone || "");
 
     // ── ACTION: STATUS ───────────────────────────────────────────────────────
     if (action === "status") {
@@ -130,7 +130,7 @@ serve(async (req: Request) => {
 
       return json({
         success: true,
-        eligible: true,
+        eligible: Boolean(adminPhone),
         has_phone: Boolean(adminPhone),
         masked_phone: adminPhone ? maskPhone(adminPhone) : null,
         has_valid_session: Boolean(activeSess),
