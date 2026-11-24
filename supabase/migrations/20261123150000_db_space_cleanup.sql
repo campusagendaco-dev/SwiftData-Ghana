@@ -8,8 +8,8 @@
 --   public.push_notification_logs older than 30 days
 --   public.sms_logs              older than 90 days
 --   public.security_logs         older than 90 days
---   public.user_notifications    READ and older than 60 days (unread are never deleted)
--- Orders, payments, wallets and profiles are never touched.
+-- Customer notifications are left to the existing cleanup-old-notifications job (03:30 UTC),
+-- by the owner's choice on 2026-11-24. Orders, payments, wallets and profiles are never touched.
 
 -- ── Run log ────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS public.db_cleanup_runs (
@@ -45,14 +45,8 @@ AS $$
     ('public.system_logs', 'System logs', 30, 'Older than 30 days'),
     ('public.push_notification_logs', 'Push notification logs', 30, 'Older than 30 days'),
     ('public.sms_logs', 'SMS logs', 90, 'Older than 90 days'),
-    ('public.security_logs', 'Security logs', 90, 'Older than 90 days'),
-    ('public.user_notifications', 'Customer notifications', 60, 'Read, and older than 60 days')
+    ('public.security_logs', 'Security logs', 90, 'Older than 90 days')
 $$;
-
--- Lets the notification cleanup find old read rows without scanning the whole table.
--- (A short write pause on user_notifications while it builds.)
-CREATE INDEX IF NOT EXISTS idx_user_notifications_read_created
-  ON public.user_notifications (created_at) WHERE read = true;
 
 -- ── Where scheduled-job history becomes "recent" ───────────────────────────
 -- cron.job_run_details is indexed only by runid, which grows with time. Binary-search runid
@@ -171,16 +165,6 @@ BEGIN
         ORDER BY created_at LIMIT p_limit));
     END IF;
 
-  ELSIF p_target = 'public.user_notifications' THEN
-    IF p_limit IS NULL THEN
-      DELETE FROM public.user_notifications WHERE read = true AND created_at < now() - interval '60 days';
-    ELSE
-      DELETE FROM public.user_notifications WHERE read = true AND created_at < now() - interval '60 days'
-        AND ctid = ANY (ARRAY(
-          SELECT ctid FROM public.user_notifications WHERE read = true AND created_at < now() - interval '60 days'
-          ORDER BY created_at LIMIT p_limit));
-    END IF;
-
   ELSE
     RAISE EXCEPTION 'unknown cleanup target %', p_target;
   END IF;
@@ -191,7 +175,8 @@ $$;
 
 -- ── The cleanup run (internal: nightly cron and the admin RPC) ─────────────
 -- p_budget_ms = 0 (nightly): one plain DELETE per table. p_budget_ms > 0 (admin): batches of
--- 2000, checking the time before every batch, then reports more_remaining so the page calls
+-- 2000, checking the time before every batch (after the first batch that removed rows), then
+-- reports more_remaining so the page calls
 -- again (keeps each request under PostgREST's statement timeout). Each table runs in its own
 -- sub-transaction: if one fails, its error is recorded and the other tables are still cleaned.
 CREATE OR REPLACE FUNCTION public.run_db_retention(
@@ -211,6 +196,7 @@ DECLARE
   v_deleted jsonb := '{}'::jsonb;
   v_errors jsonb := '{}'::jsonb;
   v_more boolean := false;
+  v_progressed boolean := false;   -- has this run deleted anything yet?
   v_run uuid;
   v_total bigint;
   v_n int;
@@ -227,12 +213,17 @@ BEGIN
         v_total := public._db_retention_delete(r.target, NULL);
       ELSE
         LOOP
-          IF clock_timestamp() >= v_deadline THEN
+          -- stop at the deadline, but only once this run has removed something, so every call
+          -- makes progress even when the budget is used up early
+          IF v_progressed AND clock_timestamp() >= v_deadline THEN
             v_more := true;
             EXIT;
           END IF;
           v_n := public._db_retention_delete(r.target, v_batch);
           v_total := v_total + v_n;
+          IF v_n > 0 THEN
+            v_progressed := true;
+          END IF;
           EXIT WHEN v_n < v_batch;
         END LOOP;
       END IF;

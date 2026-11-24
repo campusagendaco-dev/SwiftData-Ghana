@@ -194,6 +194,10 @@ export default function AdminDatabaseSpace() {
               </tbody>
             </table>
           </div>
+          <p className="text-xs text-muted-foreground">
+            Customer notifications are cleaned by a separate nightly job at 03:30: read after 14 days, broadcasts after
+            7 days, and everything after 30 days.
+          </p>
         </CardContent>
       </Card>
 

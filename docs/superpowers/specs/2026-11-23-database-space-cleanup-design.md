@@ -2,6 +2,8 @@
 
 **Status:** approved by the owner on 2026-11-23 ("yes build both with those periods").
 
+**Change (2026-11-24, owner ruling):** customer notifications are left to the existing `cleanup-old-notifications` job (03:30 UTC: read after 14 days, broadcasts and automated after 7, everything after 30). That job already deletes sooner than the "read and older than 60 days" rule below, which is therefore dropped. The page shows the job's real rules.
+
 ## Why
 Supabase warned that the database is too large (2,615 MB), and the admin area feels slow. About 2 GB of that is logs and job history that nothing cleans up. Orders are only 202 MB.
 

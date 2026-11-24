@@ -70,6 +70,15 @@ describe("AdminDatabaseSpace", () => {
     expect(screen.getByText(/TRUNCATE cron\.job_run_details;/)).toBeInTheDocument();
   });
 
+  it("explains that customer notifications are cleaned by their own job", async () => {
+    rpc.mockResolvedValue({ data: space, error: null });
+    render(<AdminDatabaseSpace />);
+    await screen.findByText("2.55 GB");
+    expect(screen.getByText(/separate nightly job at 03:30/)).toHaveTextContent(
+      "read after 14 days, broadcasts after 7 days, and everything after 30 days",
+    );
+  });
+
   it("names tables the cleanup couldn't clean", async () => {
     const cleanups = [
       { data: { deleted: { "public.sms_logs": 0 }, more_remaining: false, errors: { "public.sms_logs": "permission denied for table sms_logs" } }, error: null },

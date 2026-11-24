@@ -29,10 +29,11 @@ BEGIN
   INSERT INTO public.push_notification_logs (created_at) VALUES (now() - interval '31 days'), (now() - interval '29 days');
   INSERT INTO public.sms_logs (created_at) VALUES (now() - interval '91 days'), (now() - interval '89 days');
   INSERT INTO public.security_logs (created_at) VALUES (now() - interval '91 days'), (now() - interval '89 days');
+  -- notifications belong to the existing cleanup-old-notifications job: this cleanup never touches them
   INSERT INTO public.user_notifications (read, created_at) VALUES
-    (true,  now() - interval '61 days'),   -- read + old: deleted
-    (false, now() - interval '400 days'),  -- unread, any age: kept
-    (true,  now() - interval '59 days');   -- read + recent: kept
+    (true,  now() - interval '61 days'),
+    (false, now() - interval '400 days'),
+    (true,  now() - interval '59 days');
   INSERT INTO public.orders (created_at) VALUES (now() - interval '1000 days');
 
   -- (a) nightly run deletes exactly the old rows
@@ -52,13 +53,11 @@ BEGIN
   END IF;
   RAISE NOTICE 'PASS (a) old log rows deleted, recent rows kept';
 
-  -- (b) notifications: only read + older than 60 days
-  IF (SELECT count(*) FROM public.user_notifications) <> 2
-     OR NOT EXISTS (SELECT 1 FROM public.user_notifications WHERE read = false AND created_at < now() - interval '300 days')
-     OR NOT EXISTS (SELECT 1 FROM public.user_notifications WHERE read = true AND created_at > now() - interval '60 days') THEN
-    RAISE EXCEPTION 'FAIL (b) notifications';
+  -- (b) notifications are left to their own job
+  IF (SELECT count(*) FROM public.user_notifications) <> 3 OR v_res->'deleted' ? 'public.user_notifications' THEN
+    RAISE EXCEPTION 'FAIL (b) notifications touched';
   END IF;
-  RAISE NOTICE 'PASS (b) unread notifications are never deleted';
+  RAISE NOTICE 'PASS (b) notifications are left to the existing notification job';
 
   -- (c) orders are never touched
   IF (SELECT count(*) FROM public.orders) <> 1 THEN RAISE EXCEPTION 'FAIL (c) orders touched'; END IF;
@@ -78,6 +77,12 @@ BEGIN
   v_res := public.run_db_retention('manual', 1, v_admin);
   IF NOT (v_res->>'more_remaining')::boolean THEN RAISE EXCEPTION 'FAIL (e) budget not applied: %', v_res; END IF;
   IF (SELECT count(*) FROM public.system_logs WHERE ts < now() - interval '30 days') = 0 THEN RAISE EXCEPTION 'FAIL (e) deleted everything'; END IF;
+  -- a budget that is already used up still removes a batch on every call
+  v_n := (SELECT count(*) FROM public.system_logs) + (SELECT count(*) FROM cron.job_run_details);
+  v_res := public.run_db_retention('manual', 1, v_admin);
+  IF (SELECT count(*) FROM public.system_logs) + (SELECT count(*) FROM cron.job_run_details) >= v_n THEN
+    RAISE EXCEPTION 'FAIL (e) a call made no progress: %', v_res;
+  END IF;
   -- keep calling until done
   FOR i IN 1..50 LOOP
     v_res := public.run_db_retention('manual', 1, v_admin);
@@ -123,11 +128,11 @@ BEGIN
   -- (g) a 2FA-verified admin can read sizes and clean
   PERFORM set_config('request.jwt.claims', json_build_object('sub', v_admin, 'role', 'authenticated', 'aal', 'aal2')::text, true);
   v_res := public.admin_db_space();
-  IF jsonb_array_length(v_res->'tables') <> 6 OR (v_res->>'database_bytes')::bigint <= 0 OR v_res->'last_run' IS NULL THEN
+  IF jsonb_array_length(v_res->'tables') <> 5 OR (v_res->>'database_bytes')::bigint <= 0 OR v_res->'last_run' IS NULL THEN
     RAISE EXCEPTION 'FAIL (g) admin_db_space: %', v_res;
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v_res->'tables') t WHERE t->>'target' = 'public.user_notifications' AND (t->>'keep_days')::int = 60) THEN
-    RAISE EXCEPTION 'FAIL (g) notification rule missing';
+  IF EXISTS (SELECT 1 FROM jsonb_array_elements(v_res->'tables') t WHERE t->>'target' = 'public.user_notifications') THEN
+    RAISE EXCEPTION 'FAIL (g) notifications listed as cleaned here';
   END IF;
   v_res := public.admin_db_cleanup_now();
   IF v_res->'deleted' IS NULL THEN RAISE EXCEPTION 'FAIL (g) admin clean: %', v_res; END IF;
