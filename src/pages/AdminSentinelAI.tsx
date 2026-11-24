@@ -13,6 +13,7 @@ import {
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
+import AgentApprovalQueue from "@/components/admin/AgentApprovalQueue";
 
 interface SentinelAction {
   id: string;
@@ -87,7 +88,6 @@ const AdminSentinelAI = () => {
     executedCount?: number;
     queuedCount?: number;
   } | null>(null);
-  const [taskBusyId, setTaskBusyId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -165,33 +165,16 @@ const AdminSentinelAI = () => {
         reply: data.reply || "Command executed.",
         findings: data.findings || [],
         model: data.model,
-        executedCount: data.executed_actions?.length || 0,
-        queuedCount: data.queued_tasks?.length || 0,
+        executedCount: data.ran?.length || 0,
+        queuedCount: data.queued?.length || 0,
       });
       setCommandInput("");
-      toast.success("Ops Worker AI completed your instruction");
+      toast.success("Ops Worker AI answered; any actions wait for approval");
       fetchSentinelData();
     } catch (err: any) {
       toast.error("Worker command failed: " + err.message);
     } finally {
       setCommandLoading(false);
-    }
-  };
-
-  const handleTaskDecision = async (taskId: string, approve: boolean) => {
-    setTaskBusyId(taskId);
-    try {
-      const { data, error } = await supabase.functions.invoke("ops-worker-ai", {
-        body: { mode: approve ? "execute_task" : "reject_task", task_id: taskId },
-      });
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
-      toast.success(approve ? "Task approved and executed" : "Task rejected");
-      fetchSentinelData();
-    } catch (err: any) {
-      toast.error("Task action failed: " + err.message);
-    } finally {
-      setTaskBusyId(null);
     }
   };
 
@@ -500,7 +483,7 @@ const AdminSentinelAI = () => {
             <div className="bg-black/40 rounded-2xl p-4 border border-cyan-500/20 space-y-2">
               <div className="flex items-center justify-between text-[10px] text-cyan-400 font-bold uppercase">
                 <span>Worker Response ({commandResult.model || "openai"})</span>
-                <span>Executed: {commandResult.executedCount} • Queued: {commandResult.queuedCount}</span>
+                <span>Alerts: {commandResult.executedCount} • Waiting for approval: {commandResult.queuedCount}</span>
               </div>
               <p className="text-xs text-slate-200 leading-relaxed">{commandResult.reply}</p>
               {commandResult.findings && commandResult.findings.length > 0 && (
@@ -522,42 +505,7 @@ const AdminSentinelAI = () => {
             </div>
             <Badge className="bg-amber-500/10 text-amber-400 border-amber-500/20 text-[9px]">{pendingTasks.length} WAITING</Badge>
           </div>
-          {pendingTasks.length === 0 ? (
-            <div className="p-6 border border-dashed border-slate-800 rounded-2xl text-center">
-              <CheckCircle2 className="w-6 h-6 text-emerald-500/60 mx-auto mb-2" />
-              <p className="text-xs text-slate-500">No high-impact actions awaiting approval.</p>
-            </div>
-          ) : (
-            <div className="space-y-3 max-h-56 overflow-y-auto">
-              {pendingTasks.map((task) => (
-                <div key={task.id} className="p-3.5 rounded-2xl bg-black/30 border border-slate-800 space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-bold text-white">{task.title}</span>
-                    <Badge className="bg-amber-500/15 text-amber-400 border-none text-[9px] uppercase">{task.priority}</Badge>
-                  </div>
-                  {task.reasoning && <p className="text-[11px] text-slate-400 leading-snug">{task.reasoning}</p>}
-                  <div className="flex items-center gap-2 pt-1">
-                    <button
-                      type="button"
-                      disabled={taskBusyId === task.id}
-                      onClick={() => void handleTaskDecision(task.id, true)}
-                      className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-black uppercase"
-                    >
-                      Approve & Execute
-                    </button>
-                    <button
-                      type="button"
-                      disabled={taskBusyId === task.id}
-                      onClick={() => void handleTaskDecision(task.id, false)}
-                      className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-rose-600 text-slate-300 hover:text-white text-[10px] font-black uppercase"
-                    >
-                      Reject
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+          <AgentApprovalQueue tasks={pendingTasks} onDecided={() => void fetchSentinelData()} />
         </div>
       </div>
 

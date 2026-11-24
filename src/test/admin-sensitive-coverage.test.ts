@@ -23,6 +23,7 @@ const files = [
     .map((f) => join(root, "pages", f)),
   join(root, "components", "UserDetailDrawer.tsx"),
   join(root, "components", "AdminLayout.tsx"),
+  join(root, "components", "admin", "AgentApprovalQueue.tsx"),
 ];
 
 const ACTION_SETS: Record<string, Set<string>> = {

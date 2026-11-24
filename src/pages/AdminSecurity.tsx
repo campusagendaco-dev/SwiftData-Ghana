@@ -1708,7 +1708,8 @@ const AdminSecurity = () => {
           const dbAgent = dbAgents.find(a => a.name === agent.key);
           const currentModel = dbAgent?.active_model || "gpt-4o-mini";
           const isActive = dbAgent?.is_active !== false;
-          const autonomyMode = dbAgent?.autonomy_mode || "autonomous";
+          // Safe-agents design: only watch-only or propose-for-approval; anything else is watch-only.
+          const autonomyMode = dbAgent?.autonomy_mode === "propose" ? "propose" : "observe_only";
           
           return (
             <div key={agent.key} className={`rounded-xl border ${agent.border} bg-zinc-950 p-4 relative overflow-hidden ${!isActive ? "opacity-60" : ""}`}>
@@ -1723,6 +1724,12 @@ const AdminSecurity = () => {
                     type="button"
                     onClick={async () => {
                       const nextActive = !isActive;
+                      if (nextActive && !(await confirmed.confirm({
+                        title: `Turn on ${agent.name}?`,
+                        description: `${agent.name} starts its scheduled checks again. In "Propose" mode it can queue actions for approval; it never acts by itself.`,
+                        kind: "ops",
+                        confirmLabel: "Turn on",
+                      }))) return;
                       setDbAgents(prev => prev.map(a => a.name === agent.key ? { ...a, is_active: nextActive } : a));
                       const { error } = await (supabase.from("ai_agent_registry" as any) as any)
                         .update({ is_active: nextActive } as any)
@@ -1779,7 +1786,13 @@ const AdminSecurity = () => {
                   <select
                     value={autonomyMode}
                     onChange={async (e) => {
-                      const modeVal = e.target.value;
+                      const modeVal = e.target.value === "propose" ? "propose" : "observe_only";
+                      if (modeVal === "propose" && !(await confirmed.confirm({
+                        title: `Let ${agent.name} propose actions?`,
+                        description: "It can then queue account suspensions, IP blocks and provider or network changes. Each one waits here for an admin to approve it.",
+                        kind: "ops",
+                        confirmLabel: "Allow proposals",
+                      }))) return;
                       setDbAgents(prev => prev.map(a => a.name === agent.key ? { ...a, autonomy_mode: modeVal } : a));
                       const { error } = await (supabase.from("ai_agent_registry" as any) as any)
                         .update({ autonomy_mode: modeVal } as any)
@@ -1788,14 +1801,13 @@ const AdminSecurity = () => {
                         toast({ title: "Failed to update mode", description: error.message, variant: "destructive" });
                         void fetchData(true);
                       } else {
-                        toast({ title: `${agent.name} Mode Updated`, description: `Autonomy set to ${modeVal}` });
+                        toast({ title: `${agent.name} mode updated`, description: modeVal === "propose" ? "Proposes actions for approval" : "Watch only" });
                       }
                     }}
                     className="text-[9px] font-bold font-mono bg-zinc-900 border border-zinc-800 rounded px-1.5 py-0.5 text-amber-400 focus:outline-none focus:border-amber-500/50"
                   >
-                    <option value="autonomous">Auto</option>
-                    <option value="approval_required">Approve</option>
-                    <option value="observe_only">Observe</option>
+                    <option value="observe_only">Watch only</option>
+                    <option value="propose">Propose</option>
                   </select>
                   <select
                     value={currentModel}
