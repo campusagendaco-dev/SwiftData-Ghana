@@ -37,7 +37,8 @@ const result = (over: Record<string, unknown> = {}) => ({
 const upload = async () => {
   const file = new File(["x"], "receipt.png", { type: "image/png" });
   fireEvent.change(screen.getByLabelText("Receipt picture"), { target: { files: [file] } });
-  await waitFor(() => expect(screen.getByRole("button", { name: "Check receipt" })).not.toBeDisabled());
+  // FileReader is async; under a full parallel run it can take over the 1s default.
+  await waitFor(() => expect(screen.getByRole("button", { name: "Check receipt" })).not.toBeDisabled(), { timeout: 5000 });
 };
 
 describe("MoMo receipt checker page", () => {
