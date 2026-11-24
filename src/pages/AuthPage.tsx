@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate, Link, useSearchParams } from "react-router-dom";
 import { getOrCreateDeviceId, syncDeviceIdWithIndexedDB, getBrowserFingerprint } from "@/utils/device";
 import { useAuth } from "@/hooks/useAuth";
+import PhoneOtpField, { normalizeGhanaPhoneInput } from "@/components/PhoneOtpField";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,6 +35,7 @@ const AuthPage = () => {
   const [isSignUp, setIsSignUp] = useState(true);
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const [verifiedPhone, setVerifiedPhone] = useState<string | null>(null);
   const [supportNumber, setSupportNumber] = useState("0598170947");
   const [isDeviceBlocked, setIsDeviceBlocked] = useState(false);
   const [dismissedBlockedBanner, setDismissedBlockedBanner] = useState(false);
@@ -136,6 +138,7 @@ const AuthPage = () => {
   const resetForm = () => {
     setEmail("");
     setPhone("");
+    setVerifiedPhone(null);
     setPassword("");
     setConfirmPassword("");
     setFullName("");
@@ -151,17 +154,20 @@ const AuthPage = () => {
         setLoading(false);
         return;
       }
-      const digits = phone.replace(/\D+/g, "");
-      const normalizedPhone =
-        digits.length === 12 && digits.startsWith("233")
-          ? `0${digits.slice(3)}`
-          : digits.length === 9
-            ? `0${digits}`
-            : digits;
+      const normalizedPhone = normalizeGhanaPhoneInput(phone);
       if (!/^0\d{9}$/.test(normalizedPhone)) {
         toast({
           title: "Valid phone number required",
           description: "Please enter a valid 10-digit Ghana phone number (e.g. 0541234567).",
+          variant: "destructive",
+        });
+        setLoading(false);
+        return;
+      }
+      if (verifiedPhone !== normalizedPhone) {
+        toast({
+          title: "Phone verification required",
+          description: "Please click 'Send OTP' and verify your phone number with the 6-digit SMS code before creating your account.",
           variant: "destructive",
         });
         setLoading(false);
@@ -403,16 +409,17 @@ const AuthPage = () => {
                     </motion.div>
 
                     <motion.div layout>
-                      <Label htmlFor="phone" className="text-xs font-bold">Phone Number <span className="text-red-500">*</span></Label>
-                      <Input
-                        id="phone"
-                        type="tel"
-                        inputMode="tel"
-                        value={phone}
-                        onChange={(e) => setPhone(e.target.value)}
-                        placeholder="0541234567"
-                        className="mt-1 bg-secondary h-11 border-transparent focus-visible:border-primary/30 focus-visible:ring-primary/10 rounded-xl transition-all"
-                        required
+                      <PhoneOtpField
+                        phone={phone}
+                        onPhoneChange={setPhone}
+                        verifiedPhone={verifiedPhone}
+                        onVerified={(norm) => {
+                          setPhone(norm);
+                          setVerifiedPhone(norm);
+                        }}
+                        onResetVerification={() => setVerifiedPhone(null)}
+                        inputClassName="bg-secondary h-11 border-transparent focus-visible:border-primary/30 focus-visible:ring-primary/10 rounded-xl transition-all"
+                        labelClassName="text-xs font-bold"
                       />
                     </motion.div>
                   </>
