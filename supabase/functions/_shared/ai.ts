@@ -4,8 +4,10 @@
 
 declare const Deno: any;
 
+import { normalizeMode, type AgentMode } from "./agent_policy.ts";
+
 export type AiProvider = "openai" | "anthropic" | "google" | "heuristic";
-export type AutonomyMode = "autonomous" | "approval_required" | "observe_only";
+export type AutonomyMode = AgentMode;
 
 export interface AiUsage {
   promptTokens: number;
@@ -79,10 +81,7 @@ export function normalizeModelName(rawModel: string): string {
     if (hasAnthropic) return "claude-3-5-haiku-20241022";
     return "gpt-4o-mini";
   }
-  if (m === "claude-haiku" || m.includes("claude-haiku-4-5")) {
-    if (hasOpenAI && !hasAnthropic) return "gpt-4o-mini";
-    return "claude-3-5-haiku-20241022";
-  }
+  // Keep the model the agent already uses (owner design 2026-11-24: no bulk model switch).
   return m;
 }
 
@@ -92,23 +91,24 @@ export async function getAgentConfig(supabaseAdmin: any, agentName: string): Pro
     name: agentName,
     active_model: defaultModel,
     is_active: true,
-    autonomy_mode: "autonomous",
+    autonomy_mode: "observe_only",
     daily_budget_usd: 5.0,
   };
 
   try {
-    const { data: agent } = await supabaseAdmin
+    const { data: agent, error } = await supabaseAdmin
       .from("ai_agent_registry")
       .select("name, active_model, is_active, autonomy_mode, daily_budget_usd")
       .eq("name", agentName)
       .maybeSingle();
 
-    if (!agent) return fallback;
+    // Missing row, missing column (SQL not applied yet) or any error: watch-only.
+    if (error || !agent) return fallback;
     return {
       name: agent.name || agentName,
       active_model: normalizeModelName(agent.active_model || defaultModel),
       is_active: agent.is_active !== false,
-      autonomy_mode: (agent.autonomy_mode as AutonomyMode) || "autonomous",
+      autonomy_mode: normalizeMode(agent.autonomy_mode),
       daily_budget_usd: Number(agent.daily_budget_usd ?? 5.0),
     };
   } catch (err) {
@@ -520,10 +520,12 @@ async function executeAnthropicCall(
  * Deterministic Heuristic Engine used as a zero-downtime safety net
  * if cloud LLM API calls are temporarily unavailable or budget-capped.
  */
-function generateHeuristicFallback(agentName: string, _systemPrompt: string, userMessage: string): AiAgentResult {
-  console.log(`[Heuristic Brain] Running autonomous rule engine for "${agentName}"...`);
+export function generateHeuristicFallback(agentName: string, _systemPrompt: string, userMessage: string): AiAgentResult {
+  // Rules-only fallback when every model failed. It only describes what it sees: it never
+  // proposes actions (owner design 2026-11-24), so no outage texts or provider switches
+  // can come from here.
+  console.log(`[Heuristic Brain] Running rules-only summary for "${agentName}"...`);
 
-  const actions: any[] = [];
   const findings: string[] = [];
   const insights: any[] = [];
 
@@ -535,11 +537,6 @@ function generateHeuristicFallback(agentName: string, _systemPrompt: string, use
         for (const net of networks) {
           if (net.failure_rate >= 0.6 && net.total >= 5) {
             findings.push(`Heuristic: Severe failure rate on ${net.network} (${Math.round(net.failure_rate * 100)}%)`);
-            actions.push({
-              type: "broadcast_outage",
-              target: null,
-              params: { network: net.network, reason: "Heuristic: Over 60% failure rate detected on network" },
-            });
           }
         }
       }
@@ -562,17 +559,7 @@ function generateHeuristicFallback(agentName: string, _systemPrompt: string, use
             .sort((a: any, b: any) => (b.balance || 0) - (a.balance || 0))[0];
 
           if (alternative && alternative.balance > 100) {
-            findings.push(`Heuristic: Priority 1 provider ${prio1.name} has low balance/inactive. Switching to ${alternative.name}.`);
-            actions.push({
-              type: "switch_priority",
-              target: alternative.id,
-              params: {
-                provider_id: alternative.id,
-                provider_name: alternative.name,
-                new_priority: 1,
-                reason: `Heuristic: Rebalancing to higher balance SME provider (${alternative.balance})`,
-              },
-            });
+            findings.push(`Heuristic: Priority 1 provider ${prio1.name} has low balance or is inactive. ${alternative.name} (balance ${alternative.balance}) could take over; an admin decides.`);
           }
         }
       }
@@ -585,7 +572,7 @@ function generateHeuristicFallback(agentName: string, _systemPrompt: string, use
     summary: findings.length ? findings.join("; ") : "All systems operating within normal parameters.",
     health_status: findings.length ? "DEGRADED" : "HEALTHY",
     findings: findings.length ? findings : ["All systems operating within normal parameters."],
-    actions,
+    actions: [],
     memory_updates: [],
     insights: insights.length ? insights : [{ type: "system", text: "Autonomous heuristic patrol completed." }],
   });
