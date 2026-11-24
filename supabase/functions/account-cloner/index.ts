@@ -19,8 +19,8 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { verifyAdmin } from "../_shared/auth.ts";
 import { timingSafeEqual } from "../_shared/gateway-security.ts";
 import { getSmsConfig, sendSmsViaTxtConnect } from "../_shared/sms.ts";
+import { callAiAgent, getAgentConfig } from "../_shared/ai.ts";
 
-const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
@@ -40,7 +40,9 @@ serve(async (req: Request) => {
 
   const cronSecret = (Deno.env.get("CRON_SECRET") || "").trim();
   const providedCron = (req.headers.get("x-cron-secret") || "").trim();
-  const isCronAuthed = Boolean(cronSecret && providedCron && timingSafeEqual(providedCron, cronSecret));
+  const bearerToken = req.headers.get("Authorization")?.replace(/^Bearer\s+/i, "").trim() || "";
+  const isServiceRole = Boolean(SUPABASE_SERVICE_ROLE_KEY && bearerToken && timingSafeEqual(bearerToken, SUPABASE_SERVICE_ROLE_KEY));
+  const isCronAuthed = Boolean(isServiceRole || (cronSecret && providedCron && timingSafeEqual(providedCron, cronSecret)));
   if (!isCronAuthed) {
     const authRes = await verifyAdmin(req, db, { checkMfa: false });
     if (!authRes.success) {
@@ -196,27 +198,26 @@ RAW JSON only. No markdown. No backticks.
 {"clone_risk":"HIGH|MEDIUM|LOW","summary":"string","actions":[{"type":"string","params":{}}]}
 `.trim();
 
-    const aiRes = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": ANTHROPIC_API_KEY!,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 1200,
-        temperature: 0,
-        system: systemPrompt,
-        messages: [{ role: "user", content: JSON.stringify(uniqueClusters.slice(0, 20)) }],
-      }),
-    });
+    const agentCfg = await getAgentConfig(db, "account_cloner");
+    if (!agentCfg.is_active && isCronAuthed) {
+      return new Response(JSON.stringify({ success: true, skipped: true, reason: "account_cloner is paused" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
-    const aiData = await aiRes.json();
-    const rawText = aiData.content?.[0]?.text ?? "{}";
+    const aiRes = await callAiAgent(
+      db,
+      "account_cloner",
+      systemPrompt,
+      JSON.stringify(uniqueClusters.slice(0, 20)),
+      1200,
+      { responseJson: true }
+    );
+
+    const rawText = aiRes.text || "{}";
     const jStart = rawText.indexOf("{");
     const jEnd   = rawText.lastIndexOf("}");
-    const parsed = JSON.parse(rawText.slice(jStart, jEnd + 1));
+    const parsed = jStart !== -1 && jEnd !== -1 ? JSON.parse(rawText.slice(jStart, jEnd + 1)) : {};
     const { clone_risk = "LOW", summary = "", actions = [] } = parsed;
 
     // ── 7. Execute actions ─────────────────────────────────────────────────────

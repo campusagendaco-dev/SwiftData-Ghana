@@ -3,7 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { verifyAdmin } from "../_shared/auth.ts";
 import { getSmsConfig, dispatchUnifiedSms, dispatchUnifiedBulkSms } from "../_shared/sms.ts";
-import { callAiAgent } from "../_shared/ai.ts";
+import { callAiAgent, getAgentConfig } from "../_shared/ai.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -16,7 +16,8 @@ serve(async (req: Request) => {
   const cronSecret = (Deno.env.get("CRON_SECRET") || "").trim();
   const bearerToken = req.headers.get("Authorization")?.replace(/^Bearer\s+/i, "").trim() || "";
   const headerCronSecret = (req.headers.get("x-cron-secret") || "").trim();
-  const isCron = Boolean(cronSecret && (bearerToken === cronSecret || headerCronSecret === cronSecret));
+  const isServiceRole = Boolean(SUPABASE_SERVICE_ROLE_KEY && bearerToken === SUPABASE_SERVICE_ROLE_KEY);
+  const isCron = Boolean(isServiceRole || (cronSecret && (bearerToken === cronSecret || headerCronSecret === cronSecret)));
 
   if (!isCron) {
     const authRes = await verifyAdmin(req, supabaseAdmin);
@@ -31,6 +32,13 @@ serve(async (req: Request) => {
   try {
     const body = await req.json().catch(() => ({}));
     const { event, order_id, log_id } = body;
+
+    const agentCfg = await getAgentConfig(supabaseAdmin, "sentinel_prime");
+    if (!agentCfg.is_active && isCron && !event) {
+      return new Response(JSON.stringify({ success: true, skipped: true, reason: "sentinel_prime is paused" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     console.log(`Sentinel Prime: Initiating ${event ? 'Surgical Strike' : 'Autonomous Cognitive Scan'}...`);
 
@@ -305,6 +313,22 @@ serve(async (req: Request) => {
 
     for (const action of result.actions || []) {
       console.log(`Sentinel Tactical Action: ${action.type} on ${action.target || 'System'}`);
+
+      if (agentCfg.autonomy_mode === "observe_only") {
+        continue;
+      }
+      if (agentCfg.autonomy_mode === "approval_required" && action.type !== "notify_admin") {
+        await supabaseAdmin.from("ai_worker_tasks").insert({
+          agent_name: "sentinel_prime",
+          task_type: action.type,
+          priority: action.type === "lock_terminal" ? "critical" : "high",
+          status: "awaiting_approval",
+          title: `Sentinel: ${action.type.replace(/_/g, " ")}`,
+          reasoning: action.reason || "Proposed by Sentinel Prime",
+          payload: { ...(action.params || {}), target: action.target },
+        });
+        continue;
+      }
       
       const status = 'executed';
       const actionMetadata = action.params || {};
@@ -330,6 +354,13 @@ serve(async (req: Request) => {
         }
 
         if (action.type === 'switch_priority' && action.params?.provider_id) {
+          const targetProv = (providers || []).find((p: any) => p.id === action.params.provider_id);
+          const isKorba = String(targetProv?.handler_type || "").toLowerCase().includes("korba") ||
+            String(targetProv?.name || action.params.provider_name || "").toLowerCase().includes("korba");
+          if (isKorba) {
+            console.warn("[Sentinel AI] BLOCKED: Korba cannot be promoted to SME data priority.");
+            continue;
+          }
           const { error: pError } = await supabaseAdmin
             .from("providers")
             .update({ priority: action.params.new_priority || 1 })
@@ -342,6 +373,13 @@ serve(async (req: Request) => {
         }
 
         if (action.type === 'self_heal_provider' && action.params?.provider_id) {
+          const targetProv = (providers || []).find((p: any) => p.id === action.params.provider_id);
+          const isKorba = String(targetProv?.handler_type || "").toLowerCase().includes("korba") ||
+            String(targetProv?.name || action.params.provider_name || "").toLowerCase().includes("korba");
+          if (isKorba) {
+            console.warn("[Sentinel AI] BLOCKED: Korba cannot be self-healed to Priority 1 for SME data.");
+            continue;
+          }
           const { error: healError } = await supabaseAdmin
             .from("providers")
             .update({ priority: 1, is_active: true, consecutive_failures: 0 })

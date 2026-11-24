@@ -4,7 +4,7 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { verifyAdmin } from "../_shared/auth.ts";
 import { timingSafeEqual } from "../_shared/gateway-security.ts";
 import { getSmsConfig, sendSmsViaTxtConnect } from "../_shared/sms.ts";
-import { callAiAgent } from "../_shared/ai.ts";
+import { callAiAgent, getAgentConfig } from "../_shared/ai.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -16,7 +16,9 @@ serve(async (req: Request) => {
 
   const cronSecret = (Deno.env.get("CRON_SECRET") || "").trim();
   const providedCron = (req.headers.get("x-cron-secret") || "").trim();
-  const isCronAuthed = Boolean(cronSecret && providedCron && timingSafeEqual(providedCron, cronSecret));
+  const bearerToken = req.headers.get("Authorization")?.replace(/^Bearer\s+/i, "").trim() || "";
+  const isServiceRole = Boolean(SUPABASE_SERVICE_ROLE_KEY && bearerToken && timingSafeEqual(bearerToken, SUPABASE_SERVICE_ROLE_KEY));
+  const isCronAuthed = Boolean(isServiceRole || (cronSecret && providedCron && timingSafeEqual(providedCron, cronSecret)));
   if (!isCronAuthed) {
     const authRes = await verifyAdmin(req, supabaseAdmin, { checkMfa: false });
     if (!authRes.success) {
@@ -28,6 +30,13 @@ serve(async (req: Request) => {
   }
 
   try {
+    const guardianCfg = await getAgentConfig(supabaseAdmin, "guardian_ai");
+    if (!guardianCfg.is_active && isCronAuthed) {
+      return new Response(JSON.stringify({ success: true, skipped: true, reason: "guardian_ai is paused" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     console.log(`🛡️ Guardian AI: Initiating 24/7 Autonomous Security Patrol...`);
 
     // 1. Fetch Admin Contact
