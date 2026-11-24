@@ -1,4 +1,4 @@
--- Checks for 20261124200000_self_unsuspend_requests.sql. Read-only and safe on production
+-- Checks for 20261124203000_self_unsuspend_requests.sql. Read-only and safe on production
 -- (reads catalogs only, inside a rolled-back transaction). No error = passed.
 BEGIN;
 
