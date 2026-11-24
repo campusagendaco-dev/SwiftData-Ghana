@@ -6,7 +6,7 @@
  * IDENTITY layer: it cross-correlates profiles, IP clusters, signup velocity,
  * referral rings and failed-order patterns to detect coordinated attacks that
  * span multiple sessions and accounts.  When a coordinated attack is confirmed
- * it acts immediately and logs every decision to sentinel_actions.
+ * it proposes actions for an admin to approve (safe-agents design 2026-11-24).
  */
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
@@ -14,8 +14,10 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { verifyAdmin } from "../_shared/auth.ts";
 import { timingSafeEqual } from "../_shared/gateway-security.ts";
-import { getSmsConfig, sendSmsViaTxtConnect } from "../_shared/sms.ts";
-import { callAiAgent } from "../_shared/ai.ts";
+import { routeAgentAction, type AgentAction, type AgentMode, shouldSkipRun } from "../_shared/agent_policy.ts";
+import { queueAgentAction, runAutoAction } from "../_shared/agent_actions.ts";
+import { agentSms } from "../_shared/agent_sms.ts";
+import { callAiAgent, getAgentConfig } from "../_shared/ai.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -27,9 +29,11 @@ serve(async (req: Request) => {
 
   const cronSecret = (Deno.env.get("CRON_SECRET") || "").trim();
   const providedCron = (req.headers.get("x-cron-secret") || "").trim();
-  const isCronAuthed = Boolean(cronSecret && providedCron && timingSafeEqual(providedCron, cronSecret));
+  const bearerToken = req.headers.get("Authorization")?.replace(/^Bearer\s+/i, "").trim() || "";
+  const isServiceRole = Boolean(SUPABASE_SERVICE_ROLE_KEY && bearerToken && timingSafeEqual(bearerToken, SUPABASE_SERVICE_ROLE_KEY));
+  const isCronAuthed = Boolean(isServiceRole || (cronSecret && providedCron && timingSafeEqual(providedCron, cronSecret)));
   if (!isCronAuthed) {
-    const authRes = await verifyAdmin(req, db, { checkMfa: false });
+    const authRes = await verifyAdmin(req, db);
     if (!authRes.success) {
       return new Response(JSON.stringify({ error: authRes.error || "Unauthorized" }), {
         status: authRes.status || 401,
@@ -41,16 +45,22 @@ serve(async (req: Request) => {
   try {
     console.log("🎯 Threat Hunter: Initiating cross-signal correlation sweep...");
 
-    // ── Admin contact ──────────────────────────────────────────────────────────
-    const { data: admins } = await db.from("profiles").select("phone").eq("role", "admin").limit(1);
-    const adminPhone = admins?.[0]?.phone ?? null;
-
-    const notifyAdmin = async (msg: string) => {
-      if (!adminPhone) return;
-      try {
-        const { apiKey, senderId } = await getSmsConfig(db);
-        if (apiKey) await sendSmsViaTxtConnect(apiKey, senderId, adminPhone, `[Threat Hunter] ${msg}`);
-      } catch { /* non-critical */ }
+    const AGENT = "threat_hunter";
+    // Safe-agents design (2026-11-24): this agent WATCHES and PROPOSES. Suspensions, IP
+    // blocks, locks and cashout freezes go through routeAgentAction: queued for an admin
+    // with 2FA (propose mode) or recorded as "would propose" findings (observe_only).
+    // Flags and capped admin alerts are the only things it does by itself.
+    const notifyAdmin = (msg: string, topic?: string) =>
+      runAutoAction(db, AGENT, { type: "notify_admin", params: { message: msg, topic } }, { sms: agentSms });
+    const routeOne = async (mode: AgentMode, action: AgentAction) => {
+      const { route, reason } = routeAgentAction(mode, action);
+      if (route === "run") return { type: action.type, route, ...(await runAutoAction(db, AGENT, action, { sms: agentSms })) };
+      if (route === "queue") return { type: action.type, route, ...(await queueAgentAction(db, AGENT, action)) };
+      if (route === "record") {
+        await runAutoAction(db, AGENT, { type: "record_finding", reason: action.reason, params: { would_propose: action } }, { sms: agentSms });
+        return { type: action.type, route };
+      }
+      return { type: action.type, route, reason };
     };
 
     // ── 1. Pull profile snapshot ───────────────────────────────────────────────
@@ -153,7 +163,7 @@ You analyse multi-layer threat signals from identity and behavioural data to det
 - notify_admin: { "message": "string" }
 
 ━━━ DECISION RULES ━━━
-- IP cluster ≥5 accounts → MUST suspend_cluster + blacklist_ip
+- IP cluster ≥5 accounts → propose suspend_cluster + blacklist_ip (an admin approves)
 - IP cluster 3-4 accounts → blacklist_ip only
 - Subnet sweep with ≥3 IPs → notify_admin with coordinated attack assessment
 - Referral ring ≥10 members → suspend_referral_ring
@@ -187,68 +197,35 @@ Respond with RAW JSON only. No markdown. No backticks.
     const parsed = JSON.parse(rawText.slice(jStart, jEnd + 1));
     const { threat_level = "LOW", summary = "", actions = [] } = parsed;
 
-    // ── 8. Execute actions ─────────────────────────────────────────────────────
+    // ── Route actions through the safe-agents policy ─────────────────────────
+    const agentCfg = await getAgentConfig(db, "threat_hunter");
+    const runBody = await req.json().catch(() => ({}));
+    // Paused: skip every run except an admin's manual "Run now" (before any AI call or alert).
+    if (shouldSkipRun(agentCfg.is_active, { manual: runBody?.source === "admin_manual" })) {
+      return new Response(JSON.stringify({ success: true, skipped: true, reason: "threat_hunter is paused" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
     const executed: any[] = [];
-
-    for (const action of actions) {
-      const p = action.params ?? {};
-      try {
-        if (action.type === "suspend_cluster") {
-          const ids: string[] = p.user_ids ?? [];
-          if (ids.length > 0) {
-            await db.from("profiles").update({ is_suspended: true }).in("user_id", ids);
-          }
-          if (p.ip) {
-            await db.from("security_blacklist").insert({
-              type: "ip", value: p.ip,
-              reason: p.reason ?? "Threat Hunter: IP cluster auto-suspension",
-              created_by: "threat_hunter",
-            }).onConflict("value").ignore();
-          }
-        }
-
-        if (action.type === "blacklist_ip" && p.ip) {
-          await db.from("security_blacklist").insert({
-            type: "ip", value: p.ip,
-            reason: p.reason ?? "Threat Hunter: IP cluster blacklist",
-            created_by: "threat_hunter",
-          }).onConflict("value").ignore();
-        }
-
-        if (action.type === "suspend_referral_ring") {
-          const ids: string[] = [...(p.member_ids ?? []), p.referrer_id].filter(Boolean);
-          if (ids.length > 0) {
-            await db.from("profiles").update({ is_suspended: true }).in("user_id", ids);
-          }
-        }
-
-        if (action.type === "suspend_login_bot" && p.user_id) {
-          await db.from("profiles").update({ is_suspended: true }).eq("user_id", p.user_id);
-        }
-
-        if (action.type === "notify_admin") {
-          await notifyAdmin(p.message ?? "Threat Hunter detected a coordinated attack.");
-        }
-
-        const { data: log } = await db.from("sentinel_actions").insert({
-          action_type: action.type,
-          status: "executed",
-          effectiveness: 1,
-          reasoning: p.reason ?? summary,
-          metadata: { ...p, source: "threat_hunter", threat_level },
-        }).select().single();
-
-        if (log) executed.push(log);
-      } catch (err: any) {
-        console.error(`Threat Hunter execution failed [${action.type}]:`, err.message);
-        await db.from("sentinel_actions").insert({
-          action_type: action.type,
-          status: "failed",
-          effectiveness: -1,
-          reasoning: err.message,
-          metadata: { source: "threat_hunter", threat_level },
-        });
+    for (const raw of (Array.isArray(actions) ? actions : []).slice(0, 10)) {
+      const p: Record<string, any> = { ...(raw?.params ?? {}) };
+      const reason = String(p.reason ?? summary ?? "");
+      const proposals: AgentAction[] = [];
+      if (raw?.type === "suspend_cluster") {
+        proposals.push({ type: "suspend_cluster", title: `Threat Hunter: suspend ${(p.user_ids ?? []).length} accounts on IP ${p.ip ?? "?"}`, reason, priority: "critical", params: { user_ids: p.user_ids, ip: p.ip, reason } });
+        if (p.ip) proposals.push({ type: "blacklist_ip", title: `Threat Hunter: block IP ${p.ip}`, reason, priority: "high", params: { ip: p.ip, reason } });
+      } else if (raw?.type === "blacklist_ip") {
+        proposals.push({ type: "blacklist_ip", title: `Threat Hunter: block IP ${p.ip}`, reason, priority: "high", params: { ip: p.ip, reason } });
+      } else if (raw?.type === "suspend_referral_ring") {
+        proposals.push({ type: "suspend_referral_ring", title: `Threat Hunter: suspend referral ring of ${String(p.referrer_id ?? "?").slice(0, 8)}`, reason, priority: "high", params: { referrer_id: p.referrer_id, member_ids: p.member_ids, reason } });
+      } else if (raw?.type === "suspend_login_bot") {
+        proposals.push({ type: "suspend_login_bot", title: `Threat Hunter: suspend login bot ${String(p.user_id ?? "?").slice(0, 8)}`, reason, priority: "high", params: { user_id: p.user_id, reason } });
+      } else if (raw?.type === "notify_admin") {
+        await notifyAdmin(p.message ?? "Threat Hunter detected a coordinated attack.", p.topic);
+      } else {
+        executed.push({ type: raw?.type, route: "drop", reason: "unknown action" });
       }
+      for (const action of proposals) executed.push(await routeOne(agentCfg.autonomy_mode, action));
     }
 
     // Always log the scan summary even if no actions
@@ -263,7 +240,7 @@ Respond with RAW JSON only. No markdown. No backticks.
     }
 
     if (threat_level === "CRITICAL" || threat_level === "HIGH") {
-      await notifyAdmin(`${threat_level} threat detected. ${executed.length} auto-responses executed. ${summary}`);
+      await notifyAdmin(`${threat_level} threat detected. ${executed.length} responses proposed or recorded. ${summary}`);
     }
 
     return new Response(JSON.stringify({ success: true, threat_level, actions_taken: executed.length }), {

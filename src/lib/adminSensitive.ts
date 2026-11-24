@@ -13,6 +13,8 @@ export const SENSITIVE_FUNCTIONS = new Set([
   "heal-processing-orders",
   "route-to-datamart",
   "cron-auto-retry",
+  // runs the payment-webhook backup, which sends paid orders that never went out
+  "sentinel-ai",
   // message credit
   "admin-send-sms",
   "send-push-notification",
@@ -20,6 +22,8 @@ export const SENSITIVE_FUNCTIONS = new Set([
   "admin-broadcast-whatsapp",
   "mnotify-voice",
   "cron-winback-push",
+  // approves AI agent proposals (suspensions, provider changes, outage texts)
+  "ai-task-decide",
 ]);
 
 export const SENSITIVE_RPCS = new Set([
@@ -58,7 +62,7 @@ export const SENSITIVE_PAYOUT_ACTIONS = new Set([
 /** Actions that change who can use the admin pages. */
 export const SENSITIVE_ACCESS_ACTIONS = new Set(["revoke_admin_role", "grant_admin_role"]);
 
-export type ConfirmKind = "money" | "refund" | "payout" | "send" | "message" | "access" | "promo";
+export type ConfirmKind = "money" | "refund" | "payout" | "send" | "message" | "access" | "promo" | "account" | "ops";
 
 export type ConfirmOptions = {
   title: string;

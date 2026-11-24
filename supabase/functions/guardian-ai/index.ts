@@ -3,8 +3,10 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { verifyAdmin } from "../_shared/auth.ts";
 import { timingSafeEqual } from "../_shared/gateway-security.ts";
-import { getSmsConfig, sendSmsViaTxtConnect } from "../_shared/sms.ts";
-import { callAiAgent } from "../_shared/ai.ts";
+import { routeAgentAction, type AgentAction, type AgentMode, shouldSkipRun } from "../_shared/agent_policy.ts";
+import { queueAgentAction, runAutoAction } from "../_shared/agent_actions.ts";
+import { agentSms } from "../_shared/agent_sms.ts";
+import { callAiAgent, getAgentConfig } from "../_shared/ai.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -16,9 +18,11 @@ serve(async (req: Request) => {
 
   const cronSecret = (Deno.env.get("CRON_SECRET") || "").trim();
   const providedCron = (req.headers.get("x-cron-secret") || "").trim();
-  const isCronAuthed = Boolean(cronSecret && providedCron && timingSafeEqual(providedCron, cronSecret));
+  const bearerToken = req.headers.get("Authorization")?.replace(/^Bearer\s+/i, "").trim() || "";
+  const isServiceRole = Boolean(SUPABASE_SERVICE_ROLE_KEY && bearerToken && timingSafeEqual(bearerToken, SUPABASE_SERVICE_ROLE_KEY));
+  const isCronAuthed = Boolean(isServiceRole || (cronSecret && providedCron && timingSafeEqual(providedCron, cronSecret)));
   if (!isCronAuthed) {
-    const authRes = await verifyAdmin(req, supabaseAdmin, { checkMfa: false });
+    const authRes = await verifyAdmin(req, supabaseAdmin);
     if (!authRes.success) {
       return new Response(JSON.stringify({ error: authRes.error || "Unauthorized" }), {
         status: authRes.status || 401,
@@ -28,27 +32,35 @@ serve(async (req: Request) => {
   }
 
   try {
+    const guardianCfg = await getAgentConfig(supabaseAdmin, "guardian_ai");
+    const runBody = await req.json().catch(() => ({}));
+    // Paused: skip every run except an admin's manual "Run now".
+    if (shouldSkipRun(guardianCfg.is_active, { manual: runBody?.source === "admin_manual" })) {
+      return new Response(JSON.stringify({ success: true, skipped: true, reason: "guardian_ai is paused" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     console.log(`🛡️ Guardian AI: Initiating 24/7 Autonomous Security Patrol...`);
 
-    // 1. Fetch Admin Contact
-    const { data: admins } = await supabaseAdmin
-      .from("profiles")
-      .select("phone, email")
-      .eq("role", "admin")
-      .limit(1);
-    
-    const adminContact = admins?.[0];
-
-    const notifyAdmin = async (message: string) => {
-      if (adminContact?.phone) {
-        try {
-          const { apiKey, senderId } = await getSmsConfig(supabaseAdmin);
-          if (apiKey) {
-            await sendSmsViaTxtConnect(apiKey, senderId, adminContact.phone, `[Guardian AI] ${message}`);
-          }
-        } catch (e) {
-          console.error("SMS notification failed:", e);
-        }
+    // Safe-agents design (2026-11-24): Guardian WATCHES and PROPOSES. Order, account, IP and
+    // network changes go through routeAgentAction: queued for an admin with 2FA (propose
+    // mode) or recorded as "would propose" findings (observe_only). Admin alerts are capped.
+    const mode: AgentMode = guardianCfg.autonomy_mode;
+    const notifyAdmin = (message: string, topic?: string) =>
+      runAutoAction(supabaseAdmin, "guardian_ai", { type: "notify_admin", params: { message, topic } }, { sms: agentSms });
+    const routed: any[] = [];
+    const propose = async (action: AgentAction) => {
+      const { route, reason } = routeAgentAction(mode, action);
+      if (route === "run") {
+        routed.push({ type: action.type, route, ...(await runAutoAction(supabaseAdmin, "guardian_ai", action, { sms: agentSms })) });
+      } else if (route === "queue") {
+        routed.push({ type: action.type, route, ...(await queueAgentAction(supabaseAdmin, "guardian_ai", action)) });
+      } else if (route === "record") {
+        await runAutoAction(supabaseAdmin, "guardian_ai", { type: "record_finding", reason: action.reason, params: { would_propose: action } }, { sms: agentSms });
+        routed.push({ type: action.type, route });
+      } else {
+        routed.push({ type: action.type, route, reason });
       }
     };
 
@@ -74,11 +86,13 @@ serve(async (req: Request) => {
       // 1. Strict Payment Proof Verification: Quarantine any gateway order in processing/paid without payment proof
       if (ord.payment_method === "paystack" && !isPaidGateway && (ord.status === "processing" || ord.status === "paid")) {
         console.warn(`[Guardian AI] QUARANTINE: Order ${ord.id} is marked ${ord.status} but lacks Paystack verified payment proof.`);
-        await supabaseAdmin.from("orders").update({
-          status: "fulfillment_failed",
-          failure_reason: "SECURITY_QUARANTINE: Missing verified payment proof",
-          updated_at: new Date().toISOString()
-        }).eq("id", ord.id);
+        await propose({
+          type: "quarantine_order",
+          title: `Guardian: quarantine order ${String(ord.id).slice(0, 8)} (no verified Paystack payment)`,
+          reason: `Order is ${ord.status} but has no verified Paystack payment.`,
+          priority: "critical",
+          params: { order_id: ord.id, amount: ord.amount, status: ord.status },
+        });
         quarantinedOrders++;
       }
 
@@ -88,17 +102,20 @@ serve(async (req: Request) => {
         const { data: skP } = await supabaseAdmin.from("providers").select("id").eq("handler_type", "skdataplug").maybeSingle();
         if (skP && ord.provider_id !== skP.id) {
           console.warn(`[Guardian AI] Correcting provider_id mismatch on order ${ord.id} (ref: ${ref}). Re-linking to SKPlug.`);
-          await supabaseAdmin.from("orders").update({
-            provider_id: skP.id,
-            updated_at: new Date().toISOString()
-          }).eq("id", ord.id);
+          await propose({
+            type: "relink_order_provider",
+            title: `Guardian: relink order ${String(ord.id).slice(0, 8)} to SKPlug`,
+            reason: `Provider reference ${ref} belongs to SKPlug but the order is linked to another provider.`,
+            priority: "medium",
+            params: { order_id: ord.id, provider_id: skP.id },
+          });
           orderDiscrepanciesRepaired++;
         }
       }
     }
 
     if (quarantinedOrders > 0) {
-      await notifyAdmin(`SECURITY WATCHDOG: Quarantined ${quarantinedOrders} order(s) lacking verified payment.`);
+      await notifyAdmin(`SECURITY WATCHDOG: ${quarantinedOrders} order(s) lack verified payment; quarantine proposed for admin review.`, "guardian-quarantine");
     }
 
     // --- MODULE: Rapid Wallet Draining & Micro-Transaction Analysis ---
@@ -242,18 +259,18 @@ serve(async (req: Request) => {
 
     // 3. AI Analysis (Claude Haiku for fast processing)
     const systemPrompt = `
-      You are GUARDIAN AI — the 24/7 autonomous cyber-security watchdog for SwiftData.
-      Your job is to review the recent 15-minute transaction logs of suspicious agents and immediately neutralize threats.
+      You are GUARDIAN AI — the 24/7 cyber-security watchdog for SwiftData. You WATCH and PROPOSE: every action except notify_admin waits for an admin to approve it.
+      Your job is to review the recent 15-minute transaction logs of suspicious agents and propose actions that would neutralize threats.
 
       ━━━ CORE DIRECTIVES ━━━
       1. FRAUD & BOT DETECTION: High failure rates (>60%) combined with high volume indicate a bot or gateway exploit attempt.
       2. CARD TESTING: Multiple micro-transactions (under 2 GHS) is a severe red flag.
       3. IMPOSSIBLE TRAVEL: "distinct_ips_count" > 1 indicates compromised credentials (hijacked account).
       4. WALLET DRAINING: "cashout_volume" > 3000 GHS in 15 mins OR "cashout_volume" exceeding 75% of "current_wallet_balance" in a single audit sweep indicates rapid draining/compromise.
-      5. VELOCITY BURST: If "velocity_burst_ratio" > 8.00 (sales volume is 8x their normal historical hourly baseline), this is a velocity burst anomaly indicating automated scraping or compromised script abuse. LOCK terminal immediately unless "is_admin" (do not lock admins).
-      6. API ABUSE: Malicious IPs with >15 auth failures must be blocked immediately.
-      7. OUTAGE PROTECTION: If a network is failing across >=3 distinct agents, broadcast an outage.
-      8. ACTION PROTOCOL: If an agent exhibits behaviors 1-5, you MUST output a "lock_terminal" action to freeze their account.
+      5. VELOCITY BURST: If "velocity_burst_ratio" > 8.00 (sales volume is 8x their normal historical hourly baseline), this is a velocity burst anomaly indicating automated scraping or compromised script abuse. Propose a terminal lock unless "is_admin" (do not lock admins).
+      6. API ABUSE: Malicious IPs with >15 auth failures should be proposed for blocking.
+      7. OUTAGE PROTECTION: If a network is failing across >=3 distinct agents, propose taking it offline (broadcast_outage).
+      8. ACTION PROTOCOL: If an agent exhibits behaviors 1-5, output a "lock_terminal" action so an admin can freeze their account.
 
       ━━━ AVAILABLE ACTIONS ━━━
       - lock_terminal: { "target": "uuid", "reason": "string" }
@@ -292,75 +309,31 @@ serve(async (req: Request) => {
     const parsed = JSON.parse(rawText.slice(jsonStart, jsonEnd + 1));
     const actions = Array.isArray(parsed.actions) ? parsed.actions : [];
 
-    const executedActions = [];
 
-    // 4. Execute Autonomous Actions
-    for (const action of actions) {
-      console.log(`Guardian AI Execution: ${action.type} on ${action.target}`);
-      
-      const effectiveness = 1;
+    // 4. Route the AI's actions (mapped to the shared action names)
+    for (const action of actions.slice(0, 10)) {
       const metadata = action.params || {};
-
-      try {
-        if (action.type === 'lock_terminal') {
-          // Verify agent isn't already locked to prevent spam
-          const targetAgent = enrichedAgents.find(a => a.agent_id === action.target);
-          if (targetAgent && !targetAgent.terminal_locked) {
-            await supabaseAdmin.from("profiles").update({ terminal_locked: true }).eq("user_id", action.target);
-            await notifyAdmin(`GUARDIAN ALERT: Locked terminal for ${targetAgent.full_name} (${targetAgent.phone}). Reason: ${metadata.reason || 'Anomalous activity'}.`);
-            
-            // Log to fraud risk
-            await supabaseAdmin.from("fraud_risk_logs").insert({
-              agent_id: action.target,
-              risk_score: 99,
-              risk_factors: ['24/7_Guardian_Bot_Detection'],
-              action_taken: 'terminal_locked_by_ai'
-            });
-          }
-        }
-
-        if (action.type === 'flag_for_review') {
-          await notifyAdmin(`GUARDIAN WARNING: Please review agent ${action.target.slice(0, 8)}. Reason: ${metadata.reason || action.reason}`);
-        }
-
-        if (action.type === 'block_ip') {
-          await supabaseAdmin.from("security_blacklist").insert({
-            type: "ip",
-            value: action.target,
-            reason: metadata.reason || action.reason || "Brute force / Credential Stuffing",
-            created_by: "guardian_ai"
-          });
-          await notifyAdmin(`GUARDIAN DEFENSE: Blocked malicious IP ${action.target} due to API credential stuffing.`);
-        }
-
-        if (action.type === 'broadcast_outage') {
-          await supabaseAdmin.from("service_status").update({ 
-            status: "offline", 
-            admin_note: "Auto-disabled by Guardian AI due to universal network failure" 
-          }).eq("network", action.target.toUpperCase());
-          await notifyAdmin(`GUARDIAN OUTAGE: Auto-disabled ${action.target} network across the platform to prevent further failures.`);
-        }
-
-        if (action.type === 'notify_admin') {
-          await notifyAdmin(metadata.message || "Guardian AI detected an anomaly.");
-        }
-
-        // Log to sentinel_actions for UI
-        const { data: loggedAction } = await supabaseAdmin.from("sentinel_actions").insert({
-          action_type: action.type,
-          status: 'executed',
-          effectiveness: effectiveness,
-          reasoning: action.reason || metadata.reason || "Autonomous Guardian Sweep",
-          metadata: { ...metadata, source: "guardian_ai" }
-        }).select().single();
-
-        if (loggedAction) executedActions.push(loggedAction);
-      } catch (err: any) {
-        console.error(`Guardian Execution Failed:`, err);
+      const reason = metadata.reason || action.reason || "Guardian AI";
+      const target = typeof action.target === "string" ? action.target : "";
+      const agent = enrichedAgents.find((a) => a.agent_id === target);
+      if (action.type === "lock_terminal") {
+        if (!agent || agent.terminal_locked) continue;
+        await propose({ type: "lock_terminal", title: `Guardian: lock terminal of ${agent.full_name} (${target.slice(0, 8)})`, reason, priority: "critical", params: { user_id: target, reason } });
+      } else if (action.type === "flag_for_review") {
+        await notifyAdmin(`GUARDIAN WARNING: Please review agent ${target.slice(0, 8)}. Reason: ${reason}`, `guardian-review-${target}`);
+      } else if (action.type === "block_ip") {
+        await propose({ type: "blacklist_ip", title: `Guardian: block IP ${target}`, reason, priority: "high", params: { ip: target, reason } });
+      } else if (action.type === "broadcast_outage") {
+        await propose({ type: "disable_network", title: `Guardian: take ${target.toUpperCase()} offline`, reason, priority: "high", params: { network: target.toUpperCase(), reason } });
+      } else if (action.type === "notify_admin") {
+        await notifyAdmin(metadata.message || "Guardian AI detected an anomaly.", metadata.topic);
+      } else {
+        routed.push({ type: action.type, route: "drop", reason: "unknown action" });
       }
     }
+    const executedActions = routed;
 
-    return new Response(JSON.stringify({ success: true, actions_taken: executedActions }), {
+    return new Response(JSON.stringify({ success: true, autonomy_mode: mode, actions_taken: executedActions }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
 

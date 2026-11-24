@@ -13,6 +13,8 @@ import {
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
+import AgentApprovalQueue from "@/components/admin/AgentApprovalQueue";
+import { useConfirmedCall } from "@/components/admin/ConfirmActionProvider";
 
 interface SentinelAction {
   id: string;
@@ -32,9 +34,62 @@ interface SentinelStrategy {
   version: number;
 }
 
+interface SystemMemoryItem {
+  id: string;
+  memory_key: string;
+  category: string;
+  summary: string;
+  confidence: number;
+  observations_count: number;
+  last_observed_at: string;
+}
+
+interface WorkerTaskItem {
+  id: string;
+  agent_name: string;
+  task_type: string;
+  priority: string;
+  status: string;
+  title: string;
+  reasoning: string | null;
+  payload: any;
+  created_at: string;
+}
+
+interface AgentRunMetrics {
+  todaySpendUsd: number;
+  monthSpendUsd: number;
+  dailyBudgetUsd: number;
+  totalRunsToday: number;
+  totalTokensToday: number;
+  latestModel: string;
+  latestProvider: string;
+}
+
 const AdminSentinelAI = () => {
+  const confirmed = useConfirmedCall();
   const [actions, setActions] = useState<SentinelAction[]>([]);
   const [strategies, setStrategies] = useState<SentinelStrategy[]>([]);
+  const [memories, setMemories] = useState<SystemMemoryItem[]>([]);
+  const [pendingTasks, setPendingTasks] = useState<WorkerTaskItem[]>([]);
+  const [runMetrics, setRunMetrics] = useState<AgentRunMetrics>({
+    todaySpendUsd: 0,
+    monthSpendUsd: 0,
+    dailyBudgetUsd: 5.0,
+    totalRunsToday: 0,
+    totalTokensToday: 0,
+    latestModel: "gpt-4o-mini",
+    latestProvider: "openai",
+  });
+  const [commandInput, setCommandInput] = useState("");
+  const [commandLoading, setCommandLoading] = useState(false);
+  const [commandResult, setCommandResult] = useState<{
+    reply: string;
+    findings?: string[];
+    model?: string;
+    executedCount?: number;
+    queuedCount?: number;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -47,21 +102,81 @@ const AdminSentinelAI = () => {
 
   const fetchSentinelData = async () => {
     try {
-      const { data: actionData } = await (supabase as any).from("sentinel_actions")
-        .select("*")
-        .order("ts", { ascending: false })
-        .limit(10);
-      
-      const { data: strategyData } = await (supabase as any).from("sentinel_strategies")
-        .select("*")
-        .order("confidence_score", { ascending: false });
+      const startOfDay = new Date();
+      startOfDay.setUTCHours(0, 0, 0, 0);
+      const startOfMonth = new Date(Date.UTC(startOfDay.getUTCFullYear(), startOfDay.getUTCMonth(), 1));
 
-      if (actionData) setActions(actionData);
-      if (strategyData) setStrategies(strategyData);
+      const [actionRes, strategyRes, memoryRes, tasksRes, runsRes, regRes] = await Promise.all([
+        (supabase as any).from("sentinel_actions").select("*").order("ts", { ascending: false }).limit(15),
+        (supabase as any).from("sentinel_strategies").select("*").order("confidence_score", { ascending: false }),
+        (supabase as any).from("ai_system_memory").select("*").order("last_observed_at", { ascending: false }).limit(12),
+        (supabase as any).from("ai_worker_tasks").select("*").eq("status", "awaiting_approval").order("created_at", { ascending: false }).limit(15),
+        (supabase as any).from("ai_agent_runs").select("model, provider, prompt_tokens, completion_tokens, estimated_cost_usd, created_at").gte("created_at", startOfMonth.toISOString()).order("created_at", { ascending: false }).limit(500),
+        (supabase as any).from("ai_agent_registry").select("active_model, daily_budget_usd").eq("name", "ops_worker").maybeSingle(),
+      ]);
+
+      if (actionRes.data) setActions(actionRes.data);
+      if (strategyRes.data) setStrategies(strategyRes.data);
+      if (memoryRes.data) setMemories(memoryRes.data);
+      if (tasksRes.data) setPendingTasks(tasksRes.data);
+
+      const runs: any[] = runsRes.data || [];
+      const dayIso = startOfDay.toISOString();
+      let todaySpend = 0;
+      let monthSpend = 0;
+      let todayRuns = 0;
+      let todayTokens = 0;
+
+      for (const r of runs) {
+        const c = Number(r.estimated_cost_usd || 0);
+        monthSpend += c;
+        if (r.created_at >= dayIso) {
+          todaySpend += c;
+          todayRuns++;
+          todayTokens += Number(r.prompt_tokens || 0) + Number(r.completion_tokens || 0);
+        }
+      }
+
+      setRunMetrics({
+        todaySpendUsd: todaySpend,
+        monthSpendUsd: monthSpend,
+        dailyBudgetUsd: Number(regRes.data?.daily_budget_usd ?? 5.0),
+        totalRunsToday: todayRuns,
+        totalTokensToday: todayTokens,
+        latestModel: runs[0]?.model || regRes.data?.active_model || "gpt-4o-mini",
+        latestProvider: runs[0]?.provider || "openai",
+      });
     } catch (error) {
       console.error("Failed to fetch sentinel data:", error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const runWorkerCommand = async () => {
+    const instruction = commandInput.trim();
+    if (!instruction) return;
+    setCommandLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("ops-worker-ai", {
+        body: { mode: "command", instruction },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      setCommandResult({
+        reply: data.reply || "Command executed.",
+        findings: data.findings || [],
+        model: data.model,
+        executedCount: data.ran?.length || 0,
+        queuedCount: data.queued?.length || 0,
+      });
+      setCommandInput("");
+      toast.success("Ops Worker AI answered; any actions wait for approval");
+      fetchSentinelData();
+    } catch (err: any) {
+      toast.error("Worker command failed: " + err.message);
+    } finally {
+      setCommandLoading(false);
     }
   };
 
@@ -82,25 +197,24 @@ const AdminSentinelAI = () => {
     };
   }, []);
 
-  // Autonomous Heartbeat: Trigger Sentinel every 60 seconds
-  useEffect(() => {
-    const heartbeat = setInterval(() => {
-      if (!isProcessing) {
-        console.log("[Sentinel] Initiating Autonomous Heartbeat Scan...");
-        triggerSentinel();
-      }
-    }, 60000); // 60s loop
-
-    return () => clearInterval(heartbeat);
-  }, [isProcessing]);
+  // No timer here: agents run on their server schedules. A browser tab must not drive a
+  // job that can send paid orders (sentinel's payment backup) or spend the AI budget.
 
   const triggerSentinel = async () => {
+    if (!(await confirmed.confirm({
+      title: "Run Sentinel and the Ops Worker now?",
+      description: "Sentinel's payment backup sends paid orders whose Paystack webhook was missed (at most 10, GH₵500 per run). Everything else only watches or proposes.",
+      kind: "send",
+      confirmLabel: "Run now",
+    }))) return;
     setIsProcessing(true);
     try {
-      const { data, error } = await supabase.functions.invoke("sentinel-ai");
-      if (error) throw error;
-      if (data?.error) throw new Error(data.message || data.error);
-      toast.success(data.message || "Sentinel analysis complete");
+      const [sentRes, opsRes] = await Promise.all([
+        supabase.functions.invoke("sentinel-ai", { body: { source: "admin_manual" } }),
+        supabase.functions.invoke("ops-worker-ai", { body: { mode: "patrol", source: "admin_manual" } }),
+      ]);
+      if (sentRes.error && opsRes.error) throw sentRes.error;
+      toast.success(opsRes.data?.summary || sentRes.data?.message || "Sentinel & Ops Worker analysis complete");
       fetchSentinelData();
     } catch (error: any) {
       toast.error("Failed to trigger Sentinel: " + error.message);
@@ -266,16 +380,18 @@ const AdminSentinelAI = () => {
             </div>
             <div>
               <h3 className="text-lg font-black tracking-tight text-white uppercase italic">
-                Sentinel Core
+                OpenAI Worker Core
               </h3>
-              <p className="text-xs text-cyan-500 font-bold uppercase tracking-widest">Model: Gemini 1.5 Flash</p>
+              <p className="text-xs text-cyan-500 font-bold uppercase tracking-widest">
+                Model: {runMetrics.latestModel} ({runMetrics.latestProvider})
+              </p>
             </div>
           </div>
           
           <div className="space-y-4">
             <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest">
-              <span className="text-slate-500">Processing Speed</span>
-              <span className="text-cyan-400">98.4%</span>
+              <span className="text-slate-500">Runs Today / Tokens</span>
+              <span className="text-cyan-400">{runMetrics.totalRunsToday} runs • {runMetrics.totalTokensToday.toLocaleString()} tok</span>
             </div>
             <div className="h-1.5 w-full rounded-full bg-slate-800 overflow-hidden">
               <motion.div 
@@ -329,6 +445,67 @@ const AdminSentinelAI = () => {
             </p>
           </div>
         </motion.div>
+      </div>
+
+      {/* Worker Command Console & Pending Approvals */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="p-6 rounded-3xl border border-cyan-500/20 bg-slate-900/50 space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Terminal className="w-5 h-5 text-cyan-400" />
+              <h3 className="text-sm font-black text-white uppercase tracking-widest">AI Worker Command Console</h3>
+            </div>
+            <Badge className="bg-cyan-500/10 text-cyan-400 border-cyan-500/20 text-[9px]">OPS-WORKER-AI</Badge>
+          </div>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={commandInput}
+              onChange={(e) => setCommandInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !commandLoading) void runWorkerCommand();
+              }}
+              placeholder="e.g. Check stuck orders, audit provider health, or summarize today's errors..."
+              className="flex-1 bg-black/40 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-cyan-500/50"
+            />
+            <button
+              type="button"
+              onClick={() => void runWorkerCommand()}
+              disabled={commandLoading || !commandInput.trim()}
+              className="px-4 py-2.5 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white rounded-xl font-black text-xs uppercase tracking-wider flex items-center gap-2"
+            >
+              {commandLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
+              Run
+            </button>
+          </div>
+          {commandResult && (
+            <div className="bg-black/40 rounded-2xl p-4 border border-cyan-500/20 space-y-2">
+              <div className="flex items-center justify-between text-[10px] text-cyan-400 font-bold uppercase">
+                <span>Worker Response ({commandResult.model || "openai"})</span>
+                <span>Alerts: {commandResult.executedCount} • Waiting for approval: {commandResult.queuedCount}</span>
+              </div>
+              <p className="text-xs text-slate-200 leading-relaxed">{commandResult.reply}</p>
+              {commandResult.findings && commandResult.findings.length > 0 && (
+                <ul className="list-disc pl-4 space-y-1 text-[11px] text-slate-400">
+                  {commandResult.findings.map((f, idx) => (
+                    <li key={idx}>{f}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="p-6 rounded-3xl border border-amber-500/20 bg-slate-900/50 space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <ShieldAlert className="w-5 h-5 text-amber-400" />
+              <h3 className="text-sm font-black text-white uppercase tracking-widest">Pending Worker Approvals</h3>
+            </div>
+            <Badge className="bg-amber-500/10 text-amber-400 border-amber-500/20 text-[9px]">{pendingTasks.length} WAITING</Badge>
+          </div>
+          <AgentApprovalQueue tasks={pendingTasks} onDecided={() => void fetchSentinelData()} />
+        </div>
       </div>
 
       {/* Visual Outage Simulation Playground */}
@@ -535,31 +712,38 @@ const AdminSentinelAI = () => {
             ))}
           </div>
 
-          {/* Budget Guardian */}
+          {/* Budget Guardian (Live from ai_agent_runs) */}
           <div className="p-6 rounded-3xl border border-slate-800 bg-slate-900/40 relative overflow-hidden">
              <div className="flex items-center justify-between mb-4">
                <div className="flex items-center gap-2">
                  <DollarSign className="w-5 h-5 text-emerald-400" />
                  <h4 className="text-sm font-black text-white uppercase tracking-widest">Budget Guardian</h4>
                </div>
-               <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-[9px]">SECURE</Badge>
+               <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-[9px]">
+                 {runMetrics.todaySpendUsd >= runMetrics.dailyBudgetUsd ? "CAPPED" : "SECURE"}
+               </Badge>
              </div>
              
              <div className="space-y-4">
                <div className="flex justify-between items-end">
                  <div>
-                   <p className="text-[10px] text-slate-500 font-bold uppercase mb-1">Monthly Spend</p>
-                   <p className="text-2xl font-black text-white">$0.42 <span className="text-xs text-slate-500 font-medium">/ $10.00</span></p>
+                   <p className="text-[10px] text-slate-500 font-bold uppercase mb-1">Today's OpenAI Spend</p>
+                   <p className="text-2xl font-black text-white">
+                     ${runMetrics.todaySpendUsd.toFixed(4)} <span className="text-xs text-slate-500 font-medium">/ ${runMetrics.dailyBudgetUsd.toFixed(2)}</span>
+                   </p>
                  </div>
                  <div className="text-right">
-                   <p className="text-[10px] text-emerald-500 font-black uppercase">4.2% Used</p>
+                   <p className="text-[10px] text-emerald-500 font-black uppercase">
+                     {Math.min(100, (runMetrics.todaySpendUsd / Math.max(0.01, runMetrics.dailyBudgetUsd)) * 100).toFixed(1)}% Used
+                   </p>
+                   <p className="text-[9px] text-slate-500 font-mono">MTD: ${runMetrics.monthSpendUsd.toFixed(4)}</p>
                  </div>
                </div>
 
                <div className="h-2 w-full rounded-full bg-slate-800 overflow-hidden">
                  <motion.div 
                    initial={{ width: 0 }}
-                   animate={{ width: "4.2%" }}
+                   animate={{ width: `${Math.min(100, (runMetrics.todaySpendUsd / Math.max(0.01, runMetrics.dailyBudgetUsd)) * 100)}%` }}
                    className="h-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]"
                  />
                </div>
@@ -567,10 +751,36 @@ const AdminSentinelAI = () => {
                <div className="flex items-center gap-2 p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/10">
                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
                  <p className="text-[10px] text-emerald-400 font-medium">
-                   AI operations are currently 95% below budget.
+                   Auto-falls back to local heuristic brain if daily cap is reached.
                  </p>
                </div>
              </div>
+          </div>
+
+          {/* Learned System Memory */}
+          <div className="p-6 rounded-3xl border border-slate-800 bg-slate-900/40 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Brain className="w-5 h-5 text-cyan-400" />
+                <h4 className="text-sm font-black text-white uppercase tracking-widest">Learned System Memory</h4>
+              </div>
+              <Badge className="bg-cyan-500/10 text-cyan-400 border-cyan-500/20 text-[9px]">{memories.length} PATTERNS</Badge>
+            </div>
+            {memories.length === 0 ? (
+              <p className="text-xs text-slate-500 italic">No baselines recorded yet. Run Ops Worker AI to start learning.</p>
+            ) : (
+              <div className="space-y-2.5 max-h-64 overflow-y-auto">
+                {memories.map((m) => (
+                  <div key={m.id} className="p-3 rounded-xl bg-black/30 border border-slate-800/80 space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[10px] font-black text-cyan-400 uppercase">{m.category.replace(/_/g, " ")}</span>
+                      <span className="text-[9px] text-slate-500 font-mono">{m.observations_count}x • {(Number(m.confidence) * 100).toFixed(0)}%</span>
+                    </div>
+                    <p className="text-[11px] text-slate-300 leading-snug">{m.summary}</p>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <Card className="bg-cyan-950/20 border-cyan-500/20 shadow-none">

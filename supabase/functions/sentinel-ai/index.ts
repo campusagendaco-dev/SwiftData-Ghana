@@ -2,8 +2,10 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { verifyAdmin } from "../_shared/auth.ts";
-import { getSmsConfig, dispatchUnifiedSms, dispatchUnifiedBulkSms } from "../_shared/sms.ts";
-import { callAiAgent } from "../_shared/ai.ts";
+import { callAiAgent, getAgentConfig } from "../_shared/ai.ts";
+import { routeAgentAction, type AgentAction, shouldSkipRun } from "../_shared/agent_policy.ts";
+import { queueAgentAction, runAutoAction } from "../_shared/agent_actions.ts";
+import { agentSms } from "../_shared/agent_sms.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -16,7 +18,8 @@ serve(async (req: Request) => {
   const cronSecret = (Deno.env.get("CRON_SECRET") || "").trim();
   const bearerToken = req.headers.get("Authorization")?.replace(/^Bearer\s+/i, "").trim() || "";
   const headerCronSecret = (req.headers.get("x-cron-secret") || "").trim();
-  const isCron = Boolean(cronSecret && (bearerToken === cronSecret || headerCronSecret === cronSecret));
+  const isServiceRole = Boolean(SUPABASE_SERVICE_ROLE_KEY && bearerToken === SUPABASE_SERVICE_ROLE_KEY);
+  const isCron = Boolean(isServiceRole || (cronSecret && (bearerToken === cronSecret || headerCronSecret === cronSecret)));
 
   if (!isCron) {
     const authRes = await verifyAdmin(req, supabaseAdmin);
@@ -32,42 +35,114 @@ serve(async (req: Request) => {
     const body = await req.json().catch(() => ({}));
     const { event, order_id, log_id } = body;
 
+    const agentCfg = await getAgentConfig(supabaseAdmin, "sentinel_prime");
+    // Paused: skip every run except an admin's manual run or a targeted event.
+    if (shouldSkipRun(agentCfg.is_active, { manual: body?.source === "admin_manual" || Boolean(event) })) {
+      return new Response(JSON.stringify({ success: true, skipped: true, reason: "sentinel_prime is paused" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     console.log(`Sentinel Prime: Initiating ${event ? 'Surgical Strike' : 'Autonomous Cognitive Scan'}...`);
 
-    // 1. Self-Healing Webhook Failover Watchdog
-    console.log("Sentinel Failover: Scanning for stuck pending orders...");
+    // payment-backup:start
+    // Owner decision A (2026-11-24): backup for a missed Paystack webhook. Only pending
+    // orders 5 min - 2 h old, at most 10 per run, GH₵100 each and GH₵500 per run, 2 tries
+    // 15 min apart, skipped when the same phone + package was delivered in the last 30 min.
+    // verify-payment sends an order only if Paystack confirms it was paid (no force).
+    // 1. Zero-Loss Self-Healing Webhook Failover Watchdog
+    console.log("Sentinel Failover: Scanning for stuck pending orders with zero-loss guards...");
     const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
     const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+    const dupWindowIso = new Date(Date.now() - 30 * 60 * 1000).toISOString();
 
     const { data: stuckOrders } = await supabaseAdmin
       .from("orders")
-      .select("id")
+      .select("id, amount, customer_phone, network, package_size, metadata")
       .eq("status", "pending")
       .not("order_type", "in", '("wallet_topup","store_wallet_topup","agent_activation","sub_agent_activation","vendor_activation","free_data_claim")')
       .gte("created_at", twoHoursAgo)
-      .lte("created_at", fiveMinutesAgo);
+      .lte("created_at", fiveMinutesAgo)
+      .limit(10);
 
     if (stuckOrders && stuckOrders.length > 0) {
-      console.log(`Sentinel Failover: Found ${stuckOrders.length} stuck pending orders. Triggering verify-payment healing...`);
-      const healingPromises = stuckOrders.map(async (order: any) => {
-        try {
-          console.log(`Sentinel Failover: Triggering check for order ${order.id}`);
-          const res = await fetch(`${SUPABASE_URL}/functions/v1/verify-payment`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-            },
-            body: JSON.stringify({ reference: order.id }),
-          });
-          const data = await res.json().catch(() => ({}));
-          console.log(`Sentinel Failover: Healing check result for ${order.id}:`, data);
-        } catch (err: any) {
-          console.error(`[Sentinel Failover] Failed to trigger verify-payment for ${order.id}:`, err.message);
+      let sentinelHealTotalGhs = 0;
+      const safeOrdersToHeal: any[] = [];
+
+      for (const order of stuckOrders) {
+        const amt = Number(order.amount || 0);
+        const meta = order.metadata || {};
+        const prevAttempts = Number(meta.ai_heal_attempts || 0);
+        const lastHealAt = meta.ai_last_heal_at ? new Date(meta.ai_last_heal_at).getTime() : 0;
+
+        // Zero-loss caps: max GHS 100/order, GHS 500/run, max 2 attempts, 15m cooldown
+        if (amt <= 0 || amt > 100 || sentinelHealTotalGhs + amt > 500) continue;
+        if (prevAttempts >= 2) continue;
+        if (lastHealAt && Date.now() - lastHealAt < 15 * 60 * 1000) continue;
+
+        // Duplicate-delivery guard: skip if same phone+network+package already fulfilled/processing in last 30m
+        if (order.customer_phone && order.network && order.package_size) {
+          const { data: sibling } = await supabaseAdmin
+            .from("orders")
+            .select("id")
+            .eq("customer_phone", order.customer_phone)
+            .eq("network", order.network)
+            .eq("package_size", order.package_size)
+            .in("status", ["fulfilled", "completed", "processing"])
+            .neq("id", order.id)
+            .gte("created_at", dupWindowIso)
+            .limit(1);
+          if (sibling && sibling.length > 0) {
+            console.log(`[Sentinel Failover] Skipping ${order.id}: duplicate delivery guard triggered.`);
+            continue;
+          }
         }
-      });
-      await Promise.allSettled(healingPromises);
+
+        sentinelHealTotalGhs += amt;
+        safeOrdersToHeal.push(order);
+      }
+
+      if (safeOrdersToHeal.length > 0) {
+        console.log(`Sentinel Failover: Healing ${safeOrdersToHeal.length} verified-safe pending orders (GHS ${sentinelHealTotalGhs.toFixed(2)})...`);
+        const healingPromises = safeOrdersToHeal.map(async (order: any) => {
+          try {
+            const meta = order.metadata || {};
+            const prev = Number(meta.ai_heal_attempts || 0);
+            // Claim this try: only while the order is still pending and no other run
+            // (cron, an admin's Run now) counted it first. Otherwise leave it alone.
+            let claim = supabaseAdmin
+              .from("orders")
+              .update({
+                metadata: {
+                  ...meta,
+                  ai_heal_attempts: prev + 1,
+                  ai_last_heal_at: new Date().toISOString(),
+                },
+              })
+              .eq("id", order.id)
+              .eq("status", "pending");
+            claim = prev > 0 ? claim.eq("metadata->>ai_heal_attempts", String(prev)) : claim.is("metadata->>ai_heal_attempts", null);
+            const { data: claimed, error: claimError } = await claim.select("id");
+            if (claimError || !claimed?.length) return;
+
+            const res = await fetch(`${SUPABASE_URL}/functions/v1/verify-payment`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+              },
+              body: JSON.stringify({ reference: order.id }),
+            });
+            const data = await res.json().catch(() => ({}));
+            console.log(`Sentinel Failover: Healing check result for ${order.id}:`, data);
+          } catch (err: any) {
+            console.error(`[Sentinel Failover] Failed to trigger verify-payment for ${order.id}:`, err.message);
+          }
+        });
+        await Promise.allSettled(healingPromises);
+      }
     }
+    // payment-backup:end
 
     // 2. Fetch Deep Cognitive Memory (Adaptive Relearning Foundation)
     const [strategiesRes, pastActionsRes, recentFailuresRes] = await Promise.all([
@@ -149,14 +224,6 @@ serve(async (req: Request) => {
     const { data: settings } = await supabaseAdmin.from("v_system_settings_with_secrets").select("*").single();
     const { data: providers } = await supabaseAdmin.from("providers").select("*").order("priority", { ascending: true });
 
-    // Fetch Admin Contact for tactical alerts
-    const { data: admins } = await supabaseAdmin
-      .from("profiles")
-      .select("phone, email")
-      .eq("role" as any, "admin" as any)
-      .limit(1);
-    
-    const adminContact = admins?.[0];
 
     // Agent Risk & Behavior Metrics
     const agentStats = (agentsToAnalyze || []).map((agent: any) => {
@@ -204,19 +271,19 @@ serve(async (req: Request) => {
 
     // 4. Construct Supercharged Adaptive Cognitive Prompt
     const systemPrompt = `
-      You are SENTINEL PRIME — the autonomous intelligence brain and controller for SwiftData.
+      You are SENTINEL PRIME — the intelligence brain for SwiftData. You WATCH and PROPOSE: every action except notify_admin waits for an admin to approve it. You never send, retry or refund orders and never move money.
       
       ━━━ CORE DIRECTIVES ━━━
       1. FRAUD DETECTION: Identify high-risk velocity attacks (risk_score > 80, rapid < GHS 5 test transactions).
       2. FINANCIAL INTEGRITY: Monitor wallet balances, flag suspicious self-topups or circular flows.
       3. LIQUIDITY BALANCING: Ensure only providers with HEALTHY BALANCE (> GHS 50) and low consecutive failures hold Priority 1.
-      4. AUTO-FAILOVER: If Priority 1 provider balance < GHS 50 or consecutive_failures >= 3, switch priority to the best alternative.
-      5. NETWORK HEALING: If a provider restored healthy balance and 0 failures, re-promote them to Priority 1.
-      6. OUTAGE MITIGATION: If a network's failure rate > 50% across at least 5 orders, broadcast outage to protect user confidence.
+      4. FAILOVER PROPOSALS: If Priority 1 provider balance < GHS 50 or consecutive_failures >= 3, propose switching priority to the best alternative.
+      5. NETWORK HEALING: If a provider restored healthy balance and 0 failures, propose re-promoting them to Priority 1.
+      6. OUTAGE MITIGATION: If a network's failure rate > 50% across at least 5 orders, propose an outage broadcast.
       7. RELEARNING & ANTI-FLAPPING:
          - Inspect "RECENT TACTICAL MEMORY". If an action of the same type was executed recently and is still taking effect, DO NOT repeat it redundantly.
          - If an action previously yielded negative effectiveness (-1), adjust thresholds or choose an alternative action.
-         - Match actions against the "ACTIVE STRATEGY KNOWLEDGE BASE" and include "strategy_id" when executing proven playbooks.
+         - Match actions against the "ACTIVE STRATEGY KNOWLEDGE BASE" and include "strategy_id" when proposing proven playbooks.
          - If you discover a novel systemic pattern, propose a new strategy in "new_strategies".
 
       ━━━ AVAILABLE ACTIONS ━━━
@@ -224,7 +291,7 @@ serve(async (req: Request) => {
       - switch_priority: { "provider_id": "uuid", "new_priority": 1, "provider_name": "string", "reason": "string", "strategy_id": "optional_uuid" }
       - self_heal_provider: { "provider_id": "uuid", "provider_name": "string", "reason": "string", "strategy_id": "optional_uuid" }
       - broadcast_outage: { "network": "MTN|TELECEL|AT", "reason": "string", "strategy_id": "optional_uuid" }
-      - notify_admin: { "message": "string" }
+      - notify_admin: { "message": "string", "topic": "short-stable-key" }
 
       ━━━ CRITICAL OUTPUT RULES ━━━
       - Respond with RAW JSON only. No markdown. No code blocks. No backticks. No explanations.
@@ -278,150 +345,32 @@ serve(async (req: Request) => {
       new_strategies: Array.isArray(parsed?.new_strategies) ? parsed.new_strategies : []
     };
 
-    // 6. Execute Autonomous Actions with Dynamic Relearning Tracking
-    const executedActions = [];
-
-    // Helper for Admin SMS Notifications via multi-gateway dispatcher
-    const notifyAdmin = async (message: string) => {
-      if (adminContact?.phone) {
-        try {
-          const smsConfig = await getSmsConfig(supabaseAdmin);
-          if (smsConfig?.apiKey) {
-            await dispatchUnifiedSms(
-              smsConfig.gateway,
-              smsConfig.apiKey,
-              smsConfig.senderId,
-              adminContact.phone,
-              `[Sentinel AI] ${message}`,
-              "custom"
-            );
-            console.log(`[Sentinel AI] Admin Notified: ${adminContact.phone}`);
-          }
-        } catch (smsErr) {
-          console.error("[Sentinel AI] SMS notification failed:", smsErr);
-        }
-      }
-    };
-
-    for (const action of result.actions || []) {
-      console.log(`Sentinel Tactical Action: ${action.type} on ${action.target || 'System'}`);
-      
-      const status = 'executed';
-      const actionMetadata = action.params || {};
-
-      try {
-        if (action.type === 'lock_terminal' && action.target) {
-          const { error: lockError } = await supabaseAdmin
-            .from("profiles")
-            .update({ terminal_locked: true })
-            .eq("user_id", action.target);
-
-          if (lockError) throw lockError;
-
-          await supabaseAdmin.from("fraud_risk_logs").insert({
-            agent_id: action.target,
-            risk_score: 95,
-            risk_factors: ['AI_Autonomous_Security_Sweep'],
-            action_taken: 'lock_terminal'
-          });
-
-          await notifyAdmin(`Quarantined Agent terminal ${action.target.slice(0,8)} due to velocity fraud pattern.`);
-          actionMetadata.reason = action.reason || "Autonomous fraud quarantine";
-        }
-
-        if (action.type === 'switch_priority' && action.params?.provider_id) {
-          const { error: pError } = await supabaseAdmin
-            .from("providers")
-            .update({ priority: action.params.new_priority || 1 })
-            .eq("id", action.params.provider_id);
-          
-          if (pError) throw pError;
-          
-          await notifyAdmin(`Rebalanced liquidity: Switched ${action.params.provider_name || 'Provider'} to Priority ${action.params.new_priority || 1}.`);
-          actionMetadata.reason = action.reason || "Autonomous liquidity balancing";
-        }
-
-        if (action.type === 'self_heal_provider' && action.params?.provider_id) {
-          const { error: healError } = await supabaseAdmin
-            .from("providers")
-            .update({ priority: 1, is_active: true, consecutive_failures: 0 })
-            .eq("id", action.params.provider_id);
-          
-          if (healError) throw healError;
-          
-          await notifyAdmin(`Restored Provider: ${action.params.provider_name || 'Provider'} reprioritized to Priority 1.`);
-          actionMetadata.reason = action.reason || "Autonomous health recovery";
-        }
-
-        if (action.type === 'broadcast_outage') {
-          const network = action.params.network || "telecom network";
-          
-          // Anti-flapping: Check if an outage was already broadcast in the last 45 minutes
-          const fortyFiveMinutesAgo = new Date(Date.now() - 45 * 60 * 1000).toISOString();
-          const recentBroadcast = pastActions.find(
-            (a: any) => a.action_type === "broadcast_outage" &&
-            (a.metadata?.network || "").toUpperCase() === network.toUpperCase() &&
-            a.ts > fortyFiveMinutesAgo
-          );
-
-          if (recentBroadcast) {
-            console.log(`[Sentinel AI] Anti-flapping: Outage for ${network} already broadcasted within 45m. Suppressing duplicate.`);
-            continue;
-          }
-
-          const { data: allAgents } = await supabaseAdmin
-            .from("profiles")
-            .select("phone")
-            .eq("is_agent", true)
-            .not("phone", "is", null);
-
-          const phones = (allAgents || []).map((a: any) => a.phone).filter(Boolean);
-          
-          if (phones.length > 0) {
-            const msg = `SwiftData Alert: We have detected instability with the ${network} network. Purchases may be delayed. Our system is auto-rerouting traffic.`;
-            // Instant bulk dispatch via unified multi-gateway dispatcher
-            const smsConfig = await getSmsConfig(supabaseAdmin);
-            if (smsConfig?.apiKey) {
-              await dispatchUnifiedBulkSms(
-                smsConfig.gateway,
-                smsConfig.apiKey,
-                smsConfig.senderId,
-                phones,
-                msg,
-                "broadcast"
-              );
-            }
-          }
-          await notifyAdmin(`Outage alert sent to ${phones.length} agents for ${network}`);
-          actionMetadata.reason = action.reason || "High network drop rate detected autonomously";
-        }
-
-        if (action.type === 'notify_admin') {
-          await notifyAdmin(action.params.message || action.reason || "Sentinel anomaly detected.");
-        }
-
-        // Record tactical action with effectiveness = 0 (pending evaluation by Sentinel Evolve)
-        const { data: loggedAction } = await supabaseAdmin.from("sentinel_actions").insert({
-          action_type: action.type,
-          strategy_id: action.strategy_id || null,
-          status: status,
-          effectiveness: 0, // Pending objective evaluation by sentinel-evolve
-          reasoning: action.reason || "Autonomous cognitive execution",
-          metadata: { ...actionMetadata, ai_model: aiResult.model, ai_provider: aiResult.provider }
-        }).select().single();
-
-        if (loggedAction) executedActions.push(loggedAction);
-
-      } catch (err: any) {
-        console.error(`Tactical execution failed for ${action.type}:`, err.message);
-        await supabaseAdmin.from("sentinel_actions").insert({
-          action_type: action.type,
-          strategy_id: action.strategy_id || null,
-          status: 'failed',
-          effectiveness: -1,
-          reasoning: "Execution error: " + err.message,
-          metadata: { ...actionMetadata, error: err.message }
-        });
+    // 6. Route every AI action through the safe-agents policy (2026-11-24): admin alerts and
+    //    findings run; account, provider and broadcast changes are queued for an admin with
+    //    2FA (propose mode) or recorded as "would propose" (observe_only); the rest is dropped.
+    const executedActions: any[] = [];
+    for (const raw of (result.actions || []).slice(0, 10)) {
+      const params = { ...(raw?.params || {}) };
+      if (raw?.type === "lock_terminal" && raw?.target && !params.user_id) params.user_id = raw.target;
+      const action: AgentAction = {
+        type: raw?.type,
+        params,
+        reason: raw?.reason,
+        title: `Sentinel: ${String(raw?.type || "action").replace(/_/g, " ")}${params.provider_name ? ` (${params.provider_name})` : params.network ? ` (${params.network})` : ""}`,
+        priority: raw?.type === "lock_terminal" ? "critical" : "high",
+      };
+      const { route, reason } = routeAgentAction(agentCfg.autonomy_mode, action);
+      if (route === "run") {
+        const res = await runAutoAction(supabaseAdmin, "sentinel_prime", action, { sms: agentSms });
+        executedActions.push({ type: action.type, route, ...res });
+      } else if (route === "queue") {
+        const res = await queueAgentAction(supabaseAdmin, "sentinel_prime", action);
+        executedActions.push({ type: action.type, route, ...res });
+      } else if (route === "record") {
+        await runAutoAction(supabaseAdmin, "sentinel_prime", { type: "record_finding", reason: action.reason, params: { would_propose: action } }, { sms: agentSms });
+        executedActions.push({ type: action.type, route });
+      } else {
+        executedActions.push({ type: action.type, route, reason });
       }
     }
 
@@ -460,6 +409,7 @@ serve(async (req: Request) => {
       ai_provider: aiResult.provider,
       findings: result.findings,
       tactical_actions: executedActions,
+      autonomy_mode: agentCfg.autonomy_mode,
       new_strategies_learned: result.new_strategies?.length || 0
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
