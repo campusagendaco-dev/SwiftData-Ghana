@@ -6,6 +6,9 @@ import { verifyAdmin } from "../_shared/auth.ts";
 
 declare const Deno: any;
 
+/** Automatic healing only looks at orders placed within this window (7 days). */
+const HEAL_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
 // Heals orders stuck in 'processing' where the webhook was never received.
 // For each stuck order:
 //   1. Polls the provider's status API using our order reference.
@@ -229,7 +232,12 @@ serve(async (req) => {
     if (targetIds && targetIds.length > 0) {
       query = query.in("id", targetIds);
     } else {
-      query = query.lt("created_at", new Date(Date.now() - 5 * 60 * 1000).toISOString());
+      // Only orders from the last 7 days: healing re-sends orders the provider has no record of,
+      // and re-sending weeks-old orders would deliver (and pay for) them again. Older stuck
+      // orders are for an admin to review.
+      query = query
+        .lt("created_at", new Date(Date.now() - 5 * 60 * 1000).toISOString())
+        .gte("created_at", new Date(Date.now() - HEAL_MAX_AGE_MS).toISOString());
     }
 
     const { data: stuckOrders, error } = await query;
