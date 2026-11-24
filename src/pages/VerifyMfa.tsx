@@ -16,7 +16,7 @@ const VerifyMfa = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [factorId, setFactorId] = useState<string | null>(null);
-  const [adminOtpInfo, setAdminOtpInfo] = useState<{ eligible: boolean; masked_phone: string | null } | null>(null);
+  const [adminOtpInfo, setAdminOtpInfo] = useState<{ eligible: boolean; has_phone: boolean; masked_phone: string | null } | null>(null);
   const [smsSent, setSmsSent] = useState(false);
   const [sendingSms, setSendingSms] = useState(false);
   
@@ -90,9 +90,9 @@ const VerifyMfa = () => {
           return;
         }
         if (data?.success && data?.eligible) {
-          setAdminOtpInfo({ eligible: true, masked_phone: data.masked_phone || null });
+          setAdminOtpInfo({ eligible: true, has_phone: Boolean(data.has_phone), masked_phone: data.masked_phone || null });
         } else {
-          setAdminOtpInfo({ eligible: false, masked_phone: null });
+          setAdminOtpInfo({ eligible: false, has_phone: false, masked_phone: null });
         }
       } catch {
         // non-critical
@@ -409,24 +409,33 @@ const VerifyMfa = () => {
                 <span>{error}</span>
               </div>
             )}
-            <button
-              type="button"
-              disabled={sendingSms}
-              onClick={() => void handleRequestAdminSmsOtp()}
-              className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-primary text-sm font-bold text-primary-foreground transition active:scale-[0.98] disabled:opacity-50"
-            >
-              {sendingSms ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Sending Admin OTP...
-                </>
-              ) : (
-                <>
-                  <Send className="h-4 w-4" />
-                  Send 6-Digit SMS Code {adminOtpInfo?.masked_phone ? `to ${adminOtpInfo.masked_phone}` : ""}
-                </>
-              )}
-            </button>
+            {adminOtpInfo && !adminOtpInfo.has_phone ? (
+              <div className="rounded-2xl bg-amber-500/15 border border-amber-500/30 p-4 text-left text-xs text-foreground space-y-1">
+                <p className="font-bold text-amber-400">No phone number saved on this admin profile</p>
+                <p className="text-muted-foreground leading-relaxed">
+                  Add your phone number in your profile settings (or update it in Admin Users) to receive 6-digit Admin SMS OTPs. Until then, use your 2FA App.
+                </p>
+              </div>
+            ) : (
+              <button
+                type="button"
+                disabled={sendingSms}
+                onClick={() => void handleRequestAdminSmsOtp()}
+                className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-primary text-sm font-bold text-primary-foreground transition active:scale-[0.98] disabled:opacity-50"
+              >
+                {sendingSms ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Sending Admin OTP...
+                  </>
+                ) : (
+                  <>
+                    <Send className="h-4 w-4" />
+                    Send 6-Digit SMS Code {adminOtpInfo?.masked_phone ? `to ${adminOtpInfo.masked_phone}` : ""}
+                  </>
+                )}
+              </button>
+            )}
           </div>
         ) : (
           <form onSubmit={handleVerify} className="mt-6 space-y-4">
