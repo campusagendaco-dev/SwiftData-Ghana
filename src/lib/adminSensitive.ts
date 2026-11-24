@@ -66,6 +66,9 @@ export const SENSITIVE_PAYOUT_ACTIONS = new Set([
 /** Actions that change who can use the admin pages. */
 export const SENSITIVE_ACCESS_ACTIONS = new Set(["revoke_admin_role", "grant_admin_role"]);
 
+/** admin-otp-auth actions that change who may sign in with an SMS code. */
+export const SENSITIVE_SMS_LOGIN_ACTIONS = new Set(["set_approval"]);
+
 export type ConfirmKind = "money" | "refund" | "payout" | "send" | "message" | "access" | "promo" | "account" | "ops" | "receipt" | "unsuspend";
 
 export type ConfirmOptions = {

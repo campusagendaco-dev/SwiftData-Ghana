@@ -1,23 +1,44 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
-// Owner decision (2026-11-24): admin access requires either authenticator-app 2FA (aal2)
-// OR an approved admin's verified, unexpired SMS OTP session (admin_otp_sessions).
+// Owner decision (2026-11-24, option B): an approved admin may sign in with an SMS code to
+// view and do everyday work, but money, sends and admin-access actions still need the
+// authenticator app (aal2). This guards that split.
 const root = join(__dirname, "..", "..");
+const fnDir = join(root, "supabase", "functions");
 const read = (...p: string[]) => readFileSync(join(root, ...p), "utf8");
 
-describe("admin second-factor enforcement", () => {
-  it("verifyAdmin requires aal2 or an approved verified admin_otp_sessions record", () => {
+const SMS_ALLOWED = ["system-payout-v1", "admin-user-actions"];
+
+describe("admin SMS login stays limited", () => {
+  it("verifyAdmin needs the authenticator app unless a function explicitly allows SMS", () => {
     const src = read("supabase", "functions", "_shared", "auth.ts");
-    expect(src).toMatch(/aal\s*!==\s*"aal2"/);
-    expect(src).toMatch(/admin_otp_sessions/);
-    expect(src).toMatch(/otp_login_approved/);
+    expect(src).toMatch(/allowSms\s*=\s*false/);
+    expect(src).toMatch(/if \(allowSms && aal !== "aal2" && smsLoginAllowed\(roleObj\)/);
   });
 
-  it("the admin page guard requires MFA or verified admin OTP", () => {
-    const app = read("src", "App.tsx");
-    expect(app).toMatch(/isMfaChallenged\s*&&\s*!isAdminOtpVerified/);
-    expect(read("src", "hooks", "useAuth.tsx")).toMatch(/isAdminOtpVerified/);
+  it(`only ${SMS_ALLOWED.join(" and ")} accept SMS logins, and both block sensitive actions for them`, () => {
+    const allowing = readdirSync(fnDir).filter((d) => {
+      const f = join(fnDir, d, "index.ts");
+      return existsSync(f) && /allowSms:\s*true/.test(readFileSync(f, "utf8"));
+    });
+    expect(allowing.sort()).toEqual([...SMS_ALLOWED].sort());
+    for (const fn of SMS_ALLOWED) {
+      const src = readFileSync(join(fnDir, fn, "index.ts"), "utf8");
+      expect(src, fn).toMatch(new RegExp(`authResult\\.secondFactor === "sms" && needsAuthenticatorApp\\("${fn}", action\\)`));
+    }
+  });
+
+  it("switching SMS login on or off needs another admin with the authenticator app", () => {
+    const src = read("supabase", "functions", "_shared", "admin_sms_otp.ts");
+    expect(src).toMatch(/adminSecondFactor !== "authenticator"/);
+    expect(src).toMatch(/input\.adminId === input\.targetUserId/);
+  });
+
+  it("the database has an authenticator-only admin check for money and access changes", () => {
+    const sql = read("supabase", "migrations", "20261124210000_admin_sms_login_hardening.sql");
+    expect(sql).toMatch(/FUNCTION public\.admin_strong\(\)[\s\S]*?aal'?, ''\) = 'aal2'/);
+    expect(sql).toMatch(/otp_login_approved SET DEFAULT false/);
   });
 });

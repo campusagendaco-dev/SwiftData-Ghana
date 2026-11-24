@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Lock, Clock, LogOut } from "lucide-react";
+import { Lock, Clock, LogOut, Shield } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import SelfUnsuspendPanel from "@/components/SelfUnsuspendPanel";

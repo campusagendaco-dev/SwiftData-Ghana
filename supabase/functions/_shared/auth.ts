@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { timingSafeEqual } from "./gateway-security.ts";
+import { smsLoginAllowed } from "./admin_sms_otp.ts";
 
 /**
  * Decodes JWT token payload to read custom claims (e.g. aal, role)
@@ -38,6 +39,8 @@ export interface VerifyAdminResult {
   user?: any;
   error?: string;
   status?: number;
+  /** How the admin passed the second factor. "sms" only when the caller allowed it. */
+  secondFactor?: "authenticator" | "sms" | "service";
 }
 
 /**
@@ -47,9 +50,12 @@ export interface VerifyAdminResult {
 export async function verifyAdmin(
   req: Request,
   supabaseAdmin: any,
-  options: { checkMfa?: boolean; checkIp?: boolean } = {}
+  options: { checkMfa?: boolean; checkIp?: boolean; allowSms?: boolean } = {}
 ): Promise<VerifyAdminResult> {
-  const { checkMfa = true, checkIp = false } = options;
+  // allowSms: accept an approved admin's SMS login instead of the authenticator app. Only
+  // functions that then block money/send/access actions for SMS logins may pass it
+  // (see needsAuthenticatorApp in admin_sms_otp.ts). Default: authenticator app required.
+  const { checkMfa = true, checkIp = false, allowSms = false } = options;
 
   // 1. Extract Authorization or x-user-access-token
   const authHeader = req.headers.get("Authorization");
@@ -68,6 +74,7 @@ export async function verifyAdmin(
     // 1. Direct match against SUPABASE_SERVICE_ROLE_KEY env var (e.g. sb_secret_... or JWT)
     // 2. Or if token is a JWT with role === "service_role", verify it cryptographically against Supabase PostgREST
     //    (which validates the HMAC-SHA256 JWT signature against the project JWT secret).
+    let secondFactor: "authenticator" | "sms" | undefined;
     let isServiceRole = !!(serviceRoleKey && timingSafeEqual(token.trim(), serviceRoleKey));
     if (!isServiceRole && claims?.role === "service_role") {
       const supabaseUrl = (Deno.env.get("SUPABASE_URL") || "").replace(/\/+$/, "");
@@ -99,7 +106,7 @@ export async function verifyAdmin(
     if (!isServiceRole) {
       const { data: roles, error: rolesError } = await supabaseAdmin
         .from("user_roles")
-        .select("role, allowed_ips, otp_login_approved")
+        .select("role, allowed_ips, otp_login_approved, otp_phone")
         .eq("user_id", user.id)
         .eq("role", "admin")
         .limit(1);
@@ -114,7 +121,7 @@ export async function verifyAdmin(
       if (checkMfa) {
         const aal = claims?.aal;
         let hasAdminOtp = false;
-        if (aal !== "aal2" && roleObj.otp_login_approved !== false && claims?.session_id) {
+        if (allowSms && aal !== "aal2" && smsLoginAllowed(roleObj) && claims?.session_id) {
           const { data: otpSess } = await supabaseAdmin
             .from("admin_otp_sessions")
             .select("id")
@@ -129,10 +136,13 @@ export async function verifyAdmin(
         if (aal !== "aal2" && !hasAdminOtp) {
           return {
             success: false,
-            error: "Forbidden: Multi-Factor Authentication (2FA or Approved Admin OTP) required for admin actions.",
+            error: allowSms
+              ? "Forbidden: 2FA (authenticator app or approved admin SMS login) required for admin actions."
+              : "Forbidden: this needs your authenticator app (2FA). An SMS login can't do it.",
             status: 403,
           };
         }
+        secondFactor = aal === "aal2" ? "authenticator" : "sms";
       }
 
       // 6. Enforce IP Whitelisting
@@ -150,7 +160,7 @@ export async function verifyAdmin(
       }
     }
 
-    return { success: true, user };
+    return { success: true, user, secondFactor: isServiceRole ? "service" : (checkMfa ? secondFactor : undefined) };
   } catch (e: any) {
     console.error("[auth] Error in verifyAdmin:", e);
     return { success: false, error: "Internal Server Error in authentication: " + e.message, status: 500 };

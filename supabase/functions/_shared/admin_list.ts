@@ -18,7 +18,12 @@ export type AdminRow = {
   mfa_status: AdminMfaStatus;
   /** Kept for pages loaded before this change. */
   is_mfa_verified: boolean;
+  /** SMS login switched on by another admin, and the pinned phone (masked). */
+  sms_login: boolean;
+  sms_phone_masked: string | null;
 };
+
+const maskPinned = (p: string | null | undefined) => (p && /^233\d{9}$/.test(p) ? `0${p.slice(3, 5)}****${p.slice(-3)}` : null);
 
 /** "unknown" when the lookup failed — never report "none" for an admin we couldn't check. */
 export function mfaStatusFromUser(
@@ -33,7 +38,7 @@ export function mfaStatusFromUser(
 export async function listAdminsWith2fa(supabaseAdmin: any): Promise<AdminRow[]> {
   const { data: admins, error } = await supabaseAdmin
     .from("user_roles")
-    .select("user_id, role, allowed_ips")
+    .select("user_id, role, allowed_ips, otp_login_approved, otp_phone")
     .eq("role", "admin");
   if (error) throw error;
 
@@ -58,7 +63,7 @@ export async function listAdminsWith2fa(supabaseAdmin: any): Promise<AdminRow[]>
     ((profilesRes?.data ?? []) as { user_id: string }[]).map((p) => [p.user_id, p]),
   ) as Record<string, { email?: string; full_name?: string; last_seen_at?: string | null }>;
 
-  return (admins as { user_id: string; role: string; allowed_ips: string[] | null }[]).map((a, i) => {
+  return (admins as { user_id: string; role: string; allowed_ips: string[] | null; otp_login_approved?: boolean | null; otp_phone?: string | null }[]).map((a, i) => {
     const profile = profiles[a.user_id] ?? {};
     const { user, failed } = authUsers[i];
     const mfa_status = mfaStatusFromUser(user, failed);
@@ -72,6 +77,8 @@ export async function listAdminsWith2fa(supabaseAdmin: any): Promise<AdminRow[]>
       last_sign_in_at: failed ? null : (user?.last_sign_in_at ?? null),
       mfa_status,
       is_mfa_verified: mfa_status === "verified",
+      sms_login: a.otp_login_approved === true && Boolean(maskPinned(a.otp_phone)),
+      sms_phone_masked: a.otp_login_approved === true ? maskPinned(a.otp_phone) : null,
     };
   });
 }

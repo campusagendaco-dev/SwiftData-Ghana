@@ -8,6 +8,7 @@ import {
   SENSITIVE_USER_ACTIONS,
   SENSITIVE_ARENA_ACTIONS,
   SENSITIVE_ACCESS_ACTIONS,
+  SENSITIVE_SMS_LOGIN_ACTIONS,
 } from "@/lib/adminSensitive";
 
 // Owner rule (2026-11-24): every admin call that moves money, sends/re-sends orders or spends
@@ -31,6 +32,7 @@ const ACTION_SETS: Record<string, Set<string>> = {
   "system-payout-v1": new Set([...SENSITIVE_PAYOUT_ACTIONS, ...SENSITIVE_ACCESS_ACTIONS]),
   "admin-user-actions": new Set([...SENSITIVE_USER_ACTIONS, ...SENSITIVE_ACCESS_ACTIONS]),
   "challenge-arena": SENSITIVE_ARENA_ACTIONS,
+  "admin-otp-auth": SENSITIVE_SMS_LOGIN_ACTIONS,
 };
 
 function coveredCallAt(lines: string[], i: number): string | null {

@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { normalizePhone, getSmsConfig, sendSmsViaTxtConnect, formatTemplate } from "../_shared/sms.ts";
 import { verifyAdmin } from "../_shared/auth.ts";
+import { needsAuthenticatorApp } from "../_shared/admin_sms_otp.ts";
 import { listAdminsWith2fa } from "../_shared/admin_list.ts";
 import { fetchViaDb } from "../_shared/db_proxy.ts";
 import { log, notifyAdmins } from "../_shared/logger.ts";
@@ -305,7 +306,8 @@ serve(async (req: Request) => {
     return json({ error: "Server misconfigured" }, 500);
   }
 
-  const authResult = await verifyAdmin(req, supabaseAdmin, { checkMfa: true, checkIp: true });
+  // SMS logins are accepted here, but money/send/access actions below still need the authenticator app.
+  const authResult = await verifyAdmin(req, supabaseAdmin, { checkMfa: true, checkIp: true, allowSms: true });
   if (!authResult.success) {
     return new Response(JSON.stringify({ error: authResult.error }), {
       status: authResult.status,
@@ -318,6 +320,12 @@ serve(async (req: Request) => {
     const body = await req.json().catch(() => ({}));
     const { action: rawAction, user_id, email, redirect_path, new_password } = body;
     const action = (rawAction as string)?.trim();
+    if (authResult.secondFactor === "sms" && needsAuthenticatorApp("system-payout-v1", action)) {
+      return new Response(JSON.stringify({ error: "This needs your authenticator app (2FA). An SMS login can't do money, sends or admin-access actions." }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     if (!action) {
       return json({ error: `Missing action. Received body: ${JSON.stringify(body)}` }, 400);

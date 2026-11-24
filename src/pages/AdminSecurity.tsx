@@ -53,6 +53,8 @@ interface SystemAdmin {
   last_seen_at: string | null; is_mfa_verified: boolean; allowed_ips: string[] | null;
   /** Missing until the backend functions are redeployed. */
   mfa_status?: AdminMfaStatus; last_sign_in_at?: string | null;
+  /** SMS login switched on by another admin, with the pinned phone (masked). */
+  sms_login?: boolean; sms_phone_masked?: string | null;
 }
 const adminMfaStatus = (a: SystemAdmin): AdminMfaStatus => adminRowMfaStatus(a);
 interface SignupDay { date: string; count: number }
@@ -676,6 +678,33 @@ const AdminSecurity = () => {
     } catch (e: any) {
       toast({ title: "Grant Failed", description: e.message, variant: "destructive" });
     } finally { setAddingAdmin(false); }
+  };
+
+  // SMS login: another admin (with the authenticator app) switches it on, pinning the phone
+  // the codes go to, or off (which also ends their SMS sessions).
+  const handleSmsLogin = async (adm: SystemAdmin, on: boolean) => {
+    const name = adm.full_name || adm.email;
+    let phone: string | null = null;
+    if (on) {
+      phone = window.prompt(`Which phone should ${name}'s SMS sign-in codes go to? It will be pinned; changing their profile phone won't move it.`, "")?.trim() || null;
+      if (!phone) return;
+    }
+    const ok = await confirmed.confirm({
+      title: on ? `Let ${name} sign in with SMS codes sent to ${phone}?` : `Switch off SMS login for ${name}?`,
+      description: on
+        ? "They can then view the admin pages and do everyday work with an SMS code. Money, sends and admin-access actions still need their authenticator app."
+        : "Their SMS sessions end now; they'll need their authenticator app.",
+      kind: "access",
+      confirmLabel: on ? "Switch on SMS login" : "Switch off SMS login",
+    });
+    if (!ok) return;
+    const { data, error } = await supabase.functions.invoke("admin-otp-auth", { body: { action: "set_approval", user_id: adm.user_id, approved: on, phone } });
+    if (error || data?.error) {
+      toast({ title: "SMS login not changed", description: data?.error || error?.message, variant: "destructive" });
+      return;
+    }
+    toast({ title: on ? `SMS login on for ${name}` : `SMS login off for ${name}` });
+    void fetchData(true);
   };
 
   const handleRevokeAdmin = async (uid: string, name: string) => {
@@ -1496,7 +1525,7 @@ const AdminSecurity = () => {
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead><tr className="bg-zinc-950 border-b border-zinc-800"><TH>Administrator</TH><TH>MFA</TH><TH>Last Sign-in</TH><TH>Last Seen</TH><TH>IP Lock</TH><TH>Actions</TH></tr></thead>
+              <thead><tr className="bg-zinc-950 border-b border-zinc-800"><TH>Administrator</TH><TH>MFA</TH><TH>SMS login</TH><TH>Last Sign-in</TH><TH>Last Seen</TH><TH>IP Lock</TH><TH>Actions</TH></tr></thead>
               <tbody>
                 {adminsList.map(adm => {
                   const isMe = adm.user_id === session?.user.id;
@@ -1518,6 +1547,17 @@ const AdminSecurity = () => {
                       </td>
                       <td className="px-4 py-4">
                         <AdminTwoFactorBadge status={adminMfaStatus(adm)} />
+                      </td>
+                      <td className="px-4 py-4 text-[10px] font-mono">
+                        {adm.sms_login
+                          ? <span className="text-amber-400">On · {adm.sms_phone_masked}</span>
+                          : <span className="text-zinc-600">Off</span>}
+                        {!isMe && (
+                          <button type="button" onClick={() => void handleSmsLogin(adm, !adm.sms_login)}
+                            className="ml-2 text-[9px] font-black uppercase tracking-widest text-zinc-500 hover:text-white">
+                            {adm.sms_login ? "Switch off" : "Switch on"}
+                          </button>
+                        )}
                       </td>
                       <td className="px-4 py-4 text-xs font-mono text-zinc-500">{fmt(adm.last_sign_in_at ?? null)}</td>
                       <td className="px-4 py-4 text-xs font-mono text-zinc-500">{fmt(adm.last_seen_at)}</td>

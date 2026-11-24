@@ -1,269 +1,102 @@
 /**
- * ADMIN OTP AUTH — Approved-Admin-Only SMS OTP Verification (Alternative to TOTP 2FA)
- *
- * Security Guarantees:
- *  - Strictly restricted to users in `public.user_roles` with `role = 'admin'` AND `otp_login_approved = true`.
- *  - OTP is 6 cryptographic digits, SHA-256 hashed, expires in 5 minutes, max 5 wrong attempts, 1 SMS/60s rate limit.
- *  - Verified OTP session is cryptographically bound to the caller's exact JWT `session_id` (12h validity).
- *  - Non-admins receive 403 Forbidden.
+ * ADMIN SMS LOGIN (hardened 2026-11-24, rules in _shared/admin_sms_otp.ts)
+ *   status / request_otp / verify_otp : the signed-in admin, for this one login session
+ *   set_approval                     : ANOTHER admin, signed in with the authenticator app,
+ *                                      switches someone's SMS login on (pinning the phone) or off
+ * An SMS login gives a 4-hour session for viewing and everyday work. Money, sends and
+ * admin-access actions still need the authenticator app.
  */
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
-import { getSmsConfig, dispatchUnifiedSms, normalizePhone } from "../_shared/sms.ts";
+import { verifyAdmin } from "../_shared/auth.ts";
+import { dispatchUnifiedSms, getSmsConfig } from "../_shared/sms.ts";
+import { requestSmsCode, setSmsApproval, smsStatus, verifySmsCode, type SmsDeps } from "../_shared/admin_sms_otp.ts";
 
 declare const Deno: any;
 
 const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
+  new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
-function getJwtClaims(token: string): Record<string, any> | null {
+function jwtSessionId(token: string): string {
   try {
-    const parts = token.split(".");
-    if (parts.length !== 3) return null;
-    const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
-    const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
-    const jsonPayload = decodeURIComponent(
-      atob(padded)
-        .split("")
-        .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
-        .join("")
-    );
-    return JSON.parse(jsonPayload);
+    const part = token.split(".")[1] || "";
+    const b64 = part.replace(/-/g, "+").replace(/_/g, "/");
+    const claims = JSON.parse(atob(b64 + "=".repeat((4 - (b64.length % 4)) % 4)));
+    return String(claims?.session_id || "").trim();
   } catch {
-    return null;
+    return "";
   }
-}
-
-async function sha256Hex(input: string): Promise<string> {
-  const bytes = new TextEncoder().encode(input);
-  const hashBuf = await crypto.subtle.digest("SHA-256", bytes);
-  return Array.from(new Uint8Array(hashBuf))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-function generateSixDigitOtp(): string {
-  const arr = new Uint32Array(1);
-  crypto.getRandomValues(arr);
-  return String(100000 + (arr[0] % 900000));
-}
-
-function maskPhone(phone: string): string {
-  const digits = phone.replace(/\D+/g, "");
-  if (digits.length < 6) return "***";
-  return `${digits.slice(0, 3)}****${digits.slice(-3)}`;
 }
 
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
-
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
   const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
-  if (!SUPABASE_URL || !SERVICE_KEY) return json({ error: "Server misconfigured" }, 500);
-
+  const SECRET = (Deno.env.get("ADMIN_OTP_SECRET") || SERVICE_KEY).trim();
+  if (!SUPABASE_URL || !SERVICE_KEY || !SECRET) return json({ error: "Server misconfigured" }, 500);
   const db = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
 
-  try {
-    const bearer = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
-    if (!bearer) return json({ error: "Unauthorized" }, 401);
-
-    const { data: userData, error: userErr } = await db.auth.getUser(bearer);
-    if (userErr || !userData?.user) return json({ error: "Invalid session" }, 401);
-
-    const userId = userData.user.id;
-    const claims = getJwtClaims(bearer);
-    const sessionId = String(claims?.session_id || "").trim();
-    if (!sessionId) {
-      return json({ error: "Session identifier missing. Please sign in again." }, 401);
+  const sendSms = async (phone: string, text: string) => {
+    try {
+      const cfg = await getSmsConfig(db);
+      if (!cfg?.apiKey) return false;
+      await dispatchUnifiedSms(cfg.gateway, cfg.apiKey, cfg.senderId, phone, text.slice(0, 300), "otp");
+      return true;
+    } catch (err) {
+      console.error("[admin-otp-auth] SMS failed:", err);
+      return false;
     }
+  };
 
-    const body = await Promise.resolve(req.json()).catch(() => ({}));
+  const deps: SmsDeps = {
+    now: new Date(),
+    secret: SECRET,
+    sendSms,
+    alertOtherAdmins: async (exceptUserId: string, text: string) => {
+      try {
+        await db.rpc("notify_admins", { p_title: "Admin signed in with an SMS code", p_message: text, p_link: "/admin/security" });
+      } catch { /* non-critical */ }
+      const { data: roles } = await db.from("user_roles").select("user_id").eq("role", "admin").neq("user_id", exceptUserId).limit(10);
+      const ids = (roles || []).map((r: any) => r.user_id);
+      if (!ids.length) return;
+      const { data: admins } = await db.from("profiles").select("phone").in("user_id", ids).not("phone", "is", null);
+      for (const a of admins || []) if (a.phone) await sendSms(a.phone, `[SwiftData security] ${text}`);
+    },
+  };
+
+  try {
+    const body = await req.json().catch(() => ({}));
     const action = String(body?.action || "status").toLowerCase();
 
-    // Strict Approved-Admin Check
-    const { data: roleRow } = await db
-      .from("user_roles")
-      .select("role, otp_login_approved")
-      .eq("user_id", userId)
-      .eq("role", "admin")
-      .maybeSingle();
-
-    if (!roleRow) {
-      if (action === "status") {
-        return json({ success: true, eligible: false, has_valid_session: false }, 200);
-      }
-      return json({ error: "Forbidden: Admin privileges required", eligible: false }, 403);
+    if (action === "set_approval") {
+      const auth = await verifyAdmin(req, db); // authenticator app required (default)
+      if (!auth.success) return json({ error: auth.error || "Unauthorized" }, auth.status || 401);
+      const res = await setSmsApproval(db, {
+        adminId: String(auth.user?.id || ""),
+        adminSecondFactor: auth.secondFactor === "authenticator" ? "authenticator" : "sms",
+        targetUserId: String(body?.user_id || ""),
+        approved: body?.approved === true,
+        phone: body?.phone ? String(body.phone) : null,
+      }, deps);
+      return json(res.body, res.status);
     }
 
-    if (roleRow.otp_login_approved === false) {
-      if (action === "status") {
-        return json({ success: true, eligible: false, has_valid_session: false }, 200);
-      }
-      return json({ error: "Admin SMS OTP is disabled for this account. Please use your Authenticator App (2FA).", eligible: false }, 403);
-    }
+    const bearer = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
+    if (!bearer) return json({ error: "Unauthorized" }, 401);
+    const { data: userData, error: userErr } = await db.auth.getUser(bearer);
+    if (userErr || !userData?.user) return json({ error: "Invalid session" }, 401);
+    const input = { userId: userData.user.id, sessionId: jwtSessionId(bearer) };
+    if (!input.sessionId) return json({ error: "Please sign in again." }, 401);
 
-    const { data: profile } = await db
-      .from("profiles")
-      .select("full_name, phone, email")
-      .eq("user_id", userId)
-      .maybeSingle();
-
-    const adminPhone = normalizePhone(profile?.phone || userData.user.phone || "");
-
-    // ── ACTION: STATUS ───────────────────────────────────────────────────────
-    if (action === "status") {
-      const { data: activeSess } = await db
-        .from("admin_otp_sessions")
-        .select("id, verified_at, expires_at")
-        .eq("user_id", userId)
-        .eq("session_id", sessionId)
-        .not("verified_at", "is", null)
-        .gt("expires_at", new Date().toISOString())
-        .order("verified_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      return json({
-        success: true,
-        eligible: true,
-        has_phone: Boolean(adminPhone),
-        masked_phone: adminPhone ? maskPhone(adminPhone) : null,
-        has_valid_session: Boolean(activeSess),
-        expires_at: activeSess?.expires_at || null,
-      });
-    }
-
-    // ── ACTION: REQUEST OTP ──────────────────────────────────────────────────
-    if (action === "request_otp") {
-      if (!adminPhone) {
-        return json({ error: "No phone number is registered on your admin profile. Add your phone number or use 2FA." }, 400);
-      }
-
-      // Rate limit: 1 OTP per 60 seconds per admin
-      const oneMinAgo = new Date(Date.now() - 60_000).toISOString();
-      const { data: recent } = await db
-        .from("admin_otp_sessions")
-        .select("id")
-        .eq("user_id", userId)
-        .is("verified_at", null)
-        .gte("created_at", oneMinAgo)
-        .limit(1);
-
-      if (recent && recent.length > 0) {
-        return json({ error: "An OTP was already sent. Please wait 60 seconds before requesting another." }, 429);
-      }
-
-      const otp = generateSixDigitOtp();
-      const otpHash = await sha256Hex(`${userId}:${sessionId}:${otp}`);
-      const otpExpiresAt = new Date(Date.now() + 5 * 60_000).toISOString();
-
-      const { error: insErr } = await db.from("admin_otp_sessions").insert({
-        user_id: userId,
-        session_id: sessionId,
-        phone: adminPhone,
-        otp_hash: otpHash,
-        otp_expires_at: otpExpiresAt,
-        otp_attempts: 0,
-      });
-
-      if (insErr) throw insErr;
-
-      const smsCfg = await getSmsConfig(db);
-      if (!smsCfg?.apiKey) {
-        return json({ error: "SMS gateway is temporarily unavailable. Please use your Authenticator App (2FA)." }, 503);
-      }
-
-      await dispatchUnifiedSms(
-        smsCfg.gateway,
-        smsCfg.apiKey,
-        smsCfg.senderId,
-        adminPhone,
-        `SwiftData Admin Login OTP: ${otp}. Expires in 5 minutes. Never share this code with anyone.`,
-        "otp"
-      );
-
-      return json({
-        success: true,
-        masked_phone: maskPhone(adminPhone),
-        message: `Admin verification code sent to ${maskPhone(adminPhone)}.`,
-      });
-    }
-
-    // ── ACTION: VERIFY OTP ───────────────────────────────────────────────────
-    if (action === "verify_otp") {
-      const code = String(body?.otp || "").replace(/\D+/g, "").trim();
-      if (code.length !== 6) {
-        return json({ error: "Please enter the 6-digit Admin OTP." }, 400);
-      }
-
-      const { data: sessRow } = await db
-        .from("admin_otp_sessions")
-        .select("*")
-        .eq("user_id", userId)
-        .eq("session_id", sessionId)
-        .is("verified_at", null)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (!sessRow) {
-        return json({ error: "No active Admin OTP found. Please request a new code." }, 400);
-      }
-
-      if (sessRow.otp_expires_at && new Date(sessRow.otp_expires_at).getTime() < Date.now()) {
-        return json({ error: "Admin OTP expired. Please request a new code." }, 400);
-      }
-
-      if (Number(sessRow.otp_attempts || 0) >= 5) {
-        return json({ error: "Too many failed attempts. Please request a new Admin OTP." }, 429);
-      }
-
-      const expectedHash = await sha256Hex(`${userId}:${sessionId}:${code}`);
-      if (expectedHash !== sessRow.otp_hash) {
-        await db
-          .from("admin_otp_sessions")
-          .update({ otp_attempts: Number(sessRow.otp_attempts || 0) + 1 })
-          .eq("id", sessRow.id);
-        return json({ error: "Invalid 6-digit Admin OTP. Please try again." }, 400);
-      }
-
-      const nowIso = new Date().toISOString();
-      const expiresIso = new Date(Date.now() + 12 * 3600_000).toISOString();
-
-      await db
-        .from("admin_otp_sessions")
-        .update({
-          verified_at: nowIso,
-          expires_at: expiresIso,
-          otp_hash: null,
-        })
-        .eq("id", sessRow.id);
-
-      await db.from("system_logs").insert({
-        level: "info",
-        source: "admin-otp-auth",
-        event: "admin.otp_verified",
-        agent_id: userId,
-        message: `Approved admin ${profile?.full_name || profile?.email || userId} verified access via SMS OTP.`,
-        data: { session_id: sessionId, expires_at: expiresIso },
-      });
-
-      return json({
-        success: true,
-        verified: true,
-        expires_at: expiresIso,
-        message: "Admin SMS OTP verified! Access granted.",
-      });
-    }
-
-    return json({ error: `Unknown action: ${action}` }, 400);
+    const res =
+      action === "status" ? await smsStatus(db, input, deps)
+      : action === "request_otp" ? await requestSmsCode(db, input, deps)
+      : action === "verify_otp" ? await verifySmsCode(db, { ...input, code: String(body?.otp || "") }, deps)
+      : { status: 400, body: { error: `Unknown action: ${action}` } };
+    return json(res.body, res.status);
   } catch (err: any) {
     console.error("[admin-otp-auth] Error:", err);
-    return json({ error: err?.message || "Internal server error" }, 500);
+    return json({ error: "Something went wrong. Please use your authenticator app." }, 500);
   }
 });
