@@ -6,6 +6,7 @@ import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { getFunctionErrorMessage } from "@/lib/function-errors";
 import { logAudit } from "@/utils/auditLogger";
 import {
   ShieldCheck, ShieldAlert, Check, X, Loader2,
@@ -217,7 +218,8 @@ export default function AdminRoleModal({ user, isOpen, onClose, onUpdated }: Adm
         });
 
         if (edgeErr || edgeRes?.error) {
-          console.warn("[AdminRoleModal] Edge function update failed, falling back to client update:", edgeErr || edgeRes?.error);
+          const edgeReason = edgeRes?.error || (await getFunctionErrorMessage(edgeErr, "Edge function update failed"));
+          console.warn("[AdminRoleModal] Edge function update failed, falling back to client update:", edgeReason);
           
           const { data: prof } = await supabase
             .from("profiles")

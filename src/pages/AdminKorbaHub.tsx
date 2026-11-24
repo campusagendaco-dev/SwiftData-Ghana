@@ -12,6 +12,7 @@ import {
   ShieldCheck, Smartphone, DollarSign, HelpCircle
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getFunctionErrorMessage } from "@/lib/function-errors";
 import { useConfirmedCall } from "@/components/admin/ConfirmActionProvider";
 
 interface KorbaBundle {
@@ -336,7 +337,8 @@ const AdminKorbaHub = () => {
       });
 
       if (fulfillError || fulfillRes?.error) {
-        throw new Error(fulfillRes?.error || "Fulfillment endpoint returned an error");
+        const errMsg = fulfillRes?.error || (await getFunctionErrorMessage(fulfillError, "Fulfillment endpoint returned an error"));
+        throw new Error(errMsg);
       }
 
       toast({

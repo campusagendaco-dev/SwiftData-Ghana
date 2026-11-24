@@ -289,6 +289,11 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
     }
   };
 
+  const getAuthHeaders = async (): Promise<Record<string, string>> => {
+    const token = session?.access_token || (await supabase.auth.getSession()).data.session?.access_token;
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+
   const [resetLinkSending, setResetLinkSending] = useState(false);
   const handleSendResetLink = async () => {
     if (!user) return;
@@ -296,7 +301,7 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
     try {
       const { data: res, error } = await supabase.functions.invoke("admin-user-actions", {
         body: { action: "send_reset_link", user_id: user.user_id, email: user.email },
-        headers: { Authorization: `Bearer ${session?.access_token}` },
+        headers: await getAuthHeaders(),
       });
       if (error || res?.error) throw new Error(await parseEdgeError(error, res));
       
@@ -322,7 +327,7 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
     try {
       const { data: res, error } = await supabase.functions.invoke("admin-user-actions", {
         body: { action: "reset_transaction_pin", user_id: user.user_id },
-        headers: { Authorization: `Bearer ${session?.access_token}` },
+        headers: await getAuthHeaders(),
       });
       if (error || res?.error) throw new Error(await parseEdgeError(error, res));
       if (res?.sms_sent) {
@@ -356,7 +361,7 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
     try {
       const { data: res, error } = await supabase.functions.invoke("admin-user-actions", {
         body: { action: "revoke_sessions", user_id: user.user_id },
-        headers: { Authorization: `Bearer ${session?.access_token}` },
+        headers: await getAuthHeaders(),
       });
       if (error || res?.error) throw new Error(await parseEdgeError(error, res));
       toast({ title: "Sessions Revoked 🔒", description: `All active sessions for ${user.email} terminated.` });
