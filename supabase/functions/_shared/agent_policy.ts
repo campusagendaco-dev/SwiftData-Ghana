@@ -71,7 +71,7 @@ export function policyFor(type: string): ActionPolicy {
 
 const isId = (v: unknown): v is string => typeof v === "string" && v.trim().length > 0;
 
-export function checkActionLimits(action: AgentAction): { ok: true } | { ok: false; reason: string } {
+export function checkActionLimits(action: AgentAction): { ok: boolean; reason?: string } {
   const t = normalizeActionType(action?.type);
   const p = (action?.params ?? {}) as Record<string, unknown>;
 
@@ -97,7 +97,7 @@ export function routeAgentAction(mode: AgentMode, action: AgentAction): { route:
   if (policy === "forbidden") return { route: "drop", reason: "forbidden action" };
   if (policy === "auto") return { route: "run", reason: "auto action" };
   const limits = checkActionLimits(action);
-  if (!limits.ok) return { route: "drop", reason: limits.reason };
+  if (!limits.ok) return { route: "drop", reason: limits.reason || "over limits" };
   return normalizeMode(mode) === "propose"
     ? { route: "queue", reason: "waits for admin approval" }
     : { route: "record", reason: "watch-only: recorded as would-propose" };
