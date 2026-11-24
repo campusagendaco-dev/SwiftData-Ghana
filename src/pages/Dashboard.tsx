@@ -42,7 +42,6 @@ import WelcomeAnnouncement from "@/components/WelcomeAnnouncement";
 import ReferAndEarn from "@/components/ReferAndEarn";
 import DailyCheckIn from "@/components/DailyCheckIn";
 import PromoCarousel from "@/components/PromoCarousel";
-import CompleteProfileBanner from "@/components/CompleteProfileBanner";
 import LastMtnOrderWidget from "@/components/LastMtnOrderWidget";
 import WorldCupPredictor from "@/components/WorldCupPredictor";
 import AgentTierRecommenderCard from "@/components/AgentTierRecommenderCard";
@@ -304,7 +303,6 @@ const Dashboard = () => {
     <PageContainer>
       <FreeDataClaimBanner />
       <MysteryBoxCard />
-      <CompleteProfileBanner />
 
       <PageHeader
         eyebrow={format(new Date(), "EEEE, d MMMM")}
