@@ -687,7 +687,7 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
       const queries: Promise<any>[] = [
         supabase.from("wallets").select("balance, api_balance").eq("agent_id", user.user_id).maybeSingle(),
         supabase.from("orders").select("id, order_type, network, package_size, customer_phone, amount, profit, parent_profit, status, failure_reason, created_at")
-          .eq("agent_id", user.user_id).order("created_at", { ascending: false }).limit(15),
+          .or(`agent_id.eq.${user.user_id},customer_id.eq.${user.user_id}`).order("created_at", { ascending: false }).limit(50),
         user.last_ip
           ? (supabase.from("profiles") as any).select("user_id, full_name, email").eq("last_ip", user.last_ip).neq("user_id", user.user_id).limit(5)
           : Promise.resolve({ data: [] }),
