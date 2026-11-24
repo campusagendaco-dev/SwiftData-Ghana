@@ -81,7 +81,7 @@ async function loadSignals(db: any, userId: string, now: Date): Promise<Signals>
     db.from("duplicate_account_flags").select("id").eq("primary_user_id", userId).limit(5),
     db.from("duplicate_account_flags").select("id").contains("duplicate_user_ids", [userId]).limit(5),
     db.from("wallets").select("balance").eq("agent_id", userId).maybeSingle(),
-    db.from("account_unsuspend_requests").select("id").eq("user_id", userId).eq("status", "self_released").gte("created_at", monthAgo).limit(5),
+    db.from("account_unsuspend_requests").select("id").eq("user_id", userId).in("status", ["self_released", "auto_unsuspended"]).gte("created_at", monthAgo).limit(5),
   ]);
   return {
     openAml: (aml.data || []).length,

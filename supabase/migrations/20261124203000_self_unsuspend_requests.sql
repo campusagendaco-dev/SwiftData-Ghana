@@ -13,9 +13,8 @@ CREATE TABLE IF NOT EXISTS public.account_unsuspend_requests (
   user_name          TEXT,
   phone              TEXT        NOT NULL,
   suspension_reason  TEXT        NOT NULL,
-  route              TEXT        NOT NULL CHECK (route IN ('self_release', 'admin_review')),
-  status             TEXT        NOT NULL DEFAULT 'otp_sent'
-    CHECK (status IN ('otp_sent', 'self_released', 'pending_admin_approval', 'approved', 'rejected', 'expired')),
+  route              TEXT,
+  status             TEXT        NOT NULL DEFAULT 'otp_sent',
   otp_digest         TEXT,
   otp_expires_at     TIMESTAMPTZ,
   otp_verified_at    TIMESTAMPTZ,
@@ -25,6 +24,34 @@ CREATE TABLE IF NOT EXISTS public.account_unsuspend_requests (
   reviewed_at        TIMESTAMPTZ,
   created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Upgrade the earlier draft's table (it was applied in production on 2026-11-24).
+ALTER TABLE public.account_unsuspend_requests ADD COLUMN IF NOT EXISTS route TEXT;
+ALTER TABLE public.account_unsuspend_requests ADD COLUMN IF NOT EXISTS otp_digest TEXT;
+-- No request from the draft may be used or approved under the new rules.
+UPDATE public.account_unsuspend_requests
+   SET status = CASE WHEN status IN ('otp_sent', 'pending_admin_approval') THEN 'expired' ELSE status END,
+       route  = coalesce(route, 'admin_review')
+ WHERE route IS NULL;
+-- The draft's readable code hash and unused columns go.
+ALTER TABLE public.account_unsuspend_requests DROP COLUMN IF EXISTS otp_hash;
+ALTER TABLE public.account_unsuspend_requests DROP COLUMN IF EXISTS user_email;
+ALTER TABLE public.account_unsuspend_requests DROP COLUMN IF EXISTS is_security_breach;
+DO $$
+DECLARE c record;
+BEGIN
+  FOR c IN SELECT conname FROM pg_constraint
+            WHERE conrelid = 'public.account_unsuspend_requests'::regclass AND contype = 'c'
+              AND (pg_get_constraintdef(oid) ILIKE '%status%' OR pg_get_constraintdef(oid) ILIKE '%route%') LOOP
+    EXECUTE format('ALTER TABLE public.account_unsuspend_requests DROP CONSTRAINT %I', c.conname);
+  END LOOP;
+END $$;
+ALTER TABLE public.account_unsuspend_requests ALTER COLUMN route SET NOT NULL;
+ALTER TABLE public.account_unsuspend_requests ADD CONSTRAINT account_unsuspend_requests_route_check
+  CHECK (route IN ('self_release', 'admin_review'));
+-- 'auto_unsuspended' is kept only as history from the draft.
+ALTER TABLE public.account_unsuspend_requests ADD CONSTRAINT account_unsuspend_requests_status_check
+  CHECK (status IN ('otp_sent', 'self_released', 'pending_admin_approval', 'approved', 'rejected', 'expired', 'auto_unsuspended'));
 
 CREATE INDEX IF NOT EXISTS idx_unsuspend_req_user_created ON public.account_unsuspend_requests (user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_unsuspend_req_status ON public.account_unsuspend_requests (status, created_at DESC);

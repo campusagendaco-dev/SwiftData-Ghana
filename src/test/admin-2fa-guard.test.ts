@@ -8,6 +8,11 @@ import { join } from "node:path";
 const root = join(__dirname, "..", "..");
 const read = (...p: string[]) => readFileSync(join(root, ...p), "utf8");
 
+/** The bodies of every is_admin()/has_role() definition in a SQL file. */
+export function adminFunctionBodies(sql: string): string[] {
+  return [...sql.matchAll(/FUNCTION\s+public\.(?:is_admin|has_role)\b[\s\S]*?AS\s+\$\$([\s\S]*?)\$\$/gi)].map((m) => m[1]);
+}
+
 describe("admin 2FA can't be replaced by an SMS code", () => {
   it("verifyAdmin requires aal2 and has no SMS-code way past it", () => {
     const src = read("supabase", "functions", "_shared", "auth.ts");
@@ -16,17 +21,20 @@ describe("admin 2FA can't be replaced by an SMS code", () => {
   });
 
   it("the admin page guard has no SMS-code bypass", () => {
-    const app = read("src", "App.tsx");
-    expect(app).not.toMatch(/isAdminOtpVerified/);
+    expect(read("src", "App.tsx")).not.toMatch(/isAdminOtpVerified/);
     expect(read("src", "hooks", "useAuth.tsx")).not.toMatch(/isAdminOtpVerified/);
+  });
+
+  it("finds an SMS-session check inside is_admin() (self-check)", () => {
+    const bad = "CREATE OR REPLACE FUNCTION public.is_admin() RETURNS boolean AS $$ SELECT public.has_valid_admin_otp_session() OR admin_otp $$;";
+    const ok = "CREATE OR REPLACE FUNCTION public.is_admin() RETURNS boolean AS $$ SELECT true $$;\nDROP TABLE IF EXISTS public.admin_otp_sessions;";
+    expect(adminFunctionBodies(bad).some((b) => /admin_otp|otp_session/i.test(b))).toBe(true);
+    expect(adminFunctionBodies(ok).some((b) => /admin_otp|otp_session/i.test(b))).toBe(false);
   });
 
   it("no migration lets an SMS-code session count as admin", () => {
     const dir = join(root, "supabase", "migrations");
-    const offenders = readdirSync(dir).filter((f) => {
-      const sql = readFileSync(join(dir, f), "utf8");
-      return /FUNCTION\s+public\.(is_admin|has_role)\b/i.test(sql) && /admin_otp|otp_session/i.test(sql);
-    });
+    const offenders = readdirSync(dir).filter((f) => adminFunctionBodies(readFileSync(join(dir, f), "utf8")).some((b) => /admin_otp|otp_session/i.test(b)));
     expect(offenders).toEqual([]);
   });
 });

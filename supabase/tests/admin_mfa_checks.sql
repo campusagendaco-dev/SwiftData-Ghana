@@ -54,6 +54,19 @@ BEGIN
     PERFORM set_config('request.jwt.claims', json_build_object('sub', v_moderator, 'role', 'authenticated', 'aal', 'aal1')::text, true);
     IF NOT public.has_role(v_moderator, 'moderator') THEN RAISE EXCEPTION 'FAIL (h): moderator role needs 2FA'; END IF;
   END IF;
+
+  -- (i) an SMS-code session never counts as admin (owner decision 2026-11-24). Only runs if
+  --     the SMS session table still exists; everything here is rolled back.
+  IF to_regclass('public.admin_otp_sessions') IS NOT NULL THEN
+    BEGIN
+      EXECUTE 'UPDATE public.user_roles SET otp_login_approved = true WHERE user_id = $1 AND role = ''admin''' USING v_admin;
+    EXCEPTION WHEN undefined_column THEN NULL;
+    END;
+    EXECUTE 'INSERT INTO public.admin_otp_sessions (user_id, session_id, phone, verified_at, expires_at) VALUES ($1, ''zz-check-session'', ''0000000000'', now(), now() + interval ''1 hour'')' USING v_admin;
+    PERFORM set_config('request.jwt.claims', json_build_object('sub', v_admin, 'role', 'authenticated', 'aal', 'aal1', 'session_id', 'zz-check-session')::text, true);
+    IF public.is_admin() THEN RAISE EXCEPTION 'FAIL (i): an SMS-code session counts as admin without 2FA'; END IF;
+    IF public.has_role(v_admin, 'admin') THEN RAISE EXCEPTION 'FAIL (i): has_role(self, admin) accepts an SMS-code session'; END IF;
+  END IF;
 END;
 $$;
 
