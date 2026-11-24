@@ -27,7 +27,25 @@ declare const Deno: any;
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 
-const HIGH_IMPACT_ACTIONS = new Set(["suspend_agent", "disable_network", "lock_terminal"]);
+const HIGH_IMPACT_ACTIONS = new Set(["suspend_agent", "disable_network", "lock_terminal", "refund_order"]);
+
+// ━━━ ZERO-LOSS FINANCIAL GUARDRAILS FOR SELF-HEALING ━━━
+const MAX_AUTO_HEAL_ORDER_AMOUNT_GHS = 100;   // Orders > GHS 100 require admin approval
+const MAX_AUTO_HEAL_BATCH_TOTAL_GHS = 500;    // Max total GHS healed per 5-min patrol
+const MAX_AI_HEAL_ATTEMPTS_PER_ORDER = 2;     // Never loop-heal the same order > 2 times
+const HEAL_COOLDOWN_MS = 15 * 60 * 1000;      // 15-min cooldown between heals on same order
+const DUPLICATE_DELIVERY_WINDOW_MS = 30 * 60 * 1000; // Skip heal if same phone+pkg delivered/processing in last 30m
+const PROVIDER_SWITCH_COOLDOWN_MS = 30 * 60 * 1000;  // 30-min anti-flapping cooldown
+const MIN_PROVIDER_BALANCE_FOR_PRIO1_GHS = 100;      // Never promote a low-balance provider
+
+const PLACEHOLDER_PROVIDER_REFS = new Set([
+  "", "failed_api_call", "dispatching", "routed", "duplicate_cooldown", "refunded", "timeout", "awaiting_provider",
+]);
+
+function hasRealProviderRef(providerOrderId: string | null | undefined): boolean {
+  const ref = String(providerOrderId || "").trim().toLowerCase();
+  return Boolean(ref && !PLACEHOLDER_PROVIDER_REFS.has(ref));
+}
 
 function isKorbaProvider(p: any): boolean {
   const ht = String(p?.handler_type || "").toLowerCase();
@@ -250,58 +268,189 @@ async function executeWorkerAction(
   const p = action.params || {};
 
   if (action.type === "heal_stuck_orders") {
-    const orderIds: string[] = Array.isArray(p.pending_order_ids) ? p.pending_order_ids.slice(0, 10) : [];
+    const requestedIds: string[] = Array.isArray(p.pending_order_ids) ? p.pending_order_ids.slice(0, 10) : [];
     const healProcessing = Boolean(p.heal_processing);
     const healed: any[] = [];
+    const skippedForSafety: any[] = [];
+    let batchTotalGhs = 0;
 
-    for (const orderId of orderIds) {
-      try {
-        const res = await fetch(`${SUPABASE_URL}/functions/v1/verify-payment`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-          },
-          body: JSON.stringify({ reference: orderId }),
-        });
-        const body = await res.json().catch(() => ({}));
-        healed.push({ order_id: orderId, status: res.status, result: body?.status || body?.message || "checked" });
-      } catch (err: any) {
-        healed.push({ order_id: orderId, error: err?.message || String(err) });
+    if (requestedIds.length > 0) {
+      const { data: candidateOrders } = await supabaseAdmin
+        .from("orders")
+        .select("id, status, amount, network, package_size, customer_phone, payment_method, provider_id, provider_order_id, metadata, created_at")
+        .in("id", requestedIds);
+
+      const dupWindowIso = new Date(Date.now() - DUPLICATE_DELIVERY_WINDOW_MS).toISOString();
+
+      for (const ord of candidateOrders || []) {
+        const amt = Number(ord.amount || 0);
+        const meta = ord.metadata || {};
+        const prevAttempts = Number(meta.ai_heal_attempts || 0);
+        const lastHealAt = meta.ai_last_heal_at ? new Date(meta.ai_last_heal_at).getTime() : 0;
+
+        // Guard 1: Only heal still-pending/processing orders (never already fulfilled/refunded)
+        if (ord.status !== "pending" && ord.status !== "processing") {
+          skippedForSafety.push({ order_id: ord.id, reason: `Status is already ${ord.status}` });
+          continue;
+        }
+
+        // Guard 2: Never double-dispatch an order that already has a confirmed provider reference
+        if (ord.status === "processing" && hasRealProviderRef(ord.provider_order_id)) {
+          skippedForSafety.push({ order_id: ord.id, reason: `Already has provider ref ${ord.provider_order_id}; status poll only` });
+          continue;
+        }
+
+        // Guard 3: Per-order & per-batch GHS exposure cap -> queue for admin approval instead
+        if (amt <= 0 || amt > MAX_AUTO_HEAL_ORDER_AMOUNT_GHS || batchTotalGhs + amt > MAX_AUTO_HEAL_BATCH_TOTAL_GHS) {
+          skippedForSafety.push({ order_id: ord.id, reason: `Amount GHS ${amt} exceeds zero-loss auto-heal cap` });
+          await supabaseAdmin.from("ai_worker_tasks").insert({
+            agent_name: "ops_worker",
+            task_type: "heal_stuck_orders",
+            priority: "high",
+            status: "awaiting_approval",
+            title: `Approve High-Value Heal (GHS ${amt})`,
+            reasoning: `Order ${ord.id} (GHS ${amt}, ${ord.network} ${ord.package_size}) exceeds automatic zero-loss cap (GHS ${MAX_AUTO_HEAL_ORDER_AMOUNT_GHS}).`,
+            payload: { pending_order_ids: [ord.id], heal_processing: false },
+          });
+          continue;
+        }
+
+        // Guard 4: Max heal attempts & 15-min cooldown per order
+        if (prevAttempts >= MAX_AI_HEAL_ATTEMPTS_PER_ORDER) {
+          skippedForSafety.push({ order_id: ord.id, reason: `Reached max ${MAX_AI_HEAL_ATTEMPTS_PER_ORDER} auto-heal attempts` });
+          continue;
+        }
+        if (lastHealAt && Date.now() - lastHealAt < HEAL_COOLDOWN_MS) {
+          skippedForSafety.push({ order_id: ord.id, reason: "Within 15-min heal cooldown" });
+          continue;
+        }
+
+        // Guard 5: Duplicate-delivery protection (same phone + package + network already fulfilled/processing in last 30m)
+        if (ord.customer_phone && ord.package_size && ord.network) {
+          const { data: siblingOrders } = await supabaseAdmin
+            .from("orders")
+            .select("id, status")
+            .eq("customer_phone", ord.customer_phone)
+            .eq("network", ord.network)
+            .eq("package_size", ord.package_size)
+            .in("status", ["fulfilled", "completed", "processing"])
+            .neq("id", ord.id)
+            .gte("created_at", dupWindowIso)
+            .limit(1);
+
+          if (siblingOrders && siblingOrders.length > 0) {
+            skippedForSafety.push({
+              order_id: ord.id,
+              reason: `Duplicate delivery risk: sibling order ${siblingOrders[0].id} is already ${siblingOrders[0].status}`,
+            });
+            continue;
+          }
+        }
+
+        // Stamp heal attempt BEFORE calling verify-payment to prevent concurrent races
+        await supabaseAdmin
+          .from("orders")
+          .update({
+            metadata: {
+              ...meta,
+              ai_heal_attempts: prevAttempts + 1,
+              ai_last_heal_at: new Date().toISOString(),
+            },
+          })
+          .eq("id", ord.id);
+
+        batchTotalGhs += amt;
+
+        try {
+          const res = await fetch(`${SUPABASE_URL}/functions/v1/verify-payment`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+            },
+            body: JSON.stringify({ reference: ord.id, force: false }),
+          });
+          const body = await res.json().catch(() => ({}));
+          healed.push({ order_id: ord.id, amount: amt, status: res.status, result: body?.status || body?.message || "checked" });
+        } catch (err: any) {
+          healed.push({ order_id: ord.id, amount: amt, error: err?.message || String(err) });
+        }
       }
     }
 
+    // Only invoke heal-processing-orders if not already called in the last 10 minutes
     let processingHealResult: any = null;
     if (healProcessing) {
-      try {
-        const res = await fetch(`${SUPABASE_URL}/functions/v1/heal-processing-orders`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-          },
-          body: JSON.stringify({ source: "ops_worker" }),
-        });
-        processingHealResult = await res.json().catch(() => ({ status: res.status }));
-      } catch (err: any) {
-        processingHealResult = { error: err?.message || String(err) };
+      const tenMinsAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+      const recentHeal = recentActions.find(
+        (a: any) => a.action_type === "heal_stuck_orders" && a.ts > tenMinsAgo && a.metadata?.details?.processing_heal
+      );
+      if (recentHeal) {
+        processingHealResult = { skipped: true, reason: "Within 10-min processing-heal cooldown" };
+      } else {
+        try {
+          const res = await fetch(`${SUPABASE_URL}/functions/v1/heal-processing-orders`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+            },
+            body: JSON.stringify({ source: "ops_worker" }),
+          });
+          processingHealResult = await res.json().catch(() => ({ status: res.status }));
+        } catch (err: any) {
+          processingHealResult = { error: err?.message || String(err) };
+        }
       }
     }
 
-    return { ok: true, details: { verified_pending: healed, processing_heal: processingHealResult } };
+    return {
+      ok: true,
+      details: {
+        batch_total_ghs: Number(batchTotalGhs.toFixed(2)),
+        verified_pending: healed,
+        skipped_for_safety: skippedForSafety,
+        processing_heal: processingHealResult,
+      },
+    };
   }
 
   if (action.type === "rebalance_sme_provider" && p.provider_id) {
+    // Guard 1: Anti-flapping 30-min cooldown between provider priority switches
+    const switchCooldownIso = new Date(Date.now() - PROVIDER_SWITCH_COOLDOWN_MS).toISOString();
+    const recentSwitch = recentActions.find(
+      (a: any) => (a.action_type === "rebalance_sme_provider" || a.action_type === "switch_priority") && a.ts > switchCooldownIso
+    );
+    if (recentSwitch) {
+      return { ok: false, details: "BLOCKED BY GUARDRAIL: Provider switch cooldown (30m) active to prevent flapping." };
+    }
+
     const { data: targetProv } = await supabaseAdmin
       .from("providers")
-      .select("id, name, handler_type, is_active, balance")
+      .select("id, name, handler_type, is_active, balance, consecutive_failures")
       .eq("id", p.provider_id)
       .maybeSingle();
 
     if (!targetProv) return { ok: false, details: "Target provider not found" };
-    // STRICT SWIFTDATA GUARDRAIL: Never promote Korba for SME data fulfillment
+    // Guard 2: STRICT SWIFTDATA GUARDRAIL — Never promote Korba for SME data bundles
     if (isKorbaProvider(targetProv)) {
       return { ok: false, details: "BLOCKED BY GUARDRAIL: Korba cannot be promoted for SME data bundles." };
+    }
+    // Guard 3: Never promote an inactive, low-balance, or currently failing provider
+    if (!targetProv.is_active) {
+      return { ok: false, details: `BLOCKED BY GUARDRAIL: Provider ${targetProv.name} is inactive.` };
+    }
+    if (Number(targetProv.balance || 0) < MIN_PROVIDER_BALANCE_FOR_PRIO1_GHS) {
+      return {
+        ok: false,
+        details: `BLOCKED BY GUARDRAIL: Provider ${targetProv.name} balance (GHS ${targetProv.balance}) is below safe minimum (GHS ${MIN_PROVIDER_BALANCE_FOR_PRIO1_GHS}).`,
+      };
+    }
+    if (Number(targetProv.consecutive_failures || 0) >= 3) {
+      return {
+        ok: false,
+        details: `BLOCKED BY GUARDRAIL: Provider ${targetProv.name} has ${targetProv.consecutive_failures} consecutive failures.`,
+      };
     }
 
     const { error } = await supabaseAdmin
@@ -310,7 +459,7 @@ async function executeWorkerAction(
       .eq("id", targetProv.id);
 
     if (error) throw error;
-    return { ok: true, details: { provider: targetProv.name, new_priority: Number(p.new_priority || 1) } };
+    return { ok: true, details: { provider: targetProv.name, balance: targetProv.balance, new_priority: Number(p.new_priority || 1) } };
   }
 
   if (action.type === "triage_ticket" && p.ticket_id) {

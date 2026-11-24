@@ -42,39 +42,90 @@ serve(async (req: Request) => {
 
     console.log(`Sentinel Prime: Initiating ${event ? 'Surgical Strike' : 'Autonomous Cognitive Scan'}...`);
 
-    // 1. Self-Healing Webhook Failover Watchdog
-    console.log("Sentinel Failover: Scanning for stuck pending orders...");
+    // 1. Zero-Loss Self-Healing Webhook Failover Watchdog
+    console.log("Sentinel Failover: Scanning for stuck pending orders with zero-loss guards...");
     const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
     const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+    const dupWindowIso = new Date(Date.now() - 30 * 60 * 1000).toISOString();
 
     const { data: stuckOrders } = await supabaseAdmin
       .from("orders")
-      .select("id")
+      .select("id, amount, customer_phone, network, package_size, metadata")
       .eq("status", "pending")
       .not("order_type", "in", '("wallet_topup","store_wallet_topup","agent_activation","sub_agent_activation","vendor_activation","free_data_claim")')
       .gte("created_at", twoHoursAgo)
-      .lte("created_at", fiveMinutesAgo);
+      .lte("created_at", fiveMinutesAgo)
+      .limit(10);
 
     if (stuckOrders && stuckOrders.length > 0) {
-      console.log(`Sentinel Failover: Found ${stuckOrders.length} stuck pending orders. Triggering verify-payment healing...`);
-      const healingPromises = stuckOrders.map(async (order: any) => {
-        try {
-          console.log(`Sentinel Failover: Triggering check for order ${order.id}`);
-          const res = await fetch(`${SUPABASE_URL}/functions/v1/verify-payment`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-            },
-            body: JSON.stringify({ reference: order.id }),
-          });
-          const data = await res.json().catch(() => ({}));
-          console.log(`Sentinel Failover: Healing check result for ${order.id}:`, data);
-        } catch (err: any) {
-          console.error(`[Sentinel Failover] Failed to trigger verify-payment for ${order.id}:`, err.message);
+      let sentinelHealTotalGhs = 0;
+      const safeOrdersToHeal: any[] = [];
+
+      for (const order of stuckOrders) {
+        const amt = Number(order.amount || 0);
+        const meta = order.metadata || {};
+        const prevAttempts = Number(meta.ai_heal_attempts || 0);
+        const lastHealAt = meta.ai_last_heal_at ? new Date(meta.ai_last_heal_at).getTime() : 0;
+
+        // Zero-loss caps: max GHS 100/order, GHS 500/run, max 2 attempts, 15m cooldown
+        if (amt <= 0 || amt > 100 || sentinelHealTotalGhs + amt > 500) continue;
+        if (prevAttempts >= 2) continue;
+        if (lastHealAt && Date.now() - lastHealAt < 15 * 60 * 1000) continue;
+
+        // Duplicate-delivery guard: skip if same phone+network+package already fulfilled/processing in last 30m
+        if (order.customer_phone && order.network && order.package_size) {
+          const { data: sibling } = await supabaseAdmin
+            .from("orders")
+            .select("id")
+            .eq("customer_phone", order.customer_phone)
+            .eq("network", order.network)
+            .eq("package_size", order.package_size)
+            .in("status", ["fulfilled", "completed", "processing"])
+            .neq("id", order.id)
+            .gte("created_at", dupWindowIso)
+            .limit(1);
+          if (sibling && sibling.length > 0) {
+            console.log(`[Sentinel Failover] Skipping ${order.id}: duplicate delivery guard triggered.`);
+            continue;
+          }
         }
-      });
-      await Promise.allSettled(healingPromises);
+
+        sentinelHealTotalGhs += amt;
+        safeOrdersToHeal.push(order);
+      }
+
+      if (safeOrdersToHeal.length > 0) {
+        console.log(`Sentinel Failover: Healing ${safeOrdersToHeal.length} verified-safe pending orders (GHS ${sentinelHealTotalGhs.toFixed(2)})...`);
+        const healingPromises = safeOrdersToHeal.map(async (order: any) => {
+          try {
+            const meta = order.metadata || {};
+            await supabaseAdmin
+              .from("orders")
+              .update({
+                metadata: {
+                  ...meta,
+                  ai_heal_attempts: Number(meta.ai_heal_attempts || 0) + 1,
+                  ai_last_heal_at: new Date().toISOString(),
+                },
+              })
+              .eq("id", order.id);
+
+            const res = await fetch(`${SUPABASE_URL}/functions/v1/verify-payment`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+              },
+              body: JSON.stringify({ reference: order.id, force: false }),
+            });
+            const data = await res.json().catch(() => ({}));
+            console.log(`Sentinel Failover: Healing check result for ${order.id}:`, data);
+          } catch (err: any) {
+            console.error(`[Sentinel Failover] Failed to trigger verify-payment for ${order.id}:`, err.message);
+          }
+        });
+        await Promise.allSettled(healingPromises);
+      }
     }
 
     // 2. Fetch Deep Cognitive Memory (Adaptive Relearning Foundation)
@@ -361,6 +412,18 @@ serve(async (req: Request) => {
             console.warn("[Sentinel AI] BLOCKED: Korba cannot be promoted to SME data priority.");
             continue;
           }
+          if (!targetProv || !targetProv.is_active || Number(targetProv.balance || 0) < 100 || Number(targetProv.consecutive_failures || 0) >= 3) {
+            console.warn("[Sentinel AI] BLOCKED: Target provider failed zero-loss health/balance check (min GHS 100, active, <3 failures).");
+            continue;
+          }
+          const thirtyMinsAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+          const recentSwitch = pastActions.find(
+            (a: any) => (a.action_type === "switch_priority" || a.action_type === "rebalance_sme_provider") && a.ts > thirtyMinsAgo
+          );
+          if (recentSwitch) {
+            console.warn("[Sentinel AI] BLOCKED: 30-min provider switch cooldown active.");
+            continue;
+          }
           const { error: pError } = await supabaseAdmin
             .from("providers")
             .update({ priority: action.params.new_priority || 1 })
@@ -378,6 +441,10 @@ serve(async (req: Request) => {
             String(targetProv?.name || action.params.provider_name || "").toLowerCase().includes("korba");
           if (isKorba) {
             console.warn("[Sentinel AI] BLOCKED: Korba cannot be self-healed to Priority 1 for SME data.");
+            continue;
+          }
+          if (!targetProv || Number(targetProv.balance || 0) < 100) {
+            console.warn("[Sentinel AI] BLOCKED: Cannot self-heal provider with balance < GHS 100.");
             continue;
           }
           const { error: healError } = await supabaseAdmin
