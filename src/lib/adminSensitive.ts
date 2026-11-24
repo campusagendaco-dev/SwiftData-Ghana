@@ -28,6 +28,8 @@ export const SENSITIVE_RPCS = new Set([
   "repay_agent_credit",
   "credit_order_profits",
   "dispatch_missed_you_push_broadcast",
+  // lets everyone claim a promo again (free data / discounts)
+  "reset_promo_claims",
 ]);
 
 /** admin-user-actions actions that move money, fulfil, fail or re-send orders. */
@@ -56,7 +58,7 @@ export const SENSITIVE_PAYOUT_ACTIONS = new Set([
 /** Actions that change who can use the admin pages. */
 export const SENSITIVE_ACCESS_ACTIONS = new Set(["revoke_admin_role", "grant_admin_role"]);
 
-export type ConfirmKind = "money" | "refund" | "payout" | "send" | "message" | "access";
+export type ConfirmKind = "money" | "refund" | "payout" | "send" | "message" | "access" | "promo";
 
 export type ConfirmOptions = {
   title: string;
