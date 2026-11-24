@@ -39,10 +39,15 @@ describe("agent config defaults", () => {
 });
 
 describe("models", () => {
-  it("keeps the model an agent already uses", async () => {
+  it("runs every agent on the model it runs on today (main's mapping)", async () => {
     const { normalizeModelName } = await load();
-    expect(normalizeModelName("claude-haiku-4-5-20251001")).toBe("claude-haiku-4-5-20251001");
+    // On main, the July seed (claude-haiku-4-5) and empty models ran on gemini-3.6-flash.
+    expect(normalizeModelName("claude-haiku-4-5-20251001")).toBe("gemini-3.6-flash");
+    expect(normalizeModelName("")).toBe("gemini-3.6-flash");
+    expect(normalizeModelName("gemini-2.5-flash")).toBe("gemini-3.6-flash");
+    expect(normalizeModelName("claude-haiku")).toBe("claude-3-5-haiku-20241022");
     expect(normalizeModelName("claude-sonnet-4-5-20250929")).toBe("claude-sonnet-4-5-20250929");
+    expect(normalizeModelName("gpt-4o-mini")).toBe("gpt-4o-mini");
   });
 });
 

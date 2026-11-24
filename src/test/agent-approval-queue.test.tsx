@@ -79,6 +79,43 @@ describe("Agent approval queue", () => {
   });
 });
 
+describe("what the approval box shows", () => {
+  beforeEach(() => {
+    invoke.mockReset();
+    confirm.mockReset();
+    confirm.mockResolvedValue(false);
+  });
+  afterEach(cleanup);
+
+  it("lists the account names from the database", async () => {
+    render(<AgentApprovalQueue tasks={[task({ payload: { user_ids: ["a", "b"], display: { accounts: [{ id: "a", name: "Ama Mensah" }, { id: "b", name: "Kofi Boateng" }] } } })]} onDecided={() => {}} />);
+    expect(screen.getByText("Ama Mensah, Kofi Boateng")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    await waitFor(() => expect(confirm.mock.calls[0][0].description).toContain("Ama Mensah, Kofi Boateng"));
+  });
+
+  it("shows how many agents get the outage text, and the exact text", async () => {
+    const sms = "SwiftData Alert: We have detected instability with the MTN network.";
+    render(<AgentApprovalQueue tasks={[task({ task_type: "broadcast_outage", payload: { network: "MTN", display: { network: "MTN", recipients: 1204, sms_text: sms } } })]} onDecided={() => {}} />);
+    expect(screen.getByText("1204 agents get this SMS")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    await waitFor(() => expect(confirm).toHaveBeenCalledWith(expect.objectContaining({ kind: "message", orders: 1204 })));
+    expect(confirm.mock.calls[0][0].description).toContain(sms);
+  });
+
+  it("shows the order amount in GH₵", async () => {
+    render(<AgentApprovalQueue tasks={[task({ task_type: "quarantine_order", payload: { order_id: "o1", display: { order: { id: "o1", amount: 25, status: "processing" } } } })]} onDecided={() => {}} />);
+    expect(screen.getByText("Order o1 (GH₵25.00, processing) will be marked failed")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    await waitFor(() => expect(confirm).toHaveBeenCalledWith(expect.objectContaining({ amountGhs: 25 })));
+  });
+
+  it("says a cashout freeze only records an alert", () => {
+    render(<AgentApprovalQueue tasks={[task({ task_type: "freeze_cashouts", payload: { agent_id: "k", display: { accounts: [{ id: "k", name: "Kofi" }] } } })]} onDecided={() => {}} />);
+    expect(screen.getByText(/does not block cashouts/)).toBeInTheDocument();
+  });
+});
+
 describe("confirm kind mirror", () => {
   it("matches the backend policy for each kind", () => {
     expect(agentConfirmKind("switch_priority")).toBe("ops");

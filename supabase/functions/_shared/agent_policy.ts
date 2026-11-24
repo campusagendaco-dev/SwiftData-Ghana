@@ -18,6 +18,13 @@ export type AgentRoute = "drop" | "record" | "queue" | "run";
 export type ConfirmKindForAction = "account" | "ops" | "message";
 
 export const MAX_ACCOUNTS_PER_TASK = 20;
+/** Networks an outage text or "take offline" may name; the name goes into a bulk SMS. */
+export const KNOWN_NETWORKS = new Set(["MTN", "TELECEL", "AT", "AIRTELTIGO"]);
+
+/** A paused agent (registry is_active = false) skips every run except an admin's manual run. */
+export function shouldSkipRun(isActive: boolean, run: { manual: boolean }): boolean {
+  return !isActive && !run.manual;
+}
 
 const AUTO = new Set(["record_finding", "record_memory", "record_strategy", "flag_review", "flag_aml_review", "notify_admin"]);
 
@@ -78,6 +85,9 @@ export function checkActionLimits(action: AgentAction): { ok: boolean; reason?: 
   const idKey = REQUIRED_ID[t];
   if (idKey && !isId(p[idKey])) return { ok: false, reason: `${t} needs ${idKey}` };
   if (t === "relink_order_provider" && !isId(p.provider_id)) return { ok: false, reason: "relink_order_provider needs provider_id" };
+  if ((t === "broadcast_outage" || t === "disable_network") && !KNOWN_NETWORKS.has(String(p.network).trim().toUpperCase())) {
+    return { ok: false, reason: `${t} needs a known network (${[...KNOWN_NETWORKS].join(", ")})` };
+  }
 
   if (t === "suspend_cluster" || t === "suspend_referral_ring") {
     const list = t === "suspend_cluster" ? p.user_ids : p.member_ids;

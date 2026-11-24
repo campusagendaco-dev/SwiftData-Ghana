@@ -67,6 +67,19 @@ CREATE TABLE IF NOT EXISTS public.ai_worker_tasks (
 );
 CREATE INDEX IF NOT EXISTS idx_ai_worker_tasks_status ON public.ai_worker_tasks (status, created_at DESC);
 
+-- target_key = the accounts/provider/order a task acts on, so the same proposal isn't
+-- queued again while waiting or within 24 h of a decision.
+ALTER TABLE public.ai_worker_tasks ADD COLUMN IF NOT EXISTS target_key TEXT;
+CREATE INDEX IF NOT EXISTS idx_ai_worker_tasks_target ON public.ai_worker_tasks (target_key, created_at DESC);
+
+-- Tasks queued by the earlier draft (no target_key, or a status the new rules don't know,
+-- e.g. 'pending') are closed as rejected so none of them can be approved or block this file.
+UPDATE public.ai_worker_tasks
+   SET status = 'rejected',
+       result = coalesce(result, '{}'::jsonb) || '{"note":"closed by the safe-agents migration (queued before the redesign)"}'::jsonb
+ WHERE target_key IS NULL
+   AND status NOT IN ('executed', 'rejected', 'failed');
+
 -- 'deciding' = claimed by ai-task-decide, so a task runs only once
 DO $$
 DECLARE c record;

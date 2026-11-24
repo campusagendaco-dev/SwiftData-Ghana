@@ -289,7 +289,7 @@ Every agent sends AI-proposed actions through `routeAgentAction`. Approvals go t
 
 **Files:**
 - Modify (rewrite): `supabase/migrations/20261124160000_openai_autonomous_worker_fleet.sql`
-- Create: `supabase/migrations/20261124170000_ai_agent_schedules.sql`
+- Create: `supabase/migrations/20261124180000_ai_agent_schedules.sql`
 - Create: `supabase/tests/ai_agents_checks.sql` (read-only, safe on production: it only reads catalogs and rows, inside `BEGIN … ROLLBACK`)
 - Local harness: scratchpad PGlite (`run.mjs`), with stubs for `ai_agent_registry`, `cron` (a `cron.job` table and `cron.schedule`/`cron.unschedule` functions), `auth.users` and `public.is_admin()`
 
@@ -306,7 +306,7 @@ Every agent sends AI-proposed actions through `routeAgentAction`. Approvals go t
 - `cron.unschedule` for `ops-worker-ai-patrol`, `threat-hunter-patrol`, `aml-scanner-patrol` and `account-cloner-patrol` if they exist. This file schedules nothing.
 - No realtime publication for `ai_system_memory`. Keep it for `ai_worker_tasks` (the approval queue) and `ai_agent_runs`.
 
-**`20261124170000_ai_agent_schedules.sql`:** the four `cron.schedule` calls at the Global Constraints intervals, with the draft's `net.http_post` body.
+**`20261124180000_ai_agent_schedules.sql`:** the four `cron.schedule` calls at the Global Constraints intervals, with the draft's `net.http_post` body.
 
 **`ai_agents_checks.sql`:** `RAISE` on any of:
 - an agent not in `observe_only`/`propose`
@@ -369,5 +369,5 @@ Every agent sends AI-proposed actions through `routeAgentAction`. Approvals go t
    - `ops-worker-ai`, `sentinel-ai`, `sentinel-evolve`, `guardian-ai`
    - `threat-hunter`, `aml-scanner`, `account-cloner`, `auto-ticket-resolver`
 2. Paste `20261124160000_openai_autonomous_worker_fleet.sql`, then run `supabase/tests/ai_agents_checks.sql`. No error means it passed.
-3. Only after step 1 is done: paste `20261124170000_ai_agent_schedules.sql`.
+3. Only after step 1 is done: paste `20261124180000_ai_agent_schedules.sql`.
 4. Merge to main, so Vercel deploys the pages. Check the Sentinel AI page: every agent should show "Watch only" and the queue should be empty.

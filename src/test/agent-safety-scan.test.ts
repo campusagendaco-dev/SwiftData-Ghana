@@ -24,7 +24,7 @@ const AGENT_FILES = [
 const FORBIDDEN: { name: string; re: RegExp }[] = [
   {
     name: "order-sending or refund function",
-    re: /(functions\/v1\/|functions\.invoke\(\s*["'`])(verify-payment|heal-processing-orders|check-order-status|process-retries|verify-and-refund|admin-retry-autorouter|route-to-datamart|cron-auto-retry)\b/g,
+    re: /(functions\/v1\/|functions\.invoke\(\s*["'`])(verify-payment|heal-processing-orders|check-order-status|process-retries|verify-and-refund|admin-retry-autorouter|route-to-datamart|cron-auto-retry|ai-task-decide)\b/g,
   },
   { name: "wallet or refund RPC", re: /\.rpc\(\s*["'`](credit_wallet|debit_wallet|refund_failed_order)["'`]/g },
   { name: "write to orders", re: /from\(\s*["'`]orders["'`]\s*\)\s*\.(update|insert|delete|upsert)\b/g },
@@ -66,6 +66,10 @@ export function scan(file: string, raw: string): Hit[] {
 const read = (f: string) => readFileSync(join(fnRoot, f), "utf8");
 
 describe("AI agent safety scan", () => {
+  it("flags an agent approving its own task (self-check)", () => {
+    expect(scan("x.ts", "await fetch(`${URL}/functions/v1/ai-task-decide`, {})").map((h) => h.rule)).toEqual(["order-sending or refund function"]);
+  });
+
   it("flags a heal call written as a template URL (self-check)", () => {
     const fixture = "await fetch(`${SUPABASE_URL}/functions/v1/heal-processing-orders`, { method: 'POST' });";
     expect(scan("x.ts", fixture).map((h) => h.rule)).toEqual(["order-sending or refund function"]);
@@ -95,4 +99,30 @@ describe("AI agent safety scan", () => {
     const verifyCall = /functions\/v1\/verify-payment`[\s\S]*?body:\s*JSON\.stringify\(([^)]*)\)/.exec(block)?.[1] ?? "";
     expect(verifyCall).toBe("{ reference: order.id }");
   });
+
+  it("the payment backup counts a try only while the order is still pending, and verifies only then", () => {
+    const raw = read("sentinel-ai/index.ts");
+    const block = /\/\/ payment-backup:start([\s\S]*?)\/\/ payment-backup:end/.exec(raw)?.[1] ?? "";
+    // conditional claim: still pending and nobody else counted this try
+    expect(block).toMatch(/\.eq\("id", order\.id\)\s*\.eq\("status", "pending"\)/);
+    expect(block).toMatch(/metadata->>ai_heal_attempts/);
+    const claimAt = block.search(/if \(claimError \|\| !claimed\?\.length\) return;/);
+    const verifyAt = block.indexOf("functions/v1/verify-payment");
+    expect(claimAt).toBeGreaterThan(0);
+    expect(claimAt).toBeLessThan(verifyAt);
+  });
+
+  it("every scheduled agent honours pause (is_active) except for an admin's manual run", () => {
+    for (const f of ["ops-worker-ai/index.ts", "sentinel-ai/index.ts", "guardian-ai/index.ts", "threat-hunter/index.ts", "aml-scanner/index.ts", "account-cloner/index.ts"]) {
+      const src = stripComments(read(f));
+      expect(src, f).toMatch(/shouldSkipRun\(\s*\w+\.is_active\s*,\s*\{\s*manual:/);
+      expect(src, f).toMatch(/source\s*===\s*"admin_manual"/);
+    }
+  });
+
+  it("points at the real schedules file (20261124180000), never the old name", () => {
+    const plan = readFileSync(join(__dirname, "..", "..", "docs", "superpowers", "plans", "2026-11-24-safe-ai-agents.md"), "utf8");
+    for (const text of [read("ops-worker-ai/index.ts"), plan]) expect(text).not.toContain("20261124170000_ai_agent_schedules");
+  });
 });
+

@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import AgentApprovalQueue from "@/components/admin/AgentApprovalQueue";
+import { useConfirmedCall } from "@/components/admin/ConfirmActionProvider";
 
 interface SentinelAction {
   id: string;
@@ -66,6 +67,7 @@ interface AgentRunMetrics {
 }
 
 const AdminSentinelAI = () => {
+  const confirmed = useConfirmedCall();
   const [actions, setActions] = useState<SentinelAction[]>([]);
   const [strategies, setStrategies] = useState<SentinelStrategy[]>([]);
   const [memories, setMemories] = useState<SystemMemoryItem[]>([]);
@@ -195,24 +197,21 @@ const AdminSentinelAI = () => {
     };
   }, []);
 
-  // Autonomous Heartbeat: Trigger Sentinel every 60 seconds
-  useEffect(() => {
-    const heartbeat = setInterval(() => {
-      if (!isProcessing) {
-        console.log("[Sentinel] Initiating Autonomous Heartbeat Scan...");
-        triggerSentinel();
-      }
-    }, 60000); // 60s loop
-
-    return () => clearInterval(heartbeat);
-  }, [isProcessing]);
+  // No timer here: agents run on their server schedules. A browser tab must not drive a
+  // job that can send paid orders (sentinel's payment backup) or spend the AI budget.
 
   const triggerSentinel = async () => {
+    if (!(await confirmed.confirm({
+      title: "Run Sentinel and the Ops Worker now?",
+      description: "Sentinel's payment backup sends paid orders whose Paystack webhook was missed (at most 10, GH₵500 per run). Everything else only watches or proposes.",
+      kind: "send",
+      confirmLabel: "Run now",
+    }))) return;
     setIsProcessing(true);
     try {
       const [sentRes, opsRes] = await Promise.all([
-        supabase.functions.invoke("sentinel-ai"),
-        supabase.functions.invoke("ops-worker-ai", { body: { mode: "patrol" } }),
+        supabase.functions.invoke("sentinel-ai", { body: { source: "admin_manual" } }),
+        supabase.functions.invoke("ops-worker-ai", { body: { mode: "patrol", source: "admin_manual" } }),
       ]);
       if (sentRes.error && opsRes.error) throw sentRes.error;
       toast.success(opsRes.data?.summary || sentRes.data?.message || "Sentinel & Ops Worker analysis complete");

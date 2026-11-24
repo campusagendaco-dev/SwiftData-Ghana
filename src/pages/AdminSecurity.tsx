@@ -1586,14 +1586,14 @@ const AdminSecurity = () => {
         key: "ops_worker",
         edgeFn: "ops-worker-ai",
         name: "Ops Worker AI",
-        role: "Monitor · Learn · Autonomous Worker",
-        schedule: "Every 5 min",
+        role: "Monitor · Learn · Propose",
+        schedule: "Every 15 min",
         icon: Bot,
         color: "text-emerald-400",
         border: "border-emerald-500/25",
         bg: "bg-emerald-500/10",
         pulse: "bg-emerald-500",
-        description: "OpenAI-powered operations worker. Heals stuck orders, rebalances non-Korba SME providers, triages support tickets, and learns system baselines.",
+        description: "Operations watcher. Reports stuck orders (count and GH₵), proposes non-Korba SME provider changes for approval, alerts admins and learns system baselines. It never sends, retries or refunds orders.",
       },
       {
         key: "sentinel_prime",
@@ -1706,7 +1706,7 @@ const AdminSecurity = () => {
         {AGENT_FLEET.map(agent => {
           const AIcon = agent.icon;
           const dbAgent = dbAgents.find(a => a.name === agent.key);
-          const currentModel = dbAgent?.active_model || "gpt-4o-mini";
+          const currentModel = dbAgent?.active_model || "gemini-3.6-flash";
           const isActive = dbAgent?.is_active !== false;
           // Safe-agents design: only watch-only or propose-for-approval; anything else is watch-only.
           const autonomyMode = dbAgent?.autonomy_mode === "propose" ? "propose" : "observe_only";
@@ -1754,6 +1754,14 @@ const AdminSecurity = () => {
                     type="button"
                     title={`Run ${agent.name} now`}
                     onClick={async () => {
+                      if (!(await confirmed.confirm({
+                        title: `Run ${agent.name} now?`,
+                        description: agent.edgeFn === "sentinel-ai"
+                          ? "Sentinel's payment backup sends paid orders whose Paystack webhook was missed (at most 10, GH₵500 per run). Everything else only watches or proposes."
+                          : `${agent.name} checks now and may queue proposals for approval. It never acts by itself.`,
+                        kind: agent.edgeFn === "sentinel-ai" ? "send" : "ops",
+                        confirmLabel: "Run now",
+                      }))) return;
                       toast({ title: `Triggering ${agent.name}…` });
                       const { data, error } = await supabase.functions.invoke(agent.edgeFn, {
                         body: { mode: "patrol", source: "admin_manual" },
@@ -1829,6 +1837,8 @@ const AdminSecurity = () => {
                     }}
                     className="text-[9px] font-bold font-mono bg-zinc-900 border border-zinc-800 rounded px-1.5 py-0.5 text-cyan-400 focus:outline-none focus:border-cyan-500/50"
                   >
+                    <option value="gemini-3.6-flash">Gemini 3.6 Flash (current default)</option>
+                    <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
                     <option value="gpt-4o-mini">OpenAI GPT-4o Mini</option>
                     <option value="gpt-4o">OpenAI GPT-4o</option>
                     <option value="gpt-4.1-mini">OpenAI GPT-4.1 Mini</option>

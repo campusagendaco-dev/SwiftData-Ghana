@@ -1,6 +1,6 @@
 /**
  * OPS WORKER AI — operations, learning and security watcher.
- * Runs every 15 minutes via pg_cron (20261124170000_ai_agent_schedules.sql) or on demand
+ * Runs every 15 minutes via pg_cron (20261124180000_ai_agent_schedules.sql) or on demand
  * from the Admin Console.
  *
  * Safe-agents design (2026-11-24): it only WATCHES and PROPOSES.
@@ -19,7 +19,7 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { verifyAdmin } from "../_shared/auth.ts";
 import { timingSafeEqual } from "../_shared/gateway-security.ts";
 import { callAiAgent, getAgentConfig } from "../_shared/ai.ts";
-import { routeAgentAction, type AgentAction, type AgentMode } from "../_shared/agent_policy.ts";
+import { routeAgentAction, type AgentAction, type AgentMode, shouldSkipRun } from "../_shared/agent_policy.ts";
 import { queueAgentAction, runAutoAction } from "../_shared/agent_actions.ts";
 import { agentSms } from "../_shared/agent_sms.ts";
 
@@ -282,7 +282,8 @@ serve(async (req: Request) => {
 
     // Load agent config
     const agentConfig = await getAgentConfig(supabaseAdmin, "ops_worker");
-    if (mode === "patrol" && !agentConfig.is_active && isCronAuthed) {
+    // Paused agents skip every patrol except an admin's manual "Run now".
+    if (mode === "patrol" && shouldSkipRun(agentConfig.is_active, { manual: body?.source === "admin_manual" })) {
       return new Response(JSON.stringify({ success: true, skipped: true, reason: "ops_worker is paused" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });

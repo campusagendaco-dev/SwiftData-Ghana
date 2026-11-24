@@ -3,7 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { verifyAdmin } from "../_shared/auth.ts";
 import { timingSafeEqual } from "../_shared/gateway-security.ts";
-import { routeAgentAction, type AgentAction, type AgentMode } from "../_shared/agent_policy.ts";
+import { routeAgentAction, type AgentAction, type AgentMode, shouldSkipRun } from "../_shared/agent_policy.ts";
 import { queueAgentAction, runAutoAction } from "../_shared/agent_actions.ts";
 import { agentSms } from "../_shared/agent_sms.ts";
 import { callAiAgent, getAgentConfig } from "../_shared/ai.ts";
@@ -33,7 +33,9 @@ serve(async (req: Request) => {
 
   try {
     const guardianCfg = await getAgentConfig(supabaseAdmin, "guardian_ai");
-    if (!guardianCfg.is_active && isCronAuthed) {
+    const runBody = await req.json().catch(() => ({}));
+    // Paused: skip every run except an admin's manual "Run now".
+    if (shouldSkipRun(guardianCfg.is_active, { manual: runBody?.source === "admin_manual" })) {
       return new Response(JSON.stringify({ success: true, skipped: true, reason: "guardian_ai is paused" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });

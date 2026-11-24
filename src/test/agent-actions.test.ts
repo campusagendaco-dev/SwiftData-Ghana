@@ -127,3 +127,76 @@ describe("executeApprovedAction", () => {
     expect(db.writes.find((w) => w.table === "security_blacklist")?.values).toMatchObject({ type: "ip", value: "1.2.3.4", created_by: "admin-1" });
   });
 });
+
+describe("what the admin is shown comes from the database, not the AI", () => {
+  it("names the provider from the providers table, whatever the AI wrote", async () => {
+    const db = fakeDb({ providers: [{ id: "p1", name: "SKPlug", handler_type: "skdataplug" }] });
+    await queueAgentAction(db, "sentinel_prime", { type: "switch_priority", title: "Switch Korba to priority 1", params: { provider_id: "p1", provider_name: "Korba", new_priority: 1 } });
+    const t = db.tables.ai_worker_tasks[0];
+    expect(t.title).toBe("sentinel_prime: set provider SKPlug to priority 1");
+    expect(t.payload.display).toMatchObject({ provider: { id: "p1", name: "SKPlug" } });
+  });
+
+  it("lists the names of the accounts to be suspended", async () => {
+    const db = fakeDb({ profiles: [{ user_id: "a", full_name: "Ama Mensah" }, { user_id: "b", full_name: "Kofi Boateng" }] });
+    await queueAgentAction(db, "threat_hunter", { type: "suspend_cluster", title: "x", params: { user_ids: ["a", "b"] } });
+    const t = db.tables.ai_worker_tasks[0];
+    expect(t.title).toBe("threat_hunter: suspend 2 accounts");
+    expect(t.payload.display.accounts).toEqual([{ id: "a", name: "Ama Mensah" }, { id: "b", name: "Kofi Boateng" }]);
+  });
+
+  it("counts outage text recipients and shows the exact text", async () => {
+    const db = fakeDb({ profiles: [{ user_id: "a", is_agent: true, phone: "0241" }, { user_id: "b", is_agent: true, phone: "0242" }, { user_id: "c", is_agent: false, phone: "0243" }] });
+    await queueAgentAction(db, "sentinel_prime", { type: "broadcast_outage", params: { network: "mtn" } });
+    const d = db.tables.ai_worker_tasks[0].payload.display;
+    expect(d.recipients).toBe(2);
+    expect(d.sms_text).toContain("instability with the MTN network");
+  });
+
+  it("shows the order amount from the orders table", async () => {
+    const db = fakeDb({ orders: [{ id: "o1234567xx", amount: 25, status: "processing" }] });
+    await queueAgentAction(db, "guardian_ai", { type: "quarantine_order", params: { order_id: "o1234567xx", amount: 999 } });
+    const t = db.tables.ai_worker_tasks[0];
+    expect(t.payload.display.order).toEqual({ id: "o1234567xx", amount: 25, status: "processing" });
+    expect(t.title).toBe("guardian_ai: mark order o1234567 failed (GH₵25.00)");
+  });
+});
+
+describe("proposals don't come back after a decision", () => {
+  const cluster = (title: string) => ({ type: "suspend_cluster", title, params: { user_ids: ["b", "a"] } });
+
+  it("does not queue the same targets again while waiting, even with a new AI title", async () => {
+    const db = fakeDb();
+    await queueAgentAction(db, "threat_hunter", cluster("first wording"));
+    expect((await queueAgentAction(db, "threat_hunter", { ...cluster("second wording"), params: { user_ids: ["a", "b"] } })).queued).toBe(false);
+  });
+
+  it("does not queue again within 24 hours of a rejection, but does after", async () => {
+    const db = fakeDb({ ai_worker_tasks: [{ id: "old", task_type: "suspend_cluster", target_key: "suspend_cluster:a,b", status: "rejected", created_at: ago(3 * 60 * 60 * 1000) }] });
+    expect((await queueAgentAction(db, "threat_hunter", cluster("again"))).queued).toBe(false);
+    db.tables.ai_worker_tasks[0].created_at = ago(25 * 60 * 60 * 1000);
+    expect((await queueAgentAction(db, "threat_hunter", cluster("again"))).queued).toBe(true);
+  });
+
+  it("records the same duplicate-account flag only once a day", async () => {
+    const db = fakeDb({ duplicate_account_flags: [{ primary_user_id: "a", created_at: ago(60 * 60 * 1000) }] });
+    await runAutoAction(db, "account_cloner", { type: "flag_review", params: { user_ids: ["a", "b"] } }, { sms: fakeSms() });
+    expect(db.writes.filter((w) => w.table === "duplicate_account_flags")).toHaveLength(0);
+  });
+
+  it("records the same AML alert only once a day", async () => {
+    const db = fakeDb({ aml_alerts: [{ agent_id: "k", alert_type: "STRUCTURING", created_at: ago(60 * 60 * 1000) }] });
+    await runAutoAction(db, "aml_scanner", { type: "flag_aml_review", params: { agent_id: "k", pattern: "STRUCTURING" } }, { sms: fakeSms() });
+    expect(db.writes.filter((w) => w.table === "aml_alerts")).toHaveLength(0);
+  });
+});
+
+describe("admins are found in user_roles", () => {
+  it("never suspends someone with the admin role even if their profile says agent", async () => {
+    const db = fakeDb({ profiles: [{ user_id: "a", role: "agent" }, { user_id: "boss", role: "agent" }], user_roles: [{ user_id: "boss", role: "admin" }] });
+    const res = await executeApprovedAction(db, { task_type: "suspend_cluster", payload: { user_ids: ["a", "boss"] } }, { adminId: "x", sms: fakeSms() });
+    expect(db.tables.profiles.find((p) => p.user_id === "boss")?.is_suspended).toBeUndefined();
+    expect(res.details).toMatchObject({ skipped_admins: ["boss"] });
+  });
+});
+

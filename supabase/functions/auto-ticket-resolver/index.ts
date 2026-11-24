@@ -98,10 +98,9 @@ Description: ${ticket.description}
 - Ghanaian Warmth & Pidgin elements: sound warm, professional, but distinctively Ghanaian ("Chale", "No yawa", "Sorted").
 - Check if they are complaining about a failed order. Cross-reference their complaint with the "RECENT CUSTOMER ORDERS" list.
 - If you find an order matching their complaint whose Status is exactly "refunded":
-  * Tell them that order was refunded to their wallet and they can safely resubmit it.
+  * Tell them that order was refunded to their wallet and they can safely resubmit it, and set should_resolve to true.
 - If the matching order's Status is failed or fulfillment_failed (NOT refunded):
   * Do NOT say it was refunded. Tell them the failure is recorded and the support team will review it, and set should_resolve to false.
-  * Decide to automatically close/resolve the ticket.
 - Otherwise, draft an intelligent, helpful next-step reply (e.g. telling them how to check Paystack top-up status, or telling them the support team is investigating) and set should_resolve to false.
 - Keep the response response concise (2-4 sentences max).`;
 
@@ -148,11 +147,13 @@ Description: ${ticket.description}
 
     const aiRes = await callAiAgent(
       supabase,
-      "ops_worker",
+      "auto_ticket_resolver",
       jsonSystemPrompt,
       userPromptText,
       600,
       {
+        // Same model as on main; its own agent name so it doesn't use the ops worker's settings.
+        forceModel: "claude-sonnet-4-5-20250929",
         responseJson: true,
         imageBase64: imageBlock?.source?.data,
         imageMediaType: imageBlock?.source?.media_type,

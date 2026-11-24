@@ -68,25 +68,25 @@ function isGeminiModel(model: string): boolean {
   return model.toLowerCase().startsWith("gemini-");
 }
 
+/**
+ * Same mapping as main (2026-11-24 safe-agents design: every agent keeps the model it runs
+ * on today). The July seed (claude-haiku-4-5), empty models and old Gemini Flash ids run on
+ * gemini-3.6-flash; anything else is used as stored. The cascade in callAiAgent falls back
+ * to other providers if a model fails.
+ */
 export function normalizeModelName(rawModel: string): string {
   const m = (rawModel || "").trim();
-  const hasOpenAI = Boolean(Deno.env.get("OPENAI_API_KEY"));
-  const hasGemini = Boolean(Deno.env.get("GEMINI_API_KEY"));
-  const hasAnthropic = Boolean(Deno.env.get("ANTHROPIC_API_KEY"));
-
-  // Replace empty or broken legacy model identifiers
-  if (!m || m === "gemini-3.6-flash" || m === "gemini-1.5-flash") {
-    if (hasOpenAI) return "gpt-4o-mini";
-    if (hasGemini) return "gemini-2.0-flash";
-    if (hasAnthropic) return "claude-3-5-haiku-20241022";
-    return "gpt-4o-mini";
+  if (!m || m.includes("claude-haiku-4-5") || m.includes("gemini-1.5-flash") || m.includes("gemini-2.5-flash")) {
+    return "gemini-3.6-flash";
   }
-  // Keep the model the agent already uses (owner design 2026-11-24: no bulk model switch).
+  if (m === "claude-haiku") {
+    return "claude-3-5-haiku-20241022";
+  }
   return m;
 }
 
 export async function getAgentConfig(supabaseAdmin: any, agentName: string): Promise<AiAgentConfig> {
-  const defaultModel = Deno.env.get("OPENAI_API_KEY") ? "gpt-4o-mini" : "gemini-2.0-flash";
+  const defaultModel = "gemini-3.6-flash"; // what main uses when an agent has no model
   const fallback: AiAgentConfig = {
     name: agentName,
     active_model: defaultModel,

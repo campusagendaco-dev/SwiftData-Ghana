@@ -62,4 +62,29 @@ describe("decideTask", () => {
     expect((await decideTask(db, { taskId: "nope", approve: true, adminId: "a" }, { sms })).status).toBe(409);
     expect((await decideTask(db, { taskId: "t1", approve: true, adminId: "a" }, { sms })).status).toBe(409);
   });
+
+  it("refuses the service-role key: only a signed-in admin can approve", async () => {
+    const db = fakeDb({ ai_worker_tasks: [task()], profiles: people });
+    const res = await decideTask(db, { taskId: "t1", approve: true, adminId: "00000000-0000-0000-0000-000000000000" }, { sms });
+    expect(res.status).toBe(403);
+    expect(db.tables.ai_worker_tasks[0].status).toBe("awaiting_approval");
+    expect(db.writes.some((w) => w.table === "profiles")).toBe(false);
+  });
+
+  it("reports an error when the result can't be saved", async () => {
+    const db = fakeDb({ ai_worker_tasks: [task()], profiles: people });
+    const realFrom = db.from;
+    let updates = 0;
+    (db as any).from = (table: string) => {
+      const q = realFrom(table);
+      if (table !== "ai_worker_tasks") return q;
+      const update = q.update;
+      q.update = (v: any) => (++updates === 2 ? { eq: async () => ({ data: null, error: { message: "approved_by violates foreign key" } }) } : update(v));
+      return q;
+    };
+    const res = await decideTask(db, { taskId: "t1", approve: true, adminId: "admin-1" }, { sms });
+    expect(res.status).toBe(500);
+    expect(String(res.body.error)).toContain("could not be saved");
+  });
 });
+

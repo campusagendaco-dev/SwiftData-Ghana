@@ -26,31 +26,100 @@ type Result = { ok: boolean; details?: unknown; error?: string };
 const isKorba = (p: any) =>
   String(p?.handler_type || "").toLowerCase().includes("korba") || String(p?.name || "").toLowerCase().includes("korba");
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+const ghs = (n: unknown) => `GH₵${Number(n || 0).toFixed(2)}`;
+
+export const outageSmsText = (network: string) =>
+  `SwiftData Alert: We have detected instability with the ${network} network. Purchases may be delayed. Our system is auto-rerouting traffic.`;
+
+/** The accounts, provider, order, IP or network a task acts on, as one stable key. */
+export function targetKeyFor(type: string, params: Record<string, any>): string {
+  const ids = (list: unknown) => (Array.isArray(list) ? list.map(String) : []);
+  let target: string[];
+  if (type === "suspend_cluster") target = ids(params.user_ids);
+  else if (type === "suspend_referral_ring") target = [...ids(params.member_ids), ...(params.referrer_id ? [String(params.referrer_id)] : [])];
+  else if (params.provider_id) target = [String(params.provider_id), String(params.new_priority ?? "")];
+  else target = [params.user_id ?? params.agent_id ?? params.order_id ?? params.ip ?? String(params.network ?? "").toUpperCase()].map(String);
+  return `${type}:${[...new Set(target)].sort().join(",")}`;
+}
+
+/**
+ * What an admin is shown for a task, read from the database by id so the AI can't label
+ * one provider, account or order with another's name.
+ */
+async function buildDisplay(db: any, type: string, p: Record<string, any>): Promise<{ summary: string; display: Record<string, unknown> }> {
+  const accountIds: string[] =
+    type === "suspend_cluster" ? p.user_ids
+      : type === "suspend_referral_ring" ? [...p.member_ids, ...(p.referrer_id ? [p.referrer_id] : [])]
+        : ["suspend_agent", "suspend_login_bot", "lock_terminal"].includes(type) ? [p.user_id]
+          : type === "freeze_cashouts" ? [p.agent_id] : [];
+  if (accountIds.length) {
+    const { data: profs } = await db.from("profiles").select("user_id, full_name").in("user_id", accountIds);
+    const nameOf = new Map((profs || []).map((x: any) => [x.user_id, x.full_name || null]));
+    const accounts = accountIds.map((id) => ({ id, name: (nameOf.get(id) as string | null) ?? "Unknown account" }));
+    const n = accounts.length;
+    const summary =
+      type === "lock_terminal" ? `lock the terminal of ${accounts[0].name}`
+        : type === "freeze_cashouts" ? `record a cashout-freeze alert for ${accounts[0].name} (does not block cashouts)`
+          : `suspend ${n} account${n === 1 ? "" : "s"}`;
+    return { summary, display: { accounts } };
+  }
+  if (p.provider_id && type !== "relink_order_provider") {
+    const { data: prov } = await db.from("providers").select("id, name").eq("id", p.provider_id).maybeSingle();
+    const name = prov?.name ?? "Unknown provider";
+    const priority = type === "self_heal_provider" ? 1 : Math.max(1, Math.min(10, Math.trunc(Number(p.new_priority || 1))));
+    return { summary: `set provider ${name} to priority ${priority}`, display: { provider: { id: p.provider_id, name }, priority } };
+  }
+  if (type === "quarantine_order" || type === "relink_order_provider") {
+    const { data: order } = await db.from("orders").select("id, amount, status").eq("id", p.order_id).maybeSingle();
+    const o = order ? { id: order.id, amount: Number(order.amount || 0), status: order.status } : { id: p.order_id, amount: null, status: "not found" };
+    if (type === "quarantine_order") {
+      return { summary: `mark order ${String(p.order_id).slice(0, 8)} failed (${o.amount == null ? "amount unknown" : ghs(o.amount)})`, display: { order: o } };
+    }
+    const { data: prov } = await db.from("providers").select("id, name").eq("id", p.provider_id).maybeSingle();
+    return {
+      summary: `relink order ${String(p.order_id).slice(0, 8)} to ${prov?.name ?? "unknown provider"}`,
+      display: { order: o, provider: { id: p.provider_id, name: prov?.name ?? "Unknown provider" } },
+    };
+  }
+  if (type === "blacklist_ip") return { summary: `block IP ${p.ip}`, display: { ip: p.ip } };
+  const network = String(p.network ?? "").trim().toUpperCase();
+  if (type === "disable_network") return { summary: `take the ${network} network offline`, display: { network } };
+  if (type === "broadcast_outage") {
+    const { data: agents } = await db.from("profiles").select("phone").eq("is_agent", true).not("phone", "is", null);
+    const recipients = (agents || []).filter((a: any) => a?.phone).length;
+    return { summary: `text ${recipients} agents about ${network}`, display: { network, recipients, sms_text: outageSmsText(network) } };
+  }
+  return { summary: type, display: {} };
+}
+
 export async function queueAgentAction(db: any, agentName: string, action: AgentAction): Promise<{ queued: boolean; reason?: string }> {
   const type = normalizeActionType(action.type);
   if (policyFor(type) !== "approval") return { queued: false, reason: "not an approval action" };
   const limits = checkActionLimits(action);
   if (!limits.ok) return { queued: false, reason: limits.reason };
-  const title = String(action.title || type).slice(0, 200);
+  const params = { ...(action.params ?? {}) } as Record<string, any>;
+  if (params.network != null) params.network = String(params.network).trim().toUpperCase();
+  const targetKey = targetKeyFor(type, params);
 
-  const { data: existing } = await db
-    .from("ai_worker_tasks")
-    .select("id")
-    .eq("task_type", type)
-    .eq("title", title)
-    .eq("status", "awaiting_approval")
-    .limit(1)
-    .maybeSingle();
-  if (existing) return { queued: false, reason: "already waiting for approval" };
+  // Same targets already waiting, or decided in the last 24 hours: don't ask again.
+  const { data: active } = await db.from("ai_worker_tasks").select("id").eq("target_key", targetKey)
+    .in("status", ["awaiting_approval", "deciding"]).limit(1).maybeSingle();
+  if (active) return { queued: false, reason: "already waiting for approval" };
+  const { data: recent } = await db.from("ai_worker_tasks").select("id").eq("target_key", targetKey)
+    .gte("created_at", new Date(Date.now() - DAY_MS).toISOString()).limit(1).maybeSingle();
+  if (recent) return { queued: false, reason: "decided in the last 24 hours" };
 
+  const { summary, display } = await buildDisplay(db, type, params);
   const { error } = await db.from("ai_worker_tasks").insert({
     agent_name: agentName,
     task_type: type,
+    target_key: targetKey,
     priority: ["low", "medium", "high", "critical"].includes(String(action.priority)) ? action.priority : "high",
     status: "awaiting_approval",
-    title,
-    reasoning: action.reason || null,
-    payload: action.params ?? {},
+    title: `${agentName}: ${summary}`.slice(0, 200),
+    reasoning: [action.title && `AI: ${action.title}`, action.reason].filter(Boolean).join(" — ") || null,
+    payload: { ...params, display },
   });
   if (error) return { queued: false, reason: error.message };
   return { queued: true };
@@ -112,6 +181,9 @@ export async function runAutoAction(db: any, agentName: string, action: AgentAct
   if (type === "flag_review") {
     const ids: string[] = Array.isArray(p.user_ids) ? p.user_ids.filter((x: unknown) => typeof x === "string") : [];
     if (!ids.length) return { ok: false, error: "flag_review needs user_ids" };
+    const { data: flagged } = await db.from("duplicate_account_flags").select("id").eq("primary_user_id", ids[0])
+      .gte("created_at", new Date(Date.now() - DAY_MS).toISOString()).limit(1).maybeSingle();
+    if (flagged) return { ok: true, details: { duplicate: true } };
     await db.from("duplicate_account_flags").insert({
       primary_user_id: ids[0],
       duplicate_user_ids: ids.slice(1),
@@ -124,6 +196,9 @@ export async function runAutoAction(db: any, agentName: string, action: AgentAct
 
   if (type === "flag_aml_review") {
     if (!p.agent_id) return { ok: false, error: "flag_aml_review needs agent_id" };
+    const { data: alerted } = await db.from("aml_alerts").select("id").eq("agent_id", p.agent_id).eq("alert_type", String(p.pattern || "GENERAL"))
+      .gte("created_at", new Date(Date.now() - DAY_MS).toISOString()).limit(1).maybeSingle();
+    if (alerted) return { ok: true, details: { duplicate: true } };
     await db.from("aml_alerts").insert({
       agent_id: p.agent_id,
       alert_type: String(p.pattern || "GENERAL"),
@@ -141,9 +216,12 @@ export async function runAutoAction(db: any, agentName: string, action: AgentAct
 
 async function suspendAccounts(db: any, ids: string[], field: "is_suspended" | "terminal_locked"): Promise<Result> {
   const { data: profs } = await db.from("profiles").select("user_id, role").in("user_id", ids);
+  const { data: roles } = await db.from("user_roles").select("user_id, role").in("user_id", ids).eq("role", "admin");
+  const adminIds = new Set<string>((roles || []).map((r: any) => r.user_id));
   const found = (profs || []) as { user_id: string; role?: string }[];
-  const admins = found.filter((x) => x.role === "admin").map((x) => x.user_id);
-  const targets = found.filter((x) => x.role !== "admin").map((x) => x.user_id);
+  const isAdmin = (x: { user_id: string; role?: string }) => x.role === "admin" || adminIds.has(x.user_id);
+  const admins = found.filter(isAdmin).map((x) => x.user_id);
+  const targets = found.filter((x) => !isAdmin(x)).map((x) => x.user_id);
   if (targets.length) {
     const { error } = await db.from("profiles").update({ [field]: true }).in("user_id", targets);
     if (error) return { ok: false, error: error.message };
@@ -227,11 +305,11 @@ export async function executeApprovedAction(
     }
 
     case "broadcast_outage": {
-      const network = String(p.network);
+      const network = String(p.network).trim().toUpperCase();
       const { data: agents } = await db.from("profiles").select("phone").eq("is_agent", true).not("phone", "is", null);
       const phones = (agents || []).map((a: any) => a.phone).filter(Boolean);
       if (!phones.length) return { ok: false, error: "no agent phone numbers" };
-      const msg = `SwiftData Alert: We have detected instability with the ${network} network. Purchases may be delayed. Our system is auto-rerouting traffic.`;
+      const msg = outageSmsText(network);
       const sent = await ctx.sms.sendBulk(db, phones, msg);
       return { ok: sent, details: { recipients: phones.length, network } };
     }

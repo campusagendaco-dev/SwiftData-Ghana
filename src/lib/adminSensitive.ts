@@ -13,6 +13,8 @@ export const SENSITIVE_FUNCTIONS = new Set([
   "heal-processing-orders",
   "route-to-datamart",
   "cron-auto-retry",
+  // runs the payment-webhook backup, which sends paid orders that never went out
+  "sentinel-ai",
   // message credit
   "admin-send-sms",
   "send-push-notification",

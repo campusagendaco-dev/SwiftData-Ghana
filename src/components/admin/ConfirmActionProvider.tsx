@@ -27,7 +27,7 @@ const KIND_NOTE: Record<ConfirmOptions["kind"], string> = {
   access: "This changes who can use the admin pages.",
   promo: "People who already claimed this promo can claim it again.",
   account: "This suspends or restricts user accounts.",
-  ops: "This changes how orders are routed to providers.",
+  ops: "This changes how orders are routed or handled, or which networks are on.",
 };
 
 function summary(opts: ConfirmOptions): string {

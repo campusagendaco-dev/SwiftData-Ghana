@@ -16,30 +16,54 @@ export type AgentTask = {
   created_at: string;
 };
 
-/** Plain words for what approving a task changes. */
-export function describeTaskChange(task: Pick<AgentTask, "task_type" | "payload">): string {
+type TaskChange = { line: string; names?: string; sms?: string; recipients?: number; amountGhs?: number };
+
+/**
+ * Plain words for what approving a task changes. Uses `payload.display`, which the server
+ * filled from the database by id (names, recipient count, order amount, SMS text), so the
+ * AI can't label one account or provider with another's name.
+ */
+export function describeTaskChange(task: Pick<AgentTask, "task_type" | "payload">): TaskChange {
   const p = task.payload ?? {};
+  const d = (p.display ?? {}) as Record<string, any>;
+  const type = String(task.task_type).toLowerCase();
+  const accounts: { id: string; name: string }[] | undefined = Array.isArray(d.accounts) ? d.accounts : undefined;
+  const names = accounts?.map((a) => a.name).join(", ");
+  if (type === "freeze_cashouts") {
+    return { line: "Records a cashout-freeze alert for review (does not block cashouts)", names };
+  }
+  if (type === "broadcast_outage") {
+    const recipients = typeof d.recipients === "number" ? d.recipients : undefined;
+    return {
+      line: recipients == null ? `SMS to every agent about ${p.network}` : `${recipients} agents get this SMS`,
+      sms: d.sms_text,
+      recipients,
+    };
+  }
+  if (type === "quarantine_order" && d.order) {
+    const amount = typeof d.order.amount === "number" ? d.order.amount : undefined;
+    return {
+      line: `Order ${String(d.order.id).slice(0, 8)} (${amount == null ? "amount unknown" : `GH₵${amount.toFixed(2)}`}, ${d.order.status}) will be marked failed`,
+      amountGhs: amount,
+    };
+  }
   const ids = Array.isArray(p.user_ids) ? p.user_ids : Array.isArray(p.member_ids) ? [...p.member_ids, ...(p.referrer_id ? [p.referrer_id] : [])] : null;
-  if (ids) return `${ids.length} account${ids.length === 1 ? "" : "s"}`;
-  switch (String(task.task_type).toLowerCase()) {
+  if (ids) return { line: `${ids.length} account${ids.length === 1 ? "" : "s"}`, names };
+  switch (type) {
     case "suspend_agent":
     case "suspend_login_bot":
     case "lock_terminal":
-      return `1 account (${String(p.user_id ?? "").slice(0, 8)})`;
-    case "freeze_cashouts":
-      return `Cashouts of agent ${String(p.agent_id ?? "").slice(0, 8)}`;
+      return { line: `1 account (${names ?? String(p.user_id ?? "").slice(0, 8)})`, names };
     case "blacklist_ip":
-      return `IP ${p.ip}`;
+      return { line: `IP ${p.ip}` };
     case "disable_network":
-      return `${p.network} network goes offline`;
-    case "broadcast_outage":
-      return `SMS to every agent about ${p.network}`;
-    case "quarantine_order":
-      return `Order ${String(p.order_id ?? "").slice(0, 8)} marked failed`;
+      return { line: `${p.network} network goes offline` };
     case "relink_order_provider":
-      return `Order ${String(p.order_id ?? "").slice(0, 8)} relinked to another provider`;
+      return { line: `Order ${String(p.order_id ?? "").slice(0, 8)} relinked to ${d.provider?.name ?? "another provider"}` };
     default:
-      return p.provider_id ? `Provider ${p.provider_name || String(p.provider_id).slice(0, 8)} priority ${p.new_priority ?? 1}` : "See details";
+      return d.provider
+        ? { line: `Provider ${d.provider.name} priority ${d.priority ?? p.new_priority ?? 1}` }
+        : { line: p.provider_id ? `Provider ${String(p.provider_id).slice(0, 8)} priority ${p.new_priority ?? 1}` : "See details" };
   }
 }
 
@@ -54,11 +78,19 @@ export default function AgentApprovalQueue({ tasks, onDecided }: { tasks: AgentT
 
   const decide = async (task: AgentTask, approve: boolean) => {
     if (approve) {
+      const change = describeTaskChange(task);
       const ok = await confirmed.confirm({
         title: task.title,
-        description: `${describeTaskChange(task)}. Proposed by ${task.agent_name}${task.reasoning ? `: ${task.reasoning}` : "."}`,
+        description: [
+          `${change.line}.`,
+          change.names && `Accounts: ${change.names}.`,
+          change.sms && `SMS text: "${change.sms}"`,
+          `Proposed by ${task.agent_name}${task.reasoning ? ` (${task.reasoning})` : ""}.`,
+        ].filter(Boolean).join(" "),
         kind: agentConfirmKind(task.task_type),
         confirmLabel: "Approve",
+        ...(change.recipients != null ? { orders: change.recipients } : {}),
+        ...(change.amountGhs != null ? { amountGhs: change.amountGhs } : {}),
       });
       if (!ok) return;
     }
@@ -102,10 +134,19 @@ export default function AgentApprovalQueue({ tasks, onDecided }: { tasks: AgentT
           <p className="text-[11px] text-muted-foreground">
             {task.agent_name} · {new Date(task.created_at).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
           </p>
-          <p className="text-[11px]">
-            <span className="font-semibold">What changes: </span>
-            <span>{describeTaskChange(task)}</span>
-          </p>
+          {(() => {
+            const change = describeTaskChange(task);
+            return (
+              <div className="space-y-0.5 text-[11px]">
+                <p>
+                  <span className="font-semibold">What changes: </span>
+                  <span>{change.line}</span>
+                </p>
+                {change.names && <p className="text-muted-foreground">{change.names}</p>}
+                {change.sms && <p className="italic text-muted-foreground">“{change.sms}”</p>}
+              </div>
+            );
+          })()}
           {task.reasoning && <p className="text-[11px] leading-snug text-muted-foreground">{task.reasoning}</p>}
           {notice?.id === task.id && (
             <p className={`text-[11px] font-semibold ${notice.tone === "ok" ? "text-emerald-600 dark:text-emerald-400" : notice.tone === "warn" ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400"}`}>

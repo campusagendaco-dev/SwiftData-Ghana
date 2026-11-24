@@ -3,7 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { verifyAdmin } from "../_shared/auth.ts";
 import { callAiAgent, getAgentConfig } from "../_shared/ai.ts";
-import { routeAgentAction, type AgentAction } from "../_shared/agent_policy.ts";
+import { routeAgentAction, type AgentAction, shouldSkipRun } from "../_shared/agent_policy.ts";
 import { queueAgentAction, runAutoAction } from "../_shared/agent_actions.ts";
 import { agentSms } from "../_shared/agent_sms.ts";
 
@@ -36,7 +36,8 @@ serve(async (req: Request) => {
     const { event, order_id, log_id } = body;
 
     const agentCfg = await getAgentConfig(supabaseAdmin, "sentinel_prime");
-    if (!agentCfg.is_active && isCron && !event) {
+    // Paused: skip every run except an admin's manual run or a targeted event.
+    if (shouldSkipRun(agentCfg.is_active, { manual: body?.source === "admin_manual" || Boolean(event) })) {
       return new Response(JSON.stringify({ success: true, skipped: true, reason: "sentinel_prime is paused" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -106,16 +107,23 @@ serve(async (req: Request) => {
         const healingPromises = safeOrdersToHeal.map(async (order: any) => {
           try {
             const meta = order.metadata || {};
-            await supabaseAdmin
+            const prev = Number(meta.ai_heal_attempts || 0);
+            // Claim this try: only while the order is still pending and no other run
+            // (cron, an admin's Run now) counted it first. Otherwise leave it alone.
+            let claim = supabaseAdmin
               .from("orders")
               .update({
                 metadata: {
                   ...meta,
-                  ai_heal_attempts: Number(meta.ai_heal_attempts || 0) + 1,
+                  ai_heal_attempts: prev + 1,
                   ai_last_heal_at: new Date().toISOString(),
                 },
               })
-              .eq("id", order.id);
+              .eq("id", order.id)
+              .eq("status", "pending");
+            claim = prev > 0 ? claim.eq("metadata->>ai_heal_attempts", String(prev)) : claim.is("metadata->>ai_heal_attempts", null);
+            const { data: claimed, error: claimError } = await claim.select("id");
+            if (claimError || !claimed?.length) return;
 
             const res = await fetch(`${SUPABASE_URL}/functions/v1/verify-payment`, {
               method: "POST",

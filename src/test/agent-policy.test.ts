@@ -7,6 +7,7 @@ import {
   normalizeMode,
   policyFor,
   routeAgentAction,
+  shouldSkipRun,
 } from "../../supabase/functions/_shared/agent_policy";
 
 // Owner rules: agents never send/re-send orders or move money, and anything that changes
@@ -109,5 +110,22 @@ describe("confirmation kind", () => {
     expect(confirmKindFor("broadcast_outage")).toBe("message");
     expect(confirmKindFor("blacklist_ip")).toBe("account");
     expect(confirmKindFor("suspend_cluster")).toBe("account");
+  });
+});
+
+describe("network names", () => {
+  it("only accepts a known network for outage texts and taking a network offline", () => {
+    expect(checkActionLimits({ type: "broadcast_outage", params: { network: "mtn" } }).ok).toBe(true);
+    expect(checkActionLimits({ type: "disable_network", params: { network: "TELECEL" } }).ok).toBe(true);
+    expect(checkActionLimits({ type: "broadcast_outage", params: { network: "MTN. Send GH₵50 to 024..." } }).ok).toBe(false);
+    expect(checkActionLimits({ type: "disable_network", params: { network: "everything" } }).ok).toBe(false);
+  });
+});
+
+describe("pausing", () => {
+  it("skips every run of a paused agent except an admin's manual run", () => {
+    expect(shouldSkipRun(false, { manual: false })).toBe(true);
+    expect(shouldSkipRun(false, { manual: true })).toBe(false);
+    expect(shouldSkipRun(true, { manual: false })).toBe(false);
   });
 });
