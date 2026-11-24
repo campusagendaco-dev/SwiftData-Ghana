@@ -680,20 +680,26 @@ const AdminSecurity = () => {
     } finally { setAddingAdmin(false); }
   };
 
-  // SMS login: another admin (with the authenticator app) switches it on, pinning the phone
-  // the codes go to, or off (which also ends their SMS sessions).
+  // SMS login: an admin with the authenticator app switches it on, pinning the phone the codes go
+  // to, or off (which also ends their SMS sessions). For yourself, the server pins your own
+  // verified phone and tells the other admins.
   const handleSmsLogin = async (adm: SystemAdmin, on: boolean) => {
-    const name = adm.full_name || adm.email;
+    const self = adm.user_id === session?.user?.id;
+    const name = self ? "yourself" : adm.full_name || adm.email;
     let phone: string | null = null;
-    if (on) {
+    if (on && !self) {
       phone = window.prompt(`Which phone should ${name}'s SMS sign-in codes go to? It will be pinned; changing their profile phone won't move it.`, "")?.trim() || null;
       if (!phone) return;
     }
     const ok = await confirmed.confirm({
-      title: on ? `Let ${name} sign in with SMS codes sent to ${phone}?` : `Switch off SMS login for ${name}?`,
+      title: on
+        ? self ? "Switch on SMS login for yourself?" : `Let ${name} sign in with SMS codes sent to ${phone}?`
+        : `Switch off SMS login for ${name}?`,
       description: on
-        ? "They can then view the admin pages and do everyday work with an SMS code. Money, sends and admin-access actions still need their authenticator app."
-        : "Their SMS sessions end now; they'll need their authenticator app.",
+        ? self
+          ? "Codes will go to your own verified phone number, and the other admins will be told. With an SMS code you can view the admin pages and do everyday work; money, sends and admin-access actions still need your authenticator app."
+          : "They can then view the admin pages and do everyday work with an SMS code. Money, sends and admin-access actions still need their authenticator app."
+        : self ? "Your SMS sessions end now; you'll need your authenticator app." : "Their SMS sessions end now; they'll need their authenticator app.",
       kind: "access",
       confirmLabel: on ? "Switch on SMS login" : "Switch off SMS login",
     });
@@ -703,7 +709,10 @@ const AdminSecurity = () => {
       toast({ title: "SMS login not changed", description: data?.error || error?.message, variant: "destructive" });
       return;
     }
-    toast({ title: on ? `SMS login on for ${name}` : `SMS login off for ${name}` });
+    toast({
+      title: on ? `SMS login on for ${name}` : `SMS login off for ${name}`,
+      description: on && data?.masked_phone ? `Codes go to ${data.masked_phone}.` : undefined,
+    });
     void fetchData(true);
   };
 
@@ -1552,12 +1561,10 @@ const AdminSecurity = () => {
                         {adm.sms_login
                           ? <span className="text-amber-400">On · {adm.sms_phone_masked}</span>
                           : <span className="text-zinc-600">Off</span>}
-                        {!isMe && (
-                          <button type="button" onClick={() => void handleSmsLogin(adm, !adm.sms_login)}
-                            className="ml-2 text-[9px] font-black uppercase tracking-widest text-zinc-500 hover:text-white">
-                            {adm.sms_login ? "Switch off" : "Switch on"}
-                          </button>
-                        )}
+                        <button type="button" onClick={() => void handleSmsLogin(adm, !adm.sms_login)}
+                          className="ml-2 text-[9px] font-black uppercase tracking-widest text-zinc-500 hover:text-white">
+                          {adm.sms_login ? "Switch off" : isMe ? "Switch on for me" : "Switch on"}
+                        </button>
                       </td>
                       <td className="px-4 py-4 text-xs font-mono text-zinc-500">{fmt(adm.last_sign_in_at ?? null)}</td>
                       <td className="px-4 py-4 text-xs font-mono text-zinc-500">{fmt(adm.last_seen_at)}</td>

@@ -30,10 +30,11 @@ describe("admin SMS login stays limited", () => {
     }
   });
 
-  it("switching SMS login on or off needs another admin with the authenticator app", () => {
+  it("switching SMS login on needs the authenticator app; for yourself, only your own verified phone", () => {
     const src = read("supabase", "functions", "_shared", "admin_sms_otp.ts");
     expect(src).toMatch(/adminSecondFactor !== "authenticator"/);
-    expect(src).toMatch(/input\.adminId === input\.targetUserId/);
+    expect(src).toMatch(/const self = input\.adminId === input\.targetUserId/);
+    expect(src).toMatch(/self && input\.approved[\s\S]{0,400}phone_verified !== true/);
   });
 
   it("the database has an authenticator-only admin check for money and access changes", () => {

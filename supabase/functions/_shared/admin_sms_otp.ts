@@ -150,11 +150,23 @@ export async function setSmsApproval(
 ): Promise<Res> {
   if (!input.adminId || input.adminId === SERVICE_ROLE_USER_ID) return { status: 403, body: { error: "Only a signed-in admin can change this" } };
   if (input.adminSecondFactor !== "authenticator") return { status: 403, body: { error: "Changing SMS login needs your authenticator app." } };
-  if (input.adminId === input.targetUserId) return { status: 403, body: { error: "Another admin has to switch SMS login on or off for you." } };
+  const self = input.adminId === input.targetUserId;
   const target = await adminRole(db, input.targetUserId);
   if (!target) return { status: 404, body: { error: "That person isn't an admin" } };
   let phone: string | null = null;
-  if (input.approved) {
+  if (self && input.approved) {
+    // For yourself: only your own phone, verified by SMS code on the server (profiles.phone_verified
+    // can't be set by users), so a stolen session can't pin an attacker's number unnoticed.
+    const { data: me } = await db.from("profiles").select("phone, phone_verified").eq("user_id", input.adminId).maybeSingle();
+    const own = localGhPhone(me?.phone);
+    if (!own || me?.phone_verified !== true) {
+      return { status: 403, body: { error: "Verify your own phone number first, then switch SMS login on." } };
+    }
+    if (input.phone && localGhPhone(input.phone) !== own) {
+      return { status: 400, body: { error: "For yourself, SMS codes can only go to your own verified phone number." } };
+    }
+    phone = `233${own.slice(1)}`;
+  } else if (input.approved) {
     const local = localGhPhone(input.phone);
     if (!local) return { status: 400, body: { error: "Enter the admin's Ghana phone number to pin for SMS codes." } };
     phone = `233${local.slice(1)}`;
@@ -167,7 +179,10 @@ export async function setSmsApproval(
   await db.from("audit_logs").insert({
     admin_id: input.adminId,
     action: input.approved ? "admin_sms_login_on" : "admin_sms_login_off",
-    details: { target_user_id: input.targetUserId, phone_masked: phone ? mask(phone) : null },
+    details: { target_user_id: input.targetUserId, phone_masked: phone ? mask(phone) : null, self },
   });
+  if (self && input.approved && phone) {
+    await deps.alertOtherAdmins(input.adminId, `An admin switched on SMS login for themselves, with codes going to ${mask(phone)}. If this wasn't expected, switch it off on the Administrators tab.`);
+  }
   return { status: 200, body: { success: true, approved: input.approved, masked_phone: phone ? mask(phone) : null } };
 }

@@ -101,9 +101,40 @@ describe("switching the SMS login on or off", () => {
     expect(db.tables.user_roles[1]).toMatchObject({ otp_login_approved: true, otp_phone: "233201234567" });
   });
 
-  it("can't be done for yourself, or from an SMS login", async () => {
-    expect((await setSmsApproval(seed(), { adminId: "a2", adminSecondFactor: "authenticator", targetUserId: "a2", approved: true, phone: "0201234567" }, deps())).status).toBe(403);
+  it("can't be done from an SMS login, for yourself or anyone", async () => {
     expect((await setSmsApproval(seed(), { adminId: "a1", adminSecondFactor: "sms", targetUserId: "a2", approved: true, phone: "0201234567" }, deps())).status).toBe(403);
+    const db = seed(admin({ otp_login_approved: false, otp_phone: null }));
+    db.tables.profiles[0].phone_verified = true;
+    expect((await setSmsApproval(db, { adminId: "a1", adminSecondFactor: "sms", targetUserId: "a1", approved: true, phone: null }, deps())).status).toBe(403);
+    expect(db.tables.user_roles[0].otp_login_approved).toBe(false);
+  });
+
+  it("you can switch on your own, with the authenticator app, pinned to your own verified phone; other admins are told", async () => {
+    const db = seed(admin({ otp_login_approved: false, otp_phone: null }));
+    db.tables.profiles[0].phone_verified = true;
+    const d = deps();
+    const res = await setSmsApproval(db, { adminId: "a1", adminSecondFactor: "authenticator", targetUserId: "a1", approved: true, phone: null }, d);
+    expect(res.status).toBe(200);
+    expect(db.tables.user_roles[0]).toMatchObject({ otp_login_approved: true, otp_phone: "233559998888" });
+    expect(d.alertOtherAdmins).toHaveBeenCalledWith("a1", expect.stringContaining("switched on SMS login for themselves"));
+  });
+
+  it("not with an unverified phone, or a number other than your own verified one", async () => {
+    const unverified = seed(admin({ otp_login_approved: false, otp_phone: null }));
+    expect((await setSmsApproval(unverified, { adminId: "a1", adminSecondFactor: "authenticator", targetUserId: "a1", approved: true, phone: null }, deps())).status).toBe(403);
+    expect(unverified.tables.user_roles[0].otp_login_approved).toBe(false);
+
+    const other = seed(admin({ otp_login_approved: false, otp_phone: null }));
+    other.tables.profiles[0].phone_verified = true;
+    expect((await setSmsApproval(other, { adminId: "a1", adminSecondFactor: "authenticator", targetUserId: "a1", approved: true, phone: "0201234567" }, deps())).status).toBe(400);
+    expect(other.tables.user_roles[0].otp_login_approved).toBe(false);
+  });
+
+  it("you can always switch your own off", async () => {
+    const db = seed();
+    const res = await setSmsApproval(db, { adminId: "a1", adminSecondFactor: "authenticator", targetUserId: "a1", approved: false, phone: null }, deps());
+    expect(res.status).toBe(200);
+    expect(db.tables.user_roles[0]).toMatchObject({ otp_login_approved: false, otp_phone: null });
   });
 
   it("switching off ends the person's SMS sessions", async () => {
