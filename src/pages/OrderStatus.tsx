@@ -20,6 +20,7 @@ import { getActiveStoreDomain } from "@/lib/app-base-url";
 import { playSuccessSound } from "@/lib/sound";
 import { Badge } from "@/components/ui/badge";
 import { PushNotificationPrompt } from "@/components/PushNotificationPrompt";
+import { GuestMysteryBoxBanner } from "@/components/GuestMysteryBoxBanner";
 import { translateFailureReason, isBeneficiaryFailure } from "@/lib/failure-reasons";
 import { getCachedOrderLookup, saveCachedOrderLookup } from "@/lib/offline-cache";
 
@@ -1346,6 +1347,12 @@ const OrderStatus = () => {
                 </button>
               </div>
             </div>
+
+            {(phoneParam || orderPhone || orderData?.customer_phone) && !isFailed && (
+              <div className="px-5 pb-4">
+                <GuestMysteryBoxBanner phone={phoneParam || orderPhone || orderData?.customer_phone || ""} />
+              </div>
+            )}
 
             {isActive && (
               <div className="px-5 pb-5">

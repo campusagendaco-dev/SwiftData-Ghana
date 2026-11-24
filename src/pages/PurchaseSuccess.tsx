@@ -4,6 +4,7 @@ import { AlertTriangle, Check, CheckCircle2, Copy, Home, Loader2, ReceiptText, S
 import { supabase } from "@/integrations/supabase/client";
 import { playSuccessSound } from "@/lib/sound";
 import { PushNotificationPrompt } from "@/components/PushNotificationPrompt";
+import { GuestMysteryBoxBanner } from "@/components/GuestMysteryBoxBanner";
 import { cn } from "@/lib/utils";
 
 type Phase = "confirming" | "paid" | "sending" | "delivered" | "failed";
@@ -306,7 +307,8 @@ const PurchaseSuccess = () => {
             </div>
 
             {phase !== "failed" && (
-              <div className="pt-1">
+              <div className="pt-1 space-y-2.5">
+                <GuestMysteryBoxBanner phone={phone} />
                 <PushNotificationPrompt variant="inline" title="Get a delivery alert" description="We’ll ping your lock screen for this and future deliveries." buttonText="Alert me" />
               </div>
             )}
