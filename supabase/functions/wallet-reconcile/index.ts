@@ -9,10 +9,17 @@
 // Results are stored in wallet_reconciliation_runs; admins are notified on
 // issues. It never moves money. Callable by the cron job (service key) or an
 // admin.
+//
+// Also (2026-11-24): orders refunded twice, the same bundle delivered twice within
+// 2 minutes, and Paystack orders delivered without full verified payment. Every issue gets
+// a plain-language explanation and a safe next step: written by the AI when its words stick
+// to the issue's own numbers, otherwise by fixed rules (reconcile_checks.ts). Read-only.
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { verifyAdmin } from "../_shared/auth.ts";
+import { callAiAgent } from "../_shared/ai.ts";
+import { buildExplainPrompt, findLedgerIssues, mergeExplanations, type ReconIssue } from "../_shared/reconcile_checks.ts";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -85,18 +92,20 @@ serve(async (req) => {
     .eq("reason", "wallet_topup")
     .gte("created_at", from.toISOString());
 
-  const issues: { type: string; order_id: string; detail: string }[] = [];
+  const issues: ReconIssue[] = [];
+  const add = (type: string, order_id: string, amount_ghs: number, detail: string) =>
+    issues.push({ key: `${type}:${order_id}`, type, order_id, amount_ghs: Number(amount_ghs.toFixed(2)), detail });
   const nonUuidRefs = [...paidByOrder.keys()].filter((id) => !uuidRe.test(id));
-  for (const ref of nonUuidRefs) issues.push({ type: "paid_without_order", order_id: ref, detail: `GH₵${paidByOrder.get(ref)!.toFixed(2)} paid, reference is not an order id` });
+  for (const ref of nonUuidRefs) add("paid_without_order", ref, paidByOrder.get(ref)!, `GH₵${paidByOrder.get(ref)!.toFixed(2)} paid, reference is not an order id`);
   for (const id of orderIds) {
     const o = orders.get(id);
     const paid = paidByOrder.get(id) || 0;
     if (!o) {
-      issues.push({ type: "paid_without_order", order_id: id, detail: `GH₵${paid.toFixed(2)} paid, no order found` });
+      add("paid_without_order", id, paid, `GH₵${paid.toFixed(2)} paid, no order found`);
       continue;
     }
     if (o.order_type === "wallet_topup" && o.status !== "fulfilled") {
-      issues.push({ type: "paid_not_credited", order_id: id, detail: `GH₵${paid.toFixed(2)} paid, top-up status is ${o.status}` });
+      add("paid_not_credited", id, paid, `GH₵${paid.toFixed(2)} paid, top-up status is ${o.status}`);
     }
   }
   const creditedByOrder = new Map<string, number>();
@@ -116,12 +125,39 @@ serve(async (req) => {
       if (pm !== "paystack") continue; // Korba / admin credits are verified elsewhere
       const paid = paidByOrder.get(id);
       if (paid === undefined) {
-        issues.push({ type: "credited_without_payment", order_id: id, detail: `GH₵${credited.toFixed(2)} credited, no successful Paystack payment in the last ${hours}h` });
+        add("credited_without_payment", id, credited, `GH₵${credited.toFixed(2)} credited, no successful Paystack payment in the last ${hours}h`);
       } else if (credited > paid + 0.01) {
-        issues.push({ type: "credit_exceeds_payment", order_id: id, detail: `GH₵${credited.toFixed(2)} credited, GH₵${paid.toFixed(2)} paid` });
+        add("credit_exceeds_payment", id, credited - paid, `GH₵${credited.toFixed(2)} credited, GH₵${paid.toFixed(2)} paid`);
       }
     }
   }
+
+  // 4. Checks Paystack can't show: double refunds, double deliveries, delivered-but-underpaid.
+  const [{ data: refunds }, { data: delivered }] = await Promise.all([
+    admin.from("wallet_ledger").select("reference_id, amount, agent_id, created_at")
+      .eq("reason", "order_refund").gte("created_at", from.toISOString()).limit(5000),
+    admin.from("orders")
+      .select("id, agent_id, customer_phone, network, package_size, amount, status, payment_method, paystack_verified_amount, created_at")
+      .in("status", ["fulfilled", "completed"]).gte("created_at", from.toISOString()).limit(5000),
+  ]);
+  issues.push(...findLedgerIssues({ orders: (delivered || []) as any[], refunds: (refunds || []) as any[] }));
+
+  // 5. Plain-language explanations (AI words only when they stick to each issue's facts).
+  let aiModel: string | null = null;
+  let aiOutput: unknown = null;
+  if (issues.length) {
+    try {
+      const prompt = buildExplainPrompt(issues);
+      const res = await callAiAgent(admin, "reconciliation_explainer", prompt.system, prompt.user, 2000, { responseJson: true });
+      aiModel = res.model;
+      const s = res.text.indexOf("{");
+      const e = res.text.lastIndexOf("}");
+      aiOutput = s !== -1 && e > s ? JSON.parse(res.text.slice(s, e + 1)) : null;
+    } catch (err) {
+      console.warn("[wallet-reconcile] explanations fell back to rules:", err);
+    }
+  }
+  const explained = mergeExplanations(issues, aiOutput);
 
   const ok = issues.length === 0;
   const summary = {
@@ -131,20 +167,23 @@ serve(async (req) => {
     paystack_total: Number([...paidByOrder.values()].reduce((s, v) => s + v, 0).toFixed(2)),
     topup_credits_checked: creditedByOrder.size,
     issues: issues.length,
+    issues_total_ghs: Number(issues.reduce((s, i) => s + i.amount_ghs, 0).toFixed(2)),
     by_type: issues.reduce((m: Record<string, number>, i) => ((m[i.type] = (m[i.type] || 0) + 1), m), {}),
+    explained_by_ai: explained.filter((i) => i.explained_by === "ai").length,
+    ai_model: aiModel,
   };
 
   await admin.from("wallet_reconciliation_runs").insert({
     kind: "paystack",
     ok,
     issues: issues.length,
-    details: { ...summary, sample: issues.slice(0, 100) },
+    details: { ...summary, sample: explained.slice(0, 100) },
   });
   if (!ok) {
     await admin.rpc("notify_admins", {
       p_title: "Paystack reconciliation found issues",
       p_message: `${issues.length} item(s) need review: ${Object.entries(summary.by_type).map(([k, v]) => `${v} ${k.replace(/_/g, " ")}`).join(", ")}.`,
-      p_link: "/admin/wallet-ledger",
+      p_link: "/admin/reconciliation",
     });
   }
   return json(summary);
