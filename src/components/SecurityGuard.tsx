@@ -4,6 +4,7 @@ import { Lock, Clock, LogOut } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import SelfUnsuspendPanel from "@/components/SelfUnsuspendPanel";
+import PhoneOtpField from "@/components/PhoneOtpField";
 import { getActiveStoreDomain } from "@/lib/app-base-url";
 import { getOrCreateDeviceId, syncDeviceIdWithIndexedDB, getBrowserFingerprint } from "@/utils/device";
 
@@ -13,7 +14,9 @@ const COUNTDOWN_SECONDS = 30; // Final warning duration before ejection
 const INITIAL_REVEAL_DURATION_MS = 300; // Cinematic 0.3s auto-reveal requested by user
 
 export function SecurityGuard({ children }: { children: React.ReactNode }) {
-  const { user, signOut, profile, isAdmin } = useAuth();
+  const { user, signOut, profile, isAdmin, refreshProfile } = useAuth();
+  const [oauthPhone, setOauthPhone] = useState("");
+  const [oauthVerifiedPhone, setOauthVerifiedPhone] = useState<string | null>(null);
   
   // Security Blocker States
   const [isEnabled, setIsEnabled] = useState(true);
@@ -224,6 +227,64 @@ export function SecurityGuard({ children }: { children: React.ReactNode }) {
   const brandColor = isStoreRoute ? (cachedStore?.color || "#f59e0b") : "#f59e0b";
 
   const isSuspended = profile?.is_suspended === true;
+  const needsPhoneVerification = Boolean(
+    user &&
+    profile &&
+    !isAdmin &&
+    !isSuspended &&
+    !isDeviceBlocked &&
+    !String(profile.phone || "").trim()
+  );
+
+  if (needsPhoneVerification) {
+    return (
+      <div className="fixed inset-0 z-[100000] flex flex-col items-center justify-center bg-[#06060c] text-white p-6">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(251,191,36,0.08)_0%,transparent_70%)] pointer-events-none" />
+        <motion.div
+          initial={{ opacity: 0, scale: 0.96 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.3, ease: "easeOut" }}
+          className="bg-card/40 backdrop-blur-xl border border-amber-500/25 rounded-3xl p-7 sm:p-8 max-w-md w-full shadow-2xl relative overflow-hidden"
+        >
+          <div className="text-center mb-6">
+            <div className="w-16 h-16 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center mx-auto mb-4">
+              <Shield className="w-8 h-8 text-amber-400" />
+            </div>
+            <h2 className="text-xl sm:text-2xl font-black tracking-tight text-white">
+              Verify Your Phone Number
+            </h2>
+            <p className="text-xs sm:text-sm text-muted-foreground mt-2 leading-relaxed">
+              Add and verify your 10-digit Ghana phone number via SMS OTP to finish setting up your account and continue.
+            </p>
+          </div>
+
+          <div className="space-y-4">
+            <PhoneOtpField
+              phone={oauthPhone}
+              onPhoneChange={setOauthPhone}
+              verifiedPhone={oauthVerifiedPhone}
+              onVerified={async (norm) => {
+                setOauthPhone(norm);
+                setOauthVerifiedPhone(norm);
+                await refreshProfile();
+              }}
+              onResetVerification={() => setOauthVerifiedPhone(null)}
+              inputClassName="bg-black/40 border-white/15 text-white h-11 rounded-xl"
+              labelClassName="text-xs font-bold text-zinc-200"
+            />
+
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="w-full py-3 px-4 bg-white/5 hover:bg-white/10 text-muted-foreground font-bold rounded-xl flex items-center justify-center gap-2 transition-all border border-white/10 text-xs"
+            >
+              <LogOut className="w-4 h-4" /> Sign Out
+            </button>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
 
   if (user && (isSuspended || isDeviceBlocked) && !isAdmin) {
     return (

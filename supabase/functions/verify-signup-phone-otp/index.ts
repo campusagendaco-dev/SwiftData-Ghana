@@ -176,10 +176,33 @@ serve(async (req: Request) => {
         })
         .eq("id", row.id);
 
+      // If caller is already authenticated (e.g. Google OAuth user), save verified phone directly to profiles
+      let profileUpdated = false;
+      const bearer = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
+      if (bearer && bearer !== SERVICE_KEY) {
+        try {
+          const { data: authData } = await db.auth.getUser(bearer);
+          if (authData?.user?.id) {
+            const { error: profErr } = await db
+              .from("profiles")
+              .update({
+                phone,
+                phone_verified: true,
+                updated_at: new Date().toISOString(),
+              })
+              .eq("user_id", authData.user.id);
+            if (!profErr) profileUpdated = true;
+          }
+        } catch {
+          // non-critical for pre-signup callers using anon key
+        }
+      }
+
       return json({
         success: true,
         verified: true,
         phone,
+        profile_updated: profileUpdated,
         verification_token: token,
         message: "Phone number verified!",
       }, 200);
