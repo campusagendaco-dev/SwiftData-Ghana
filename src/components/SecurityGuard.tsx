@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Lock, Clock, LogOut } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import SelfUnsuspendPanel from "@/components/SelfUnsuspendPanel";
 import { getActiveStoreDomain } from "@/lib/app-base-url";
 import { getOrCreateDeviceId, syncDeviceIdWithIndexedDB, getBrowserFingerprint } from "@/utils/device";
 
@@ -250,11 +251,13 @@ export function SecurityGuard({ children }: { children: React.ReactNode }) {
             Access Restricted
           </p>
 
-          <p className="text-muted-foreground text-sm leading-relaxed mb-8">
+          <p className="text-muted-foreground text-sm leading-relaxed mb-5">
             {isDeviceBlocked 
               ? "A disabled account is associated with this device. Access is restricted for security enforcement."
-              : "Your account has been suspended by the platform administrator. You are currently restricted from accessing your wallet, dashboard, and making purchases."}
+              : "Your account is currently restricted from accessing your wallet, dashboard, and making purchases."}
           </p>
+
+          {!isDeviceBlocked && <SelfUnsuspendPanel />}
 
           <div className="flex flex-col gap-3">
             <a
