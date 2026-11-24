@@ -7,6 +7,7 @@ import {
   SENSITIVE_PAYOUT_ACTIONS,
   SENSITIVE_USER_ACTIONS,
   SENSITIVE_ARENA_ACTIONS,
+  SENSITIVE_ACCESS_ACTIONS,
 } from "@/lib/adminSensitive";
 
 // Owner rule (2026-11-24): every admin call that moves money, sends/re-sends orders or spends
@@ -25,8 +26,8 @@ const files = [
 ];
 
 const ACTION_SETS: Record<string, Set<string>> = {
-  "system-payout-v1": SENSITIVE_PAYOUT_ACTIONS,
-  "admin-user-actions": SENSITIVE_USER_ACTIONS,
+  "system-payout-v1": new Set([...SENSITIVE_PAYOUT_ACTIONS, ...SENSITIVE_ACCESS_ACTIONS]),
+  "admin-user-actions": new Set([...SENSITIVE_USER_ACTIONS, ...SENSITIVE_ACCESS_ACTIONS]),
   "challenge-arena": SENSITIVE_ARENA_ACTIONS,
 };
 
@@ -44,6 +45,9 @@ function coveredCallAt(lines: string[], i: number): string | null {
       if (action && actions.has(action[1])) return `${fn[1]}:${action[1]}`;
     }
   }
+  // page-local wrappers such as AdminSecurity's invoke({ action: "revoke_admin_role" })
+  const wrapped = line.match(/\binvoke\(\{\s*action:\s*["'`]([a-z_]+)["'`]/);
+  if (wrapped && SENSITIVE_ACCESS_ACTIONS.has(wrapped[1])) return `access:${wrapped[1]}`;
   const rpc = line.match(/(?<!confirmed)\.rpc\(\s*["'`]([a-z0-9_]+)["'`]/);
   if (rpc && SENSITIVE_RPCS.has(rpc[1])) return `rpc:${rpc[1]}`;
   return null;
