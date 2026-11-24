@@ -18,6 +18,7 @@ export type AgentSms = {
 
 export const ADMIN_SMS_PER_DAY = 10;
 const TOPIC_SMS_WINDOW_MS = 60 * 60 * 1000;
+const FINDING_DEDUPE_MS = 60 * 60 * 1000;
 const MIN_PROVIDER_BALANCE_GHS = 100;
 
 type Result = { ok: boolean; details?: unknown; error?: string };
@@ -89,11 +90,20 @@ export async function runAutoAction(db: any, agentName: string, action: AgentAct
 
   if (type === "record_finding") {
     const would = p.would_propose as AgentAction | undefined;
-    const text = would ? `Would propose: ${would.title || normalizeActionType(would.type)}` : String(p.text || action.title || "Agent finding");
+    const text = (would ? `Would propose: ${would.title || normalizeActionType(would.type)}` : String(p.text || action.title || "Agent finding")).slice(0, 500);
+    // Agents re-run every few minutes; keep one copy of the same finding per hour.
+    const { data: same } = await db
+      .from("ai_insights")
+      .select("id")
+      .eq("insight_text", text)
+      .gte("created_at", new Date(Date.now() - FINDING_DEDUPE_MS).toISOString())
+      .limit(1)
+      .maybeSingle();
+    if (same) return { ok: true, details: { duplicate: true } };
     await db.from("ai_insights").insert({
       agent_id: null,
       type: "agent_finding",
-      insight_text: text.slice(0, 500),
+      insight_text: text,
       metadata: { agent: agentName, ...(would ? { would_propose: would } : {}), reason: action.reason || null },
     });
     return { ok: true };

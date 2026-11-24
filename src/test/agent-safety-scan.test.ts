@@ -9,7 +9,13 @@ import { join } from "node:path";
 // with `// payment-backup:start` / `// payment-backup:end`.
 
 const fnRoot = join(__dirname, "..", "..", "supabase", "functions");
-const AGENT_FILES = ["ops-worker-ai/index.ts", "_shared/ai.ts"];
+const AGENT_FILES = [
+  "ops-worker-ai/index.ts",
+  "_shared/ai.ts",
+  "sentinel-ai/index.ts",
+  "sentinel-evolve/index.ts",
+  "guardian-ai/index.ts",
+];
 
 const FORBIDDEN: { name: string; re: RegExp }[] = [
   {
@@ -67,5 +73,20 @@ describe("AI agent safety scan", () => {
   it("no agent sends orders, refunds, moves money, writes orders or skips 2FA", () => {
     const hits = AGENT_FILES.flatMap((f) => scan(f, read(f)));
     expect(hits).toEqual([]);
+  });
+
+  it("keeps the payment backup inside its guards (owner decision A)", () => {
+    const raw = read("sentinel-ai/index.ts");
+    const block = /\/\/ payment-backup:start([\s\S]*?)\/\/ payment-backup:end/.exec(raw)?.[1] ?? "";
+    expect(block).not.toBe("");
+    expect(block).toMatch(/\.eq\(\s*"status",\s*"pending"\s*\)/);
+    expect(block).toMatch(/\.limit\(10\)/);
+    expect(block).toMatch(/amt > 100/);
+    expect(block).toMatch(/> 500/);
+    expect(block).toMatch(/30 \* 60 \* 1000/);
+    expect(block).toMatch(/15 \* 60 \* 1000/);
+    expect(block).toMatch(/prevAttempts >= 2/);
+    const verifyCall = /functions\/v1\/verify-payment`[\s\S]*?body:\s*JSON\.stringify\(([^)]*)\)/.exec(block)?.[1] ?? "";
+    expect(verifyCall).toBe("{ reference: order.id }");
   });
 });

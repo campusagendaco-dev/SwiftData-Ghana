@@ -65,6 +65,14 @@ describe("runAutoAction", () => {
     expect(w?.values.insight_text).toBe("Would propose: Suspend 3 accounts");
     expect(w?.values.metadata).toMatchObject({ agent: "threat_hunter", would_propose: wouldPropose });
   });
+
+  it("does not store the same finding again within an hour", async () => {
+    const db = fakeDb({ ai_insights: [{ insight_text: "Would propose: Suspend 3 accounts", created_at: ago(20 * 60 * 1000) }] });
+    const wouldPropose = { type: "suspend_cluster", title: "Suspend 3 accounts", params: { user_ids: ["a", "b", "c"] } };
+    const res = await runAutoAction(db, "threat_hunter", { type: "record_finding", params: { would_propose: wouldPropose } }, { sms: fakeSms() });
+    expect(res.ok).toBe(true);
+    expect(db.writes.filter((x) => x.table === "ai_insights")).toHaveLength(0);
+  });
 });
 
 describe("executeApprovedAction", () => {
