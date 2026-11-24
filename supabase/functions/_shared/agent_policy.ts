@@ -50,6 +50,8 @@ const REQUIRED_ID: Record<string, string> = {
   quarantine_order: "order_id",
   relink_order_provider: "order_id",
   blacklist_ip: "ip",
+  disable_network: "network",
+  broadcast_outage: "network",
 };
 
 export function normalizeMode(raw: unknown): AgentMode {

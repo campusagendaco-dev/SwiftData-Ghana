@@ -94,6 +94,12 @@ describe("limits", () => {
     expect(checkActionLimits({ type: "quarantine_order", params: { order_id: "o" } }).ok).toBe(true);
     expect(checkActionLimits({ type: "blacklist_ip", params: { ip: "1.2.3.4" } }).ok).toBe(true);
   });
+
+  it("needs the network for network-wide actions", () => {
+    expect(checkActionLimits({ type: "disable_network", params: {} }).ok).toBe(false);
+    expect(checkActionLimits({ type: "broadcast_outage", params: {} }).ok).toBe(false);
+    expect(checkActionLimits({ type: "broadcast_outage", params: { network: "MTN" } }).ok).toBe(true);
+  });
 });
 
 describe("confirmation kind", () => {
