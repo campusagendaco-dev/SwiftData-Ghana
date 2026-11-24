@@ -604,14 +604,30 @@ function InputBar({ input, setInput, onSend, isListening, onToggleVoice, typing,
 }
 
 // ─── Trigger button ───────────────────────────────────────────────────────────
-function TriggerButton({ open, unread, onToggle }: { open: boolean; unread: number; onToggle: () => void }) {
+function TriggerButton({
+  open,
+  unread,
+  onToggle,
+  wasDraggedRef,
+}: {
+  open: boolean;
+  unread: number;
+  onToggle: () => void;
+  wasDraggedRef?: React.MutableRefObject<boolean>;
+}) {
   return (
     <motion.button
       type="button"
       whileHover={{ scale: 1.08 }}
       whileTap={{ scale: 0.92 }}
-      onClick={onToggle}
-      className="relative w-[60px] h-[60px] rounded-full flex items-center justify-center shadow-2xl border-2 border-amber-500/20 overflow-hidden bg-[#1a1a2e]"
+      onClick={() => {
+        if (wasDraggedRef?.current) {
+          wasDraggedRef.current = false;
+          return;
+        }
+        onToggle();
+      }}
+      className="relative w-[60px] h-[60px] rounded-full flex items-center justify-center shadow-2xl border-2 border-amber-500/20 overflow-hidden bg-[#1a1a2e] touch-none select-none"
       style={{ boxShadow: "0 8px 32px rgba(99,102,241,0.4)" }}
     >
       <AnimatePresence mode="wait">
@@ -627,9 +643,9 @@ function TriggerButton({ open, unread, onToggle }: { open: boolean; unread: numb
           <motion.div key="open"
             initial={{ rotate: 30, opacity: 0, scale: 0.6 }} animate={{ rotate: 0, opacity: 1, scale: 1 }} exit={{ rotate: -30, opacity: 0, scale: 0.6 }}
             transition={{ duration: 0.2 }}
-            className="w-full h-full"
+            className="w-full h-full pointer-events-none"
           >
-            <img src="/assets/ama_avatar.webp" alt="Ama" className="w-full h-full object-cover object-top scale-[1.6]" />
+            <img src="/assets/ama_avatar.webp" alt="Ama" draggable={false} className="w-full h-full object-cover object-top scale-[1.6] select-none pointer-events-none" />
           </motion.div>
         )}
       </AnimatePresence>
@@ -663,6 +679,26 @@ export default function AIConcierge() {
   const bottomRef      = useRef<HTMLDivElement>(null);
   const inputRef       = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<any>(null);
+  const viewportConstraintsRef = useRef<HTMLDivElement>(null);
+  const wasDraggedRef = useRef(false);
+
+  const [savedOffset, setSavedOffset] = useState<{ x: number; y: number }>(() => {
+    try {
+      const raw = localStorage.getItem("ama_logo_pos_v1");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (typeof parsed?.x === "number" && typeof parsed?.y === "number") {
+          const maxLeft = typeof window !== "undefined" ? -(window.innerWidth - 84) : -300;
+          const maxUp = typeof window !== "undefined" ? -(window.innerHeight - 104) : -500;
+          return {
+            x: Math.max(maxLeft, Math.min(0, parsed.x)),
+            y: Math.max(maxUp, Math.min(0, parsed.y)),
+          };
+        }
+      }
+    } catch { /* ignore */ }
+    return { x: 0, y: 0 };
+  });
   const openRef        = useRef(open);
   useEffect(() => { openRef.current = open; }, [open]);
 
@@ -915,11 +951,42 @@ export default function AIConcierge() {
         </AnimatePresence>
       )}
 
-      {/* ── Desktop: draggable floating panel ────────────────────────────── */}
+      {/* Viewport drag boundary for movable Ama logo */}
+      <div ref={viewportConstraintsRef} className="fixed inset-3 pointer-events-none z-[9996]" aria-hidden="true" />
+
+      {/* ── Desktop: draggable floating panel & Ama logo ─────────────────── */}
       {!isMobile && (
         <motion.div
-          drag dragMomentum={false} whileDrag={{ scale: 1.03, cursor: "grabbing" }}
-          className="fixed bottom-10 right-10 z-[9999] flex flex-col items-end gap-3 cursor-grab"
+          drag
+          dragConstraints={viewportConstraintsRef}
+          dragElastic={0.08}
+          dragMomentum={false}
+          initial={savedOffset}
+          onDragStart={() => {
+            wasDraggedRef.current = false;
+          }}
+          onDrag={(_, info) => {
+            if (Math.hypot(info.offset.x, info.offset.y) > 6) {
+              wasDraggedRef.current = true;
+            }
+          }}
+          onDragEnd={(_, info) => {
+            const next = {
+              x: Math.round(savedOffset.x + info.offset.x),
+              y: Math.round(savedOffset.y + info.offset.y),
+            };
+            setSavedOffset(next);
+            try {
+              localStorage.setItem("ama_logo_pos_v1", JSON.stringify(next));
+            } catch { /* ignore */ }
+            if (wasDraggedRef.current) {
+              setTimeout(() => {
+                wasDraggedRef.current = false;
+              }, 120);
+            }
+          }}
+          whileDrag={{ scale: 1.05, cursor: "grabbing" }}
+          className="fixed bottom-10 right-10 z-[9999] flex flex-col items-end gap-3 cursor-grab touch-none"
         >
           <AnimatePresence>
             {open && (
@@ -944,15 +1011,47 @@ export default function AIConcierge() {
               </motion.div>
             )}
           </AnimatePresence>
-          <TriggerButton open={open} unread={unread} onToggle={() => setOpen(o => !o)} />
+          <TriggerButton open={open} unread={unread} onToggle={() => setOpen(o => !o)} wasDraggedRef={wasDraggedRef} />
         </motion.div>
       )}
 
-      {/* ── Mobile trigger (only when closed) ────────────────────────────── */}
+      {/* ── Mobile trigger: draggable anywhere on screen (only when closed) ─ */}
       {isMobile && !open && (
-        <div data-dash-float className="fixed bottom-6 right-4 z-[9997]">
-          <TriggerButton open={open} unread={unread} onToggle={() => setOpen(o => !o)} />
-        </div>
+        <motion.div
+          data-dash-float
+          drag
+          dragConstraints={viewportConstraintsRef}
+          dragElastic={0.08}
+          dragMomentum={false}
+          initial={savedOffset}
+          onDragStart={() => {
+            wasDraggedRef.current = false;
+          }}
+          onDrag={(_, info) => {
+            if (Math.hypot(info.offset.x, info.offset.y) > 6) {
+              wasDraggedRef.current = true;
+            }
+          }}
+          onDragEnd={(_, info) => {
+            const next = {
+              x: Math.round(savedOffset.x + info.offset.x),
+              y: Math.round(savedOffset.y + info.offset.y),
+            };
+            setSavedOffset(next);
+            try {
+              localStorage.setItem("ama_logo_pos_v1", JSON.stringify(next));
+            } catch { /* ignore */ }
+            if (wasDraggedRef.current) {
+              setTimeout(() => {
+                wasDraggedRef.current = false;
+              }, 120);
+            }
+          }}
+          whileDrag={{ scale: 1.08 }}
+          className="fixed bottom-6 right-4 z-[9997] touch-none cursor-grab active:cursor-grabbing"
+        >
+          <TriggerButton open={open} unread={unread} onToggle={() => setOpen(o => !o)} wasDraggedRef={wasDraggedRef} />
+        </motion.div>
       )}
     </>
   );
