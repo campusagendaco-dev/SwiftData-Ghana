@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { ShieldCheck, ShieldAlert, Loader2, QrCode, RefreshCw, CheckCircle2, AlertTriangle, Trash2, Copy } from "lucide-react";
@@ -25,11 +25,12 @@ const MfaSetupWidget = () => {
   // Current factor for unenrolling
   const [activeFactorId, setActiveFactorId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string>("");
+  const verifyingRef = useRef(false);
 
   // Initial status sync
   useEffect(() => {
     const syncMfaFactors = async () => {
-      if (!user) return;
+      if (!user?.id) return;
       setCheckingStatus(true);
       try {
         const { data, error } = await supabase.auth.mfa.listFactors();
@@ -49,8 +50,8 @@ const MfaSetupWidget = () => {
       }
     };
 
-    syncMfaFactors();
-  }, [user, isMfaEnabled]);
+    void syncMfaFactors();
+  }, [user?.id, isMfaEnabled]);
 
   const handleBeginEnrollment = async () => {
     console.log("[MFA] Beginning enrollment script execution...");
@@ -62,11 +63,18 @@ const MfaSetupWidget = () => {
         throw new Error("Supabase Multi-Factor Authentication SDK is missing from the build client.");
       }
 
+      // Clean up any stale unverified TOTP factors so friendlyName never collides with 422
+      const { data: existingFactors } = await supabase.auth.mfa.listFactors().catch(() => ({ data: null }));
+      const unverifiedFactors = (existingFactors?.all || []).filter(f => f.status !== "verified");
+      for (const uf of unverifiedFactors) {
+        await supabase.auth.mfa.unenroll({ factorId: uf.id }).catch(() => null);
+      }
+
       // Initiate TOTP factor creation in Supabase auth engine
       const { data, error } = await supabase.auth.mfa.enroll({
         factorType: "totp",
         issuer: "SwiftData Ghana",
-        friendlyName: `TOTP (${new Date().toLocaleDateString()})`
+        friendlyName: `TOTP (${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })})`
       });
 
       if (error) throw error;
@@ -88,11 +96,14 @@ const MfaSetupWidget = () => {
 
   const handleVerifyAndActivate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!factorId || !verificationCode || verificationCode.length !== 6) {
+    if (verifyingRef.current || loading) return;
+    const cleanCode = verificationCode.replace(/\D/g, "");
+    if (!factorId || cleanCode.length !== 6) {
       toast.error("Please enter the full 6-digit code.");
       return;
     }
 
+    verifyingRef.current = true;
     setLoading(true);
     try {
       // 1. Request initial challenge to verify enrollment
@@ -102,10 +113,10 @@ const MfaSetupWidget = () => {
       if (challengeError) throw challengeError;
 
       // 2. Submit the token to promote status from 'unverified' to 'verified'
-      const { data: verifyData, error: verifyError } = await supabase.auth.mfa.verify({
+      const { error: verifyError } = await supabase.auth.mfa.verify({
         factorId,
         challengeId: challengeData.id,
-        code: verificationCode
+        code: cleanCode
       });
 
       if (verifyError) throw verifyError;
@@ -117,6 +128,7 @@ const MfaSetupWidget = () => {
     } catch (e: any) {
       toast.error("Verification failed", { description: e.message || "Check your code and try again." });
     } finally {
+      verifyingRef.current = false;
       setLoading(false);
       setVerificationCode("");
     }

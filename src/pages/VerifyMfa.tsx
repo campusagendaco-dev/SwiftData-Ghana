@@ -14,25 +14,30 @@ const VerifyMfa = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [factorId, setFactorId] = useState<string | null>(null);
-  const [challengeId, setChallengeId] = useState<string | null>(null);
   
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const verifyingRef = useRef(false);
+  const verifiedSuccessRef = useRef(false);
+  const lastSubmittedCodeRef = useRef<string>("");
 
   // Fetch active MFA TOTP factor on load
   useEffect(() => {
     if (authLoading) return;
-    if (!user) {
+    if (!user?.id) {
       navigate("/login");
       return;
     }
+    if (verifiedSuccessRef.current) return;
 
+    let cancelled = false;
     const initializeFactor = async () => {
       try {
         // 1. Retrieve list of enrolled factors
         const { data: factorsData, error: factorsError } = await supabase.auth.mfa.listFactors();
         if (factorsError) throw factorsError;
+        if (cancelled) return;
 
-        const verifiedFactors = factorsData.all.filter(f => f.status === "verified");
+        const verifiedFactors = (factorsData?.all || []).filter(f => f.status === "verified");
         if (verifiedFactors.length === 0) {
           // Intelligent Self-Healing Recovery Loop Breaker!
           console.warn("[MFA Recovery] No active factors found on server. Clearing stale session.");
@@ -44,15 +49,19 @@ const VerifyMfa = () => {
         }
 
         const totpFactor = verifiedFactors[0];
-        setFactorId(totpFactor.id);
+        setFactorId(prev => prev === totpFactor.id ? prev : totpFactor.id);
       } catch (e: any) {
+        if (cancelled) return;
         console.error("[MFA Init] Factor initialization error:", e);
         setError("Could not initialize secure connection. Please try again.");
       }
     };
 
-    initializeFactor();
-  }, [user, navigate]);
+    void initializeFactor();
+    return () => {
+      cancelled = true;
+    };
+  }, [authLoading, user?.id, navigate]);
 
   // Automatically refocus the first box on load
   useEffect(() => {
@@ -61,8 +70,30 @@ const VerifyMfa = () => {
     }
   }, []);
 
+  const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>, index: number) => {
+    const pasted = (e.clipboardData?.getData("text") || "").replace(/\D/g, "").slice(0, 6);
+    if (!pasted) return;
+    e.preventDefault();
+    lastSubmittedCodeRef.current = "";
+    if (error) setError("");
+
+    const nextOtp = [...otp];
+    const startIdx = pasted.length === 6 ? 0 : index;
+    pasted.split("").forEach((digit, i) => {
+      if (startIdx + i < 6) {
+        nextOtp[startIdx + i] = digit;
+      }
+    });
+    setOtp(nextOtp);
+    const nextFocus = Math.min(startIdx + pasted.length, 5);
+    inputRefs.current[nextFocus]?.focus();
+  };
+
   const handleOtpChange = (element: HTMLInputElement, index: number) => {
     const value = element.value.replace(/\D/g, ""); // Allow digits only
+    lastSubmittedCodeRef.current = "";
+    if (error) setError("");
+
     if (!value) {
       const nextOtp = [...otp];
       nextOtp[index] = "";
@@ -71,15 +102,30 @@ const VerifyMfa = () => {
     }
 
     const nextOtp = [...otp];
-    // Handle pasting full 6 digits
+    // Handle single-digit replacement when input already contained 1 digit
+    if (value.length === 2 && otp[index].length === 1) {
+      const replacement = value.startsWith(otp[index]) ? value.slice(1) : value.slice(0, 1);
+      nextOtp[index] = replacement;
+      setOtp(nextOtp);
+      if (index < 5) {
+        inputRefs.current[index + 1]?.focus();
+      }
+      return;
+    }
+
+    // Handle pasting / autofilling multiple digits
     if (value.length > 1) {
-      const pastedValues = value.slice(0, 6).split("");
+      const cleanDigits = value.length >= 6 && otp[index] && value.startsWith(otp[index]) && value.length > 6
+        ? value.slice(1, 7)
+        : value.slice(0, 6);
+      const startIdx = cleanDigits.length === 6 ? 0 : index;
+      const pastedValues = cleanDigits.split("");
       pastedValues.forEach((v, i) => {
-        if (index + i < 6) nextOtp[index + i] = v;
+        if (startIdx + i < 6) nextOtp[startIdx + i] = v;
       });
       setOtp(nextOtp);
       // Focus next empty or last index
-      const nextFocus = Math.min(index + pastedValues.length, 5);
+      const nextFocus = Math.min(startIdx + pastedValues.length, 5);
       inputRefs.current[nextFocus]?.focus();
     } else {
       nextOtp[index] = value;
@@ -93,6 +139,7 @@ const VerifyMfa = () => {
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, index: number) => {
     if (e.key === "Backspace") {
+      lastSubmittedCodeRef.current = "";
       if (!otp[index] && index > 0) {
         // Backspace into previous element
         const nextOtp = [...otp];
@@ -109,23 +156,43 @@ const VerifyMfa = () => {
 
   const handleVerify = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    const fullCode = otp.join("");
+    if (verifyingRef.current || verifiedSuccessRef.current || loading) {
+      return;
+    }
+
+    const fullCode = otp.join("").replace(/\D/g, "");
     if (fullCode.length !== 6) {
-      setError("Please enter all 6 digits.");
+      if (e) setError("Please enter all 6 digits.");
       return;
     }
 
     if (!factorId) {
-      setError("Authentication session not ready. Please refresh.");
+      if (e) setError("Authentication session not ready. Please refresh.");
       return;
     }
 
+    if (lastSubmittedCodeRef.current === fullCode) {
+      return;
+    }
+
+    verifyingRef.current = true;
+    lastSubmittedCodeRef.current = fullCode;
     setLoading(true);
     setError("");
 
     try {
-      // 1. Create the challenge immediately before verification
-      // This prevents "Challenge and verify IP addresses mismatch" by executing both in the exact same thread
+      // If session already reached AAL2 (e.g. concurrent verification), skip duplicate verify call
+      if (typeof supabase.auth.mfa.getAuthenticatorAssuranceLevel === "function") {
+        const aalRes = await supabase.auth.mfa.getAuthenticatorAssuranceLevel().catch(() => ({ data: null }));
+        if (aalRes?.data?.currentLevel === "aal2") {
+          verifiedSuccessRef.current = true;
+          await refreshMfaStatus();
+          navigate("/dashboard", { replace: true });
+          return;
+        }
+      }
+
+      // 1. Create a fresh challenge immediately before verification
       const { data: challengeData, error: challengeError } = await supabase.auth.mfa.challenge({
         factorId
       });
@@ -135,7 +202,7 @@ const VerifyMfa = () => {
       }
 
       // 2. Immediately verify the challenge
-      const { data, error: verifyError } = await supabase.auth.mfa.verify({
+      const { error: verifyError } = await supabase.auth.mfa.verify({
         factorId,
         challengeId: challengeData.id,
         code: fullCode,
@@ -145,30 +212,45 @@ const VerifyMfa = () => {
         throw verifyError;
       }
 
+      verifiedSuccessRef.current = true;
       toast.success("Secure login verified! Welcome back.");
       await refreshMfaStatus();
-      navigate("/dashboard");
+      navigate("/dashboard", { replace: true });
     } catch (err: any) {
-      console.error("[MFA] Verification failed:", err);
       const isTotpErr = (err.message || "").toLowerCase().includes("totp") || (err.message || "").toLowerCase().includes("invalid") || err.status === 422;
+      if (!isTotpErr) {
+        console.warn("[MFA] Verification failed:", err);
+      }
       setError(
         isTotpErr
-          ? "Invalid or expired 6-digit code. Please check your Authenticator app for the latest code. Tip: Ensure your device's date & time settings are set to 'Automatic'."
+          ? "Invalid or expired 6-digit code. Please wait for the next code in your Authenticator app and enter it. Tip: Ensure your device's date & time settings are set to 'Automatic'."
           : (err.message || "Invalid verification code. Please try again.")
       );
+      lastSubmittedCodeRef.current = "";
       setOtp(["", "", "", "", "", ""]);
       setTimeout(() => inputRefs.current[0]?.focus(), 100);
     } finally {
-      setLoading(false);
+      verifyingRef.current = false;
+      if (!verifiedSuccessRef.current) {
+        setLoading(false);
+      }
     }
   };
 
   // Auto-submit when all 6 digits are typed
   useEffect(() => {
-    if (otp.join("").length === 6 && factorId) {
-      handleVerify();
+    const fullCode = otp.join("").replace(/\D/g, "");
+    if (
+      fullCode.length === 6 &&
+      factorId &&
+      !loading &&
+      !verifyingRef.current &&
+      !verifiedSuccessRef.current &&
+      lastSubmittedCodeRef.current !== fullCode
+    ) {
+      void handleVerify();
     }
-  }, [otp, factorId]);
+  }, [otp, factorId, loading]);
 
   if (authLoading) {
     return (
@@ -215,6 +297,7 @@ const VerifyMfa = () => {
                 aria-label={`Digit ${index + 1} of 6`}
                 maxLength={6} // Allows pasting full length
                 value={data}
+                onPaste={(e) => handlePaste(e, index)}
                 onChange={(e) => handleOtpChange(e.target, index)}
                 onKeyDown={(e) => handleKeyDown(e, index)}
                 className={`h-14 w-11 sm:w-12 rounded-2xl border-2 bg-background text-center text-2xl font-black text-foreground outline-none transition-colors focus:border-primary ${
