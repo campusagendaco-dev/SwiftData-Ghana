@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
-
-const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY") || "";
+import { timingSafeEqual } from "../_shared/gateway-security.ts";
 
 // The generated flyer HTML is returned to the client and rendered via
 // innerHTML/document.write (outside JSX's auto-escaping), and both the
@@ -14,36 +14,258 @@ function escapeHtml(value: unknown): string {
   }[ch] as string));
 }
 
+function jsonResponse(body: Record<string, unknown>, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
+async function authenticateCaller(req: Request): Promise<{ ok: boolean; userId?: string; error?: string; status?: number }> {
+  const authHeader = req.headers.get("Authorization");
+  const userToken = req.headers.get("x-user-access-token");
+  const token = userToken || authHeader?.replace(/^Bearer\s+/i, "").trim();
+
+  if (!token) {
+    return { ok: false, error: "Unauthorized: Missing authentication token", status: 401 };
+  }
+
+  const serviceRoleKey = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "").trim();
+  if (serviceRoleKey && timingSafeEqual(token, serviceRoleKey)) {
+    return { ok: true, userId: "service-role" };
+  }
+
+  const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
+  if (!supabaseUrl || !serviceRoleKey) {
+    return { ok: false, error: "Server auth configuration missing", status: 500 };
+  }
+
+  try {
+    const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
+    const { data, error } = await supabaseAdmin.auth.getUser(token);
+    if (error || !data?.user) {
+      return { ok: false, error: "Unauthorized: Invalid session token", status: 401 };
+    }
+    return { ok: true, userId: data.user.id };
+  } catch (err) {
+    console.error("[AI Flyer] Auth error:", err);
+    return { ok: false, error: "Unauthorized", status: 401 };
+  }
+}
+
+interface AiFlyerDesign {
+  primaryColor: string;
+  secondaryColor: string;
+  accentColor: string;
+  backgroundGradient: string;
+  customGreetingText: string;
+  tagline: string;
+  fontFamily: string;
+  caption: string;
+  whatsappStatus: string;
+  promoBroadcast: string;
+  variants?: string[];
+}
+
+function extractJsonObject(rawText: string): Record<string, unknown> | null {
+  const trimmed = (rawText || "").trim();
+  const jsonStart = trimmed.indexOf("{");
+  const jsonEnd = trimmed.lastIndexOf("}");
+  if (jsonStart === -1 || jsonEnd === -1 || jsonEnd <= jsonStart) return null;
+  try {
+    return JSON.parse(trimmed.slice(jsonStart, jsonEnd + 1));
+  } catch {
+    return null;
+  }
+}
+
+async function generateWithOpenAI(
+  apiKey: string,
+  systemInstruction: string,
+  userMsg: string
+): Promise<{ parsed: Record<string, unknown> | null; model: string }> {
+  const model = "gpt-4o-mini";
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      temperature: 0.7,
+      max_tokens: 900,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: systemInstruction },
+        { role: "user", content: userMsg },
+      ],
+    }),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => "");
+    throw new Error(`OpenAI Chat API error (${res.status}): ${errText.slice(0, 300)}`);
+  }
+
+  const data = await res.json();
+  const rawText = data?.choices?.[0]?.message?.content || "";
+  return { parsed: extractJsonObject(rawText), model };
+}
+
+async function generateWithGemini(
+  apiKey: string,
+  systemInstruction: string,
+  userMsg: string
+): Promise<{ parsed: Record<string, unknown> | null; model: string }> {
+  const models = ["gemini-2.0-flash", "gemini-1.5-flash"];
+  let lastErr = "Gemini request failed";
+
+  for (const model of models) {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: `${systemInstruction}\n\nInput:\n${userMsg}` }] }],
+          generationConfig: {
+            temperature: 0.7,
+            responseMimeType: "application/json",
+          },
+        }),
+      }
+    );
+
+    if (res.ok) {
+      const geminiData = await res.json();
+      const rawText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
+      return { parsed: extractJsonObject(rawText), model };
+    }
+    lastErr = `Gemini ${model} failed (${res.status}): ${(await res.text().catch(() => "")).slice(0, 200)}`;
+  }
+
+  throw new Error(lastErr);
+}
+
+async function generatePromoImage(
+  apiKey: string,
+  storeName: string,
+  prompt: string,
+  imageSize: string
+): Promise<{ imageUrl?: string; imageBase64?: string; imageModel?: string; imageError?: string }> {
+  const imagePrompt = `Modern, vibrant Ghanaian mobile data bundle promotional flyer background graphic for "${storeName}". Clean bold commercial aesthetic, warm gold and deep emerald/dark accents, high contrast, no gibberish text. Theme: ${prompt || "Affordable MTN, Telecel, AirtelTigo instant data deals in Ghana"}.`;
+
+  const allowedSizes = new Set(["1024x1024", "1024x1536", "1536x1024", "1024x1792", "1792x1024"]);
+  const safeSize = allowedSizes.has(imageSize) ? imageSize : "1024x1024";
+
+  // Primary: gpt-image-1
+  try {
+    const primaryRes = await fetch("https://api.openai.com/v1/images/generations", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-image-1",
+        prompt: imagePrompt,
+        n: 1,
+        size: safeSize === "1024x1792" || safeSize === "1792x1024" ? "1024x1024" : safeSize,
+      }),
+    });
+
+    if (primaryRes.ok) {
+      const data = await primaryRes.json();
+      const item = data?.data?.[0];
+      if (item?.b64_json || item?.url) {
+        return {
+          imageBase64: item.b64_json,
+          imageUrl: item.url,
+          imageModel: "gpt-image-1",
+        };
+      }
+    } else {
+      const errText = await primaryRes.text().catch(() => "");
+      console.warn(`[AI Flyer] gpt-image-1 failed (${primaryRes.status}), falling back to dall-e-3: ${errText.slice(0, 200)}`);
+    }
+  } catch (err: any) {
+    console.warn("[AI Flyer] gpt-image-1 exception, falling back to dall-e-3:", err?.message || err);
+  }
+
+  // Fallback: dall-e-3
+  try {
+    const dalleSize = safeSize === "1024x1536" || safeSize === "1536x1024" ? "1024x1024" : safeSize;
+    const fallbackRes = await fetch("https://api.openai.com/v1/images/generations", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: "dall-e-3",
+        prompt: imagePrompt,
+        n: 1,
+        size: dalleSize,
+        response_format: "url",
+      }),
+    });
+
+    if (fallbackRes.ok) {
+      const data = await fallbackRes.json();
+      const item = data?.data?.[0];
+      if (item?.url || item?.b64_json) {
+        return {
+          imageUrl: item.url,
+          imageBase64: item.b64_json,
+          imageModel: "dall-e-3",
+        };
+      }
+    }
+
+    const errText = await fallbackRes.text().catch(() => "");
+    return { imageError: `Image generation failed (${fallbackRes.status}): ${errText.slice(0, 200)}` };
+  } catch (err: any) {
+    return { imageError: `Image generation error: ${err?.message || String(err)}` };
+  }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
-  const authHeader = req.headers.get("Authorization");
-  if (!authHeader) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
-      status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+  const auth = await authenticateCaller(req);
+  if (!auth.ok) {
+    return jsonResponse({ error: auth.error || "Unauthorized" }, auth.status || 401);
   }
 
   try {
     const payload = await req.json().catch(() => ({}));
-    const { storeName, storeUrl, packages, networks, contact, prompt } = payload;
+    const {
+      storeName,
+      storeUrl = "",
+      packages = {},
+      networks = [],
+      contact = "",
+      prompt = "",
+      mode = "flyer",
+      category = "daily",
+      network = "",
+      generateImage = false,
+      imageSize = "1024x1024",
+    } = payload;
 
     if (!storeName) {
-      return new Response(JSON.stringify({ error: "Store name is required" }), {
-        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonResponse({ error: "Store name is required" }, 400);
     }
 
-    const allSizes = new Set<string>();
-    Object.values(packages || {}).forEach((pkgs: unknown) => {
-      if (Array.isArray(pkgs)) {
-        pkgs.forEach((pkg: { size: string }) => allSizes.add(pkg.size));
-      }
-    });
+    const OPENAI_API_KEY = (Deno.env.get("OPENAI_API_KEY") || "").trim();
+    const GEMINI_API_KEY = (Deno.env.get("GEMINI_API_KEY") || "").trim();
 
-    let aiDesign = {
+    const defaultCaption = `🔥 Promo Alert from ${storeName}! 🔥\nGet the cheapest MTN, Telecel & AirtelTigo data bundles in Ghana instantly — pay with MoMo, no wahala! ⚡\n\n📲 Order here: ${storeUrl || "swiftdatagh.shop"}\n\n#SwiftData #GhanaDataPlug #MobileDataGH`;
+
+    let aiDesign: AiFlyerDesign = {
       primaryColor: "#EAB308",
       secondaryColor: "#111111",
       accentColor: "#EAB308",
@@ -51,39 +273,105 @@ serve(async (req) => {
       customGreetingText: "Official Data Reseller",
       tagline: "Your trusted mobile data plug",
       fontFamily: "Poppins",
-      caption: `🔥 Promo Alert from ${storeName}! 🔥\nGet the cheapest data bundles instantly. Fast, secure, and no-expiry plans.\n\n📲 Order here: ${storeUrl}\n\n#SwiftData #Ghanareseller #MobileData`
+      caption: defaultCaption,
+      whatsappStatus: defaultCaption,
+      promoBroadcast: `🇬🇭 ${storeName} Daily Data Drop!\n\n✅ MTN, Telecel & AirtelTigo bundles at unbeatable GH₵ prices\n⚡ Instant MoMo checkout & fast delivery\n\nTap to order now 👉 ${storeUrl || "swiftdatagh.shop"}${contact ? `\n📞 Support: ${contact}` : ""}`,
+      variants: [defaultCaption],
     };
 
-    if (prompt && GEMINI_API_KEY) {
-      console.log(`[AI Flyer] Calling Gemini to generate style for prompt: "${prompt}"`);
-      try {
-        const systemInstruction = `You are a premium graphic designer and marketing copywriter. Given a store name, networks, and a style prompt, generate matching styling properties and social caption. Output a raw JSON object with: primaryColor (hex), secondaryColor (hex), accentColor (hex), backgroundGradient (CSS gradient), customGreetingText (short banner title), tagline (compelling sales tagline), fontFamily (Poppins, Montserrat, Inter, or Space Grotesk), and caption (marketing post copy). Return only the JSON object. No formatting, no backticks, no comments.`;
-        const userMsg = `Store: ${storeName}, Prompt: "${prompt}"`;
+    let aiProvider: "openai" | "gemini" | "default" = "default";
+    let aiModel = "template-default";
 
-        const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: `${systemInstruction}\n\nInput:\n${userMsg}` }] }]
-          })
-        });
+    const effectivePrompt = String(prompt || "").trim() ||
+      (mode === "promo_copy"
+        ? `Create punchy Ghanaian WhatsApp status captions and a promo broadcast for category "${category}"${network ? ` focusing on ${network} bundles` : " covering MTN, Telecel, and AirtelTigo"}.`
+        : "");
 
-        if (geminiRes.ok) {
-          const geminiData = await geminiRes.json();
-          const rawText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
-          const jsonStart = rawText.indexOf("{");
-          const jsonEnd = rawText.lastIndexOf("}");
-          if (jsonStart !== -1 && jsonEnd !== -1) {
-            const parsed = JSON.parse(rawText.slice(jsonStart, jsonEnd + 1));
-            aiDesign = { ...aiDesign, ...parsed };
-            console.log("[AI Flyer] Gemini styling parsed successfully:", aiDesign);
+    const shouldInvokeAi = Boolean(effectivePrompt) && (Boolean(OPENAI_API_KEY) || Boolean(GEMINI_API_KEY));
+
+    if (shouldInvokeAi) {
+      const systemInstruction = `You are a top Ghanaian digital marketing copywriter and graphic designer specializing in mobile data resellers (MTN, Telecel, AirtelTigo, MoMo payments, GH₵ pricing).
+Write authentic, high-converting Ghanaian WhatsApp marketing copy (warm, energetic, concise, natural Ghanaian phrasing like "no wahala", "sharp delivery", "your trusted data plug", without overdoing slang) plus matching flyer design tokens.
+Return ONLY a valid raw JSON object with these exact keys:
+- primaryColor: hex color string (e.g. "#EAB308")
+- secondaryColor: dark hex background color string (e.g. "#111111")
+- accentColor: hex color string
+- backgroundGradient: valid CSS linear-gradient string
+- customGreetingText: short punchy banner badge (max 5 words)
+- tagline: compelling sales tagline (max 10 words)
+- fontFamily: one of "Poppins", "Montserrat", "Inter", or "Space Grotesk"
+- caption: ready-to-post WhatsApp Status caption with emojis, GH₵ value pitch, and the store URL
+- whatsappStatus: concise 4-6 line WhatsApp Status post (optimized for mobile status screen) including the store URL
+- promoBroadcast: slightly richer WhatsApp broadcast / group promo message with bullet points and clear CTA including the store URL
+- variants: array of 2 additional distinct short Ghanaian WhatsApp Status caption variations (strings) including the store URL`;
+
+      const networkNames = Array.isArray(networks)
+        ? networks.map((n: any) => (typeof n === "string" ? n : n?.name)).filter(Boolean).join(", ")
+        : "";
+      const userMsg = [
+        `Store Name: ${storeName}`,
+        `Store URL: ${storeUrl || "swiftdatagh.shop"}`,
+        contact ? `Contact/MoMo: ${contact}` : "",
+        network ? `Featured Network: ${network}` : "",
+        networkNames ? `Networks: ${networkNames}` : "",
+        `Mode: ${mode}`,
+        `Category: ${category}`,
+        `Style/Promo Prompt: "${effectivePrompt}"`,
+      ].filter(Boolean).join("\n");
+
+      // Primary: OpenAI (gpt-4o-mini)
+      if (OPENAI_API_KEY) {
+        try {
+          const { parsed, model } = await generateWithOpenAI(OPENAI_API_KEY, systemInstruction, userMsg);
+          if (parsed) {
+            aiDesign = {
+              ...aiDesign,
+              ...parsed,
+              caption: String(parsed.caption || parsed.whatsappStatus || aiDesign.caption),
+              whatsappStatus: String(parsed.whatsappStatus || parsed.caption || aiDesign.whatsappStatus),
+              promoBroadcast: String(parsed.promoBroadcast || parsed.caption || aiDesign.promoBroadcast),
+              variants: Array.isArray(parsed.variants)
+                ? parsed.variants.map((v) => String(v)).filter(Boolean)
+                : aiDesign.variants,
+            };
+            aiProvider = "openai";
+            aiModel = model;
           }
-        } else {
-          console.error("[AI Flyer] Gemini API call failed:", await geminiRes.text());
+        } catch (err: any) {
+          console.error("[AI Flyer] OpenAI call failed:", err?.message || err);
         }
-      } catch (err: any) {
-        console.error("[AI Flyer] Failed to fetch or parse AI design:", err.message);
       }
+
+      // Fallback: Gemini (only if OpenAI wasn't configured or failed)
+      if (aiProvider === "default" && GEMINI_API_KEY) {
+        try {
+          const { parsed, model } = await generateWithGemini(GEMINI_API_KEY, systemInstruction, userMsg);
+          if (parsed) {
+            aiDesign = {
+              ...aiDesign,
+              ...parsed,
+              caption: String(parsed.caption || parsed.whatsappStatus || aiDesign.caption),
+              whatsappStatus: String(parsed.whatsappStatus || parsed.caption || aiDesign.whatsappStatus),
+              promoBroadcast: String(parsed.promoBroadcast || parsed.caption || aiDesign.promoBroadcast),
+              variants: Array.isArray(parsed.variants)
+                ? parsed.variants.map((v) => String(v)).filter(Boolean)
+                : aiDesign.variants,
+            };
+            aiProvider = "gemini";
+            aiModel = model;
+          }
+        } catch (err: any) {
+          console.error("[AI Flyer] Gemini fallback failed:", err?.message || err);
+        }
+      }
+    }
+
+    // Optional AI Flyer Image Generation (gpt-image-1 -> dall-e-3 fallback)
+    let imageResult: { imageUrl?: string; imageBase64?: string; imageModel?: string; imageError?: string } = {};
+    if (generateImage && OPENAI_API_KEY) {
+      imageResult = await generatePromoImage(OPENAI_API_KEY, String(storeName), effectivePrompt, String(imageSize));
+    } else if (generateImage && !OPENAI_API_KEY) {
+      imageResult = { imageError: "OPENAI_API_KEY is not configured for image generation." };
     }
 
     const safeAiDesign = {
@@ -96,24 +384,30 @@ serve(async (req) => {
       accentColor: escapeHtml(aiDesign.accentColor),
       backgroundGradient: escapeHtml(aiDesign.backgroundGradient),
     };
+
     const htmlFlyer = buildFlyerHtml(
       escapeHtml(storeName),
       escapeHtml(storeUrl),
       packages || {},
-      networks || [],
+      Array.isArray(networks) ? networks : [],
       escapeHtml(contact),
       safeAiDesign
     );
 
-    return new Response(JSON.stringify({ html: htmlFlyer, caption: aiDesign.caption, design: aiDesign }), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    return jsonResponse({
+      html: htmlFlyer,
+      caption: aiDesign.caption,
+      whatsappStatus: aiDesign.whatsappStatus,
+      promoBroadcast: aiDesign.promoBroadcast,
+      variants: aiDesign.variants || [],
+      design: aiDesign,
+      provider: aiProvider,
+      model: aiModel,
+      ...imageResult,
     });
   } catch (error: any) {
     console.error("Flyer generation error:", error);
-    return new Response(JSON.stringify({ error: "Failed to generate flyer" }), {
-      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return jsonResponse({ error: "Failed to generate flyer" }, 500);
   }
 });
 
@@ -177,7 +471,7 @@ body { font-family:'${design.fontFamily || 'Poppins'}', sans-serif; background:#
           ${netPkgs.map((pkg: { size: string; price: number; validity?: string; popular?: boolean }) => `
             <div class="pkg-card">
               <div class="pkg-size">${escapeHtml(pkg.size)}</div>
-              <div class="pkg-price">GH₵${pkg.price.toFixed(2)}</div>
+              <div class="pkg-price">GH₵${Number(pkg.price || 0).toFixed(2)}</div>
               <div class="pkg-validity">${escapeHtml(pkg.validity || 'Non-expiry')}</div>
               ${pkg.popular ? `<div class="pkg-popular" style="background:${design.primaryColor}; color:${design.primaryColor === '#ffffff' ? '#000000' : '#ffffff'}">🔥 HOT</div>` : ''}
             </div>

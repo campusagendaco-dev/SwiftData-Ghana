@@ -101,6 +101,7 @@ const AdminSettings = lazy(() => import("./pages/AdminSettings"));
 const AdminAnalytics = lazy(() => import("./pages/AdminAnalytics"));
 const AdminPromotions = lazy(() => import("./pages/AdminPromotions"));
 const AdminMysteryBox = lazy(() => import("./pages/AdminMysteryBox"));
+const AdminMysteryBoxClaims = lazy(() => import("./pages/AdminMysteryBoxClaims"));
 const AdminDatabaseSpace = lazy(() => import("./pages/AdminDatabaseSpace"));
 const AdminTickets = lazy(() => import("./pages/AdminTickets"));
 const AdminAuditLogs = lazy(() => import("./pages/AdminAuditLogs"));
@@ -586,6 +587,7 @@ const AppContent = () => {
           <Route path="analytics" element={<AdminAnalytics />} />
           <Route path="promotions" element={<AdminPromotions />} />
           <Route path="mystery-box" element={<AdminMysteryBox />} />
+          <Route path="mystery-box-claims" element={<AdminMysteryBoxClaims />} />
           <Route path="tickets" element={<AdminTickets />} />
           <Route path="audit-logs" element={<AdminAuditLogs />} />
           <Route path="security" element={<AdminSecurity />} />

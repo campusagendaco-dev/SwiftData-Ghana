@@ -87,6 +87,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: "Korba Packages", icon: Package,    path: "/admin/korba/packages", permKey: "packages" },
       { label: "Promo Codes",  icon: Ticket,       path: "/admin/promotions", permKey: "packages" },
       { label: "Mystery Box",  icon: Gift,         path: "/admin/mystery-box", permKey: "packages" },
+      { label: "Mystery Box Claims", icon: Users2, path: "/admin/mystery-box-claims", permKey: "packages" },
     ],
   },
   {

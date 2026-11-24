@@ -36,6 +36,7 @@ async function getPaystackSecretKey(supabase: any): Promise<string> {
   return cachedPaystackKey;
 }
 
+const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
 
 // const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -211,17 +212,18 @@ function formatMainMenu(
   }
 }
 
-async function callGemini(prompt: string) {
-  if (!GEMINI_API_KEY) return null;
+async function callGemini(prompt: string): Promise<string | null> {
+  const geminiKey = Deno.env.get("GEMINI_API_KEY") || GEMINI_API_KEY;
+  if (!geminiKey) return null;
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 4500); // Fast 4.5s timeout
+  const timeoutId = setTimeout(() => controller.abort(), 5000);
   try {
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.2 },
+        generationConfig: { temperature: 0.25 },
       }),
       signal: controller.signal,
     });
@@ -235,16 +237,95 @@ async function callGemini(prompt: string) {
   }
 }
 
-async function fetchImageAsBase64(url: string): Promise<{ base64: string; mimeType: string } | null> {
+async function callWhatsAppAiChat(systemPrompt: string, userMessage: string): Promise<string | null> {
+  const openaiKey = Deno.env.get("OPENAI_API_KEY") || OPENAI_API_KEY;
+  const multilingualSystemPrompt = `${systemPrompt}
+
+### ━━━ MULTILINGUAL GHANAIAN FLUENCY (ENGLISH / TWI / PIDGIN) ━━━
+- Understand and reply naturally in the customer's language: Standard English, Ghanaian Twi (Asante/Akuapem Twi), or Ghanaian Pidgin (e.g. "charley", "abeg", "how much be 5 gig", "mepɛ MTN data", "me order no mmaeɛ").
+- Keep replies concise, warm, WhatsApp-friendly, and action-oriented.
+- If the customer clearly matches one of the exact intent codes (BUY_DATA, BUY_AIRTIME, MASHUP, TRACK_ORDER, ECG, UTILITY, CHECKER, BENEFICIARY, WALLET, SUPPORT, HISTORY, PORTAL, CHANNEL, API_ACCESS), include that exact intent code in your response so the bot can route them immediately; otherwise answer their sales or support question directly and helpfully.`;
+
+  if (openaiKey) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    try {
+      const res = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${openaiKey}`,
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          messages: [
+            { role: "system", content: multilingualSystemPrompt },
+            { role: "user", content: userMessage },
+          ],
+          temperature: 0.3,
+          max_tokens: 450,
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      if (res.ok) {
+        const json = await res.json();
+        const content = json.choices?.[0]?.message?.content?.trim();
+        if (content) return content;
+      } else {
+        const errText = await res.text().catch(() => "");
+        console.warn(`[OpenAI Chat] HTTP ${res.status}: ${errText.slice(0, 200)}`);
+      }
+    } catch (err) {
+      clearTimeout(timeoutId);
+      console.error("[OpenAI Chat] Error, falling back to Gemini:", err);
+    }
+  }
+
+  // Fallback to Gemini if OPENAI_API_KEY is absent or OpenAI fails
+  return await callGemini(`${multilingualSystemPrompt}\n\nUser Message: "${userMessage}"`);
+}
+
+async function fetchMediaBytes(url: string, defaultMime = "application/octet-stream"): Promise<{ bytes: Uint8Array; mimeType: string } | null> {
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 12000);
-    const res = await fetch(url, { signal: controller.signal });
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    const headers: Record<string, string> = {};
+
+    // Support authenticated Twilio or Meta Cloud API media downloads when env credentials exist
+    if (url.includes("api.twilio.com")) {
+      const sid = Deno.env.get("TWILIO_ACCOUNT_SID");
+      const token = Deno.env.get("TWILIO_AUTH_TOKEN");
+      if (sid && token) {
+        headers["Authorization"] = `Basic ${btoa(`${sid}:${token}`)}`;
+      }
+    } else if (url.includes("graph.facebook.com") || url.includes("lookaside.fbsbx.com")) {
+      const metaToken = Deno.env.get("META_WHATSAPP_TOKEN") || Deno.env.get("WHATSAPP_ACCESS_TOKEN");
+      if (metaToken) {
+        headers["Authorization"] = `Bearer ${metaToken}`;
+      }
+    }
+
+    const res = await fetch(url, { headers, signal: controller.signal });
     clearTimeout(timeout);
-    if (!res.ok) return null;
-    const mimeType = (res.headers.get("content-type") || "image/jpeg").split(";")[0].trim();
+    if (!res.ok) {
+      console.warn(`[fetchMediaBytes] HTTP ${res.status} for ${url.slice(0, 80)}`);
+      return null;
+    }
+    const mimeType = (res.headers.get("content-type") || defaultMime).split(";")[0].trim();
     const buf = await res.arrayBuffer();
-    const bytes = new Uint8Array(buf);
+    return { bytes: new Uint8Array(buf), mimeType };
+  } catch (err) {
+    console.error("[fetchMediaBytes] Error:", err);
+    return null;
+  }
+}
+
+async function fetchImageAsBase64(url: string): Promise<{ base64: string; mimeType: string } | null> {
+  const downloaded = await fetchMediaBytes(url, "image/jpeg");
+  if (!downloaded) return null;
+  try {
+    const bytes = downloaded.bytes;
     let binary = "";
     const len = bytes.byteLength;
     for (let i = 0; i < len; i += 8192) {
@@ -252,20 +333,85 @@ async function fetchImageAsBase64(url: string): Promise<{ base64: string; mimeTy
     }
     return {
       base64: btoa(binary),
-      mimeType,
+      mimeType: downloaded.mimeType,
     };
   } catch (err) {
-    console.error("[fetchImageAsBase64] Error:", err);
+    console.error("[fetchImageAsBase64] Encode error:", err);
+    return null;
+  }
+}
+
+function base64ToUint8Array(b64: string): Uint8Array {
+  const clean = b64.includes(",") ? b64.split(",")[1] : b64;
+  const binary = atob(clean);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+function getAudioFileExtension(mimeType: string): string {
+  const m = (mimeType || "").toLowerCase();
+  if (m.includes("mpeg") || m.includes("mp3")) return "mp3";
+  if (m.includes("mp4") || m.includes("m4a") || m.includes("aac")) return "m4a";
+  if (m.includes("wav")) return "wav";
+  if (m.includes("webm")) return "webm";
+  if (m.includes("flac")) return "flac";
+  return "ogg";
+}
+
+async function transcribeVoiceNoteWithWhisper(audioBytes: Uint8Array, mimeType = "audio/ogg"): Promise<string | null> {
+  const openaiKey = Deno.env.get("OPENAI_API_KEY") || OPENAI_API_KEY;
+  if (!openaiKey) {
+    console.warn("[Whisper] Missing OPENAI_API_KEY; cannot transcribe voice note.");
+    return null;
+  }
+
+  const cleanMime = (mimeType || "audio/ogg").split(";")[0].trim() || "audio/ogg";
+  const ext = getAudioFileExtension(cleanMime);
+  const form = new FormData();
+  form.append("file", new Blob([audioBytes], { type: cleanMime }), `voice.${ext}`);
+  form.append("model", "whisper-1");
+  form.append(
+    "prompt",
+    "SwiftData Ghana WhatsApp voice note in English, Ghanaian Twi, or Pidgin. Common terms: MTN, Telecel, Vodafone, AirtelTigo, AT, Mash Up, MoMo, Mobile Money, ECG, WAEC, gig, GB, cedis, data bundle, airtime."
+  );
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 20000);
+  try {
+    const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${openaiKey}`,
+      },
+      body: form,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      console.warn(`[Whisper] HTTP ${res.status}: ${errText.slice(0, 250)}`);
+      return null;
+    }
+    const json = await res.json();
+    const transcript = String(json?.text || "").trim();
+    return transcript || null;
+  } catch (err) {
+    clearTimeout(timeoutId);
+    console.error("[Whisper] Transcription error:", err);
     return null;
   }
 }
 
 async function callGeminiVision(prompt: string, imageBase64: string, mimeType = "image/jpeg"): Promise<any> {
-  if (!GEMINI_API_KEY) return null;
+  const geminiKey = Deno.env.get("GEMINI_API_KEY") || GEMINI_API_KEY;
+  if (!geminiKey) return null;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 20000);
   try {
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -304,6 +450,66 @@ async function callGeminiVision(prompt: string, imageBase64: string, mimeType = 
   }
 }
 
+async function callVisionAi(prompt: string, imageBase64: string, mimeType = "image/jpeg"): Promise<any> {
+  const openaiKey = Deno.env.get("OPENAI_API_KEY") || OPENAI_API_KEY;
+  if (openaiKey) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 20000);
+    try {
+      const cleanMime = (mimeType || "image/jpeg").split(";")[0].trim() || "image/jpeg";
+      const res = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${openaiKey}`,
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          messages: [
+            {
+              role: "user",
+              content: [
+                { type: "text", text: prompt },
+                {
+                  type: "image_url",
+                  image_url: {
+                    url: `data:${cleanMime};base64,${imageBase64}`,
+                  },
+                },
+              ],
+            },
+          ],
+          temperature: 0.1,
+          max_tokens: 600,
+          response_format: { type: "json_object" },
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      if (res.ok) {
+        const json = await res.json();
+        const raw = json.choices?.[0]?.message?.content;
+        if (raw) {
+          try {
+            return JSON.parse(raw);
+          } catch {
+            const cleaned = String(raw).replace(/```json\s*|```/g, "").trim();
+            return JSON.parse(cleaned);
+          }
+        }
+      } else {
+        const errText = await res.text().catch(() => "");
+        console.warn(`[OpenAI Vision] HTTP ${res.status}: ${errText.slice(0, 200)}`);
+      }
+    } catch (err) {
+      clearTimeout(timeoutId);
+      console.error("[OpenAI Vision] Error, falling back to Gemini Vision:", err);
+    }
+  }
+
+  return await callGeminiVision(prompt, imageBase64, mimeType);
+}
+
 // ── WaSender payload parser ───────────────────────────────────────────────────
 
 function parseMessage(payload: any): { 
@@ -315,6 +521,10 @@ function parseMessage(payload: any): {
   imageUrl?: string | null;
   imageBase64?: string | null;
   mimeType?: string;
+  isAudio: boolean;
+  audioUrl?: string | null;
+  audioBase64?: string | null;
+  audioMimeType?: string;
 } {
   const rawM = payload?.data?.messages || payload?.data || payload;
   const m = Array.isArray(rawM) ? rawM[0] : rawM;
@@ -351,6 +561,7 @@ function parseMessage(payload: any): {
   }
   const msg = m.message || {};
   const imageMsg = msg.imageMessage || msg.viewOnceMessage?.message?.imageMessage || msg.viewOnceMessageV2?.message?.imageMessage;
+  const audioMsg = msg.audioMessage || msg.pttMessage || msg.viewOnceMessage?.message?.audioMessage || msg.viewOnceMessageV2?.message?.audioMessage;
   
   const text = m.messageBody || 
                msg.conversation || 
@@ -358,7 +569,16 @@ function parseMessage(payload: any): {
                imageMsg?.caption || 
                "";
 
-  const isImage = Boolean(
+  const isAudio = Boolean(
+    audioMsg ||
+    m.messageType === "audioMessage" ||
+    m.messageType === "audio" ||
+    m.messageType === "ptt" ||
+    m.messageType === "voice" ||
+    payload?.event?.includes("audio")
+  );
+
+  const isImage = !isAudio && Boolean(
     imageMsg || 
     m.messageType === "imageMessage" || 
     m.messageType === "image" ||
@@ -392,6 +612,30 @@ function parseMessage(payload: any): {
     }
   }
 
+  let audioUrl: string | null = null;
+  let audioBase64: string | null = null;
+  const audioMimeType = audioMsg?.mimetype || m.mimetype || "audio/ogg";
+
+  if (isAudio) {
+    if (audioMsg?.url && typeof audioMsg.url === "string" && audioMsg.url.startsWith("http")) {
+      audioUrl = audioMsg.url;
+    } else if (payload?.data?.mediaUrl && typeof payload.data.mediaUrl === "string") {
+      audioUrl = payload.data.mediaUrl;
+    } else if (m.mediaUrl && typeof m.mediaUrl === "string") {
+      audioUrl = m.mediaUrl;
+    } else if (payload?.data?.audioUrl && typeof payload.data.audioUrl === "string") {
+      audioUrl = payload.data.audioUrl;
+    }
+
+    if (typeof audioMsg?.base64 === "string" && audioMsg.base64.length > 0) {
+      audioBase64 = audioMsg.base64;
+    } else if (typeof m.mediaBase64 === "string" && m.mediaBase64.length > 0) {
+      audioBase64 = m.mediaBase64;
+    } else if (typeof payload?.data?.mediaBase64 === "string" && payload.data.mediaBase64.length > 0) {
+      audioBase64 = payload.data.mediaBase64;
+    }
+  }
+
   return { 
     id: messageId,
     from: from.trim(), 
@@ -400,7 +644,11 @@ function parseMessage(payload: any): {
     isImage,
     imageUrl,
     imageBase64,
-    mimeType
+    mimeType,
+    isAudio,
+    audioUrl,
+    audioBase64,
+    audioMimeType
   };
 }
 
@@ -467,14 +715,35 @@ async function verifyKovaHmac(
   }
 }
 
-function parseKovaPayload(payload: any): { from: string; text: string; messageId: string; isImage: boolean; imageUrl?: string | null } {
+function parseKovaPayload(payload: any): {
+  from: string;
+  text: string;
+  messageId: string;
+  isImage: boolean;
+  imageUrl?: string | null;
+  isAudio: boolean;
+  audioUrl?: string | null;
+  audioMimeType?: string;
+} {
   // Check Meta Cloud API nested structure
   const metaMsg = payload?.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
   if (metaMsg) {
     const from = String(metaMsg.from || "").replace(/\D/g, "");
     const text = String(metaMsg.text?.body || metaMsg.caption || metaMsg.button?.text || "");
-    const isImage = metaMsg.type === "image";
-    return { from, text, messageId: metaMsg.id || "", isImage, imageUrl: metaMsg.image?.link || null };
+    const isAudio = metaMsg.type === "audio" || metaMsg.type === "voice";
+    const isImage = !isAudio && metaMsg.type === "image";
+    const audioUrl = metaMsg.audio?.link || metaMsg.voice?.link || null;
+    const audioMimeType = metaMsg.audio?.mime_type || metaMsg.voice?.mime_type || "audio/ogg";
+    return {
+      from,
+      text,
+      messageId: metaMsg.id || "",
+      isImage,
+      imageUrl: metaMsg.image?.link || null,
+      isAudio,
+      audioUrl,
+      audioMimeType,
+    };
   }
 
   // Check Kova data/message object
@@ -513,10 +782,27 @@ function parseKovaPayload(payload: any): { from: string; text: string; messageId
     ""
   ).trim();
   const messageId = String(d?.id || d?.message_id || d?.uuid || payload?.id || payload?.delivery_id || "");
-  const isImage = d?.type === "image" || Boolean(d?.image || d?.media_url);
-  const imageUrl = d?.image?.url || d?.media_url || null;
+  const mediaMime = String(d?.mime_type || d?.mimetype || d?.audio?.mime_type || d?.voice?.mime_type || "");
+  const isAudio =
+    d?.type === "audio" ||
+    d?.type === "voice" ||
+    d?.type === "ptt" ||
+    Boolean(d?.audio || d?.voice) ||
+    mediaMime.toLowerCase().startsWith("audio/");
+  const isImage = !isAudio && (d?.type === "image" || Boolean(d?.image || d?.media_url));
+  const imageUrl = isImage ? (d?.image?.url || d?.media_url || null) : null;
+  const audioUrl = isAudio ? (d?.audio?.url || d?.voice?.url || d?.media_url || null) : null;
 
-  return { from, text, messageId, isImage, imageUrl };
+  return {
+    from,
+    text,
+    messageId,
+    isImage,
+    imageUrl,
+    isAudio,
+    audioUrl,
+    audioMimeType: mediaMime || "audio/ogg",
+  };
 }
 
 // ── Data access ───────────────────────────────────────────────────────────────
@@ -2118,6 +2404,10 @@ serve(async (req: Request) => {
   let imageUrl: string | null = null;
   let imageBase64: string | null = null;
   let imageMimeType = "image/jpeg";
+  let isAudio = false;
+  let audioUrl: string | null = null;
+  let audioBase64: string | null = null;
+  let audioMimeType = "audio/ogg";
   let senderVerified = false;
   const contentType = req.headers.get("content-type") || "";
 
@@ -2155,12 +2445,20 @@ serve(async (req: Request) => {
 
       const numMedia = parseInt(String(formData.get("NumMedia") || "0"), 10);
       if (numMedia > 0) {
-        isImage = true;
-        imageUrl = String(formData.get("MediaUrl0") || "") || null;
-        imageMimeType = String(formData.get("MediaContentType0") || "image/jpeg");
+        const mediaUrl0 = String(formData.get("MediaUrl0") || "") || null;
+        const mediaType0 = String(formData.get("MediaContentType0") || "image/jpeg");
+        if (mediaType0.toLowerCase().startsWith("audio/")) {
+          isAudio = true;
+          audioUrl = mediaUrl0;
+          audioMimeType = mediaType0;
+        } else {
+          isImage = true;
+          imageUrl = mediaUrl0;
+          imageMimeType = mediaType0;
+        }
       }
 
-      console.log(`[WA Webhook] Twilio incoming from: ${from} (raw: ${rawFrom}), text: "${text.slice(0, 50)}", isImage: ${isImage}`);
+      console.log(`[WA Webhook] Twilio incoming from: ${from} (raw: ${rawFrom}), text: "${text.slice(0, 50)}", isImage: ${isImage}, isAudio: ${isAudio}`);
     } else if (isKova) {
       // Incoming from Arkesel Kova WhatsApp Business API
       const rawBody = await req.text().catch(() => "");
@@ -2192,8 +2490,11 @@ serve(async (req: Request) => {
       fromMe = false;
       isImage = parsed.isImage;
       imageUrl = parsed.imageUrl || null;
+      isAudio = parsed.isAudio;
+      audioUrl = parsed.audioUrl || null;
+      audioMimeType = parsed.audioMimeType || "audio/ogg";
 
-      console.log(`[WA Webhook] Kova incoming from: ${from}, event: ${kovaEvent || "message"}, text: "${text.slice(0, 50)}", isImage: ${isImage}`);
+      console.log(`[WA Webhook] Kova incoming from: ${from}, event: ${kovaEvent || "message"}, text: "${text.slice(0, 50)}", isImage: ${isImage}, isAudio: ${isAudio}`);
     } else {
       // Incoming JSON (WaSender, Meta Cloud API, or raw Kova)
       const rawJsonBody = await req.text().catch(() => "");
@@ -2224,7 +2525,10 @@ serve(async (req: Request) => {
         fromMe = false;
         isImage = parsed.isImage;
         imageUrl = parsed.imageUrl || null;
-        console.log(`[WA Webhook] Kova/Meta JSON incoming from: ${from}, text: "${text.slice(0, 50)}", isImage: ${isImage}`);
+        isAudio = parsed.isAudio;
+        audioUrl = parsed.audioUrl || null;
+        audioMimeType = parsed.audioMimeType || "audio/ogg";
+        console.log(`[WA Webhook] Kova/Meta JSON incoming from: ${from}, text: "${text.slice(0, 50)}", isImage: ${isImage}, isAudio: ${isAudio}`);
       } else if (payload?.event?.includes("message")) {
         // WaSender API
         const parsed = parseMessage(payload);
@@ -2236,13 +2540,17 @@ serve(async (req: Request) => {
         imageUrl = parsed.imageUrl || null;
         imageBase64 = parsed.imageBase64 || null;
         imageMimeType = parsed.mimeType || "image/jpeg";
-        console.log(`[WA Webhook] WaSender incoming from: ${from}, text: "${text.slice(0, 50)}", isImage: ${isImage}`);
+        isAudio = parsed.isAudio;
+        audioUrl = parsed.audioUrl || null;
+        audioBase64 = parsed.audioBase64 || null;
+        audioMimeType = parsed.audioMimeType || "audio/ogg";
+        console.log(`[WA Webhook] WaSender incoming from: ${from}, text: "${text.slice(0, 50)}", isImage: ${isImage}, isAudio: ${isAudio}`);
       } else {
         return new Response("ok", { headers: corsHeaders });
       }
     }
 
-    if (!from || (!text && !isImage) || fromMe) {
+    if (!from || (!text && !isImage && !isAudio) || fromMe) {
       if (isTwilio) {
         return new Response(`<?xml version="1.0" encoding="UTF-8"?><Response></Response>`, {
           headers: { "Content-Type": "text/xml" },
@@ -2320,7 +2628,58 @@ serve(async (req: Request) => {
     let agentId: string = sess?.agent_id || "";
     let input = text.toLowerCase().trim();
 
-    // ── IMAGE COMPLAINT & SCREENSHOT DETECTION (MULTIMODAL GEMINI VISION) ─────
+    // ── VOICE-NOTE TRANSCRIPTION (OPENAI WHISPER) ────────────────────────────
+    if (isAudio && !text) {
+      console.log(`[WA Bot] Processing incoming voice note from ${from}...`);
+      let audioBytes: Uint8Array | null = null;
+      let mimeForWhisper = audioMimeType || "audio/ogg";
+
+      if (audioBase64) {
+        try {
+          audioBytes = base64ToUint8Array(audioBase64);
+        } catch (err) {
+          console.warn("[WA Bot] Failed to decode audioBase64:", err);
+        }
+      }
+
+      if (!audioBytes && audioUrl) {
+        const downloaded = await fetchMediaBytes(audioUrl, mimeForWhisper);
+        if (downloaded) {
+          audioBytes = downloaded.bytes;
+          mimeForWhisper = downloaded.mimeType || mimeForWhisper;
+        }
+      }
+
+      const transcript = audioBytes
+        ? await transcribeVoiceNoteWithWhisper(audioBytes, mimeForWhisper)
+        : null;
+
+      if (transcript) {
+        console.log(`[WA Bot] Whisper voice transcript from ${from}: "${transcript.slice(0, 120)}"`);
+        text = transcript;
+        input = text.toLowerCase().trim();
+      } else {
+        await sendWhatsAppMessage(
+          from,
+          [
+            `🎙️ *Voice Note Received*`,
+            `━━━━━━━━━━━━━━━━━━━━`,
+            `Sorry, I couldn't clearly transcribe that voice note right now.`,
+            ``,
+            `Please type your request (English, Twi, or Pidgin) — e.g. *BUY 2GB 0244123456* — or reply *0* for the Main Menu.`,
+          ].join("\n")
+        );
+        if (isTwilio) {
+          return new Response(`<?xml version="1.0" encoding="UTF-8"?><Response></Response>`, {
+            headers: { "Content-Type": "text/xml" },
+            status: 200,
+          });
+        }
+        return new Response("ok", { headers: corsHeaders });
+      }
+    }
+
+    // ── IMAGE / MOMO PAYMENT SCREENSHOT DETECTION (OPENAI VISION + GEMINI FALLBACK) ──
     if (isImage) {
       console.log(`[WA Bot] Processing incoming image message from ${from}...`);
       let visionData: any = null;
@@ -2336,24 +2695,28 @@ serve(async (req: Request) => {
       }
 
       if (base64ToUse) {
-        const visionPrompt = `You are an expert OCR & customer care assistant for SwiftData Ghana (telecoms, airtime, and data bundles platform).
-A customer submitted this screenshot as a complaint or inquiry on WhatsApp.
-Carefully examine all text, badges, and numbers in the screenshot.
+        const visionPrompt = `You are an expert OCR, Mobile Money (MoMo) payment receipt reader, and customer care assistant for SwiftData Ghana (telecoms, airtime, and data bundles platform).
+A customer submitted this screenshot on WhatsApp (either a MoMo payment receipt/SMS confirmation or an order status screen).
+Carefully examine all text, badges, transaction IDs, and numbers in the screenshot.
 Extract:
-1. "is_order_screenshot": true if this is an order status screen, payment receipt, SMS receipt, transaction screen, mobile money confirmation, or SwiftData dashboard/store page.
-2. "reference": Any visible order ID, reference, or transaction hash (e.g. "8c1d2146", "#8c1d2146-e3c", or similar alphanumeric hash).
-3. "phone": Recipient phone number (e.g. "0594132962", "024...", "055...").
-4. "network": Telecom network (MTN, Telecel, Vodafone, AirtelTigo, AT).
-5. "package": Package or volume (e.g. "1GB", "2GB", "5GB", "10GB", or GHS Airtime amount).
-6. "amount": Price or charge in GHS (e.g. "4.94", "5.00").
-7. "status": Visible status in the screenshot (e.g. "FULFILLMENT FAILED", "FAILED", "PENDING", "UNPAID", "SPAM", "SUCCESS").
-8. "failure_reason": Any error message or note shown in the screenshot.
-9. "summary": One concise sentence summarizing the complaint.
+1. "is_order_screenshot": true if this is an order status screen, payment receipt, SMS receipt, transaction screen, Mobile Money (MTN MoMo / Telecel Cash / AT Money) confirmation, or SwiftData dashboard/store page.
+2. "is_momo_receipt": true if this is specifically a Mobile Money payment confirmation screenshot or SMS.
+3. "momo_transaction_id": Any Mobile Money Transaction ID / Financial Transaction ID (e.g. "28471920456", "TXN123456").
+4. "reference": Any visible order ID, reference, or transaction hash (e.g. "8c1d2146", "#8c1d2146-e3c", or similar alphanumeric hash).
+5. "phone": Recipient or sender phone number (e.g. "0594132962", "024...", "055...").
+6. "sender_name": Sender or merchant name if visible.
+7. "network": Telecom network (MTN, Telecel, Vodafone, AirtelTigo, AT).
+8. "package": Package or volume (e.g. "1GB", "2GB", "5GB", "10GB", or GHS Airtime amount).
+9. "amount": Price or paid amount in GHS (e.g. "4.94", "5.00").
+10. "timestamp": Date/time shown on the receipt if visible.
+11. "status": Visible status in the screenshot (e.g. "FULFILLMENT FAILED", "FAILED", "PENDING", "UNPAID", "SUCCESS", "PAID").
+12. "failure_reason": Any error message or note shown in the screenshot.
+13. "summary": One concise sentence summarizing the receipt or complaint.
 
 Return ONLY a valid JSON object matching these keys.`;
 
-        visionData = await callGeminiVision(visionPrompt, base64ToUse, mimeToUse);
-        console.log(`[WA Bot] Gemini Vision OCR extracted:`, JSON.stringify(visionData));
+        visionData = await callVisionAi(visionPrompt, base64ToUse, mimeToUse);
+        console.log(`[WA Bot] Vision OCR extracted:`, JSON.stringify(visionData));
       }
 
       // Check customer's recent orders from database
@@ -2367,16 +2730,23 @@ Return ONLY a valid JSON object matching these keys.`;
 
       let matchedOrder: any = null;
 
-      // 1. Match by reference extracted by Gemini Vision
-      if (visionData?.reference) {
-        const rawRef = String(visionData.reference).replace(/[^a-zA-Z0-9-]/g, "").trim().toLowerCase();
+      // 1. Match by reference or MoMo transaction ID extracted by Vision
+      const candidateRef = visionData?.reference || visionData?.momo_transaction_id;
+      if (candidateRef) {
+        const rawRef = String(candidateRef).replace(/[^a-zA-Z0-9-]/g, "").trim().toLowerCase();
         if (rawRef.length >= 4) {
-          matchedOrder = recentOrders?.find((o: any) => o.id.toLowerCase().includes(rawRef));
+          matchedOrder = recentOrders?.find((o: any) =>
+            o.id.toLowerCase().includes(rawRef) ||
+            String(o.metadata?.client_reference || "").toLowerCase().includes(rawRef) ||
+            String(o.metadata?.momo_transaction_id || "").toLowerCase().includes(rawRef)
+          );
           if (!matchedOrder) {
             const { data: directRefOrder } = await supabase
               .from("orders")
               .select("id, status, network, package_size, amount, customer_phone, failure_reason, created_at, metadata")
-              .ilike("id", `%${rawRef}%`)
+              .or(`id.ilike.%${rawRef}%,metadata->>client_reference.eq.${rawRef}`)
+              .order("created_at", { ascending: false })
+              .limit(1)
               .maybeSingle();
             if (directRefOrder) matchedOrder = directRefOrder;
           }
@@ -2415,8 +2785,16 @@ Return ONLY a valid JSON object matching these keys.`;
           `🤖 *SwiftData Intelligent Support*`,
           `━━━━━━━━━━━━━━━━━━━━`,
           `I see the screenshot of your ${isFailed ? "*failed*" : ""} *${net} ${pkg}* order (\`#${shortId}\`) for *${phone}*.`,
-          ``,
         ];
+
+        if (visionData?.momo_transaction_id || visionData?.amount) {
+          const momoParts: string[] = [];
+          if (visionData?.momo_transaction_id) momoParts.push(`TxID: \`${visionData.momo_transaction_id}\``);
+          if (visionData?.amount) momoParts.push(`Amount: GH₵ ${visionData.amount}`);
+          replyLines.push(`💳 *Receipt Details:* ${momoParts.join(" • ")}`);
+        }
+
+        replyLines.push(``);
 
         if (isFailed) {
           replyLines.push(
@@ -2458,8 +2836,19 @@ Return ONLY a valid JSON object matching these keys.`;
         const fallbackLines = [
           `👋 *SwiftData Customer Support*`,
           `━━━━━━━━━━━━━━━━━━━━`,
-          `Thank you for sending your screenshot!`,
+          visionData?.is_momo_receipt
+            ? `Thank you for sending your MoMo payment screenshot!`
+            : `Thank you for sending your screenshot!`,
         ];
+        if (visionData?.momo_transaction_id) {
+          fallbackLines.push(`• *MoMo Transaction ID:* \`${visionData.momo_transaction_id}\``);
+        }
+        if (visionData?.amount) {
+          fallbackLines.push(`• *Amount Detected:* GH₵ ${visionData.amount}`);
+        }
+        if (visionData?.phone) {
+          fallbackLines.push(`• *Number Detected:* ${visionData.phone}`);
+        }
         if (visionData?.summary) {
           fallbackLines.push(`_${visionData.summary}_`, ``);
         }
@@ -3176,7 +3565,7 @@ Return ONLY a valid JSON object matching these keys.`;
         step = "SELECT_SERVICE";
         input = "portal";
       } else {
-        // 3. Fallback to Gemini AI (Fast 4.5s timeout)
+        // 3. Natural English / Twi / Pidgin sales & support AI (OpenAI gpt-4o-mini primary, Gemini fallback)
         let customPrompt = SYSTEM_PROMPT;
         try {
           const { data: settingsData } = await supabase
@@ -3190,7 +3579,11 @@ Return ONLY a valid JSON object matching these keys.`;
           console.error("Failed to fetch custom bot prompt:", err);
         }
 
-        const aiResponse = await callGemini(`${customPrompt.replace(/\{\{storeName\}\}/g, storeName)}\n\nUser Message: "${text}"\n\nAnalyze the intent and respond with a friendly message or identify the service needed.`);
+        const resolvedPrompt = customPrompt.replace(/\{\{storeName\}\}/g, storeName);
+        const aiResponse = await callWhatsAppAiChat(
+          resolvedPrompt,
+          `Customer Message: "${text}"\n\nAnalyze the intent (in English, Twi, or Pidgin). If it maps to a service, include the exact intent code; otherwise reply naturally in the customer's language.`
+        );
         if (aiResponse) {
           if (aiResponse.includes("BUY_DATA") || text.toLowerCase().includes("data")) {
             step = "SELECT_SERVICE";
@@ -5855,7 +6248,14 @@ Return ONLY a valid JSON object matching these keys.`;
           break;
         }
 
-        reply = [
+        const supportPrompt = SYSTEM_PROMPT.replace(/\{\{storeName\}\}/g, storeName);
+        const orderRefHint = data.lastOrderId ? `Active order reference: #${String(data.lastOrderId).slice(0, 8)}.` : "";
+        const aiSupportReply = await callWhatsAppAiChat(
+          supportPrompt,
+          `The customer is in Live Support. ${orderRefHint} Customer says: "${text}". Reply empathetically and concisely in their language (English, Twi, or Pidgin), do NOT output raw intent codes, remind them they can reply R to retry delivery, 0 for Main Menu, or chat with human support at https://wa.me/233598170947.`
+        );
+
+        reply = aiSupportReply || [
           `👋 *SwiftData Support Desk*`,
           `━━━━━━━━━━━━━━━━━━━━`,
           `We have noted your message regarding order #${(data.lastOrderId || "").slice(0, 8) || "inquiry"}.`,

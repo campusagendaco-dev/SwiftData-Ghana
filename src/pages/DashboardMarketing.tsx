@@ -3,9 +3,10 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import {
   MessageCircle, Copy, Check, Share2,
-  Zap, Gift,
+  Zap, Gift, Sparkles, Loader2,
   ExternalLink, QrCode, ArrowRight
 } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 import { basePackages } from "@/lib/data";
 import { cn } from "@/lib/utils";
 import { useAppTheme } from "@/contexts/ThemeContext";
@@ -94,6 +95,8 @@ const DashboardMarketing = () => {
   const [selectedNetwork, setSelectedNetwork] = useState<"MTN" | "Telecel" | "AirtelTigo">("MTN");
   const [selectedStatusText, setSelectedStatusText] = useState("");
   const [mockupBg, setMockupBg] = useState("from-teal-600 to-emerald-700");
+  const [aiGenerating, setAiGenerating] = useState(false);
+  const [aiPromoCopy, setAiPromoCopy] = useState<{ status: string; broadcast: string } | null>(null);
 
   const storeUrl = profile?.slug
     ? `${window.location.origin}/store/${profile.slug}`
@@ -119,6 +122,35 @@ const DashboardMarketing = () => {
       .replace(/\{storeUrl\}/g, storeUrl);
 
   const currentMessages = STATUS_TEMPLATES[statusCategory] ?? [];
+
+  const handleGenerateAiPromo = async () => {
+    setAiGenerating(true);
+    try {
+      const categoryLabel = STATUS_CATEGORIES.find(c => c.id === statusCategory)?.label || statusCategory;
+      const { data, error } = await supabase.functions.invoke("generate-flyer", {
+        body: {
+          mode: "promo_copy",
+          storeName: profile?.store_name || "My Store",
+          storeUrl,
+          category: statusCategory,
+          network: selectedNetwork,
+          contact: profile?.momo_number || "",
+          prompt: `Generate a fresh Ghanaian WhatsApp status caption and broadcast message for ${categoryLabel} promoting affordable ${selectedNetwork} and all-network instant MoMo data bundles.`,
+        },
+      });
+      if (error) throw new Error(error.message || "Failed to generate AI promo copy");
+      const statusText = data?.whatsappStatus || data?.caption || "";
+      const broadcastText = data?.promoBroadcast || data?.caption || statusText;
+      if (!statusText) throw new Error("No promo copy returned");
+      setAiPromoCopy({ status: statusText, broadcast: broadcastText });
+      setSelectedStatusText(statusText);
+      toast({ title: "AI Promo Copy Ready!", description: "Preview updated — copy or share directly to WhatsApp." });
+    } catch (err: any) {
+      toast({ title: "AI generation failed", description: err?.message || "Please try again.", variant: "destructive" });
+    } finally {
+      setAiGenerating(false);
+    }
+  };
 
   useEffect(() => {
     if (currentMessages.length > 0) {
@@ -194,7 +226,17 @@ const DashboardMarketing = () => {
                   <p className="text-[10px] font-bold text-green-400 uppercase tracking-widest">Copy · post to Status · sell more</p>
                 </div>
               </div>
-              <div className={cn("flex gap-1.5 flex-wrap p-1 rounded-2xl border", isDark ? "bg-black/30 border-white/8" : "bg-gray-100 border-gray-200")}>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleGenerateAiPromo}
+                  disabled={aiGenerating}
+                  className="h-9 px-3.5 rounded-xl bg-emerald-500 text-white text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 hover:bg-emerald-600 disabled:opacity-60 transition-all shadow-sm active:scale-95"
+                >
+                  {aiGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                  {aiGenerating ? "Generating..." : "Generate AI Promo Copy"}
+                </button>
+                <div className={cn("flex gap-1.5 flex-wrap p-1 rounded-2xl border", isDark ? "bg-black/30 border-white/8" : "bg-gray-100 border-gray-200")}>
                 {STATUS_CATEGORIES.map(cat => (
                   <button
                     key={cat.id}
@@ -210,8 +252,74 @@ const DashboardMarketing = () => {
                     {cat.label}
                   </button>
                 ))}
+                </div>
               </div>
             </div>
+
+            {aiPromoCopy && (
+              <div className={cn(
+                "rounded-2xl border p-5 space-y-3",
+                isDark ? "bg-emerald-500/10 border-emerald-500/30" : "bg-emerald-50 border-emerald-200"
+              )}>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-emerald-400" />
+                    <span className={cn("text-xs font-black uppercase tracking-wider", isDark ? "text-emerald-300" : "text-emerald-800")}>
+                      AI-Generated Ghanaian Promo Copy
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedStatusText(aiPromoCopy.status)}
+                    className="text-[10px] font-black uppercase text-emerald-400 hover:underline"
+                  >
+                    Preview in Phone
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {[
+                    { id: "ai-status", label: "WhatsApp Status", text: aiPromoCopy.status },
+                    { id: "ai-broadcast", label: "Broadcast Copy", text: aiPromoCopy.broadcast },
+                  ].map((item) => (
+                    <div
+                      key={item.id}
+                      onClick={() => setSelectedStatusText(item.text)}
+                      className={cn(
+                        "rounded-xl border p-4 space-y-3 cursor-pointer transition-all",
+                        selectedStatusText === item.text
+                          ? "border-emerald-500 bg-emerald-500/10"
+                          : isDark ? "bg-black/30 border-white/10" : "bg-white border-emerald-100"
+                      )}
+                    >
+                      <p className={cn("text-[10px] font-black uppercase tracking-widest", isDark ? "text-emerald-300/80" : "text-emerald-700")}>{item.label}</p>
+                      <p className={cn("text-xs leading-relaxed whitespace-pre-line", isDark ? "text-white/80" : "text-gray-700")}>{item.text}</p>
+                      <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          type="button"
+                          onClick={() => handleCopy(item.text, item.id)}
+                          className={cn(
+                            "flex-1 h-8 rounded-lg border text-[10px] font-black flex items-center justify-center gap-1.5 transition-all",
+                            isDark ? "bg-white/5 border-white/10 text-white/75 hover:bg-white/10" : "bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100"
+                          )}
+                        >
+                          {copied === item.id ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                          {copied === item.id ? "Copied!" : "Copy"}
+                        </button>
+                        <a
+                          href={`https://wa.me/?text=${encodeURIComponent(item.text)}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="flex-1 h-8 rounded-lg bg-green-500/15 border border-green-500/25 text-[10px] font-black text-green-400 hover:bg-green-500/25 transition-all flex items-center justify-center gap-1.5"
+                        >
+                          <MessageCircle className="w-3 h-3" />
+                          WhatsApp
+                        </a>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Mobile Mockup split layout */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">

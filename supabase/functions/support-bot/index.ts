@@ -1,12 +1,9 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
+import { timingSafeEqual } from "../_shared/gateway-security.ts";
 
 declare const Deno: any;
-
-const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY") || "";
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 
 const BOT_SENDER_ID = "00000000-0000-0000-0000-000000000001";
 
@@ -60,7 +57,12 @@ When a human must handle it (manual refund, account suspension, large missing pa
 - Gratitude → "So glad I could help! You're always welcome to reach out."`;
 
 /** Fire-and-forget push notification to all admin users when bot escalates */
-async function notifyAdmins(supabase: any, conversationId: string) {
+async function notifyAdmins(
+  supabase: any,
+  conversationId: string,
+  supabaseUrl: string,
+  serviceRoleKey: string
+) {
   try {
     const { data: admins } = await supabase
       .from("profiles")
@@ -69,14 +71,14 @@ async function notifyAdmins(supabase: any, conversationId: string) {
 
     if (!admins?.length) return;
 
-    const notifyUrl = `${SUPABASE_URL}/functions/v1/send-push-notification`;
+    const notifyUrl = `${supabaseUrl}/functions/v1/send-push-notification`;
 
     for (const admin of admins) {
       fetch(notifyUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+          "Authorization": `Bearer ${serviceRoleKey}`,
         },
         body: JSON.stringify({
           user_id: admin.user_id,
@@ -102,10 +104,80 @@ async function notifyAdmins(supabase: any, conversationId: string) {
   }
 }
 
+async function generateOpenAIReply(
+  apiKey: string,
+  systemPrompt: string,
+  chatMessages: { role: string; content: string }[]
+): Promise<string> {
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: "gpt-4o-mini",
+      max_tokens: 600,
+      messages: [
+        { role: "system", content: systemPrompt },
+        ...chatMessages,
+      ],
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.text().catch(() => "");
+    console.error("[support-bot] OpenAI API error:", err);
+    throw new Error(`OpenAI API error: ${res.status}`);
+  }
+
+  const data = await res.json();
+  const reply = data?.choices?.[0]?.message?.content?.trim();
+  if (!reply) throw new Error("Empty reply from OpenAI");
+  return reply;
+}
+
+async function generateAnthropicReply(
+  apiKey: string,
+  systemPrompt: string,
+  chatMessages: { role: string; content: string }[]
+): Promise<string> {
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 600,
+      system: systemPrompt,
+      messages: chatMessages,
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.text().catch(() => "");
+    console.error("[support-bot] Claude API error:", err);
+    throw new Error(`Claude API error: ${res.status}`);
+  }
+
+  const data = await res.json();
+  const reply = data?.content?.[0]?.text?.trim();
+  if (!reply) throw new Error("Empty reply from Claude");
+  return reply;
+}
+
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
-  if (!ANTHROPIC_API_KEY) {
+  const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY") || "";
+  const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY") || "";
+  const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
+  const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+
+  if (!OPENAI_API_KEY && !ANTHROPIC_API_KEY) {
     return new Response(JSON.stringify({ error: "AI not configured" }), {
       status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
@@ -114,12 +186,71 @@ serve(async (req: Request) => {
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
   try {
+    // Authenticate caller: require either service-role key or a valid user JWT
+    const authHeader = req.headers.get("Authorization") || "";
+    const bearerToken = authHeader.replace(/^Bearer\s+/i, "").trim();
+    if (!bearerToken) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const isServiceRole = Boolean(
+      SUPABASE_SERVICE_ROLE_KEY && timingSafeEqual(bearerToken, SUPABASE_SERVICE_ROLE_KEY)
+    );
+
+    let authUser: any = null;
+    if (!isServiceRole) {
+      const { data: authData, error: authErr } = await supabase.auth.getUser(bearerToken);
+      if (authErr || !authData?.user) {
+        return new Response(JSON.stringify({ error: "Unauthorized: Invalid token" }), {
+          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      authUser = authData.user;
+    }
+
     const { conversation_id } = await req.json();
 
     if (!conversation_id) {
       return new Response(JSON.stringify({ error: "conversation_id required" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    // Fetch conversation owner and verify authorization before reading messages or wallet/order context
+    const { data: conv } = await supabase
+      .from("support_conversations")
+      .select("user_id")
+      .eq("id", conversation_id)
+      .maybeSingle();
+
+    if (!conv) {
+      return new Response(JSON.stringify({ error: "Conversation not found" }), {
+        status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (!isServiceRole && conv.user_id !== authUser.id) {
+      const [roleRes, callerProfileRes] = await Promise.all([
+        supabase
+          .from("user_roles")
+          .select("role")
+          .eq("user_id", authUser.id)
+          .eq("role", "admin")
+          .maybeSingle(),
+        supabase
+          .from("profiles")
+          .select("is_admin")
+          .eq("user_id", authUser.id)
+          .maybeSingle(),
+      ]);
+      const isAdmin = Boolean(roleRes.data || callerProfileRes.data?.is_admin);
+      if (!isAdmin) {
+        return new Response(JSON.stringify({ error: "Forbidden: You do not have access to this conversation" }), {
+          status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
     }
 
     // Fetch the last 20 messages for context
@@ -145,13 +276,6 @@ serve(async (req: Request) => {
       });
     }
 
-    // Get the conversation owner's name for personalisation
-    const { data: conv } = await supabase
-      .from("support_conversations")
-      .select("user_id")
-      .eq("id", conversation_id)
-      .maybeSingle();
-
     let userName = "there";
     let userContext = "";
     if (conv?.user_id) {
@@ -166,7 +290,7 @@ serve(async (req: Request) => {
       try {
         const [walletRes, ordersRes] = await Promise.all([
           supabase.from("wallets").select("balance, api_balance").eq("agent_id", conv.user_id).maybeSingle(),
-          supabase.from("orders").select("id, status, customer_phone, network, amount, failure_reason, created_at, order_type").eq("agent_id", conv.user_id).order("created_at", { ascending: false }).limit(5)
+          supabase.from("orders").select("id, status, customer_phone, network, amount, failure_reason, created_at, order_type").eq("agent_id", conv.user_id).order("created_at", { ascending: false }).limit(5),
         ]);
 
         const wallet = walletRes.data;
@@ -176,7 +300,7 @@ serve(async (req: Request) => {
 * Current Main Wallet Balance: GHS ${wallet?.balance ?? 0}
 * Current API Wallet Balance: GHS ${wallet?.api_balance ?? 0}
 * Recent Orders:
-${orders.map((o: any) => `  - Order ID: ${o.id} | Date: ${o.created_at} | Type: ${o.order_type} | Network: ${o.network} | Phone: ${o.customer_phone || 'N/A'} | Amount: GHS ${o.amount} | Status: ${o.status}${o.failure_reason ? ` | Failure Reason: "${o.failure_reason}"` : ''}`).join("\n")}
+${orders.map((o: any) => `  - Order ID: ${o.id} | Date: ${o.created_at} | Type: ${o.order_type} | Network: ${o.network} | Phone: ${o.customer_phone || "N/A"} | Amount: GHS ${o.amount} | Status: ${o.status}${o.failure_reason ? ` | Failure Reason: "${o.failure_reason}"` : ""}`).join("\n")}
 `;
       } catch (contextErr: any) {
         console.error("[support-bot] Failed to fetch customer context:", contextErr.message);
@@ -201,37 +325,27 @@ ${orders.map((o: any) => `  - Order ID: ${o.id} | Date: ${o.created_at} | Type: 
 
     const systemPrompt = BASE_SYSTEM_PROMPT + knowledgeContext + userContext + `\n\nThe user's name is ${userName}.`;
 
-    // Build Claude messages array
-    const claudeMessages = messages.map((m: any) => ({
+    const chatMessages = messages.map((m: any) => ({
       role: m.sender_id === BOT_SENDER_ID ? "assistant" : "user",
       content: m.content,
     }));
 
-    // Call Claude
-    const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 600,
-        system: systemPrompt,
-        messages: claudeMessages,
-      }),
-    });
-
-    if (!claudeRes.ok) {
-      const err = await claudeRes.text();
-      console.error("[support-bot] Claude API error:", err);
-      throw new Error(`Claude API error: ${claudeRes.status}`);
+    // OpenAI primary (gpt-4o-mini), Anthropic fallback when OPENAI_API_KEY is absent or OpenAI fails
+    let reply = "";
+    if (OPENAI_API_KEY) {
+      try {
+        reply = await generateOpenAIReply(OPENAI_API_KEY, systemPrompt, chatMessages);
+      } catch (openAiErr: any) {
+        if (ANTHROPIC_API_KEY) {
+          console.warn("[support-bot] OpenAI failed, falling back to Anthropic:", openAiErr.message);
+          reply = await generateAnthropicReply(ANTHROPIC_API_KEY, systemPrompt, chatMessages);
+        } else {
+          throw openAiErr;
+        }
+      }
+    } else {
+      reply = await generateAnthropicReply(ANTHROPIC_API_KEY, systemPrompt, chatMessages);
     }
-
-    const claudeData = await claudeRes.json();
-    const reply = claudeData?.content?.[0]?.text?.trim();
-    if (!reply) throw new Error("Empty reply from Claude");
 
     // Insert bot reply
     const { error: insertErr } = await supabase
@@ -252,11 +366,12 @@ ${orders.map((o: any) => `  - Order ID: ${o.id} | Date: ${o.created_at} | Type: 
       .eq("id", conversation_id);
 
     // Detect escalation → notify admins
-    if (ESCALATION_RE.test(reply)) {
-      notifyAdmins(supabase, conversation_id);
+    const escalated = ESCALATION_RE.test(reply);
+    if (escalated) {
+      notifyAdmins(supabase, conversation_id, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     }
 
-    return new Response(JSON.stringify({ ok: true, reply, escalated: ESCALATION_RE.test(reply) }), {
+    return new Response(JSON.stringify({ ok: true, reply, escalated }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err: unknown) {
