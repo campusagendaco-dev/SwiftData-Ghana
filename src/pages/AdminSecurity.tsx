@@ -5,11 +5,14 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useConfirmedCall } from "@/components/admin/ConfirmActionProvider";
+import AdminTwoFactorBadge, { adminRowMfaStatus, type AdminMfaStatus } from "@/components/admin/AdminTwoFactorBadge";
+import Database2faCheckCard from "@/components/admin/Database2faCheckCard";
 import {
   Shield, Globe, RefreshCw, Loader2, CheckCircle2,
   Search, Zap, Gift, TrendingUp, FileDown, Activity, BookOpen, Hash,
   BarChart2, Ban, ChevronDown, ChevronUp, Copy, Lock, ShieldAlert,
-  UserX, MapPin, LogIn, AlertCircle, ShieldCheck, Bot,
+  UserX, MapPin, LogIn, ShieldCheck, Bot,
   Crosshair, Radio, Terminal, TriangleAlert, Play
 } from "lucide-react";
 
@@ -48,7 +51,10 @@ interface FailedOrderUser {
 interface SystemAdmin {
   user_id: string; role: string; email: string; full_name: string;
   last_seen_at: string | null; is_mfa_verified: boolean; allowed_ips: string[] | null;
+  /** Missing until the backend functions are redeployed. */
+  mfa_status?: AdminMfaStatus; last_sign_in_at?: string | null;
 }
+const adminMfaStatus = (a: SystemAdmin): AdminMfaStatus => adminRowMfaStatus(a);
 interface SignupDay { date: string; count: number }
 interface AdminAction {
   id: string; admin_email: string; action: string;
@@ -211,6 +217,7 @@ const AUTO_INTERVAL = 60; // seconds between auto-scans
 const AdminSecurity = () => {
   const { toast }   = useToast();
   const { session } = useAuth();
+  const confirmed = useConfirmedCall();
   const [tab, setTab]     = useState<TabId>("overview");
   const [search, setSearch] = useState("");
   const [loading, setLoading]     = useState(true);
@@ -652,10 +659,18 @@ const AdminSecurity = () => {
   useEffect(() => { if (tab === "admins") void fetchAdmins(); }, [tab, fetchAdmins]);
 
   const handleAddAdmin = async () => {
-    if (!newAdminEmail.trim()) return;
+    const email = newAdminEmail.trim();
+    if (!email) return;
+    const ok = await confirmed.confirm({
+      title: `Make ${email} an admin?`,
+      description: "They get full access to wallets, providers and user management. Check the email is exactly right.",
+      kind: "access",
+      confirmLabel: "Make admin",
+    });
+    if (!ok) return;
     setAddingAdmin(true);
     try {
-      await invoke({ action: "grant_admin_role", email: newAdminEmail.trim() });
+      await invoke({ action: "grant_admin_role", email });
       toast({ title: "Success", description: "Administrator granted!" });
       setNewAdminEmail(""); void fetchAdmins();
     } catch (e: any) {
@@ -664,7 +679,13 @@ const AdminSecurity = () => {
   };
 
   const handleRevokeAdmin = async (uid: string, name: string) => {
-    if (!confirm(`REVOKE admin access for ${name}?`)) return;
+    const ok = await confirmed.confirm({
+      title: `Remove admin access for ${name}?`,
+      description: "They will lose access to every admin page straight away.",
+      kind: "access",
+      confirmLabel: "Remove admin",
+    });
+    if (!ok) return;
     try {
       await invoke({ action: "revoke_admin_role", user_id: uid });
       toast({ title: "Access Revoked" }); void fetchAdmins();
@@ -1428,8 +1449,14 @@ const AdminSecurity = () => {
     </div>
   );
 
+  const adminsWithout2fa =
+    loadingAdmins || adminsList.length === 0 || adminsList.some((a) => adminMfaStatus(a) === "unknown")
+      ? null
+      : adminsList.filter((a) => adminMfaStatus(a) === "none").length;
+
   const renderAdmins = () => (
     <div className="space-y-5">
+      <Database2faCheckCard adminsWithout2fa={adminsWithout2fa} />
       <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-5">
         <div className="flex items-center gap-2 mb-4">
           <div className="p-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20"><ShieldCheck className="w-3.5 h-3.5 text-amber-500" /></div>
@@ -1469,7 +1496,7 @@ const AdminSecurity = () => {
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead><tr className="bg-zinc-950 border-b border-zinc-800"><TH>Administrator</TH><TH>MFA</TH><TH>Last Seen</TH><TH>IP Lock</TH><TH>Actions</TH></tr></thead>
+              <thead><tr className="bg-zinc-950 border-b border-zinc-800"><TH>Administrator</TH><TH>MFA</TH><TH>Last Sign-in</TH><TH>Last Seen</TH><TH>IP Lock</TH><TH>Actions</TH></tr></thead>
               <tbody>
                 {adminsList.map(adm => {
                   const isMe = adm.user_id === session?.user.id;
@@ -1490,10 +1517,9 @@ const AdminSecurity = () => {
                         </div>
                       </td>
                       <td className="px-4 py-4">
-                        {adm.is_mfa_verified
-                          ? <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"><Shield className="w-3 h-3" /><span className="text-[9px] font-black font-mono uppercase">2FA OK</span></div>
-                          : <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-red-500/10 text-red-400 border border-red-500/20 animate-pulse"><AlertCircle className="w-3 h-3" /><span className="text-[9px] font-black font-mono uppercase">NO 2FA</span></div>}
+                        <AdminTwoFactorBadge status={adminMfaStatus(adm)} />
                       </td>
+                      <td className="px-4 py-4 text-xs font-mono text-zinc-500">{fmt(adm.last_sign_in_at ?? null)}</td>
                       <td className="px-4 py-4 text-xs font-mono text-zinc-500">{fmt(adm.last_seen_at)}</td>
                       <td className="px-4 py-4">
                         {adm.allowed_ips?.length ? <span className="text-[10px] font-black text-emerald-400 flex items-center gap-1 font-mono"><Lock className="w-3 h-3" />{adm.allowed_ips.length} IPs</span>
