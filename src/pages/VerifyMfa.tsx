@@ -1,19 +1,24 @@
 import { useState, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-import { ShieldAlert, Lock, ArrowRight, Loader2, AlertCircle } from "lucide-react";
+import { ShieldAlert, Lock, ArrowRight, Loader2, AlertCircle, Smartphone, KeyRound, Send } from "lucide-react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 
 const VerifyMfa = () => {
-  const { user, loading: authLoading, refreshMfaStatus, isMfaChallenged } = useAuth();
+  const { user, isAdmin, loading: authLoading, refreshMfaStatus, refreshAdminOtpStatus } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   
+  const [method, setMethod] = useState<"totp" | "otp">(searchParams.get("mode") === "otp" ? "otp" : "totp");
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [factorId, setFactorId] = useState<string | null>(null);
+  const [adminOtpInfo, setAdminOtpInfo] = useState<{ eligible: boolean; masked_phone: string | null } | null>(null);
+  const [smsSent, setSmsSent] = useState(false);
+  const [sendingSms, setSendingSms] = useState(false);
   
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const verifyingRef = useRef(false);
@@ -39,6 +44,11 @@ const VerifyMfa = () => {
 
         const verifiedFactors = (factorsData?.all || []).filter(f => f.status === "verified");
         if (verifiedFactors.length === 0) {
+          // If this is an approved admin without TOTP enrolled, let them use Admin SMS OTP instead of signing them out
+          if (isAdmin) {
+            setMethod("otp");
+            return;
+          }
           // Intelligent Self-Healing Recovery Loop Breaker!
           console.warn("[MFA Recovery] No active factors found on server. Clearing stale session.");
           await supabase.auth.signOut({ scope: "local" });
@@ -61,7 +71,55 @@ const VerifyMfa = () => {
     return () => {
       cancelled = true;
     };
-  }, [authLoading, user?.id, navigate]);
+  }, [authLoading, user?.id, isAdmin, navigate]);
+
+  // Check if approved admin is eligible for Admin SMS OTP
+  useEffect(() => {
+    if (authLoading || !user?.id || !isAdmin) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await supabase.functions.invoke("admin-otp-auth", {
+          body: { action: "status" },
+        });
+        if (cancelled) return;
+        if (data?.has_valid_session) {
+          verifiedSuccessRef.current = true;
+          await refreshAdminOtpStatus();
+          navigate("/admin", { replace: true });
+          return;
+        }
+        if (data?.success) {
+          setAdminOtpInfo({ eligible: Boolean(data.eligible), masked_phone: data.masked_phone || null });
+        }
+      } catch {
+        // non-critical
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [authLoading, user?.id, isAdmin, navigate, refreshAdminOtpStatus]);
+
+  const handleRequestAdminSmsOtp = async () => {
+    setSendingSms(true);
+    setError("");
+    try {
+      const { data, error: fnErr } = await supabase.functions.invoke("admin-otp-auth", {
+        body: { action: "request_otp" },
+      });
+      if (fnErr) throw fnErr;
+      if (data?.error) throw new Error(data.error);
+      setSmsSent(true);
+      setOtp(["", "", "", "", "", ""]);
+      toast.success(data?.message || "Admin verification code sent via SMS.");
+      setTimeout(() => inputRefs.current[0]?.focus(), 100);
+    } catch (err: any) {
+      setError(err?.message || "Could not send Admin OTP.");
+    } finally {
+      setSendingSms(false);
+    }
+  };
 
   // Automatically refocus the first box on load
   useEffect(() => {
@@ -166,7 +224,7 @@ const VerifyMfa = () => {
       return;
     }
 
-    if (!factorId) {
+    if (method === "totp" && !factorId) {
       if (e) setError("Authentication session not ready. Please refresh.");
       return;
     }
@@ -181,6 +239,19 @@ const VerifyMfa = () => {
     setError("");
 
     try {
+      if (method === "otp") {
+        const { data, error: verifyErr } = await supabase.functions.invoke("admin-otp-auth", {
+          body: { action: "verify_otp", otp: fullCode },
+        });
+        if (verifyErr) throw verifyErr;
+        if (data?.error) throw new Error(data.error);
+
+        verifiedSuccessRef.current = true;
+        toast.success("Admin SMS OTP verified! Welcome back.");
+        await refreshAdminOtpStatus();
+        navigate("/admin", { replace: true });
+        return;
+      }
       // If session already reached AAL2 (e.g. concurrent verification), skip duplicate verify call
       if (typeof supabase.auth.mfa.getAuthenticatorAssuranceLevel === "function") {
         const aalRes = await supabase.auth.mfa.getAuthenticatorAssuranceLevel().catch(() => ({ data: null }));
@@ -242,7 +313,7 @@ const VerifyMfa = () => {
     const fullCode = otp.join("").replace(/\D/g, "");
     if (
       fullCode.length === 6 &&
-      factorId &&
+      (method === "otp" ? smsSent : Boolean(factorId)) &&
       !loading &&
       !verifyingRef.current &&
       !verifiedSuccessRef.current &&
@@ -250,7 +321,7 @@ const VerifyMfa = () => {
     ) {
       void handleVerify();
     }
-  }, [otp, factorId, loading]);
+  }, [otp, factorId, loading, method, smsSent]);
 
   if (authLoading) {
     return (
@@ -280,12 +351,83 @@ const VerifyMfa = () => {
           <Lock className="w-3.5 h-3.5" /> Your account is protected
         </p>
 
-        <h1 className="mt-3 text-2xl sm:text-3xl font-black tracking-tight text-foreground">Enter your security code</h1>
+        <h1 className="mt-3 text-2xl sm:text-3xl font-black tracking-tight text-foreground">
+          {method === "otp" ? "Admin SMS Verification" : "Enter your security code"}
+        </h1>
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-          Open your authenticator app and type the 6-digit code for SwiftData.
+          {method === "otp"
+            ? `Verify with a 6-digit SMS code sent to your approved admin phone${adminOtpInfo?.masked_phone ? ` (${adminOtpInfo.masked_phone})` : ""}.`
+            : "Open your authenticator app and type the 6-digit code for SwiftData."}
         </p>
 
-        <form onSubmit={handleVerify} className="mt-6 space-y-4">
+        {/* Approved-Admin Method Switcher (2FA <-> Admin SMS OTP) */}
+        {isAdmin && adminOtpInfo?.eligible && (
+          <div className="mt-5 grid grid-cols-2 gap-1.5 rounded-2xl bg-muted/70 p-1">
+            <button
+              type="button"
+              onClick={() => {
+                setMethod("totp");
+                setError("");
+                setOtp(["", "", "", "", "", ""]);
+              }}
+              disabled={!factorId}
+              className={`flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-bold transition-all disabled:opacity-40 ${
+                method === "totp"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <KeyRound className="h-3.5 w-3.5" />
+              2FA App
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setMethod("otp");
+                setError("");
+                setOtp(["", "", "", "", "", ""]);
+              }}
+              className={`flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-bold transition-all ${
+                method === "otp"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Smartphone className="h-3.5 w-3.5" />
+              Admin SMS OTP
+            </button>
+          </div>
+        )}
+
+        {method === "otp" && !smsSent ? (
+          <div className="mt-6 space-y-3">
+            {error && (
+              <div role="alert" className="flex items-start gap-2 rounded-2xl bg-amber-500/15 px-3 py-2.5 text-left text-sm font-medium text-foreground">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+                <span>{error}</span>
+              </div>
+            )}
+            <button
+              type="button"
+              disabled={sendingSms}
+              onClick={() => void handleRequestAdminSmsOtp()}
+              className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-primary text-sm font-bold text-primary-foreground transition active:scale-[0.98] disabled:opacity-50"
+            >
+              {sendingSms ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Sending Admin OTP...
+                </>
+              ) : (
+                <>
+                  <Send className="h-4 w-4" />
+                  Send 6-Digit SMS Code {adminOtpInfo?.masked_phone ? `to ${adminOtpInfo.masked_phone}` : ""}
+                </>
+              )}
+            </button>
+          </div>
+        ) : (
+          <form onSubmit={handleVerify} className="mt-6 space-y-4">
           <div className="flex justify-center gap-1.5 sm:gap-2.5">
             {otp.map((data, index) => (
               <input
@@ -336,8 +478,25 @@ const VerifyMfa = () => {
             )}
           </button>
         </form>
+        )}
 
-        <p className="mt-4 text-xs text-muted-foreground">Codes change every 30 seconds.</p>
+        {method === "otp" ? (
+          <div className="mt-4 flex items-center justify-center gap-3 text-xs text-muted-foreground">
+            <span>Code expires in 5 minutes.</span>
+            {smsSent && (
+              <button
+                type="button"
+                disabled={sendingSms}
+                onClick={() => void handleRequestAdminSmsOtp()}
+                className="font-semibold text-primary hover:underline disabled:opacity-50"
+              >
+                {sendingSms ? "Sending..." : "Resend SMS"}
+              </button>
+            )}
+          </div>
+        ) : (
+          <p className="mt-4 text-xs text-muted-foreground">Codes change every 30 seconds.</p>
+        )}
 
         <button
           type="button"

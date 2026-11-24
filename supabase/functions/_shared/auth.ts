@@ -99,7 +99,7 @@ export async function verifyAdmin(
     if (!isServiceRole) {
       const { data: roles, error: rolesError } = await supabaseAdmin
         .from("user_roles")
-        .select("role, allowed_ips")
+        .select("role, allowed_ips, otp_login_approved")
         .eq("user_id", user.id)
         .eq("role", "admin")
         .limit(1);
@@ -110,13 +110,26 @@ export async function verifyAdmin(
 
       const roleObj = roles[0];
 
-      // 5. Enforce MFA (AAL2)
+      // 5. Enforce MFA (AAL2) OR Approved-Admin SMS OTP Session
       if (checkMfa) {
         const aal = claims?.aal;
-        if (aal !== "aal2") {
+        let hasAdminOtp = false;
+        if (aal !== "aal2" && roleObj.otp_login_approved !== false && claims?.session_id) {
+          const { data: otpSess } = await supabaseAdmin
+            .from("admin_otp_sessions")
+            .select("id")
+            .eq("user_id", user.id)
+            .eq("session_id", String(claims.session_id))
+            .not("verified_at", "is", null)
+            .gt("expires_at", new Date().toISOString())
+            .limit(1)
+            .maybeSingle();
+          hasAdminOtp = Boolean(otpSess?.id);
+        }
+        if (aal !== "aal2" && !hasAdminOtp) {
           return {
             success: false,
-            error: "Forbidden: Multi-Factor Authentication (MFA) required for admin actions.",
+            error: "Forbidden: Multi-Factor Authentication (2FA or Approved Admin OTP) required for admin actions.",
             status: 403,
           };
         }

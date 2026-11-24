@@ -102,6 +102,8 @@ interface AuthContextType {
   isMfaEnabled: boolean;
   isMfaChallenged: boolean;
   refreshMfaStatus: () => Promise<void>;
+  isAdminOtpVerified: boolean;
+  refreshAdminOtpStatus: () => Promise<boolean>;
   savedAccounts: SavedAccount[];
   switchAccount: (userId: string) => Promise<{ success: boolean; error?: string; expiredEmail?: string }>;
   addAccount: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
@@ -148,6 +150,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [mfaStatus, setMfaStatus] = useState({ enabled: false, challenged: false });
+  const [isAdminOtpVerified, setIsAdminOtpVerified] = useState(false);
   const [savedAccounts, setSavedAccounts] = useState<SavedAccount[]>(() => getSavedAccountsFromStorage());
   const [isAccountSwitcherOpen, setIsAccountSwitcherOpen] = useState(false);
 
@@ -263,6 +266,24 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  const refreshAdminOtpStatus = async (): Promise<boolean> => {
+    try {
+      const { data, error } = await supabase.functions.invoke("admin-otp-auth", {
+        body: { action: "status" },
+      });
+      if (error || !data?.success) {
+        setIsAdminOtpVerified(false);
+        return false;
+      }
+      const verified = Boolean(data.has_valid_session);
+      setIsAdminOtpVerified(verified);
+      return verified;
+    } catch {
+      setIsAdminOtpVerified(false);
+      return false;
+    }
+  };
+
   const refreshMfaStatus = async () => {
     try {
       const { data, error } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
@@ -300,6 +321,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 checkAdminRole(userId),
                 refreshMfaStatus(),
               ]).then(([profData, adminData]) => {
+                if (mounted && adminData) {
+                  void refreshAdminOtpStatus();
+                } else if (mounted) {
+                  setIsAdminOtpVerified(false);
+                }
                 if (mounted && session) {
                   upsertSavedAccount(session, profData, adminData);
                 }
@@ -835,6 +861,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         isMfaEnabled: mfaStatus.enabled,
         isMfaChallenged: mfaStatus.challenged,
         refreshMfaStatus,
+        isAdminOtpVerified,
+        refreshAdminOtpStatus,
         savedAccounts,
         switchAccount,
         addAccount,
@@ -866,6 +894,8 @@ const defaultAuthFallback: AuthContextType = {
   isMfaEnabled: false,
   isMfaChallenged: false,
   refreshMfaStatus: async () => {},
+  isAdminOtpVerified: false,
+  refreshAdminOtpStatus: async () => false,
   savedAccounts: [],
   switchAccount: async () => ({ success: false, error: "Auth initializing..." }),
   addAccount: async () => ({ success: false, error: "Auth initializing..." }),
