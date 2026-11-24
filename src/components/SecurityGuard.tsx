@@ -250,11 +250,14 @@ export function SecurityGuard({ children }: { children: React.ReactNode }) {
             <div className="w-16 h-16 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center mx-auto mb-4">
               <Shield className="w-8 h-8 text-amber-400" />
             </div>
+            <span className="inline-block text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/30 mb-3">
+              New Update · One-Time Only
+            </span>
             <h2 className="text-xl sm:text-2xl font-black tracking-tight text-white">
               Verify Your Phone Number
             </h2>
             <p className="text-xs sm:text-sm text-muted-foreground mt-2 leading-relaxed">
-              Add and verify your 10-digit Ghana phone number via SMS OTP to finish setting up your account and continue.
+              Add and verify your 10-digit Ghana phone number via SMS OTP once to access your account. You will not be asked again after verification.
             </p>
           </div>
 
