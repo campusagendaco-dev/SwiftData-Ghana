@@ -29,6 +29,7 @@ const KIND_NOTE: Record<ConfirmOptions["kind"], string> = {
   account: "This suspends or restricts user accounts.",
   ops: "This changes how orders are routed or handled, or which networks are on.",
   receipt: "This records a MoMo receipt decision. It credits nothing by itself.",
+  unsuspend: "This lifts a suspension: the person can use their account and wallet again.",
 };
 
 function summary(opts: ConfirmOptions): string {

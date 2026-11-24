@@ -254,7 +254,7 @@ export function SecurityGuard({ children }: { children: React.ReactNode }) {
           <p className="text-muted-foreground text-sm leading-relaxed mb-5">
             {isDeviceBlocked 
               ? "A disabled account is associated with this device. Access is restricted for security enforcement."
-              : "Your account is currently restricted from accessing your wallet, dashboard, and making purchases."}
+              : "Your account has been suspended by the platform administrator. You are currently restricted from accessing your wallet, dashboard, and making purchases."}
           </p>
 
           {!isDeviceBlocked && <SelfUnsuspendPanel />}

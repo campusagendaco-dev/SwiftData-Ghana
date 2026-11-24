@@ -223,7 +223,10 @@ async function suspendAccounts(db: any, ids: string[], field: "is_suspended" | "
   const admins = found.filter(isAdmin).map((x) => x.user_id);
   const targets = found.filter((x) => !isAdmin(x)).map((x) => x.user_id);
   if (targets.length) {
-    const { error } = await db.from("profiles").update({ [field]: true }).in("user_id", targets);
+    // An approved suspension is permanent until an admin lifts it: clear any timed hold so
+    // the self-unsuspend code can never lift it.
+    const values = field === "is_suspended" ? { is_suspended: true, suspended_until: null } : { [field]: true };
+    const { error } = await db.from("profiles").update(values).in("user_id", targets);
     if (error) return { ok: false, error: error.message };
   }
   return { ok: targets.length > 0, details: { changed: targets, skipped_admins: admins, not_found: ids.filter((i) => !found.some((f) => f.user_id === i)) } };

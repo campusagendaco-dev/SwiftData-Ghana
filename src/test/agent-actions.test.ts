@@ -85,6 +85,12 @@ describe("executeApprovedAction", () => {
     expect(db.tables.profiles.filter((p) => p.is_suspended).map((p) => p.user_id)).toEqual(["a", "b"]);
   });
 
+  it("an approved suspension is never a timed hold that a code could lift", async () => {
+    const db = fakeDb({ profiles: [{ user_id: "a", role: "agent", suspended_until: "2026-11-24T20:00:00Z" }] });
+    await executeApprovedAction(db, { task_type: "suspend_cluster", payload: { user_ids: ["a"] } }, ctx());
+    expect(db.tables.profiles[0]).toMatchObject({ is_suspended: true, suspended_until: null });
+  });
+
   it("never suspends an admin", async () => {
     const db = fakeDb({ profiles: [{ user_id: "a", role: "agent" }, { user_id: "boss", role: "admin" }] });
     const res = await executeApprovedAction(db, { task_type: "suspend_cluster", payload: { user_ids: ["a", "boss"] } }, ctx());

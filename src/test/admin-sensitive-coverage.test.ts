@@ -24,6 +24,7 @@ const files = [
   join(root, "components", "UserDetailDrawer.tsx"),
   join(root, "components", "AdminLayout.tsx"),
   join(root, "components", "admin", "AgentApprovalQueue.tsx"),
+  join(root, "components", "AdminUnsuspendPopup.tsx"),
 ];
 
 const ACTION_SETS: Record<string, Set<string>> = {

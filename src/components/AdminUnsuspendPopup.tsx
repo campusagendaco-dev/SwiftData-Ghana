@@ -4,20 +4,21 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { useConfirmedCall } from "@/components/admin/ConfirmActionProvider";
 
 interface PendingUnsuspendRequest {
   id: string;
   user_id: string;
   user_name: string | null;
-  user_email: string | null;
   phone: string;
   suspension_reason: string;
-  is_security_breach: boolean;
+  route: string;
   status: string;
   created_at: string;
 }
 
 export default function AdminUnsuspendPopup() {
+  const confirmed = useConfirmedCall();
   const [requests, setRequests] = useState<PendingUnsuspendRequest[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
@@ -26,7 +27,8 @@ export default function AdminUnsuspendPopup() {
     try {
       const { data } = await (supabase as any)
         .from("account_unsuspend_requests")
-        .select("id, user_id, user_name, user_email, phone, suspension_reason, is_security_breach, status, created_at")
+        // Only the columns admins may read (never the code digest).
+        .select("id, user_id, user_name, phone, suspension_reason, route, status, created_at")
         .eq("status", "pending_admin_approval")
         .order("created_at", { ascending: false })
         .limit(5);
@@ -39,44 +41,25 @@ export default function AdminUnsuspendPopup() {
   useEffect(() => {
     void loadPending();
 
-    const channel = supabase
-      .channel("admin-unsuspend-approvals")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "account_unsuspend_requests" },
-        (payload: any) => {
-          const row = payload.new as PendingUnsuspendRequest | undefined;
-          if (!row) return;
-
-          if (row.status === "pending_admin_approval") {
-            setRequests((prev) => {
-              const filtered = prev.filter((r) => r.id !== row.id);
-              return [row, ...filtered].slice(0, 5);
-            });
-            setDismissedIds((prev) => {
-              const next = new Set(prev);
-              next.delete(row.id);
-              return next;
-            });
-            toast.warning(`Security Approval Needed: ${row.user_name || row.phone} verified OTP to unsuspend`, {
-              description: row.suspension_reason,
-              duration: 8000,
-            });
-          } else {
-            setRequests((prev) => prev.filter((r) => r.id !== row.id));
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    // Checks every 30 seconds: the table is kept out of realtime so row updates can't carry
+    // the code digest to subscribers.
+    const timer = setInterval(() => void loadPending(), 30_000);
+    return () => clearInterval(timer);
   }, []);
 
   const handleDecision = async (reqItem: PendingUnsuspendRequest, decision: "approve" | "reject") => {
+    if (decision === "approve") {
+      const ok = await confirmed.confirm({
+        title: `Lift the suspension on ${reqItem.user_name || reqItem.phone}?`,
+        description: `They verified their phone (${reqItem.phone}). Why it's held: ${reqItem.suspension_reason}`,
+        kind: "unsuspend",
+        confirmLabel: "Lift suspension",
+      });
+      if (!ok) return;
+    }
     setBusyId(reqItem.id);
     try {
+      // Approve was confirmed above; reject keeps the account suspended.
       const { data, error } = await supabase.functions.invoke("self-unsuspend", {
         body: { action: "admin_decision", request_id: reqItem.id, decision },
       });
@@ -141,7 +124,6 @@ export default function AdminUnsuspendPopup() {
             <div className="flex items-center gap-2 text-zinc-400 font-mono text-[11px]">
               <Phone className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
               <span>{reqItem.phone}</span>
-              {reqItem.user_email && <span className="truncate">· {reqItem.user_email}</span>}
             </div>
             <div className="pt-1.5 mt-1 border-t border-white/10">
               <span className="text-[10px] font-bold uppercase tracking-wider text-rose-400 block">

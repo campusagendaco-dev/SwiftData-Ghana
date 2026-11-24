@@ -52,6 +52,7 @@ export function fakeDb(seed: Record<string, Row[]> = {}) {
       lte: (c: string, v: any) => { preds.push((r) => r[c] <= v); return q; },
       gt: (c: string, v: any) => { preds.push((r) => r[c] > v); return q; },
       not: (c: string, _o: string, _v: null) => { preds.push((r) => r[c] != null); return q; },
+      contains: (c: string, v: any[]) => { preds.push((r) => Array.isArray(r[c]) && v.every((x) => r[c].includes(x))); return q; },
       is: (c: string, v: null) => { preds.push((r) => (r[c] ?? null) === v); filters.push(`${c} is ${v}`); return q; },
       order: () => q,
       limit: (n: number) => { limitN = n; return q; },

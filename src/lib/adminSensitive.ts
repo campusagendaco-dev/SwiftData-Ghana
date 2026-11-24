@@ -17,6 +17,8 @@ export const SENSITIVE_FUNCTIONS = new Set([
   "sentinel-ai",
   // records MoMo receipt decisions (accept/reject); checks are marked read-only
   "verify-momo-receipt",
+  // lifts suspensions (admin_decision approve)
+  "self-unsuspend",
   // message credit
   "admin-send-sms",
   "send-push-notification",
@@ -64,7 +66,7 @@ export const SENSITIVE_PAYOUT_ACTIONS = new Set([
 /** Actions that change who can use the admin pages. */
 export const SENSITIVE_ACCESS_ACTIONS = new Set(["revoke_admin_role", "grant_admin_role"]);
 
-export type ConfirmKind = "money" | "refund" | "payout" | "send" | "message" | "access" | "promo" | "account" | "ops" | "receipt";
+export type ConfirmKind = "money" | "refund" | "payout" | "send" | "message" | "access" | "promo" | "account" | "ops" | "receipt" | "unsuspend";
 
 export type ConfirmOptions = {
   title: string;
