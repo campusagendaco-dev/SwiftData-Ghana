@@ -9,6 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import { RefreshCw, RotateCcw, Wallet, Search, Check, Copy, ShieldCheck, Users, Calendar, Eye, Play, Loader2, Sparkles, CheckCircle2, ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAppTheme } from "@/contexts/ThemeContext";
+import { useConfirmedCall } from "@/components/admin/ConfirmActionProvider";
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -43,6 +44,7 @@ function fmt(dateStr: string) {
 }
 
 export default function AdminRefundedOrders() {
+  const confirmed = useConfirmedCall();
   const { isDark } = useAppTheme();
   const { toast } = useToast();
   const [orders, setOrders] = useState<AdminRefundedOrder[]>([]);
@@ -185,6 +187,19 @@ export default function AdminRefundedOrders() {
 
       toast({ title: "Number Verified!", description: `${phone} is verified on the beneficiary list! Re-submitting order for fulfillment...` });
 
+      // Charging the wallet again and re-sending the order needs the admin's say-so.
+      if (!(await confirmed.confirm({
+        title: "Charge the wallet and send this order again?",
+        description: `${phone} is now verified. The agent's wallet is charged again and the order is sent to a data provider.`,
+        kind: "send",
+        orders: 1,
+        amountGhs: Number(ord.amount) || undefined,
+        confirmLabel: "Yes, charge and send",
+      }))) {
+        setVerifyingId(null);
+        return;
+      }
+
       // Debit agent wallet for retry
       const { data: debitRes, error: debitErr } = await supabase.rpc("debit_wallet", {
         p_agent_id: ord.agent_id,
@@ -209,7 +224,7 @@ export default function AdminRefundedOrders() {
       setOrders((prev) => prev.filter((o) => o.id !== ord.id));
 
       // Invoke verify-payment for automated fulfillment
-      const { data: payRes, error: payErr } = await supabase.functions.invoke("verify-payment", {
+      const { data: payRes, error: payErr } = await confirmed.invokeAlreadyConfirmed("verify-payment", {
         body: { reference: ord.id, order_id: ord.id }
       });
 

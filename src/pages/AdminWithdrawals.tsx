@@ -14,6 +14,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { logAudit } from "@/utils/auditLogger";
 import { CardTilt } from "@/components/ui/CardTilt";
 import { cn } from "@/lib/utils";
+import { useConfirmedCall } from "@/components/admin/ConfirmActionProvider";
 
 interface WithdrawalRow {
   id: string;
@@ -89,6 +90,7 @@ function exportCsv(rows: WithdrawalRow[]) {
 }
 
 const AdminWithdrawals = () => {
+  const confirmed = useConfirmedCall();
   const { user: currentUser, session } = useAuth();
 
   const [withdrawals, setWithdrawals] = useState<WithdrawalRow[]>([]);
@@ -264,8 +266,16 @@ const AdminWithdrawals = () => {
   };
 
   const handleConfirm = async (withdrawalId: string) => {
-    setConfirming(withdrawalId);
     const withdrawal = withdrawals.find(w => w.id === withdrawalId);
+    if (!(await confirmed.confirm({
+      title: "Mark this withdrawal as paid?",
+      description: "Only confirm once the money has actually been sent to the agent.",
+      kind: "payout",
+      orders: 1,
+      amountGhs: Number(withdrawal?.amount) || undefined,
+      confirmLabel: "Yes, mark as paid",
+    }))) return;
+    setConfirming(withdrawalId);
 
     const { data, error } = await supabase.functions.invoke("system-payout-v1", {
       body: { action: "confirm_withdrawal", withdrawal_id: withdrawalId },
@@ -291,9 +301,16 @@ const AdminWithdrawals = () => {
   };
 
   const handlePaystackPayout = async (withdrawalId: string) => {
-    if (!window.confirm("Initiate a REAL transfer via Paystack?")) return;
-    setPayingPaystack(withdrawalId);
     const withdrawal = withdrawals.find(w => w.id === withdrawalId);
+    if (!(await confirmed.confirm({
+      title: "Send a real Paystack transfer?",
+      description: "Paystack will transfer this money to the agent's account. This can't be undone.",
+      kind: "payout",
+      orders: 1,
+      amountGhs: Number(withdrawal?.net_amount ?? withdrawal?.amount) || undefined,
+      confirmLabel: "Yes, send the transfer",
+    }))) return;
+    setPayingPaystack(withdrawalId);
 
     const { data, error } = await supabase.functions.invoke("system-payout-v1", {
       body: { action: "paystack_payout", withdrawal_id: withdrawalId },
@@ -331,6 +348,15 @@ const AdminWithdrawals = () => {
       toast.error("Enter a reason for rejection");
       return;
     }
+    const rejected = withdrawals.find(w => w.id === withdrawalId);
+    if (!(await confirmed.confirm({
+      title: "Reject this withdrawal?",
+      description: "The amount goes back to the agent's wallet.",
+      kind: "money",
+      orders: 1,
+      amountGhs: Number(rejected?.amount) || undefined,
+      confirmLabel: "Yes, reject",
+    }))) return;
     setRejecting(true);
 
     const { data, error } = await supabase.functions.invoke("system-payout-v1", {
@@ -359,7 +385,15 @@ const AdminWithdrawals = () => {
 
   const handleBulkConfirm = async () => {
     if (!selectedIds.size) return;
-    if (!window.confirm(`Confirm ${selectedIds.size} withdrawal(s) as sent?`)) return;
+    const chosen = withdrawals.filter(w => selectedIds.has(w.id));
+    if (!(await confirmed.confirm({
+      title: `Mark ${selectedIds.size} withdrawal(s) as paid?`,
+      description: "Only confirm once the money has actually been sent to every one of these agents.",
+      kind: "payout",
+      orders: selectedIds.size,
+      amountGhs: chosen.reduce((s, w) => s + (Number(w.amount) || 0), 0) || undefined,
+      confirmLabel: "Yes, mark all as paid",
+    }))) return;
     setBulkConfirming(true);
 
     let success = 0, failed = 0;

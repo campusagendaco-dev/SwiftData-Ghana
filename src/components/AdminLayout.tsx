@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { Outlet, Link, useLocation, useNavigate } from "react-router-dom";
+import { ConfirmActionProvider } from "@/components/admin/ConfirmActionProvider";
 import { useAuth } from "@/hooks/useAuth";
 import { useAppTheme } from "@/contexts/ThemeContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -24,6 +25,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { useConfirmedCall } from "@/components/admin/ConfirmActionProvider";
 
 export interface NavItem {
   label: string;
@@ -676,7 +678,8 @@ const OrdersHubTabs = ({ items, activeQueueCount }: { items: NavItem[]; activeQu
 
 /* ───────────── Layout ───────────── */
 
-const AdminLayout = () => {
+const AdminLayoutInner = () => {
+  const confirmed = useConfirmedCall();
   const [open, setOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<boolean>(() => readJson<boolean>(COLLAPSE_KEY, false));
   const [cmdOpen, setCmdOpen] = useState(false);
@@ -758,12 +761,20 @@ const AdminLayout = () => {
 
   const handleQuickReconcileAndSync = async () => {
     if (syncingNow) return;
+    const ok = await confirmed.confirm({
+      title: "Reconcile and sync orders?",
+      description:
+        "Retries failed orders (they are sent to a data provider again) and checks processing orders with providers, which can re-send orders a provider reports as failed.",
+      kind: "send",
+      confirmLabel: "Yes, retry and sync",
+    });
+    if (!ok) return;
     setSyncingNow(true);
     const toastId = toast.loading("Reconciling orders and syncing providers…");
     try {
       const [retryRes, bulkCheckRes] = await Promise.allSettled([
-        supabase.functions.invoke("cron-auto-retry", { body: {} }),
-        supabase.functions.invoke("check-order-status", { body: { auto_bulk: true } }),
+        confirmed.invokeAlreadyConfirmed("cron-auto-retry", { body: {} }),
+        confirmed.invokeAlreadyConfirmed("check-order-status", { body: { auto_bulk: true } }),
         supabase.functions.invoke("system-payout-v1", { body: { action: "get_provider_balance" } }),
       ]);
       await fetchLiveHeaderTelemetry();
@@ -1018,5 +1029,12 @@ const AdminLayout = () => {
     </div>
   );
 };
+
+/** Every admin page (and the header) can ask the admin to confirm money/send actions. */
+const AdminLayout = () => (
+  <ConfirmActionProvider>
+    <AdminLayoutInner />
+  </ConfirmActionProvider>
+);
 
 export default AdminLayout;
