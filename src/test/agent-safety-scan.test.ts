@@ -15,6 +15,10 @@ const AGENT_FILES = [
   "sentinel-ai/index.ts",
   "sentinel-evolve/index.ts",
   "guardian-ai/index.ts",
+  "threat-hunter/index.ts",
+  "aml-scanner/index.ts",
+  "account-cloner/index.ts",
+  "auto-ticket-resolver/index.ts",
 ];
 
 const FORBIDDEN: { name: string; re: RegExp }[] = [
@@ -25,6 +29,8 @@ const FORBIDDEN: { name: string; re: RegExp }[] = [
   { name: "wallet or refund RPC", re: /\.rpc\(\s*["'`](credit_wallet|debit_wallet|refund_failed_order)["'`]/g },
   { name: "write to orders", re: /from\(\s*["'`]orders["'`]\s*\)\s*\.(update|insert|delete|upsert)\b/g },
   { name: "2FA check turned off", re: /checkMfa\s*:\s*false/g },
+  // Suspensions and terminal locks happen only in _shared/agent_actions.ts, after an admin approved them.
+  { name: "suspends or locks accounts by itself", re: /(is_suspended|terminal_locked)\s*:\s*true/g },
 ];
 
 /** Removes comments but keeps URLs such as https://… inside strings. */

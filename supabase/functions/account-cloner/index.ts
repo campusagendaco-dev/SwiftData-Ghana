@@ -18,7 +18,9 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { verifyAdmin } from "../_shared/auth.ts";
 import { timingSafeEqual } from "../_shared/gateway-security.ts";
-import { getSmsConfig, sendSmsViaTxtConnect } from "../_shared/sms.ts";
+import { routeAgentAction, type AgentAction, type AgentMode } from "../_shared/agent_policy.ts";
+import { queueAgentAction, runAutoAction } from "../_shared/agent_actions.ts";
+import { agentSms } from "../_shared/agent_sms.ts";
 import { callAiAgent, getAgentConfig } from "../_shared/ai.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
@@ -44,7 +46,7 @@ serve(async (req: Request) => {
   const isServiceRole = Boolean(SUPABASE_SERVICE_ROLE_KEY && bearerToken && timingSafeEqual(bearerToken, SUPABASE_SERVICE_ROLE_KEY));
   const isCronAuthed = Boolean(isServiceRole || (cronSecret && providedCron && timingSafeEqual(providedCron, cronSecret)));
   if (!isCronAuthed) {
-    const authRes = await verifyAdmin(req, db, { checkMfa: false });
+    const authRes = await verifyAdmin(req, db);
     if (!authRes.success) {
       return new Response(JSON.stringify({ error: authRes.error || "Unauthorized" }), {
         status: authRes.status || 401,
@@ -56,16 +58,22 @@ serve(async (req: Request) => {
   try {
     console.log("👤 Account Cloner Detector: Scanning for multi-account fraud...");
 
-    // ── Admin contact ──────────────────────────────────────────────────────────
-    const { data: admins } = await db.from("profiles").select("phone").eq("role", "admin").limit(1);
-    const adminPhone = admins?.[0]?.phone ?? null;
-
-    const notifyAdmin = async (msg: string) => {
-      if (!adminPhone) return;
-      try {
-        const { apiKey, senderId } = await getSmsConfig(db);
-        if (apiKey) await sendSmsViaTxtConnect(apiKey, senderId, adminPhone, `[Account Cloner] ${msg}`);
-      } catch { /* non-critical */ }
+    const AGENT = "account_cloner";
+    // Safe-agents design (2026-11-24): this agent WATCHES and PROPOSES. Suspensions, IP
+    // blocks, locks and cashout freezes go through routeAgentAction: queued for an admin
+    // with 2FA (propose mode) or recorded as "would propose" findings (observe_only).
+    // Flags and capped admin alerts are the only things it does by itself.
+    const notifyAdmin = (msg: string, topic?: string) =>
+      runAutoAction(db, AGENT, { type: "notify_admin", params: { message: msg, topic } }, { sms: agentSms });
+    const routeOne = async (mode: AgentMode, action: AgentAction) => {
+      const { route, reason } = routeAgentAction(mode, action);
+      if (route === "run") return { type: action.type, route, ...(await runAutoAction(db, AGENT, action, { sms: agentSms })) };
+      if (route === "queue") return { type: action.type, route, ...(await queueAgentAction(db, AGENT, action)) };
+      if (route === "record") {
+        await runAutoAction(db, AGENT, { type: "record_finding", reason: action.reason, params: { would_propose: action } }, { sms: agentSms });
+        return { type: action.type, route };
+      }
+      return { type: action.type, route, reason };
     };
 
     // ── 1. Full profile pull ───────────────────────────────────────────────────
@@ -220,67 +228,36 @@ RAW JSON only. No markdown. No backticks.
     const parsed = jStart !== -1 && jEnd !== -1 ? JSON.parse(rawText.slice(jStart, jEnd + 1)) : {};
     const { clone_risk = "LOW", summary = "", actions = [] } = parsed;
 
-    // ── 7. Execute actions ─────────────────────────────────────────────────────
+    // ── Route actions through the safe-agents policy ─────────────────────────
     const profileMap = new Map(profiles.map(p => [p.user_id, p]));
     const executed: any[] = [];
-
-    for (const action of actions) {
-      const p = action.params ?? {};
-      try {
-        if (action.type === "suspend_cluster" && Array.isArray(p.user_ids)) {
-          let idsToSuspend: string[] = p.user_ids;
-
-          // If keep_oldest, find the earliest-created account and spare it
-          if (p.keep_oldest) {
-            const sorted = idsToSuspend
-              .map(id => ({ id, created_at: profileMap.get(id)?.created_at ?? "" }))
-              .sort((a, b) => a.created_at.localeCompare(b.created_at));
-            idsToSuspend = sorted.slice(1).map(s => s.id); // skip the oldest
-          }
-
-          // Skip admins
-          idsToSuspend = idsToSuspend.filter(id => profileMap.get(id)?.role !== "admin");
-
-          if (idsToSuspend.length > 0) {
-            await db.from("profiles").update({ is_suspended: true }).in("user_id", idsToSuspend);
-
-            // Write to duplicate_account_flags
-            await db.from("duplicate_account_flags").insert({
-              primary_user_id: p.user_ids[0],
-              duplicate_user_ids: idsToSuspend,
-              matching_criteria: p.reason ?? summary,
-              confidence_score: clone_risk === "HIGH" ? 0.9 : 0.65,
-              action_taken: "suspended",
-            });
-          }
+    for (const raw of (Array.isArray(actions) ? actions : []).slice(0, 10)) {
+      const p: Record<string, any> = { ...(raw?.params ?? {}) };
+      const reason = String(p.reason ?? summary ?? "");
+      const proposals: AgentAction[] = [];
+      if (raw?.type === "suspend_cluster" && Array.isArray(p.user_ids)) {
+        let ids: string[] = p.user_ids;
+        // If keep_oldest, spare the earliest-created account; never include admins.
+        if (p.keep_oldest) {
+          ids = ids
+            .map((id) => ({ id, created_at: profileMap.get(id)?.created_at ?? "" }))
+            .sort((a, b) => a.created_at.localeCompare(b.created_at))
+            .slice(1)
+            .map((s) => s.id);
         }
-
-        if (action.type === "flag_review" && Array.isArray(p.user_ids)) {
-          await db.from("duplicate_account_flags").insert({
-            primary_user_id: p.user_ids[0],
-            duplicate_user_ids: p.user_ids.slice(1),
-            matching_criteria: `${p.cluster_type}: ${p.reason ?? summary}`,
-            confidence_score: 0.5,
-            action_taken: "flagged_review",
-          });
+        ids = ids.filter((id) => profileMap.get(id)?.role !== "admin");
+        if (ids.length > 0) {
+          proposals.push({ type: "flag_review", reason, params: { user_ids: [p.user_ids[0], ...ids.filter((i) => i !== p.user_ids[0])], reason, confidence: clone_risk === "HIGH" ? 0.9 : 0.65 } });
+          proposals.push({ type: "suspend_cluster", title: `Account Cloner: suspend ${ids.length} duplicate accounts of ${String(p.user_ids[0]).slice(0, 8)}`, reason, priority: "high", params: { user_ids: ids, reason } });
         }
-
-        if (action.type === "notify_admin") {
-          await notifyAdmin(p.message ?? `Account Cloner [${clone_risk}]: ${summary}`);
-        }
-
-        const { data: log } = await db.from("sentinel_actions").insert({
-          action_type: action.type,
-          status: "executed",
-          effectiveness: 1,
-          reasoning: p.reason ?? summary,
-          metadata: { ...p, source: "account_cloner", clone_risk },
-        }).select().single();
-
-        if (log) executed.push(log);
-      } catch (err: any) {
-        console.error(`Account Cloner execution failed [${action.type}]:`, err.message);
+      } else if (raw?.type === "flag_review" && Array.isArray(p.user_ids)) {
+        proposals.push({ type: "flag_review", reason, params: { user_ids: p.user_ids, reason: `${p.cluster_type}: ${reason}`, confidence: 0.5 } });
+      } else if (raw?.type === "notify_admin") {
+        await notifyAdmin(p.message ?? `Account Cloner [${clone_risk}]: ${summary}`, p.topic);
+      } else {
+        executed.push({ type: raw?.type, route: "drop", reason: "unknown action" });
       }
+      for (const action of proposals) executed.push(await routeOne(agentCfg.autonomy_mode, action));
     }
 
     // Always log the scan

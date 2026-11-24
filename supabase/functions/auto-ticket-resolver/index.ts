@@ -29,7 +29,7 @@ serve(async (req: Request) => {
   const isServiceRole = Boolean(SUPABASE_SERVICE_ROLE_KEY && bearerToken && timingSafeEqual(bearerToken, SUPABASE_SERVICE_ROLE_KEY));
   const isCronAuthed = Boolean(isServiceRole || (cronSecret && providedCron && timingSafeEqual(providedCron, cronSecret)));
   if (!isCronAuthed) {
-    const authRes = await verifyAdmin(req, supabase, { checkMfa: false });
+    const authRes = await verifyAdmin(req, supabase);
     if (!authRes.success) {
       return new Response(JSON.stringify({ error: authRes.error || "Unauthorized" }), {
         status: authRes.status || 401,
@@ -97,9 +97,10 @@ Description: ${ticket.description}
 ━━━ OPERATIONAL DIRECTIVES ━━━
 - Ghanaian Warmth & Pidgin elements: sound warm, professional, but distinctively Ghanaian ("Chale", "No yawa", "Sorted").
 - Check if they are complaining about a failed order. Cross-reference their complaint with the "RECENT CUSTOMER ORDERS" list.
-- If you find a failed/refunded order matching their complaint:
-  * Inform them that the system has already detected the failure and automatically refunded their wallet.
-  * Assure them they can safely resubmit the order.
+- If you find an order matching their complaint whose Status is exactly "refunded":
+  * Tell them that order was refunded to their wallet and they can safely resubmit it.
+- If the matching order's Status is failed or fulfillment_failed (NOT refunded):
+  * Do NOT say it was refunded. Tell them the failure is recorded and the support team will review it, and set should_resolve to false.
   * Decide to automatically close/resolve the ticket.
 - Otherwise, draft an intelligent, helpful next-step reply (e.g. telling them how to check Paystack top-up status, or telling them the support team is investigating) and set should_resolve to false.
 - Keep the response response concise (2-4 sentences max).`;

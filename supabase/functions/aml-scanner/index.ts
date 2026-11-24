@@ -17,8 +17,10 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { verifyAdmin } from "../_shared/auth.ts";
 import { timingSafeEqual } from "../_shared/gateway-security.ts";
-import { getSmsConfig, sendSmsViaTxtConnect } from "../_shared/sms.ts";
-import { callAiAgent } from "../_shared/ai.ts";
+import { routeAgentAction, type AgentAction, type AgentMode } from "../_shared/agent_policy.ts";
+import { queueAgentAction, runAutoAction } from "../_shared/agent_actions.ts";
+import { agentSms } from "../_shared/agent_sms.ts";
+import { callAiAgent, getAgentConfig } from "../_shared/ai.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -34,7 +36,7 @@ serve(async (req: Request) => {
   const isServiceRole = Boolean(SUPABASE_SERVICE_ROLE_KEY && bearerToken && timingSafeEqual(bearerToken, SUPABASE_SERVICE_ROLE_KEY));
   const isCronAuthed = Boolean(isServiceRole || (cronSecret && providedCron && timingSafeEqual(providedCron, cronSecret)));
   if (!isCronAuthed) {
-    const authRes = await verifyAdmin(req, db, { checkMfa: false });
+    const authRes = await verifyAdmin(req, db);
     if (!authRes.success) {
       return new Response(JSON.stringify({ error: authRes.error || "Unauthorized" }), {
         status: authRes.status || 401,
@@ -46,16 +48,22 @@ serve(async (req: Request) => {
   try {
     console.log("💰 AML Scanner: Initiating financial crime pattern analysis...");
 
-    // ── Admin contact ──────────────────────────────────────────────────────────
-    const { data: admins } = await db.from("profiles").select("phone").eq("role", "admin").limit(1);
-    const adminPhone = admins?.[0]?.phone ?? null;
-
-    const notifyAdmin = async (msg: string) => {
-      if (!adminPhone) return;
-      try {
-        const { apiKey, senderId } = await getSmsConfig(db);
-        if (apiKey) await sendSmsViaTxtConnect(apiKey, senderId, adminPhone, `[AML Scanner] ${msg}`);
-      } catch { /* non-critical */ }
+    const AGENT = "aml_scanner";
+    // Safe-agents design (2026-11-24): this agent WATCHES and PROPOSES. Suspensions, IP
+    // blocks, locks and cashout freezes go through routeAgentAction: queued for an admin
+    // with 2FA (propose mode) or recorded as "would propose" findings (observe_only).
+    // Flags and capped admin alerts are the only things it does by itself.
+    const notifyAdmin = (msg: string, topic?: string) =>
+      runAutoAction(db, AGENT, { type: "notify_admin", params: { message: msg, topic } }, { sms: agentSms });
+    const routeOne = async (mode: AgentMode, action: AgentAction) => {
+      const { route, reason } = routeAgentAction(mode, action);
+      if (route === "run") return { type: action.type, route, ...(await runAutoAction(db, AGENT, action, { sms: agentSms })) };
+      if (route === "queue") return { type: action.type, route, ...(await queueAgentAction(db, AGENT, action)) };
+      if (route === "record") {
+        await runAutoAction(db, AGENT, { type: "record_finding", reason: action.reason, params: { would_propose: action } }, { sms: agentSms });
+        return { type: action.type, route };
+      }
+      return { type: action.type, route, reason };
     };
 
     const now = Date.now();
@@ -232,61 +240,28 @@ RAW JSON only. No markdown.
     const parsed = JSON.parse(rawText.slice(jStart, jEnd + 1));
     const { aml_level = "MEDIUM", summary = "", actions = [] } = parsed;
 
-    // ── 6. Execute actions ─────────────────────────────────────────────────────
+    // ── Route actions through the safe-agents policy ─────────────────────────
+    const agentCfg = await getAgentConfig(db, "aml_scanner");
     const executed: any[] = [];
-
-    for (const action of actions) {
-      const p = action.params ?? {};
-      try {
-        if (action.type === "lock_terminal" && p.agent_id) {
-          const f = enriched.find(e => e.agent_id === p.agent_id);
-          if (f && !f.already_suspended) {
-            await db.from("profiles").update({ terminal_locked: true }).eq("user_id", p.agent_id);
-            await db.from("fraud_risk_logs").insert({
-              agent_id: p.agent_id,
-              risk_score: f.risk_score,
-              risk_factors: f.flags,
-              action_taken: "aml_terminal_lock",
-            });
-          }
+    for (const raw of (Array.isArray(actions) ? actions : []).slice(0, 10)) {
+      const p: Record<string, any> = { ...(raw?.params ?? {}) };
+      const reason = String(p.reason ?? summary ?? "");
+      const proposals: AgentAction[] = [];
+      if (raw?.type === "lock_terminal" && p.agent_id) {
+        const f = enriched.find((e: any) => e.agent_id === p.agent_id);
+        if (f && !f.already_suspended) {
+          proposals.push({ type: "lock_terminal", title: `AML: lock terminal of ${String(p.agent_id).slice(0, 8)} (risk ${f.risk_score})`, reason, priority: "critical", params: { user_id: p.agent_id, reason } });
         }
-
-        if (action.type === "flag_aml_review" && p.agent_id) {
-          await db.from("aml_alerts").insert({
-            agent_id: p.agent_id,
-            alert_type: p.pattern ?? "GENERAL",
-            risk_score: p.risk_score ?? 50,
-            pattern_description: summary,
-            action_taken: "flagged_for_review",
-          });
-        }
-
-        if (action.type === "freeze_cashouts" && p.agent_id) {
-          await db.from("aml_alerts").insert({
-            agent_id: p.agent_id,
-            alert_type: "CASHOUT_FREEZE",
-            risk_score: 70,
-            pattern_description: p.reason ?? summary,
-            action_taken: "cashouts_frozen",
-          });
-        }
-
-        if (action.type === "notify_admin") {
-          await notifyAdmin(p.message ?? `AML ${aml_level}: ${summary}`);
-        }
-
-        const { data: log } = await db.from("sentinel_actions").insert({
-          action_type: action.type,
-          status: "executed",
-          effectiveness: 1,
-          reasoning: p.reason ?? summary,
-          metadata: { ...p, source: "aml_scanner", aml_level },
-        }).select().single();
-
-        if (log) executed.push(log);
-      } catch (err: any) {
-        console.error(`AML Scanner execution failed [${action.type}]:`, err.message);
+      } else if (raw?.type === "flag_aml_review" && p.agent_id) {
+        proposals.push({ type: "flag_aml_review", reason, params: { agent_id: p.agent_id, pattern: p.pattern, risk_score: p.risk_score, reason } });
+      } else if (raw?.type === "freeze_cashouts" && p.agent_id) {
+        proposals.push({ type: "freeze_cashouts", title: `AML: freeze cashouts of ${String(p.agent_id).slice(0, 8)}`, reason, priority: "high", params: { agent_id: p.agent_id, reason } });
+      } else if (raw?.type === "notify_admin") {
+        await notifyAdmin(p.message ?? `AML ${aml_level}: ${summary}`, p.topic);
+      } else {
+        executed.push({ type: raw?.type, route: "drop", reason: "unknown action" });
       }
+      for (const action of proposals) executed.push(await routeOne(agentCfg.autonomy_mode, action));
     }
 
     // Scan summary log (always written so the dashboard shows activity)
@@ -299,7 +274,7 @@ RAW JSON only. No markdown.
     });
 
     if (aml_level === "CRITICAL") {
-      await notifyAdmin(`CRITICAL AML: ${executed.length} enforcement actions. ${summary}`);
+      await notifyAdmin(`CRITICAL AML: ${executed.length} actions proposed or recorded. ${summary}`);
     }
 
     return new Response(JSON.stringify({ success: true, aml_level, flagged: flagged.length, actions_taken: executed.length }), {
