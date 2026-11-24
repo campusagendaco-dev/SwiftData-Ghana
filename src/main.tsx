@@ -40,8 +40,8 @@ const forceAssetRecovery = async (sourceMsg?: string) => {
 // Expose globally so React Error Boundaries can leverage the exact same logic
 (window as any).forceAssetRecovery = forceAssetRecovery;
 
-// Proactively flush any stale Service Worker precached index.html from older builds (v2026.11.18.paystack_lockdown)
-const CURRENT_SW_BUILD_KEY = "swiftdata_sw_build_2026_11_18_paystack_lockdown_v1";
+// Proactively flush any stale Service Worker precached index.html from older builds
+const CURRENT_SW_BUILD_KEY = "swiftdata_sw_build_2026_11_24_security_guard_fix_v2";
 if (typeof window !== "undefined" && localStorage.getItem(CURRENT_SW_BUILD_KEY) !== CURRENT_SW_BUILD_KEY) {
   localStorage.setItem(CURRENT_SW_BUILD_KEY, CURRENT_SW_BUILD_KEY);
   if ("serviceWorker" in navigator) {
@@ -82,6 +82,8 @@ window.addEventListener("error", (e) => {
     msg.includes("failed to fetch dynamically imported module") ||
     msg.includes("expected a javascript-or-wasm module script") ||
     msg.includes("error loading dynamically imported module") ||
+    msg.includes("referenceerror") ||
+    msg.includes("is not defined") ||
     msg.includes("postgres_changes") ||
     msg.includes("wallet-balance-header") ||
     msg.includes("subscribe()") ||
