@@ -30,7 +30,9 @@ serve(async (req: Request) => {
 
   const cronSecret = (Deno.env.get("CRON_SECRET") || "").trim();
   const providedCron = (req.headers.get("x-cron-secret") || "").trim();
-  const isCronAuthed = Boolean(cronSecret && providedCron && timingSafeEqual(providedCron, cronSecret));
+  const bearerToken = req.headers.get("Authorization")?.replace(/^Bearer\s+/i, "").trim() || "";
+  const isServiceRole = Boolean(SUPABASE_SERVICE_ROLE_KEY && bearerToken && timingSafeEqual(bearerToken, SUPABASE_SERVICE_ROLE_KEY));
+  const isCronAuthed = Boolean(isServiceRole || (cronSecret && providedCron && timingSafeEqual(providedCron, cronSecret)));
   if (!isCronAuthed) {
     const authRes = await verifyAdmin(req, db, { checkMfa: false });
     if (!authRes.success) {

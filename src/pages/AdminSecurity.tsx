@@ -1583,7 +1583,21 @@ const AdminSecurity = () => {
     /* Agent fleet definition — mirrors ai_agent_registry */
     const AGENT_FLEET = [
       {
+        key: "ops_worker",
+        edgeFn: "ops-worker-ai",
+        name: "Ops Worker AI",
+        role: "Monitor · Learn · Autonomous Worker",
+        schedule: "Every 5 min",
+        icon: Bot,
+        color: "text-emerald-400",
+        border: "border-emerald-500/25",
+        bg: "bg-emerald-500/10",
+        pulse: "bg-emerald-500",
+        description: "OpenAI-powered operations worker. Heals stuck orders, rebalances non-Korba SME providers, triages support tickets, and learns system baselines.",
+      },
+      {
         key: "sentinel_prime",
+        edgeFn: "sentinel-ai",
         name: "Sentinel Prime",
         role: "Fraud · Liquidity · Network Healing",
         schedule: "Every 1 min",
@@ -1596,6 +1610,7 @@ const AdminSecurity = () => {
       },
       {
         key: "guardian_ai",
+        edgeFn: "guardian-ai",
         name: "Guardian AI",
         role: "24/7 Security Patrol",
         schedule: "Every 5 min",
@@ -1608,9 +1623,10 @@ const AdminSecurity = () => {
       },
       {
         key: "threat_hunter",
+        edgeFn: "threat-hunter",
         name: "Threat Hunter",
         role: "Cross-Signal Correlation",
-        schedule: "Every 3 min",
+        schedule: "Every 5 min",
         icon: Crosshair,
         color: "text-red-400",
         border: "border-red-500/25",
@@ -1620,6 +1636,7 @@ const AdminSecurity = () => {
       },
       {
         key: "aml_scanner",
+        edgeFn: "aml-scanner",
         name: "AML Scanner",
         role: "Anti-Money Laundering",
         schedule: "Every 10 min",
@@ -1632,6 +1649,7 @@ const AdminSecurity = () => {
       },
       {
         key: "account_cloner",
+        edgeFn: "account-cloner",
         name: "Account Cloner",
         role: "Multi-Account Fraud",
         schedule: "Every 20 min",
@@ -1644,14 +1662,15 @@ const AdminSecurity = () => {
       },
       {
         key: "sentinel_evolve",
+        edgeFn: "sentinel-evolve",
         name: "Sentinel Evolve",
         role: "Self-Learning Loop",
         schedule: "Every 15 min",
         icon: Radio,
-        color: "text-emerald-400",
-        border: "border-emerald-500/25",
-        bg: "bg-emerald-500/10",
-        pulse: "bg-emerald-500",
+        color: "text-teal-400",
+        border: "border-teal-500/25",
+        bg: "bg-teal-500/10",
+        pulse: "bg-teal-500",
         description: "Evaluates effectiveness of every autonomous action and updates strategy confidence scores — the system learns from every decision.",
       },
     ];
@@ -1687,19 +1706,62 @@ const AdminSecurity = () => {
         {AGENT_FLEET.map(agent => {
           const AIcon = agent.icon;
           const dbAgent = dbAgents.find(a => a.name === agent.key);
-          const currentModel = dbAgent?.active_model || "claude-haiku-4-5-20251001";
+          const currentModel = dbAgent?.active_model || "gpt-4o-mini";
+          const isActive = dbAgent?.is_active !== false;
+          const autonomyMode = dbAgent?.autonomy_mode || "autonomous";
           
           return (
-            <div key={agent.key} className={`rounded-xl border ${agent.border} bg-zinc-950 p-4 relative overflow-hidden`}>
+            <div key={agent.key} className={`rounded-xl border ${agent.border} bg-zinc-950 p-4 relative overflow-hidden ${!isActive ? "opacity-60" : ""}`}>
               {/* subtle scan-line top accent */}
               <div className={`absolute top-0 left-0 right-0 h-0.5 ${agent.bg}`} />
               <div className="flex items-start justify-between mb-3">
                 <div className={`p-2 rounded-lg border ${agent.border} ${agent.bg}`}>
                   <AIcon className={`w-4 h-4 ${agent.color}`} />
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <Pulse color={agent.pulse} />
-                  <span className={`text-[9px] font-black font-mono uppercase tracking-widest ${agent.color}`}>LIVE</span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const nextActive = !isActive;
+                      setDbAgents(prev => prev.map(a => a.name === agent.key ? { ...a, is_active: nextActive } : a));
+                      const { error } = await (supabase.from("ai_agent_registry" as any) as any)
+                        .update({ is_active: nextActive } as any)
+                        .eq("name", agent.key);
+                      if (error) {
+                        toast({ title: "Failed to toggle agent", description: error.message, variant: "destructive" });
+                        void fetchData(true);
+                      } else {
+                        toast({ title: `${agent.name} ${nextActive ? "Activated" : "Paused"}` });
+                      }
+                    }}
+                    className={`flex items-center gap-1.5 px-2 py-0.5 rounded border text-[9px] font-black font-mono uppercase tracking-widest ${
+                      isActive
+                        ? `${agent.border} ${agent.bg} ${agent.color}`
+                        : "border-zinc-800 bg-zinc-900 text-zinc-500"
+                    }`}
+                  >
+                    {isActive && <Pulse color={agent.pulse} />}
+                    {isActive ? "LIVE" : "PAUSED"}
+                  </button>
+                  <button
+                    type="button"
+                    title={`Run ${agent.name} now`}
+                    onClick={async () => {
+                      toast({ title: `Triggering ${agent.name}…` });
+                      const { data, error } = await supabase.functions.invoke(agent.edgeFn, {
+                        body: { mode: "patrol", source: "admin_manual" },
+                      });
+                      if (error || data?.error) {
+                        toast({ title: `${agent.name} error`, description: error?.message || data?.error, variant: "destructive" });
+                      } else {
+                        toast({ title: `${agent.name} completed`, description: data?.summary || data?.message || "Patrol finished" });
+                        void fetchData(true);
+                      }
+                    }}
+                    className="p-1 rounded bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white hover:border-cyan-500/40"
+                  >
+                    <Play className="w-3 h-3" />
+                  </button>
                 </div>
               </div>
               <p className={`text-xs font-black ${agent.color} font-mono uppercase tracking-wide mb-0.5`}>{agent.name}</p>
@@ -1707,32 +1769,62 @@ const AdminSecurity = () => {
               <p className="text-[10px] text-zinc-600 leading-relaxed mb-3">{agent.description}</p>
               
               <div className="flex items-center justify-between pt-2 border-t border-zinc-800 flex-wrap gap-2">
-                <span className="text-[9px] text-zinc-600 font-mono">{agent.schedule}</span>
-                <select
-                  value={currentModel}
-                  onChange={async (e) => {
-                    const modelVal = e.target.value;
-                    setDbAgents(prev => prev.map(a => a.name === agent.key ? { ...a, active_model: modelVal } : a));
-                    
-                    const { error } = await (supabase
-                      .from("ai_agent_registry" as any) as any)
-                      .update({ active_model: modelVal } as any)
-                      .eq("name", agent.key);
+                <div className="flex flex-col">
+                  <span className="text-[9px] text-zinc-600 font-mono">{agent.schedule}</span>
+                  {dbAgent?.last_run_at && (
+                    <span className="text-[8px] text-zinc-700 font-mono">Last: {fmt(dbAgent.last_run_at)}</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <select
+                    value={autonomyMode}
+                    onChange={async (e) => {
+                      const modeVal = e.target.value;
+                      setDbAgents(prev => prev.map(a => a.name === agent.key ? { ...a, autonomy_mode: modeVal } : a));
+                      const { error } = await (supabase.from("ai_agent_registry" as any) as any)
+                        .update({ autonomy_mode: modeVal } as any)
+                        .eq("name", agent.key);
+                      if (error) {
+                        toast({ title: "Failed to update mode", description: error.message, variant: "destructive" });
+                        void fetchData(true);
+                      } else {
+                        toast({ title: `${agent.name} Mode Updated`, description: `Autonomy set to ${modeVal}` });
+                      }
+                    }}
+                    className="text-[9px] font-bold font-mono bg-zinc-900 border border-zinc-800 rounded px-1.5 py-0.5 text-amber-400 focus:outline-none focus:border-amber-500/50"
+                  >
+                    <option value="autonomous">Auto</option>
+                    <option value="approval_required">Approve</option>
+                    <option value="observe_only">Observe</option>
+                  </select>
+                  <select
+                    value={currentModel}
+                    onChange={async (e) => {
+                      const modelVal = e.target.value;
+                      setDbAgents(prev => prev.map(a => a.name === agent.key ? { ...a, active_model: modelVal } : a));
                       
-                    if (error) {
-                      toast({ title: "Failed to update routing", description: error.message, variant: "destructive" });
-                      void fetchData(true);
-                    } else {
-                      toast({ title: `${agent.name} Rerouted`, description: `Agent model updated to ${modelVal}` });
-                    }
-                  }}
-                  className="text-[9px] font-bold font-mono bg-zinc-900 border border-zinc-800 rounded px-1.5 py-0.5 text-cyan-400 focus:outline-none focus:border-cyan-500/50"
-                >
-                  <option value="claude-haiku-4-5-20251001">Claude Haiku</option>
-                  <option value="claude-sonnet-4-5-20250929">Claude Sonnet</option>
-                  <option value="gemini-1.5-flash">Gemini Flash</option>
-                  <option value="gemini-1.5-pro">Gemini Pro</option>
-                </select>
+                      const { error } = await (supabase
+                        .from("ai_agent_registry" as any) as any)
+                        .update({ active_model: modelVal } as any)
+                        .eq("name", agent.key);
+                        
+                      if (error) {
+                        toast({ title: "Failed to update routing", description: error.message, variant: "destructive" });
+                        void fetchData(true);
+                      } else {
+                        toast({ title: `${agent.name} Rerouted`, description: `Agent model updated to ${modelVal}` });
+                      }
+                    }}
+                    className="text-[9px] font-bold font-mono bg-zinc-900 border border-zinc-800 rounded px-1.5 py-0.5 text-cyan-400 focus:outline-none focus:border-cyan-500/50"
+                  >
+                    <option value="gpt-4o-mini">OpenAI GPT-4o Mini</option>
+                    <option value="gpt-4o">OpenAI GPT-4o</option>
+                    <option value="gpt-4.1-mini">OpenAI GPT-4.1 Mini</option>
+                    <option value="claude-3-5-haiku-20241022">Claude Haiku</option>
+                    <option value="claude-sonnet-4-5-20250929">Claude Sonnet</option>
+                    <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+                  </select>
+                </div>
               </div>
             </div>
           );

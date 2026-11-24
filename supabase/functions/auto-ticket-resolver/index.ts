@@ -3,9 +3,11 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { verifyAdmin } from "../_shared/auth.ts";
 import { timingSafeEqual } from "../_shared/gateway-security.ts";
+import { callAiAgent } from "../_shared/ai.ts";
 
 declare const Deno: any;
 
+const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY") || "";
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY") || "";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
@@ -13,7 +15,7 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
-  if (!ANTHROPIC_API_KEY) {
+  if (!OPENAI_API_KEY && !ANTHROPIC_API_KEY) {
     return new Response(JSON.stringify({ error: "AI not configured" }), {
       status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
@@ -23,7 +25,9 @@ serve(async (req: Request) => {
 
   const cronSecret = (Deno.env.get("CRON_SECRET") || "").trim();
   const providedCron = (req.headers.get("x-cron-secret") || "").trim();
-  const isCronAuthed = Boolean(cronSecret && providedCron && timingSafeEqual(providedCron, cronSecret));
+  const bearerToken = req.headers.get("Authorization")?.replace(/^Bearer\s+/i, "").trim() || "";
+  const isServiceRole = Boolean(SUPABASE_SERVICE_ROLE_KEY && bearerToken && timingSafeEqual(bearerToken, SUPABASE_SERVICE_ROLE_KEY));
+  const isCronAuthed = Boolean(isServiceRole || (cronSecret && providedCron && timingSafeEqual(providedCron, cronSecret)));
   if (!isCronAuthed) {
     const authRes = await verifyAdmin(req, supabase, { checkMfa: false });
     if (!authRes.success) {
@@ -135,71 +139,41 @@ Description: ${ticket.description}
       }
     }
 
-    const messages = [
+    // 4. Call Unified AI Router (OpenAI primary with vision support, Anthropic/Gemini fallback)
+    const jsonSystemPrompt = `${systemPrompt}\n\n━━━ OUTPUT FORMAT ━━━\nRespond with RAW JSON only: {"reply":"your concise Ghanaian-style response","should_resolve":true|false}`;
+    const userPromptText = imageBlock
+      ? `Analyze the attached screenshot of the user's transaction/failed order, extract any transaction reference, status, amount, or error message, cross-reference with recent orders, and output JSON for ticket ID: ${ticket.id}`
+      : `Generate the automated JSON response for ticket ID: ${ticket.id}`;
+
+    const aiRes = await callAiAgent(
+      supabase,
+      "ops_worker",
+      jsonSystemPrompt,
+      userPromptText,
+      600,
       {
-        role: "user",
-        content: imageBlock 
-          ? [
-              { type: "text", text: "Here is the user's uploaded screenshot of the transaction / failed order: " },
-              imageBlock,
-              { type: "text", text: `Please carefully analyze this image, extract transaction references, statuses, amounts, or error messages, and cross-reference them to resolve/reply to support ticket ID: ${ticket.id}` }
-            ]
-          : `Generate the automated JSON response for ticket ID: ${ticket.id}`
+        responseJson: true,
+        imageBase64: imageBlock?.source?.data,
+        imageMediaType: imageBlock?.source?.media_type,
       }
-    ];
+    );
 
-    // 4. Call Claude
-    const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-5-20250929",
-        max_tokens: 600,
-        system: systemPrompt,
-        messages: messages,
-        tools: [{
-          name: "resolve_ticket",
-          description: "Finalize the ticket resolution with a reply and a status decision.",
-          input_schema: {
-            type: "object",
-            properties: {
-              reply: { type: "string", description: "Your Ghanaian-style response message to the user." },
-              should_resolve: { type: "boolean", description: "True if the ticket is resolved (e.g. refunded or fixed), False if it needs human review." }
-            },
-            required: ["reply", "should_resolve"]
-          }
-        }],
-        tool_choice: { type: "tool", name: "resolve_ticket" }
-      }),
-    });
-
-    if (!claudeRes.ok) {
-      const err = await claudeRes.text();
-      console.error("[auto-ticket-resolver] Claude API error:", err);
-      throw new Error(`Claude API error: ${claudeRes.status}`);
-    }
-
-    const claudeData = await claudeRes.json();
-    
     let reply = "Hello! We have received your ticket and our support team is actively looking into it. We will update you shortly.";
     let shouldResolve = false;
 
     try {
-      const toolUse = claudeData?.content?.find((c: any) => c.type === "tool_use");
-      if (toolUse && toolUse.name === "resolve_ticket") {
-        reply = toolUse.input.reply;
-        shouldResolve = toolUse.input.should_resolve;
-      } else {
-        // Fallback
-        const rawText = claudeData?.content?.[0]?.text || "";
-        reply = rawText;
+      const raw = aiRes.text || "";
+      const start = raw.indexOf("{");
+      const end = raw.lastIndexOf("}");
+      if (start !== -1 && end !== -1) {
+        const parsed = JSON.parse(raw.slice(start, end + 1));
+        if (parsed.reply) reply = String(parsed.reply);
+        shouldResolve = Boolean(parsed.should_resolve);
+      } else if (raw.trim()) {
+        reply = raw.trim();
       }
     } catch (_e) {
-      console.error("[auto-ticket-resolver] Failed to parse tool use:", _e);
+      console.error("[auto-ticket-resolver] Failed to parse AI JSON response:", _e);
     }
 
     // 6. Update Ticket in Database

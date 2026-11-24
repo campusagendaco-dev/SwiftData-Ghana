@@ -18,7 +18,8 @@ serve(async (req: Request) => {
   const cronSecret = (Deno.env.get("CRON_SECRET") || "").trim();
   const bearerToken = req.headers.get("Authorization")?.replace(/^Bearer\s+/i, "").trim() || "";
   const headerCronSecret = (req.headers.get("x-cron-secret") || "").trim();
-  const isCron = Boolean(cronSecret && (bearerToken === cronSecret || headerCronSecret === cronSecret));
+  const isServiceRole = Boolean(SUPABASE_SERVICE_ROLE_KEY && bearerToken === SUPABASE_SERVICE_ROLE_KEY);
+  const isCron = Boolean(isServiceRole || (cronSecret && (bearerToken === cronSecret || headerCronSecret === cronSecret)));
 
   if (!isCron) {
     const authRes = await verifyAdmin(req, supabaseAdmin);
@@ -149,6 +150,18 @@ serve(async (req: Request) => {
             version: 1,
             is_active: true
           });
+
+          // Also persist into ai_system_memory for cross-agent learning
+          await supabaseAdmin.from("ai_system_memory").upsert({
+            memory_key: `playbook:${action.action_type}`,
+            category: "ops_playbook",
+            summary: `${newStrategyName}: ${String(conditionDesc).slice(0, 300)}`,
+            data: { action_type: action.action_type, metadata: action.metadata || {} },
+            confidence: 0.80,
+            last_observed_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }, { onConflict: "memory_key" });
+
           console.log(`[Sentinel Evolve] Created new permanent strategy: "${newStrategyName}"`);
         } catch (stratErr) {
           console.error("[Sentinel Evolve] Failed to synthesize new strategy:", stratErr);
