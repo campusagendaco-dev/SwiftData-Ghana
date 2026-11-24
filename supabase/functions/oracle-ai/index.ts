@@ -5,6 +5,8 @@ import { timingSafeEqual } from "../_shared/gateway-security.ts";
 
 declare const Deno: any;
 
+import { buildPurchaseProposal, buildRedeemProposal, disputeOutcome, judgeRecommendation, type AmaProposal } from "../_shared/ama_actions.ts";
+
 const SYSTEM_PROMPT = `You are Ama — a young, brilliant, and emotionally intelligent Black Ghanaian female assistant built into SwiftData Ghana. You are the digital face of the platform, serving agents and customers across the country.
 
 ━━━ WHO YOU ARE ━━━
@@ -54,8 +56,9 @@ Use the get_system_health tool to check if a provider (MTN, Telecel, AirtelTigo)
 
 ━━━ HARD RULES ━━━
 - Never ask for passwords, PINs, card numbers, or secret keys — not for any reason
-- Never promise or mention refunds — say the system handles it automatically if relevant
-- For order failures: tell them the system retries automatically; they can also use the Retry button on their Orders page
+- Never promise a refund or a date. If a paid order failed, use investigate_dispute: it passes the order to the support team, who review refunds
+- For order failures: tell them what investigate_dispute reports. Never tell them an order will be re-sent or retried
+- Buying data and redeeming points only happen when the user taps Confirm on the card you prepare. Never say something was bought or redeemed until they confirm
 - For wallet issues: top-ups reflect within 1–2 minutes after Paystack confirms payment
 - You DO have access to the user's live profile, balance, and recent order history ONLY when they are explicitly provided in the user context block. If this information is NOT provided in the context, do NOT invent or guess it. Say: "I don't have access to your real-time account data right now—please check your dashboard."
 - STRICT TRUTH: Do not make up or guess any financial stats, transaction statuses, or balances. If a tool or context does not give you a specific number or status, state clearly that you do not have that information.
@@ -107,7 +110,7 @@ const TOOLS: ToolDef[] = [
   },
   {
     name: "purchase_data_bundle",
-    description: "Purchase a data bundle for a specific phone number using the user's wallet. You MUST extract the network, phone number, and package size (e.g. '1GB', '500MB') from the user's message.",
+    description: "Prepare a data bundle purchase from the user's wallet. It does NOT buy anything: it shows the user a card with the network, bundle, number and price, and the purchase happens only if they tap Confirm. Extract the network, phone number, and package size (e.g. '1GB', '500MB') from the user's message.",
     input_schema: {
       type: "object",
       properties: {
@@ -120,7 +123,7 @@ const TOOLS: ToolDef[] = [
   },
   {
     name: "investigate_dispute",
-    description: "Investigate a specific data bundle order that the user claims failed. This tool checks the live provider status and automatically refunds the user's wallet if the provider confirms the failure. Requires the user's phone number or the specific order ID.",
+    description: "Look up an order the user says failed and report its status. It never refunds: a failed, paid order is passed to the support team, who review refunds. Requires the user's phone number or the specific order ID.",
     input_schema: {
       type: "object",
       properties: {
@@ -155,7 +158,7 @@ const JUDGE_TOOLS: ToolDef[] = [
   },
   {
     name: "execute_resolution",
-    description: "Finalize the dispute judgment. If REFUND, it credits the wallet.",
+    description: "Record your dispute recommendation (REFUND, REJECT or MANUAL_REVIEW). It moves no money; an admin reviews it.",
     input_schema: {
       type: "object",
       properties: {
@@ -185,6 +188,8 @@ interface ToolContext {
   dbProfile: any;
   req: Request;
   isJudgeMode: boolean;
+  /** Set by purchase/redeem tools; the chat shows it as a card the user must confirm. */
+  proposal?: { value: AmaProposal | null };
 }
 
 async function executeTool(name: string, input: any, ctx: ToolContext): Promise<string> {
@@ -218,19 +223,10 @@ async function executeTool(name: string, input: any, ctx: ToolContext): Promise<
     if (!authUser || !dbProfile) {
       return "Redemption failed: Valid authentication token required.";
     }
-    const pointsToRedeem = Math.floor(Number(dbProfile.loyalty_points || 0));
-    if (pointsToRedeem < 100) {
-      return "Redemption failed: User needs at least 100 points.";
-    }
-    const amountGHS = pointsToRedeem / 100;
-    const { error: rpcError } = await supabase.rpc("redeem_loyalty_points_to_wallet", {
-      user_id: authUser.id,
-      points_amount: pointsToRedeem,
-      credit_amount: amountGHS,
-    });
-    return rpcError
-      ? `Error: ${rpcError.message}`
-      : `Success! Redeemed ${pointsToRedeem} points for ${amountGHS} GHS added to wallet.`;
+    const r = buildRedeemProposal(dbProfile.loyalty_points);
+    if (!r.ok) return (r as { ok: false; reason: string }).reason;
+    if (ctx.proposal) ctx.proposal.value = r.proposal;
+    return `I've prepared a redemption of ${r.proposal.points} points for GH₵${r.proposal.amount_ghs.toFixed(2)}. Nothing has happened yet: tell the user to tap Confirm on the card if they want it.`;
   }
 
   if (name === "get_system_health") {
@@ -300,42 +296,17 @@ async function executeTool(name: string, input: any, ctx: ToolContext): Promise<
     if (!authUser || !dbProfile) {
       return "Purchase failed: User must be logged in to purchase data.";
     }
-    try {
-      const { data: pkg } = await supabaseAdmin
-        .from("global_package_settings")
-        .select("public_price, agent_price, sub_agent_price")
-        .eq("network", network)
-        .ilike("package_size", package_size)
-        .maybeSingle();
-
-      if (!pkg) {
-        return `Purchase failed: Could not find a package matching "${package_size}" for ${network}.`;
-      }
-      const amount = dbProfile.is_agent ? (pkg.agent_price || pkg.public_price) : pkg.public_price;
-
-      const res = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/wallet-buy-data`, {
-        method: "POST",
-        headers: {
-          "Authorization": req.headers.get("Authorization") || "",
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          network,
-          package_size,
-          customer_phone: phone_number,
-          amount,
-          reference: crypto.randomUUID(),
-        }),
-      });
-
-      const buyData = await res.json();
-      if (buyData.error) {
-        return `Purchase failed: ${buyData.error}`;
-      }
-      return `Purchase successful! Order ID: ${buyData.order_id}. The ${network} ${package_size} bundle for ${phone_number} is processing and will be delivered shortly.`;
-    } catch (err: any) {
-      return `Purchase failed due to system error: ${err.message}`;
-    }
+    const { data: pkg } = await supabaseAdmin
+      .from("global_package_settings")
+      .select("package_size, public_price, agent_price, is_unavailable")
+      .ilike("network", String(network || ""))
+      .ilike("package_size", String(package_size || ""))
+      .maybeSingle();
+    const r = buildPurchaseProposal({ network, phone_number, package_size }, pkg, { isAgent: Boolean(dbProfile.is_agent) });
+    if (!r.ok) return (r as { ok: false; reason: string }).reason;
+    if (ctx.proposal) ctx.proposal.value = r.proposal;
+    const p = r.proposal;
+    return `I've prepared ${p.network} ${p.package_size} for ${p.phone} at GH₵${p.amount_ghs.toFixed(2)} from the wallet. Nothing has been bought yet: tell the user to check the number and tap Confirm on the card.`;
   }
 
   if (name === "investigate_dispute") {
@@ -398,71 +369,36 @@ async function executeTool(name: string, input: any, ctx: ToolContext): Promise<
       return "Investigation failed: User not authenticated.";
     }
     try {
-      let query = supabaseAdmin.from("orders").select("*").eq("agent_id", authUser.id);
+      let query = supabaseAdmin.from("orders").select("id, agent_id, network, package_size, amount, status, payment_method, paystack_verified_amount, auto_refunded").eq("agent_id", authUser.id);
       if (order_id) query = query.eq("id", order_id);
       else if (phone_number) query = query.eq("customer_phone", phone_number).order("created_at", { ascending: false }).limit(1);
-      else throw new Error("Need an order ID or phone number to investigate.");
-
+      else return "I need an order ID or the phone number to look the order up.";
       const { data: orders } = await query;
       const order = orders?.[0];
-
       if (!order || order.agent_id !== authUser.id) {
         return "Could not find any recent order matching those details in your account.";
       }
-
-      const hasProofOfPayment =
-        order.payment_method === "wallet" || Number(order.paystack_verified_amount || 0) > 0;
-
-      if (order.status === "fulfilled") {
-        return `Order ${order.id.slice(0, 8)} for ${order.network} ${order.package_size} shows as successfully fulfilled by the provider. No refund can be issued automatically. Please contact support if the customer insists they didn't receive it.`;
-      }
-      if (order.status === "refunded" || order.auto_refunded) {
-        return `Order ${order.id.slice(0, 8)} has already been refunded to your wallet.`;
-      }
-      if (order.status === "failed" || order.status === "fulfillment_failed") {
-        if (!hasProofOfPayment) {
-          return `Order ${order.id.slice(0, 8)} failed before payment was completed, so no refund is applicable.`;
-        }
-        const { data: claimedOrder, error: claimErr } = await supabaseAdmin
-          .from("orders")
-          .update({ status: "refunded", auto_refunded: true })
-          .eq("id", order.id)
-          .eq("agent_id", authUser.id)
-          .in("status", ["failed", "fulfillment_failed"])
-          .is("auto_refunded", false)
+      const outcome = disputeOutcome(order);
+      if (outcome.ticket) {
+        // One open review ticket per order is enough.
+        const { data: existing } = await supabaseAdmin
+          .from("support_tickets")
           .select("id")
+          .eq("user_id", authUser.id)
+          .eq("subject", outcome.ticket.subject)
+          .eq("status", "open")
+          .limit(1)
           .maybeSingle();
-
-        if (claimErr || !claimedOrder) {
-          return `Order ${order.id.slice(0, 8)} has already been refunded to your wallet.`;
+        if (!existing) {
+          await supabaseAdmin.from("support_tickets").insert({
+            user_id: authUser.id,
+            subject: outcome.ticket.subject,
+            description: outcome.ticket.description,
+            status: "open",
+          });
         }
-        const { error: refundErr } = await supabaseAdmin.rpc("credit_wallet", {
-          p_agent_id: authUser.id,
-          p_amount: order.amount,
-        });
-        if (!refundErr) {
-          return `Confirmed! Order ${order.id.slice(0, 8)} failed. I have automatically refunded ${order.amount} GHS to your wallet.`;
-        }
-        return `Order ${order.id.slice(0, 8)} failed, but I couldn't process the refund automatically. An admin has been notified.`;
       }
-
-      const verifyRes = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/verify-payment`, {
-        method: "POST",
-        headers: {
-          "Authorization": req.headers.get("Authorization") || "",
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ reference: order.id }),
-      });
-      const verifyData = await verifyRes.json();
-
-      if (verifyData.status === "fulfilled") {
-        return `I checked the live provider logs. Order ${order.id.slice(0, 8)} was actually successful! The status has been updated.`;
-      }
-      if (verifyData.status === "failed" || verifyData.status === "fulfillment_failed" || verifyData.status === "refunded") {
-        return `I checked the live provider logs and the order failed. Any eligible refund is processed automatically by the payment verifier.`;
-      }
-      return `Order ${order.id.slice(0, 8)} is still marked as '${verifyData.status || order.status}'. The provider is still processing it. Please check back in a few minutes.`;
+      return outcome.message;
     } catch (err: any) {
       return "Investigation failed due to an error: " + err.message;
     }
@@ -473,76 +409,20 @@ async function executeTool(name: string, input: any, ctx: ToolContext): Promise<
       return "Unauthorized: execute_resolution is only available in AI Judge mode.";
     }
     const { order_id, judgment, reasoning } = input || {};
-    if (!order_id || !judgment || !reasoning) {
-      return "execute_resolution requires order_id, judgment, and reasoning.";
-    }
-    if (!["REFUND", "REJECT", "MANUAL_REVIEW"].includes(judgment)) {
-      return `Invalid judgment "${judgment}". Must be REFUND, REJECT, or MANUAL_REVIEW.`;
-    }
-
+    if (!order_id || !judgment) return "execute_resolution needs order_id and judgment.";
+    const message = judgeRecommendation(String(order_id), String(judgment), String(reasoning || ""));
     try {
-      const { data: order } = await supabaseAdmin
-        .from("orders")
-        .select("*")
-        .eq("id", order_id)
-        .maybeSingle();
-
-      if (!order) {
-        return `Resolution failed: Order ${order_id} not found.`;
-      }
-
-      let outcomeMsg = "";
-      if (judgment === "REFUND") {
-        const hasProofOfPayment =
-          order.payment_method === "wallet" || Number(order.paystack_verified_amount || 0) > 0;
-        if (!hasProofOfPayment) {
-          outcomeMsg = `REFUND blocked for order ${order.id}: no verified proof of payment. Escalated to MANUAL_REVIEW.`;
-        } else if (order.status === "refunded" || order.auto_refunded) {
-          outcomeMsg = `Order ${order.id} was already refunded.`;
-        } else {
-          const { data: claimedOrder, error: claimErr } = await supabaseAdmin
-            .from("orders")
-            .update({ status: "refunded", auto_refunded: true })
-            .eq("id", order.id)
-            .is("auto_refunded", false)
-            .neq("status", "refunded")
-            .select("id")
-            .maybeSingle();
-
-          if (claimErr || !claimedOrder) {
-            outcomeMsg = `Order ${order.id} was already refunded or could not be claimed.`;
-          } else if (order.agent_id) {
-            const { error: refundErr } = await supabaseAdmin.rpc("credit_wallet", {
-              p_agent_id: order.agent_id,
-              p_amount: order.amount,
-            });
-            outcomeMsg = refundErr
-              ? `Order ${order.id} marked refunded, but wallet credit failed: ${refundErr.message}`
-              : `REFUND executed: Credited ${order.amount} GHS to agent ${order.agent_id} for order ${order.id}.`;
-          } else {
-            outcomeMsg = `Order ${order.id} marked refunded (no agent_id to credit).`;
-          }
-        }
-      } else {
-        outcomeMsg = `Judgment ${judgment} recorded for order ${order.id}.`;
-      }
-
-      try {
-        await supabaseAdmin.from("system_logs").insert({
-          level: judgment === "MANUAL_REVIEW" ? "warning" : "info",
-          source: "oracle-ai-judge",
-          event: "ai_judge.resolution",
-          message: `Dispute ${order.id}: ${judgment} — ${reasoning}`,
-          data: { order_id: order.id, judgment, reasoning, outcome: outcomeMsg },
-        });
-      } catch (_logErr) {
-        // Non-critical
-      }
-
-      return outcomeMsg;
-    } catch (err: any) {
-      return `execute_resolution failed: ${err.message}`;
+      await supabaseAdmin.from("system_logs").insert({
+        level: String(judgment).toUpperCase() === "MANUAL_REVIEW" ? "warning" : "info",
+        source: "oracle-ai-judge",
+        event: "ai_judge.recommendation",
+        message,
+        data: { order_id, judgment, reasoning },
+      });
+    } catch (_logErr) {
+      // Non-critical
     }
+    return message;
   }
 
   return `Unknown tool: ${name}`;
@@ -835,6 +715,25 @@ serve(async (req: Request) => {
     }
 
     // ━━━ Event-Driven Triggers (AI Dispute Judge) ━━━
+    // ━━━ User tapped Confirm on a redemption card (no AI involved) ━━━
+    if (body?.action === "confirm_redeem") {
+      if (!authUser || !dbProfile) {
+        return new Response(JSON.stringify({ error: "Please sign in again." }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      const r = buildRedeemProposal(dbProfile.loyalty_points);
+      if (!r.ok || r.proposal.points !== Number(body?.points)) {
+        return new Response(JSON.stringify({ error: "Your points changed. Ask Ama again for an up-to-date offer." }), { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      const { error: rpcError } = await supabaseAdmin.rpc("redeem_loyalty_points_to_wallet", {
+        user_id: authUser.id,
+        points_amount: r.proposal.points,
+        credit_amount: r.proposal.amount_ghs,
+      });
+      return new Response(JSON.stringify(rpcError ? { error: rpcError.message } : { ok: true, ...r.proposal }), {
+        status: rpcError ? 400 : 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     if (event === "new_dispute") {
       if (!isServiceRole) {
         return new Response(JSON.stringify({ error: "Unauthorized: Service role key required for dispute judge" }), {
@@ -844,7 +743,7 @@ serve(async (req: Request) => {
       const { order_id, reason } = body;
       console.log(`[Oracle AI] New Dispute Triggered: Order ${order_id}`);
 
-      const judgeSystemPrompt = `${SYSTEM_PROMPT}\n\n━━━ JUDGE DIRECTIVE ━━━\nYou are now in JUDGE MODE. Use the investigate_dispute tool to see the provider logs. If the provider says "Success" but the user says "Failed", check the timestamps. If the provider response is missing, issue a REFUND. Always call execute_resolution once you have reached a final judgment.`;
+      const judgeSystemPrompt = `${SYSTEM_PROMPT}\n\n━━━ JUDGE DIRECTIVE ━━━\nYou are now in JUDGE MODE. Use the investigate_dispute tool to see the provider logs. If the provider says "Success" but the user says "Failed", check the timestamps. If the provider response is missing, recommend a REFUND. Always call execute_resolution once you have reached a final recommendation; it moves no money, an admin reviews it.`;
 
       const judgeMessages = [
         {
@@ -927,6 +826,7 @@ serve(async (req: Request) => {
       { role: "user", content: `${superContext}\n\nUSER MESSAGE: ${userMessage}` },
     ];
 
+    const proposalSlot: { value: AmaProposal | null } = { value: null };
     const chatResult = await runModelWithFallback({
       openAiKey: OPENAI_API_KEY,
       anthropicKey: ANTHROPIC_API_KEY,
@@ -943,12 +843,13 @@ serve(async (req: Request) => {
           dbProfile,
           req,
           isJudgeMode: false,
+          proposal: proposalSlot,
         }),
     });
 
     const oracle_opinion = chatResult.text || "I'm here to help!";
 
-    return new Response(JSON.stringify({ oracle_opinion }), {
+    return new Response(JSON.stringify({ oracle_opinion, proposal: proposalSlot.value }), {
       status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error: any) {

@@ -8,12 +8,15 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import AmaProposalCard, { type AmaProposal } from "@/components/ama/AmaProposalCard";
 
 interface Message {
   id?: string;
   role: "user" | "bot";
   text: string;
   ts: Date;
+  /** Something Ama prepared (purchase or redemption); runs only if the user confirms. */
+  proposal?: AmaProposal | null;
 }
 
 const QUICK_ACTIONS = [
@@ -381,8 +384,9 @@ interface MessageListProps {
   messages: Message[];
   typing: boolean;
   bottomRef: React.RefObject<HTMLDivElement>;
+  onProposalDone: (message: string) => void;
 }
-function MessageList({ messages, typing, bottomRef }: MessageListProps) {
+function MessageList({ messages, typing, bottomRef, onProposalDone }: MessageListProps) {
   return (
     <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3 scrollbar-none overscroll-contain">
       {messages.map((m, i) => (
@@ -415,6 +419,7 @@ function MessageList({ messages, typing, bottomRef }: MessageListProps) {
               }
             >
               <MessageContent text={m.text} role={m.role} />
+              {m.role === "bot" && m.proposal && <AmaProposalCard proposal={m.proposal} onDone={onProposalDone} />}
             </div>
             <p className="text-[9px] text-white/20 px-1 font-medium">{fmt(m.ts)}</p>
           </div>
@@ -765,17 +770,18 @@ export default function AIConcierge() {
       });
 
       let reply = data?.oracle_opinion || "I'm here to help! Please try again.";
+      const proposal: AmaProposal | null = data?.proposal ?? null;
       
       const cleanMsg = msg.toLowerCase();
       if (cleanMsg.includes("health") || cleanMsg.includes("status") || cleanMsg.includes("network") || cleanMsg.includes("diagnostics") || cleanMsg.includes("latency")) {
         reply += "\n\n[WIDGET:PROVIDER_HEALTH]";
       } else if (cleanMsg.includes("balance") || cleanMsg.includes("wallet") || cleanMsg.includes("float") || cleanMsg.includes("momo")) {
         reply += "\n\n[WIDGET:WALLET_SUMMARY]";
-      } else if (cleanMsg.includes("buy") || cleanMsg.includes("purchase") || cleanMsg.includes("checkout") || cleanMsg.includes("fulfill") || cleanMsg.includes("data")) {
+      } else if (!proposal && (cleanMsg.includes("buy") || cleanMsg.includes("purchase") || cleanMsg.includes("checkout") || cleanMsg.includes("fulfill") || cleanMsg.includes("data"))) {
         reply += "\n\n[WIDGET:QUICK_PURCHASE]";
       }
 
-      setMessages(prev => [...prev, { role: "bot", text: reply, ts: new Date() }]);
+      setMessages(prev => [...prev, { role: "bot", text: reply, ts: new Date(), proposal }]);
 
       if (isSpeaking) {
         const u = new SpeechSynthesisUtterance(reply);
@@ -841,7 +847,12 @@ export default function AIConcierge() {
         }}
         onClose={() => setOpen(false)}
       />
-      <MessageList messages={messages} typing={typing} bottomRef={bottomRef} />
+      <MessageList
+        messages={messages}
+        typing={typing}
+        bottomRef={bottomRef}
+        onProposalDone={(text) => setMessages((prev) => [...prev, { role: "bot", text, ts: new Date() }])}
+      />
       <QuickBar onSend={send} disabled={typing} />
       <InputBar
         input={input}

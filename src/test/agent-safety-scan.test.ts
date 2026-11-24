@@ -22,12 +22,14 @@ const AGENT_FILES = [
   // MoMo receipt checker: reads receipts and records decisions; must never touch orders or wallets
   "verify-momo-receipt/index.ts",
   "_shared/momo_receipt_service.ts",
+  // Ama: buys and redeems only after the user taps Confirm in the app; never refunds
+  "oracle-ai/index.ts",
 ];
 
 const FORBIDDEN: { name: string; re: RegExp }[] = [
   {
     name: "order-sending or refund function",
-    re: /(functions\/v1\/|functions\.invoke\(\s*["'`])(verify-payment|heal-processing-orders|check-order-status|process-retries|verify-and-refund|admin-retry-autorouter|route-to-datamart|cron-auto-retry|ai-task-decide)\b/g,
+    re: /(functions\/v1\/|functions\.invoke\(\s*["'`])(verify-payment|heal-processing-orders|check-order-status|process-retries|verify-and-refund|admin-retry-autorouter|route-to-datamart|cron-auto-retry|ai-task-decide|wallet-buy-data)\b/g,
   },
   { name: "wallet or refund RPC", re: /\.rpc\(\s*["'`](credit_wallet|debit_wallet|refund_failed_order)["'`]/g },
   { name: "write to orders", re: /from\(\s*["'`]orders["'`]\s*\)\s*\.(update|insert|delete|upsert)\b/g },
