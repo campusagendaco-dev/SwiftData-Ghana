@@ -419,6 +419,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       isAgent = referralCodeOrMetadata.isAgent || false;
     }
 
+    const rawPhoneDigits = String(phone || "").replace(/\D+/g, "");
+    const normalizedPhone =
+      rawPhoneDigits.length === 12 && rawPhoneDigits.startsWith("233")
+        ? `0${rawPhoneDigits.slice(3)}`
+        : rawPhoneDigits.length === 9
+          ? `0${rawPhoneDigits}`
+          : rawPhoneDigits;
+
+    if (!/^0\d{9}$/.test(normalizedPhone)) {
+      return {
+        data: null,
+        error: new Error("A valid 10-digit Ghana phone number is required to create an account."),
+      };
+    }
+
     const role = isAgent ? "agent" : "user";
 
     const deviceId = getOrCreateDeviceId();
@@ -431,7 +446,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         data: { 
           full_name: fullName,
           referral_code: referralCode || null,
-          phone: phone || "",
+          phone: normalizedPhone,
           store_name: storeName || "",
           slug: slug || null,
           is_sub_agent: isSubAgent,

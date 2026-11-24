@@ -14,6 +14,7 @@ const AuthAgent = () => {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [fullName, setFullName] = useState("");
+  const [phone, setPhone] = useState("");
   const [loading, setLoading] = useState(false);
   const [oauthLoading, setOauthLoading] = useState<"google" | null>(null);
   const [showPassword, setShowPassword] = useState(false);
@@ -32,13 +33,30 @@ const AuthAgent = () => {
         return;
       }
 
+      const digits = phone.replace(/\D+/g, "");
+      const normalizedPhone =
+        digits.length === 12 && digits.startsWith("233")
+          ? `0${digits.slice(3)}`
+          : digits.length === 9
+            ? `0${digits}`
+            : digits;
+      if (!/^0\d{9}$/.test(normalizedPhone)) {
+        toast({
+          title: "Valid phone number required",
+          description: "Please enter a valid 10-digit Ghana phone number (e.g. 0541234567).",
+          variant: "destructive",
+        });
+        setLoading(false);
+        return;
+      }
+
       if (password !== confirmPassword) {
         toast({ title: "Passwords do not match", description: "Please re-enter both passwords.", variant: "destructive" });
         setLoading(false);
         return;
       }
 
-      const { error } = await signUp(email, password, fullName);
+      const { error } = await signUp(email, password, fullName, { phone: normalizedPhone, isAgent: true });
       if (error) {
         toast({ title: "Sign up failed", description: error.message, variant: "destructive" });
       } else {
@@ -95,17 +113,32 @@ const AuthAgent = () => {
         <div className="bg-card border border-border rounded-2xl p-8 glow-yellow">
           <form onSubmit={handleSubmit} className="space-y-4">
             {isSignUp && (
-              <div>
-                <Label htmlFor="fullName">Full Name</Label>
-                <Input
-                  id="fullName"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  placeholder="Kwame Asante"
-                  className="mt-1 bg-secondary"
-                  required
-                />
-              </div>
+              <>
+                <div>
+                  <Label htmlFor="fullName">Full Name</Label>
+                  <Input
+                    id="fullName"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    placeholder="Kwame Asante"
+                    className="mt-1 bg-secondary"
+                    required
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="phone">Phone Number <span className="text-red-500">*</span></Label>
+                  <Input
+                    id="phone"
+                    type="tel"
+                    inputMode="tel"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="0541234567"
+                    className="mt-1 bg-secondary"
+                    required
+                  />
+                </div>
+              </>
             )}
 
             <div>
