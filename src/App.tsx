@@ -34,7 +34,6 @@ const MysteryBoxWatcher = lazy(() => import("@/components/MysteryBoxWatcher"));
 const LocationAlertPrompt = lazy(() => import("@/components/LocationAlertPrompt").then(m => ({ default: m.LocationAlertPrompt })));
 const AccountSwitcherModal = lazy(() => import("@/components/AccountSwitcherModal").then(m => ({ default: m.AccountSwitcherModal })));
 const AIConcierge = lazy(() => import("@/components/AIConcierge"));
-const AmaWelcomeTour = lazy(() => import("@/components/ama/AmaWelcomeTour"));
 const AudioUnlocker = lazy(() => import("@/components/AudioUnlocker"));
 const FreeDataButton = lazy(() => import("@/components/FreeDataButton"));
 const NotificationPopup = lazy(() => import("@/components/NotificationPopup"));
@@ -165,12 +164,12 @@ const queryClient = new QueryClient();
 
 /** Authenticated dashboard guard that keeps admins on the admin dashboard and unapproved agents/sub-agents on pending */
 const DashboardGuard = ({ children }: { children: React.ReactNode }) => {
-  const { user, profile, isAdmin, loading, isMfaChallenged, isAdminOtpVerified } = useAuth();
+  const { user, profile, isAdmin, loading, isMfaChallenged } = useAuth();
   const location = useLocation();
 
   if (loading) return <LoadingScreen />;
   if (!user) return <Navigate to="/login" replace />;
-  if (isMfaChallenged && !isAdminOtpVerified) return <Navigate to="/verify-mfa" replace />;
+  if (isMfaChallenged) return <Navigate to="/verify-mfa" replace />;
   
   // Bypass admin enforcement ONLY when visiting account settings (essential for setting up mandatory MFA)
   if (isAdmin && !location.pathname.includes("/dashboard/account-settings")) {
@@ -229,7 +228,7 @@ const SubAgentPendingGuard = ({ children }: { children: React.ReactNode }) => {
 
 /** Admin guard */
 const AdminGuard = ({ children }: { children: React.ReactNode }) => {
-  const { user, isAdmin, loading, isMfaChallenged, isMfaEnabled, isAdminOtpVerified } = useAuth();
+  const { user, isAdmin, loading, isMfaChallenged, isMfaEnabled } = useAuth();
   const [ipAllowed, setIpAllowed] = useState<boolean | null>(null);
 
   useEffect(() => {
@@ -272,13 +271,13 @@ const AdminGuard = ({ children }: { children: React.ReactNode }) => {
 
   if (loading || (isAdmin && ipAllowed === null)) return <LoadingScreen />;
   if (!user) return <Navigate to="/login" replace />;
-  if (isMfaChallenged && !isAdminOtpVerified) return <Navigate to="/verify-mfa" replace />;
+  if (isMfaChallenged) return <Navigate to="/verify-mfa" replace />;
   if (!isAdmin) return <Navigate to="/" replace />;
   if (ipAllowed === false) return <Navigate to="/ip-blocked" replace />;
 
-  // Force all Administrators to verify via 2FA (TOTP) OR Approved Admin SMS OTP before entering Admin controls
-  if (!isMfaEnabled && !isAdminOtpVerified) {
-    return <Navigate to="/verify-mfa?mode=otp" replace />;
+  // Force all Administrators to configure and use MFA before entering Admin controls
+  if (!isMfaEnabled) {
+    return <Navigate to="/dashboard/account-settings?force_admin_mfa=true" replace />;
   }
   
   return <>{children}</>;
@@ -628,8 +627,6 @@ const AppContent = () => {
           {!isAdmin && <NotificationPopup />}
           {!isAdmin && <ChallengeLiveNotifier />}
           {!isChallengeArenaPage && !isAdmin && <AIConcierge />}
-          {/* Ama's welcome tour: dashboard only, so it never overlaps TutorialModal */}
-          {isDashboard && !isChallengeArenaPage && !isAdmin && <AmaWelcomeTour />}
           {!isChallengeArenaPage && !isPaymentFlow && !isAdmin && <PushNotificationPrompt variant="floating" />}
           <AccountSwitcherModal />
           {!isAgentStore && !isChallengeArenaPage && !isAdmin && <FreeDataButton />}
