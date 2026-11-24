@@ -73,9 +73,9 @@ const VerifyMfa = () => {
     };
   }, [authLoading, user?.id, isAdmin, navigate]);
 
-  // Check server-side if caller is an approved admin eligible for Admin SMS OTP (works at AAL1 before 2FA)
+  // Check if approved admin is eligible for Admin SMS OTP
   useEffect(() => {
-    if (authLoading || !user?.id) return;
+    if (authLoading || !user?.id || !isAdmin) return;
     let cancelled = false;
     (async () => {
       try {
@@ -89,10 +89,8 @@ const VerifyMfa = () => {
           navigate("/admin", { replace: true });
           return;
         }
-        if (data?.success && data?.eligible) {
-          setAdminOtpInfo({ eligible: true, masked_phone: data.masked_phone || null });
-        } else {
-          setAdminOtpInfo({ eligible: false, masked_phone: null });
+        if (data?.success) {
+          setAdminOtpInfo({ eligible: Boolean(data.eligible), masked_phone: data.masked_phone || null });
         }
       } catch {
         // non-critical
@@ -101,7 +99,7 @@ const VerifyMfa = () => {
     return () => {
       cancelled = true;
     };
-  }, [authLoading, user?.id, navigate, refreshAdminOtpStatus]);
+  }, [authLoading, user?.id, isAdmin, navigate, refreshAdminOtpStatus]);
 
   const handleRequestAdminSmsOtp = async () => {
     setSendingSms(true);
@@ -363,7 +361,7 @@ const VerifyMfa = () => {
         </p>
 
         {/* Approved-Admin Method Switcher (2FA <-> Admin SMS OTP) */}
-        {adminOtpInfo?.eligible && (
+        {isAdmin && adminOtpInfo?.eligible && (
           <div className="mt-5 grid grid-cols-2 gap-1.5 rounded-2xl bg-muted/70 p-1">
             <button
               type="button"
