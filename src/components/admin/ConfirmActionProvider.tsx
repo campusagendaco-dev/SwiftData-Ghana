@@ -25,6 +25,7 @@ const KIND_NOTE: Record<ConfirmOptions["kind"], string> = {
   send: "This sends orders to a data provider.",
   message: "This sends messages and uses SMS/push credit.",
   access: "This changes who can use the admin pages.",
+  promo: "People who already claimed this promo can claim it again.",
 };
 
 function summary(opts: ConfirmOptions): string {

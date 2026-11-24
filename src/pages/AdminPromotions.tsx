@@ -645,9 +645,15 @@ const AdminPromotions = () => {
     fetchPromos();
   };
 
-  const handleResetPromoUses = async (id: string, code: string) => {
-    if (!confirm(`Are you sure you want to reset all claims for ${code}? This will set uses back to 0 and allow people who already claimed it to claim it again.`)) return;
-    
+  const handleResetPromoUses = async (id: string, code: string, uses?: number | null) => {
+    const used = Number(uses) || 0;
+    if (!(await confirmed.confirm({
+      title: `Reset all claims for ${code}?`,
+      description: `${used} use${used === 1 ? "" : "s"} will be cleared and the count set back to 0, so everyone can claim ${code} again. This can't be undone.`,
+      kind: "promo",
+      confirmLabel: "Reset claims",
+    }))) return;
+
     const { error } = await supabase.rpc("reset_promo_claims", { p_promo_id: id });
     if (error) {
       toast({ title: "Failed to reset claims", description: error.message, variant: "destructive" });
@@ -1872,7 +1878,7 @@ const AdminPromotions = () => {
                               {promo.is_active ? "Disable" : "Enable"}
                             </Button>
                             <Button size="sm" variant="outline"
-                              onClick={() => handleResetPromoUses(promo.id, promo.code)}
+                              onClick={() => handleResetPromoUses(promo.id, promo.code, promo.current_uses)}
                               className="text-xs border-amber-500/20 bg-amber-500/5 text-amber-400 hover:text-amber-300 hover:bg-amber-500/10 rounded-xl"
                               title="Reset all claims and uses to 0">
                               <RefreshCw className="w-3.5 h-3.5 mr-1" /> Reset
