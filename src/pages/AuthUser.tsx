@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
+import { claimVerifiedPhone } from "@/lib/phoneVerification";
 import PhoneOtpField, { normalizeGhanaPhoneInput } from "@/components/PhoneOtpField";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -65,6 +66,7 @@ const AuthUser = () => {
         toast({ title: "Sign up failed", description: error.message, variant: "destructive" });
       } else {
         const { error: signInError } = await signIn(email, password);
+        if (!signInError) await claimVerifiedPhone();
         if (!signInError) {
           toast({ title: "Welcome!", description: "Your account is ready. You can now buy data." });
           navigate("/buy-data");

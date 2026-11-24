@@ -233,7 +233,8 @@ export function SecurityGuard({ children }: { children: React.ReactNode }) {
     !isAdmin &&
     !isSuspended &&
     !isDeviceBlocked &&
-    !String(profile.phone || "").trim()
+    // a phone only counts once the server marked it verified (verify-signup-phone-otp)
+    !(profile as any).phone_verified
   );
 
   if (needsPhoneVerification) {

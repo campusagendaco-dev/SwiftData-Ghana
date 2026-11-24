@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate, Link, useSearchParams } from "react-router-dom";
 import { getOrCreateDeviceId, syncDeviceIdWithIndexedDB, getBrowserFingerprint } from "@/utils/device";
 import { useAuth } from "@/hooks/useAuth";
+import { claimVerifiedPhone } from "@/lib/phoneVerification";
 import PhoneOtpField, { normalizeGhanaPhoneInput } from "@/components/PhoneOtpField";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -192,6 +193,7 @@ const AuthPage = () => {
         toast({ title: "Sign up failed", description: error.message, variant: "destructive" });
       } else {
         if (data?.session) {
+          await claimVerifiedPhone();
           if (enableBiometricsOnSignUp) {
             try {
               toast({ title: "Sign Up Success!", description: "Please scan your fingerprint now to enable Biometric Login." });

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { CheckCircle2, Loader2, Send, ShieldCheck } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { rememberPhoneToken } from "@/lib/phoneVerification";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
@@ -95,6 +96,7 @@ export default function PhoneOtpField({
       if (error) throw error;
       if (!data?.success || !data?.verified) throw new Error(data?.error || "Invalid verification code.");
 
+      rememberPhoneToken(data.phone || normalized, data.verification_token || "");
       onVerified(data.phone || normalized, data.verification_token || "");
       setOtpSent(false);
       setOtpCode("");
