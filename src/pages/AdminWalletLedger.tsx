@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { CheckCircle2, Loader2, RefreshCw, Search, ShieldAlert, ShieldCheck, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
+import { getFunctionErrorMessage } from "@/lib/function-errors";
 import { cn } from "@/lib/utils";
 import { useConfirmedCall } from "@/components/admin/ConfirmActionProvider";
 
@@ -16,12 +18,14 @@ const card = "rounded-2xl border border-border/70 bg-card/85 dark:border-white/[
 const ced = (n: number) => `GH₵${Number(n || 0).toLocaleString("en-GH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const when = (s: string | null) => (s ? new Date(s).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "—");
 
-async function authHeader() {
+async function authHeader(): Promise<Record<string, string>> {
   const { data } = await supabase.auth.getSession();
-  return { Authorization: `Bearer ${data.session?.access_token}` };
+  const token = data.session?.access_token;
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 export default function AdminWalletLedger() {
+  const { user } = useAuth();
   const confirmed = useConfirmedCall();
   const [runs, setRuns] = useState<{ ledger?: Run; paystack?: Run }>({});
   const [checking, setChecking] = useState<"" | "ledger" | "paystack">("");
@@ -97,7 +101,10 @@ export default function AdminWalletLedger() {
       headers: await authHeader(),
     });
     setDeciding("");
-    if (error || data?.error) return toast.error(data?.error || error?.message || "Failed");
+    if (error || data?.error) {
+      const msg = data?.error || (await getFunctionErrorMessage(error, "Failed"));
+      return toast.error(msg);
+    }
     toast.success(approve ? (data?.executed ? "Approved and applied" : data?.error || "Approved") : "Rejected");
     loadRequests();
   };
@@ -189,7 +196,9 @@ export default function AdminWalletLedger() {
           <p className="mt-4 text-[13px] text-muted-foreground">Nothing waiting.</p>
         ) : (
           <ul className="mt-3 divide-y divide-border/60">
-            {pending.map((r) => (
+            {pending.map((r) => {
+              const isSelfRequest = !!user?.id && r.requested_by === user.id;
+              return (
               <li key={r.id} className="py-3 flex flex-col sm:flex-row sm:items-center gap-3">
                 <div className="min-w-0 flex-1">
                   <p className="text-[14px] font-semibold">
@@ -198,7 +207,13 @@ export default function AdminWalletLedger() {
                   <p className="text-[12.5px] text-muted-foreground">“{r.reason}” · requested by {names[r.requested_by] || r.requested_by.slice(0, 8)} · {when(r.requested_at)}</p>
                 </div>
                 <div className="flex gap-2 shrink-0">
-                  <button type="button" onClick={() => decide(r, true)} disabled={!!deciding} className="h-9 px-3 rounded-xl bg-emerald-600 text-white text-[13px] font-semibold inline-flex items-center gap-1.5 hover:bg-emerald-500 disabled:opacity-60">
+                  <button
+                    type="button"
+                    onClick={() => decide(r, true)}
+                    disabled={!!deciding || isSelfRequest}
+                    title={isSelfRequest ? "A second admin must approve your own adjustment request" : undefined}
+                    className="h-9 px-3 rounded-xl bg-emerald-600 text-white text-[13px] font-semibold inline-flex items-center gap-1.5 hover:bg-emerald-500 disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
                     {deciding === r.id + ":a" ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />} Approve
                   </button>
                   <button type="button" onClick={() => decide(r, false)} disabled={!!deciding} className="h-9 px-3 rounded-xl border border-border text-[13px] font-semibold inline-flex items-center gap-1.5 hover:bg-muted disabled:opacity-60">
@@ -206,7 +221,8 @@ export default function AdminWalletLedger() {
                   </button>
                 </div>
               </li>
-            ))}
+              );
+            })}
           </ul>
         )}
         {recent.length > 0 && (

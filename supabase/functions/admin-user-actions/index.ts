@@ -108,7 +108,6 @@ type AdminUserAction =
   | "heal_stuck_orders"
   | "bulk_update_order_status"
   | "purge_bot_spam"
-  | "send_reset_link"
   | "revoke_sessions"
   | "reset_transaction_pin"
   | "get_user_audit_logs"
@@ -940,15 +939,16 @@ serve(async (req: Request) => {
             continue;
           }
           const val = settings[key];
-          // Reject null prototype injection
+          // Reject null prototype injection and skip undefined values
           if (key === "__proto__" || key === "constructor" || key === "prototype") continue;
+          if (val === undefined) continue;
           // Type validation for known fields
           if (BOOLEAN_KEYS.has(key) && typeof val !== "boolean") {
             return new Response(JSON.stringify({ error: `Setting '${key}' must be a boolean` }), {
               status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
             });
           }
-          if (NUMERIC_KEYS.has(key)) {
+          if (NUMERIC_KEYS.has(key) && val !== null) {
             const n = Number(val);
             const minVal = key === "background_blueness" ? -10 : 0;
             if (!Number.isFinite(n) || n < minVal || n > 100000) {
@@ -957,7 +957,7 @@ serve(async (req: Request) => {
               });
             }
           }
-          if (STRING_KEYS.has(key) && typeof val !== "string") {
+          if (STRING_KEYS.has(key) && val !== null && typeof val !== "string") {
             return new Response(JSON.stringify({ error: `Setting '${key}' must be a string` }), {
               status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
             });

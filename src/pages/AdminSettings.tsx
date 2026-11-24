@@ -16,6 +16,7 @@ import { playSound, playSuccessSound } from "@/lib/sound";
 import { getFlagUrl } from "@/lib/utils";
 import { AdminLocationAlertsCard } from "@/components/AdminLocationAlertsCard";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { getFunctionErrorMessage } from "@/lib/function-errors";
 import { useConfirmedCall } from "@/components/admin/ConfirmActionProvider";
 
 interface SystemSettings {
@@ -1001,7 +1002,8 @@ const AdminSettings = () => {
       if (!edgeError && edgeData?.success) {
         success = true;
       } else {
-        console.warn("Edge function provider deletion fallback to client cleanup:", edgeError?.message || edgeData?.error);
+        const edgeReason = edgeData?.error || (await getFunctionErrorMessage(edgeError, "Edge function provider deletion failed"));
+        console.warn("Edge function provider deletion fallback to client cleanup:", edgeReason);
         
         // 2. Client-side fallback cleanup:
         // a. Unlink provider from orders (only provider_id column exists on orders table)
