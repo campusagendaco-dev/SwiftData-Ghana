@@ -34,6 +34,7 @@ const MysteryBoxWatcher = lazy(() => import("@/components/MysteryBoxWatcher"));
 const LocationAlertPrompt = lazy(() => import("@/components/LocationAlertPrompt").then(m => ({ default: m.LocationAlertPrompt })));
 const AccountSwitcherModal = lazy(() => import("@/components/AccountSwitcherModal").then(m => ({ default: m.AccountSwitcherModal })));
 const AIConcierge = lazy(() => import("@/components/AIConcierge"));
+const AmaWelcomeTour = lazy(() => import("@/components/ama/AmaWelcomeTour"));
 const AudioUnlocker = lazy(() => import("@/components/AudioUnlocker"));
 const FreeDataButton = lazy(() => import("@/components/FreeDataButton"));
 const NotificationPopup = lazy(() => import("@/components/NotificationPopup"));
@@ -627,6 +628,8 @@ const AppContent = () => {
           {!isAdmin && <NotificationPopup />}
           {!isAdmin && <ChallengeLiveNotifier />}
           {!isChallengeArenaPage && !isAdmin && <AIConcierge />}
+          {/* Ama's welcome tour: dashboard only, so it never overlaps TutorialModal */}
+          {isDashboard && !isChallengeArenaPage && !isAdmin && <AmaWelcomeTour />}
           {!isChallengeArenaPage && !isPaymentFlow && !isAdmin && <PushNotificationPrompt variant="floating" />}
           <AccountSwitcherModal />
           {!isAgentStore && !isChallengeArenaPage && !isAdmin && <FreeDataButton />}
