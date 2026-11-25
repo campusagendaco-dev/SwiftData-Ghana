@@ -7,6 +7,7 @@ export interface CachedBuyCatalog {
   mtnExpressModeEnabled?: boolean;
   holidayMode?: boolean;
   holidayMessage?: string;
+  maintenanceMessage?: string;
   orderingDisabled?: boolean;
   updatedAt: number;
 }

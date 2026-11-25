@@ -297,7 +297,7 @@ const BuyData = ({ initialNetwork, initialCategory }: BuyDataProps = {}) => {
   const [holidayMode, setHolidayMode] = useState<boolean>(() => Boolean(cachedCatalog?.holidayMode));
   const [holidayMessage, setHolidayMessage] = useState<string>(() => cachedCatalog?.holidayMessage || "");
   const [maintenanceMessage, setMaintenanceMessage] = useState<string>(
-    () => (cachedCatalog as any)?.maintenanceMessage || "Notice: We are currently under maintenance. Operations will begin, God willing, on 1st December. Please stay tuned!"
+    () => cachedCatalog?.maintenanceMessage || "Notice: We are currently under maintenance. Operations will begin, God willing, on 1st December. Please stay tuned!"
   );
   const [orderingDisabled, setOrderingDisabled] = useState<boolean>(() => Boolean(cachedCatalog?.orderingDisabled));
   const [priceMultipliers, setPriceMultipliers] = useState<Record<string, number>>(() => cachedCatalog?.priceMultipliers || { MTN: 1, Telecel: 1, AirtelTigo: 1 });
@@ -427,7 +427,7 @@ const BuyData = ({ initialNetwork, initialCategory }: BuyDataProps = {}) => {
           priceMultipliers: pricingCtx.multipliers,
           holidayMode: sys ? Boolean(sys.holiday_mode_enabled) : Boolean(prevCache?.holidayMode),
           holidayMessage: sys ? String(sys.holiday_message || "Holiday mode active. Orders will resume soon.") : (prevCache?.holidayMessage || ""),
-          maintenanceMessage: typeof sys?.maintenance_message === "string" ? sys.maintenance_message : ((prevCache as any)?.maintenanceMessage || ""),
+          maintenanceMessage: typeof sys?.maintenance_message === "string" ? sys.maintenance_message : (prevCache?.maintenanceMessage || ""),
           orderingDisabled: sys ? Boolean(sys.disable_ordering) : Boolean(prevCache?.orderingDisabled),
           activeGateway: sys?.active_payment_gateway || prevCache?.activeGateway || "paystack",
           mtnExpressModeEnabled: typeof sys?.mtn_express_mode_enabled === "boolean" ? sys.mtn_express_mode_enabled : (prevCache?.mtnExpressModeEnabled ?? true),
