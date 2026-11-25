@@ -4,6 +4,7 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { normalizePhone, getSmsConfig, sendSmsViaTxtConnect, formatTemplate } from "../_shared/sms.ts";
 import { verifyAdmin } from "../_shared/auth.ts";
 import { needsAuthenticatorApp } from "../_shared/admin_sms_otp.ts";
+import { togglePackageAvailability } from "../_shared/package_toggle.ts";
 import { listAdminsWith2fa } from "../_shared/admin_list.ts";
 import { fetchViaDb } from "../_shared/db_proxy.ts";
 import { log, notifyAdmins } from "../_shared/logger.ts";
@@ -2618,51 +2619,29 @@ serve(async (req: Request) => {
       }
 
       case "toggle_package_availability": {
-        // Everyday stock pause/resume only: never reads or writes any price column so SMS-logged-in
-        // admins can toggle out-of-stock status while price edits (save_package_settings) stay aal2-only.
-        const { packages } = body;
-        if (!Array.isArray(packages) || packages.length === 0) {
-          return new Response(JSON.stringify({ error: "packages array is required" }), {
-            status: 400,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
-
-        const dedupedMap = new Map<string, { network: string; package_size: string; is_unavailable: boolean; updated_at: string }>();
-        const nowIso = new Date().toISOString();
-        for (const p of packages) {
-          const net = String(p?.network || "").trim();
-          const size = String(p?.package_size || "").trim();
-          if (!net || !size) continue;
-          dedupedMap.set(`${net}::${size}`, {
-            network: net,
-            package_size: size,
-            is_unavailable: !!p.is_unavailable,
-            updated_at: nowIso,
-          });
-        }
-        const upserts = Array.from(dedupedMap.values());
-
-        if (upserts.length === 0) {
-          return new Response(JSON.stringify({ success: true, saved: 0 }), {
-            status: 200,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
-
-        const { error: upsertError } = await supabaseAdmin
-          .from("global_package_settings")
-          .upsert(upserts, { onConflict: "network,package_size" });
-
-        if (upsertError) {
-          return new Response(JSON.stringify({ error: upsertError.message }), {
-            status: 500,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
-
-        return new Response(JSON.stringify({ success: true, saved: upserts.length }), {
-          status: 200,
+        // Out-of-stock switch only (rules in _shared/package_toggle.ts): updates existing bundles,
+        // never prices; logged; an SMS sign-in flipping many at once alerts the other admins.
+        const res = await togglePackageAvailability(supabaseAdmin, {
+          adminId: String(actor?.id || ""),
+          via: authResult.secondFactor === "sms" ? "sms" : "authenticator",
+          packages: body?.packages,
+        }, {
+          now: new Date(),
+          alertOtherAdmins: async (exceptUserId, text) => {
+            const smsConfig = await getSmsConfig(supabaseAdmin);
+            if (!smsConfig?.apiKey) return;
+            const { data: roles } = await supabaseAdmin.from("user_roles").select("user_id").eq("role", "admin").neq("user_id", exceptUserId).limit(10);
+            const ids = [...new Set((roles || []).map((r: any) => r.user_id))];
+            if (!ids.length) return;
+            const { data: admins } = await supabaseAdmin.from("profiles").select("user_id, phone").in("user_id", ids);
+            for (const a of admins || []) {
+              const recipient = normalizePhone(a?.phone);
+              if (recipient) await sendSmsViaTxtConnect(smsConfig.apiKey, smsConfig.senderId, recipient, `[SwiftData security] ${text}`, "admin_alert", a.user_id).catch(() => {});
+            }
+          },
+        });
+        return new Response(JSON.stringify(res.body), {
+          status: res.status,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }

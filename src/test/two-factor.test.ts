@@ -10,12 +10,17 @@ const tokenWith = (aal: string) => {
   return `${part({ alg: "HS256" })}.${part({ sub: "admin-1", aal })}.signature`;
 };
 
-const adminClient = (isAdmin = true) => ({
-  auth: { getUser: async () => ({ data: { user: { id: "admin-1" } }, error: null }) },
-  from: () => ({
-    select: () => ({ eq: () => ({ eq: () => ({ limit: async () => ({ data: isAdmin ? [{ role: "admin" }] : [], error: null }) }) }) }),
-  }),
-});
+const adminClient = (isAdmin = true) => {
+  // Like supabase-js: the roles query can be awaited directly or after .limit()
+  const result = () => ({ data: isAdmin ? [{ role: "admin" }] : [], error: null });
+  const rolesQuery = { limit: async () => result(), then: (ok: any, bad: any) => Promise.resolve(result()).then(ok, bad) };
+  return {
+    auth: { getUser: async () => ({ data: { user: { id: "admin-1" } }, error: null }) },
+    from: () => ({
+      select: () => ({ eq: () => ({ eq: () => rolesQuery }) }),
+    }),
+  };
+};
 
 const requestWith = (token: string) => new Request("https://x.test", { headers: { Authorization: `Bearer ${token}` } });
 

@@ -521,6 +521,9 @@ const AdminPackages = () => {
         setUpdatingMashupHold(false);
         return;
       }
+      if (Array.isArray(data?.skipped) && data.skipped.length > 0) {
+        toast({ title: "Some bundles weren't switched", description: `Not in the price list yet: ${data.skipped.join(", ")}. Save their prices first, then switch them.`, variant: "destructive" });
+      }
 
       setSettings(prev => {
         const next = { ...prev };
@@ -605,6 +608,9 @@ const AdminPackages = () => {
       if (error || data?.error) {
         const msg = data?.error || await getFunctionErrorMessage(error, "Failed to update package status.");
         toast({ title: "Failed to update status", description: msg, variant: "destructive" });
+        updateSetting(network, size, "is_unavailable", !isUnavailable);
+      } else if (Array.isArray(data?.skipped) && data.skipped.length > 0) {
+        toast({ title: "Not switched", description: `${network} ${size} isn't in the price list yet. Save its prices first, then switch it.`, variant: "destructive" });
         updateSetting(network, size, "is_unavailable", !isUnavailable);
       } else {
         toast({ 
