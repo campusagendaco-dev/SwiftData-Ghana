@@ -144,7 +144,7 @@ async function verifyKorbaStatusViaApi(
           "Authorization": `HMAC ${clientKey}:${signatureHex}`,
         },
         body: JSON.stringify(statusPayload),
-        disableFallback: false,
+        disableFallback: true,
       });
 
       if (response.ok) {
@@ -336,7 +336,7 @@ serve(async (req: Request) => {
     // 1. Fetch order
     const { data: existingOrder } = await supabaseAdmin
       .from("orders")
-      .select("id, order_type, agent_id, parent_agent_id, network, package_size, customer_phone, amount, status, profit, parent_profit, metadata, customer_id, payment_method")
+      .select("id, order_type, agent_id, parent_agent_id, network, package_size, customer_phone, utility_provider, utility_account_number, amount, status, profit, parent_profit, metadata, customer_id, payment_method")
       .eq("id", cleanedTransactionId)
       .maybeSingle();
 
@@ -397,12 +397,16 @@ serve(async (req: Request) => {
         await notifyApiClient(supabaseAdmin, cleanedTransactionId, "fulfilled");
 
         // Trigger SMS for Customer
-        if (existingOrder.customer_phone) {
+        const smsTargetPhone = existingOrder.order_type === "utility"
+          ? (existingOrder.metadata?.payment_phone || existingOrder.metadata?.phone || existingOrder.customer_phone)
+          : existingOrder.customer_phone;
+        if (smsTargetPhone) {
           try {
             const isUtility = existingOrder.order_type === "utility";
-            const networkName = existingOrder.network || "";
+            const networkName = existingOrder.utility_provider || existingOrder.network || "";
             const packageName = existingOrder.package_size || "";
             const isAirtime = String(packageName).toUpperCase() === "AIRTIME";
+            const utilAccount = existingOrder.utility_account_number || existingOrder.metadata?.meter_number || existingOrder.customer_phone;
             
             let displayPackage = `${networkName} ${packageName}`;
             if (isAirtime) {
@@ -414,15 +418,15 @@ serve(async (req: Request) => {
             let customMsg = "";
             if (isUtility) {
               if (prepaidToken) {
-                customMsg = `Payment received! ECG Prepaid Token: ${prepaidToken}\nMeter: ${existingOrder.customer_phone}\nAmount: GHS ${Number(existingOrder.amount).toFixed(2)}\nTxID: ${existingOrder.id}`;
+                customMsg = `Payment received! ECG Prepaid Token: ${prepaidToken}\nMeter: ${utilAccount}\nAmount: GHS ${Number(existingOrder.amount).toFixed(2)}\nTxID: ${existingOrder.id}`;
               } else {
-                customMsg = `Payment received! Your ${networkName} payment for account ${existingOrder.customer_phone} of GHS ${Number(existingOrder.amount).toFixed(2)} is being processed.\nTxID: ${existingOrder.id}`;
+                customMsg = `Payment received! Your ${networkName || "Utility"} payment for account ${utilAccount} of GHS ${Number(existingOrder.amount).toFixed(2)} is being processed.\nTxID: ${existingOrder.id}`;
               }
             } else {
               customMsg = `Success! Your order for ${displayPackage} to ${existingOrder.customer_phone} has been processed.\nTxID: ${existingOrder.id}`;
             }
 
-            await sendPaymentSms(supabaseAdmin, existingOrder.customer_phone, "custom", { message: customMsg }, existingOrder.agent_id);
+            await sendPaymentSms(supabaseAdmin, smsTargetPhone, "custom", { message: customMsg }, existingOrder.agent_id);
           } catch (smsErr) {
             console.error("[korba-webhook] Success SMS dispatch failed:", smsErr);
           }

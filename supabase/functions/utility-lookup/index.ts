@@ -106,10 +106,10 @@ serve(async (req: Request) => {
       const { data: meterProviders } = await supabaseAdmin
         .from("providers")
         .select("*")
-        .eq("provider_type", "utility")
+        .or("provider_type.eq.utility,handler_type.eq.korba")
         .order("priority", { ascending: true });
-      const korbaProv = (meterProviders as any[])?.find((p: any) => p.is_active && p.name === "Korba")
-        || (meterProviders as any[])?.find((p: any) => p.name === "Korba");
+      const korbaProv = (meterProviders as any[])?.find((p: any) => p.is_active && (p.handler_type === "korba" || p.name === "Korba"))
+        || (meterProviders as any[])?.find((p: any) => p.handler_type === "korba" || p.name === "Korba");
 
       const KORBA_CLIENT_ID = Deno.env.get("KORBA_CLIENT_ID") || korbaProv?.settings?.client_id || "2419";
       const KORBA_CLIENT_KEY = Deno.env.get("KORBA_CLIENT_KEY") || korbaProv?.api_key || korbaProv?.settings?.client_key || "";
@@ -206,12 +206,12 @@ serve(async (req: Request) => {
     const { data: dbProviders } = await supabaseAdmin
       .from("providers")
       .select("*")
-      .eq("provider_type", "utility")
+      .or("provider_type.eq.utility,handler_type.eq.korba")
       .order("priority", { ascending: true });
 
-    const activeProvider = (dbProviders as any[])?.find((p: any) => p.is_active && p.name === "Korba") 
+    const activeProvider = (dbProviders as any[])?.find((p: any) => p.is_active && (p.handler_type === "korba" || p.name === "Korba")) 
       || (dbProviders as any[])?.find((p: any) => p.is_active)
-      || (dbProviders as any[])?.find((p: any) => p.name === "Korba")
+      || (dbProviders as any[])?.find((p: any) => p.handler_type === "korba" || p.name === "Korba")
       || { name: "Korba", handler_type: "korba" };
 
     const KORBA_CLIENT_ID = Deno.env.get("KORBA_CLIENT_ID") || activeProvider?.settings?.client_id || "2419";
@@ -285,10 +285,16 @@ serve(async (req: Request) => {
     };
 
     if (isKorba) {
+      if (!KORBA_CLIENT_KEY || !KORBA_SECRET_KEY) {
+        return new Response(JSON.stringify({ success: false, error: "Korba credentials not configured" }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
       const sortedKeys = Object.keys(payload).sort();
       const messageParts = [];
       for (const key of sortedKeys) {
-        messageParts.push(`${key}=${payload[key]}`);
+        if (payload[key] !== undefined) {
+          messageParts.push(`${key}=${payload[key]}`);
+        }
       }
       const message = messageParts.join("&");
       
@@ -318,6 +324,7 @@ serve(async (req: Request) => {
       method: "POST",
       headers,
       body: JSON.stringify(payload),
+      disableFallback: isKorba,
     });
 
     const responseText = await response.text();
@@ -337,8 +344,8 @@ serve(async (req: Request) => {
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    if (!response.ok || !jsonResponse.success) {
-      let apiError = jsonResponse.error_message || jsonResponse.error || jsonResponse.message || (typeof jsonResponse.data === 'string' ? jsonResponse.data : JSON.stringify(jsonResponse));
+    if (!response.ok || !jsonResponse.success || jsonResponse?.results?.success === false) {
+      let apiError = pickErrorMessage(jsonResponse) || `Account lookup failed (HTTP ${response.status})`;
       
       const fullResponseStr = typeof jsonResponse === 'object' ? JSON.stringify(jsonResponse) : String(responseText);
       const errorLower = fullResponseStr.toLowerCase();
@@ -356,7 +363,8 @@ serve(async (req: Request) => {
       return new Response(JSON.stringify({ success: false, error: "No meters found. For ECG Prepaid, please enter the phone number linked to your ECG PowerApp mobile app (e.g. 054XXXXXXX), not the physical prepaid card/meter number." }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    const customerName = findName(jsonResponse.data) || findName(jsonResponse);
+    const firstMeter = Array.isArray(jsonResponse.results?.data) ? jsonResponse.results.data[0] : null;
+    const customerName = findName(jsonResponse.data) || findName(jsonResponse) || firstMeter?.customerName || firstMeter?.alias || firstMeter?.meterNumber || null;
 
     if (!customerName) {
       return new Response(JSON.stringify({ success: false, error: jsonResponse.error_message || jsonResponse.error || "Could not find customer name in response" }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });

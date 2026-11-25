@@ -45,7 +45,23 @@ serve(async (req) => {
     const rawMeta = payload.metadata && typeof payload.metadata === "object" && !Array.isArray(payload.metadata)
       ? payload.metadata
       : {};
-    const ALLOWED_META_KEYS = ["meter_type", "meter_category", "district", "customer_name", "account_name", "account_number", "phone", "reference_note"];
+    const ALLOWED_META_KEYS = [
+      "meter_id",
+      "meter_number",
+      "meter_type",
+      "meter_category",
+      "alias",
+      "meter_alias",
+      "district",
+      "region",
+      "customer_name",
+      "customer_phone",
+      "payment_phone",
+      "account_name",
+      "account_number",
+      "phone",
+      "reference_note",
+    ];
     const safeMeta: Record<string, string | number | boolean> = {};
     for (const k of ALLOWED_META_KEYS) {
       const v = (rawMeta as Record<string, unknown>)[k];
@@ -53,6 +69,10 @@ serve(async (req) => {
         safeMeta[k] = typeof v === "string" ? v.slice(0, 200) : v;
       }
     }
+
+    // Fetch user's phone for SMS/WhatsApp token delivery and GWCL customer_number
+    const { data: profile } = await supabaseAdmin.from("profiles").select("phone").eq("user_id", user.id).maybeSingle();
+    const notificationPhone = String(safeMeta.phone || safeMeta.customer_phone || profile?.phone || user.phone || "").trim();
 
     // Atomic debit
     const { data: debitResult, error: debitError } = await supabaseAdmin.rpc("debit_wallet", {
@@ -64,7 +84,7 @@ serve(async (req) => {
       return new Response(JSON.stringify({ 
         error: debitResult?.error || "Wallet debit failed",
         balance: debitResult?.balance 
-      }), { status: 200, headers: corsHeaders });
+      }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     const orderId = crypto.randomUUID();
@@ -72,6 +92,8 @@ serve(async (req) => {
       id: orderId,
       agent_id: user.id,
       order_type: "utility",
+      network: utility_provider,
+      customer_phone: notificationPhone || utility_account_number,
       utility_type,
       utility_provider,
       utility_account_number,
@@ -79,8 +101,13 @@ serve(async (req) => {
       amount: payAmount,
       status: "paid",
       payment_method: "wallet",
-      failure_reason: "Awaiting manual fulfillment / Token generation",
-      metadata: { ...safeMeta, lookup_transaction_id }
+      failure_reason: null,
+      metadata: {
+        ...safeMeta,
+        ...(notificationPhone ? { phone: notificationPhone } : {}),
+        base_price: payAmount,
+        lookup_transaction_id,
+      }
     });
 
     if (insertError) {
@@ -109,9 +136,6 @@ serve(async (req) => {
     }
     
     // Send notification
-    const { data: profile } = await supabaseAdmin.from("profiles").select("phone").eq("user_id", user.id).maybeSingle();
-    const notificationPhone = profile?.phone || user.phone;
-    
     if (notificationPhone) {
       await sendPaymentSms(supabaseAdmin, notificationPhone, "utility_paid", {
         utility_type,

@@ -343,7 +343,7 @@ const AdminUtilityOrders = () => {
         o.utility_provider || "",
         o.utility_account_number || "",
         o.utility_account_name || "",
-        o.amount.toFixed(2),
+        Number(o.amount || 0).toFixed(2),
         o.status
       ]);
 
@@ -407,7 +407,7 @@ const AdminUtilityOrders = () => {
             <span className="text-[10px] font-black uppercase tracking-widest text-amber-500/80">Utility Billing Center</span>
           </div>
           <h1 className="font-display text-3xl font-black tracking-tight flex items-center gap-3">
-            <Lightbulb className="w-8 h-8 text-amber-505 animate-pulse" />
+            <Lightbulb className="w-8 h-8 text-amber-500 animate-pulse" />
             Utility Orders
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
@@ -628,7 +628,7 @@ const AdminUtilityOrders = () => {
                         })()}
                       </td>
                       <td className="p-2.5 text-right font-black text-foreground text-[11px]">
-                        ₵{o.amount.toFixed(2)}
+                        ₵{Number(o.amount || 0).toFixed(2)}
                       </td>
                       <td className="p-2.5">
                         <div className="flex flex-col text-[11px]">

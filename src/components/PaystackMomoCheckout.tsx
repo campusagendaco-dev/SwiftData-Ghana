@@ -491,7 +491,8 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
       });
       
       if (error || !data?.authorization_url) {
-        throw new Error(data?.error || error?.message || "Could not initialize Paystack checkout.");
+        const msg = data?.error || (await getFunctionErrorMessage(error, "Could not initialize Paystack checkout."));
+        throw new Error(msg);
       }
       
       window.location.href = data.authorization_url;
@@ -540,7 +541,8 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
       });
 
       if (error || !data?.success) {
-        throw new Error(data?.error || error?.message || "Failed to initialize Korba checkout session.");
+        const msg = data?.error || (await getFunctionErrorMessage(error, "Failed to initialize Korba checkout session."));
+        throw new Error(msg);
       }
 
       const XCheckout = (window as any).XCheckout;
@@ -604,7 +606,8 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
       });
 
       if (error || !data?.authorization_url) {
-        throw new Error(data?.error || error?.message || "Failed to initialize Card checkout session.");
+        const msg = data?.error || (await getFunctionErrorMessage(error, "Failed to initialize Card checkout session."));
+        throw new Error(msg);
       }
 
       window.location.href = data.authorization_url;
@@ -721,7 +724,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
       }
     } catch (err: any) {
       console.error("OTP verification error:", err);
-      const msg = err.message || "Incorrect OTP. Please check and try again.";
+      const msg = await getFunctionErrorMessage(err, "Incorrect OTP. Please check and try again.");
       setOtpError(msg);
       setStep('otp_entry');
       // Refocus first box

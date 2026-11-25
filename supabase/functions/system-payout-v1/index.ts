@@ -140,14 +140,45 @@ type AdminUserAction =
   | "purge_bot_spam"
   | "test_korba_payload";
 
+async function resolveKorbaCredentials(supabaseAdmin: any): Promise<{
+  clientId: string;
+  clientKey: string;
+  secretKey: string;
+}> {
+  let envClientId = Deno.env.get("KORBA_CLIENT_ID")?.trim() || "";
+  let envClientKey = Deno.env.get("KORBA_CLIENT_KEY")?.trim() || "";
+  let envSecretKey = Deno.env.get("KORBA_SECRET_KEY")?.trim() || "";
+
+  if (envClientId && envClientKey && envSecretKey) {
+    return { clientId: envClientId, clientKey: envClientKey, secretKey: envSecretKey };
+  }
+
+  let korbaProv: any = null;
+  try {
+    const { data } = await supabaseAdmin
+      .from("providers")
+      .select("api_key, api_secret, settings")
+      .eq("handler_type", "korba")
+      .limit(1)
+      .maybeSingle();
+    korbaProv = data;
+  } catch (err) {
+    console.warn("[system-payout-v1] Failed to load Korba provider fallback:", err);
+  }
+
+  return {
+    clientId: envClientId || String(korbaProv?.settings?.client_id || "2419"),
+    clientKey: envClientKey || korbaProv?.api_key || korbaProv?.settings?.client_key || "",
+    secretKey: envSecretKey || korbaProv?.api_secret || korbaProv?.settings?.secret_key || "",
+  };
+}
+
 async function queryKorbaApi(
   supabaseAdmin: any,
   url: string,
   payload: Record<string, any>
 ): Promise<{ success: boolean; data?: any; error?: string }> {
-  const KORBA_CLIENT_ID = Deno.env.get("KORBA_CLIENT_ID") || "2419";
-  const KORBA_CLIENT_KEY = Deno.env.get("KORBA_CLIENT_KEY") || "";
-  const KORBA_SECRET_KEY = Deno.env.get("KORBA_SECRET_KEY") || "";
+  const { clientKey: KORBA_CLIENT_KEY, secretKey: KORBA_SECRET_KEY } = await resolveKorbaCredentials(supabaseAdmin);
 
   if (!KORBA_CLIENT_KEY || !KORBA_SECRET_KEY) {
     return { success: false, error: "Korba gateway credentials not configured in edge functions." };
@@ -157,7 +188,9 @@ async function queryKorbaApi(
   const sortedKeys = Object.keys(payload).sort();
   const messageParts = [];
   for (const key of sortedKeys) {
-    messageParts.push(`${key}=${payload[key]}`);
+    if (payload[key] !== undefined) {
+      messageParts.push(`${key}=${payload[key]}`);
+    }
   }
   const message = messageParts.join("&");
 
@@ -180,7 +213,7 @@ async function queryKorbaApi(
   let responseData: any = null;
   let proxyError = "";
 
-  // Attempt 1: Query via DB Proxy (static IP database proxy)
+  // Strictly route all Korba API calls through whitelisted proxy (fetchViaDb -> Vercel bridge)
   try {
     console.log(`[Korba API Proxy] Fetching ${url} via DB Proxy...`);
     const res = await fetchViaDb(supabaseAdmin, url, {
@@ -191,111 +224,43 @@ async function queryKorbaApi(
       },
       body: JSON.stringify(payload),
       disableFallback: true,
-    }, 20); // 20s timeout now that service_role statement_timeout is increased to 30s
+    }, 20);
 
     resText = await res.text();
     console.log(`[Korba API Proxy] Response status: ${res.status}`);
 
-    // Check if the proxy response itself returned Gateway Timeout or Statement Timeout
     if (res.ok && !resText.includes("Gateway Timeout") && !resText.includes("canceling statement")) {
       try {
         responseData = JSON.parse(resText);
-        success = responseData.success || (responseData.error_code === null) || false;
+        const hasErrorCode = responseData?.error_code !== undefined && responseData?.error_code !== null && Number(responseData.error_code) > 0;
+        const explicitFailure =
+          responseData?.success === false ||
+          hasErrorCode ||
+          Boolean(responseData?.error) ||
+          Boolean(responseData?.detail);
+        success = !explicitFailure;
         if (!success) {
-          proxyError = responseData.message || responseData.detail || JSON.stringify(responseData);
+          proxyError = responseData.detail || responseData.error_message || responseData.message || responseData.error || JSON.stringify(responseData);
         }
       } catch {
         console.warn("[Korba API Proxy] Response not JSON:", resText);
         proxyError = "Response not JSON: " + resText;
       }
     } else {
-      console.warn("[Korba API Proxy] Request timed out or failed in pg_net:", resText);
-      proxyError = resText || `HTTP ${res.status}`;
+      console.warn("[Korba API Proxy] Request timed out or failed:", resText);
+      try {
+        responseData = JSON.parse(resText);
+        proxyError = responseData?.detail || responseData?.error_message || responseData?.message || responseData?.error || resText || `HTTP ${res.status}`;
+      } catch {
+        proxyError = resText || `HTTP ${res.status}`;
+      }
     }
   } catch (e: any) {
     console.warn(`[Korba API Proxy] Proxy exception: ${e.message}`);
     proxyError = e.message || "Unknown proxy exception";
   }
 
-  // Attempt 2: Direct HTTP Fetch Fallback (if DB Proxy failed or timed out)
-  // Fallback is strictly disabled for money payouts to prevent double-charging cashout requests.
-  const isFallbackEnabled = false;
-  if ((!success || !responseData) && isFallbackEnabled) {
-    console.log(`[Korba API Direct] Proxy failed/timed out (${proxyError}). Falling back to Direct edge fetch...`);
-    let fallbackError = "";
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 12000); // 12s timeout
-
-      let client: any = undefined;
-      const fetchOpts: RequestInit = {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `HMAC ${KORBA_CLIENT_KEY}:${signatureHex}`,
-        },
-        body: JSON.stringify(payload),
-        signal: controller.signal,
-      };
-
-      if (url.includes("korba365.com")) {
-        const proxyUrl = Deno.env.get("KORBA_PROXY_URL")?.trim() || ""; // set as a Supabase secret; never hardcode
-        if (proxyUrl) {
-          console.log(`[system-payout-v1] Routing direct fetch through whitelisted proxy: ${proxyUrl.replace(/:[^:@]+@/, ":***@")}`);
-          if (typeof (Deno as any).createHttpClient === "function") {
-            client = (Deno as any).createHttpClient({ proxy: { url: proxyUrl } });
-            (fetchOpts as any).client = client;
-          } else {
-            console.warn("[system-payout-v1] Deno.createHttpClient is not available in this environment.");
-          }
-        }
-      }
-
-      let res;
-      try {
-        res = await fetch(url, fetchOpts);
-      } finally {
-        if (client) {
-          try {
-            client.close();
-          } catch (closeErr) {
-            console.error("[system-payout-v1] Error closing HTTP client proxy:", closeErr);
-          }
-        }
-      }
-
-      clearTimeout(timeoutId);
-      resText = await res.text();
-      console.log(`[Korba API Direct] Response status: ${res.status}`);
-
-      try {
-        responseData = JSON.parse(resText);
-        success = responseData.success || (responseData.error_code === null) || false;
-        if (!success) {
-          fallbackError = responseData.message || responseData.detail || responseData.error || resText;
-        }
-      } catch {
-        responseData = { error: resText || `HTTP ${res.status}` };
-        fallbackError = resText || `HTTP ${res.status}`;
-      }
-    } catch (e: any) {
-      console.error(`[Korba API Direct] Direct fallback failed:`, e);
-      fallbackError = e.message || String(e);
-      responseData = { error: `Proxy timed out, and direct fallback connection failed: ${e.message || e}` };
-    }
-
-    if (!success) {
-      const finalError = `Database HTTP Proxy failed: ${proxyError}. Direct fallback got: ${fallbackError}`;
-      responseData = {
-        success: false,
-        error: finalError,
-        message: finalError,
-        detail: finalError
-      };
-    }
-  }
-
-  return { success, data: responseData };
+  return { success, data: responseData, error: success ? undefined : (proxyError || "Korba API request failed") };
 }
 
 serve(async (req: Request) => {
@@ -2149,7 +2114,7 @@ serve(async (req: Request) => {
       }
 
       case "get_korba_balance": {
-        const KORBA_CLIENT_ID = Deno.env.get("KORBA_CLIENT_ID") || "2419";
+        const { clientId: KORBA_CLIENT_ID } = await resolveKorbaCredentials(supabaseAdmin);
         const balancePayload = {
           client_id: parseInt(KORBA_CLIENT_ID) || 2419,
         };
@@ -2183,9 +2148,9 @@ serve(async (req: Request) => {
       }
 
       case "get_korba_transactions": {
-        const KORBA_CLIENT_ID = Deno.env.get("KORBA_CLIENT_ID") || "2419";
+        const { clientId: KORBA_CLIENT_ID } = await resolveKorbaCredentials(supabaseAdmin);
         const txPayload = {
-          client_id: KORBA_CLIENT_ID,
+          client_id: parseInt(KORBA_CLIENT_ID) || 2419,
         };
 
         const result = await queryKorbaApi(
@@ -2219,7 +2184,7 @@ serve(async (req: Request) => {
       }
 
       case "get_korba_packages": {
-        const KORBA_CLIENT_ID = Deno.env.get("KORBA_CLIENT_ID") || "2419";
+        const { clientId: KORBA_CLIENT_ID } = await resolveKorbaCredentials(supabaseAdmin);
         const balancePayload = {
           client_id: parseInt(KORBA_CLIENT_ID) || 2419,
         };
@@ -2240,27 +2205,41 @@ serve(async (req: Request) => {
         let mtnBundles: any[] = [];
         let telecelBundles: any[] = [];
         let airtelTigoBundles: any[] = [];
+        const fetchErrors: string[] = [];
 
         try {
           try {
             console.log("[get_korba_packages] Fetching MTN bundles...");
             mtnBundles = await fetchBundlesForUrl("https://xchange.korba365.com/api/v1.0/get_mtndata_product_id/", "MTN");
           } catch (err: any) {
-            console.error("[get_korba_packages] Failed to fetch MTN bundles:", err.message || err);
+            const msg = err?.message || String(err);
+            console.error("[get_korba_packages] Failed to fetch MTN bundles:", msg);
+            fetchErrors.push(`MTN: ${msg}`);
           }
 
           try {
             console.log("[get_korba_packages] Fetching Telecel bundles...");
             telecelBundles = await fetchBundlesForUrl("https://xchange.korba365.com/api/v1.0/get_vodafonedata_product_id/", "Vodafone/Telecel");
           } catch (err: any) {
-            console.error("[get_korba_packages] Failed to fetch Telecel bundles:", err.message || err);
+            const msg = err?.message || String(err);
+            console.error("[get_korba_packages] Failed to fetch Telecel bundles:", msg);
+            fetchErrors.push(`Telecel: ${msg}`);
           }
 
           try {
             console.log("[get_korba_packages] Fetching AirtelTigo bundles...");
             airtelTigoBundles = await fetchBundlesForUrl("https://xchange.korba365.com/api/v1.0/get_airteltigodata_product_id/", "AirtelTigo");
           } catch (err: any) {
-            console.error("[get_korba_packages] Failed to fetch AirtelTigo bundles:", err.message || err);
+            const msg = err?.message || String(err);
+            console.error("[get_korba_packages] Failed to fetch AirtelTigo bundles:", msg);
+            fetchErrors.push(`AirtelTigo: ${msg}`);
+          }
+
+          const fetchedDataBundles = [...mtnBundles, ...telecelBundles, ...airtelTigoBundles];
+          if (fetchedDataBundles.length === 0) {
+            throw new Error(fetchErrors.length > 0
+              ? `Failed to fetch packages from Korba API: ${fetchErrors.join("; ")}`
+              : "Failed to fetch packages from all Korba API networks due to timeouts or errors.");
           }
 
           const airtimePackages = [
@@ -2290,14 +2269,12 @@ serve(async (req: Request) => {
             }
           ];
 
-          const allBundles = [...mtnBundles, ...telecelBundles, ...airtelTigoBundles, ...airtimePackages];
-          if (allBundles.length === 0) {
-            throw new Error("Failed to fetch packages from all Korba API networks due to timeouts or errors.");
-          }
+          const allBundles = [...fetchedDataBundles, ...airtimePackages];
 
           return new Response(JSON.stringify({
             success: true,
             bundles: allBundles,
+            ...(fetchErrors.length > 0 ? { partial_errors: fetchErrors } : {}),
           }), {
             status: 200,
             headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -2307,7 +2284,7 @@ serve(async (req: Request) => {
           return new Response(JSON.stringify({
             success: false,
             error: e.message || "Failed to fetch Korba packages",
-          }), { status: 200, headers: corsHeaders });
+          }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
       }
 
@@ -2957,8 +2934,19 @@ serve(async (req: Request) => {
 
       case "test_korba_payload": {
         const { targetUrl, payload: testPayload } = body;
-        const KORBA_CLIENT_KEY = Deno.env.get("KORBA_CLIENT_KEY") || "";
-        const KORBA_SECRET_KEY = Deno.env.get("KORBA_SECRET_KEY") || "";
+        if (!testPayload || typeof testPayload !== "object") {
+          return new Response(JSON.stringify({ success: false, error: "Missing payload object" }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        const { clientKey: KORBA_CLIENT_KEY, secretKey: KORBA_SECRET_KEY } = await resolveKorbaCredentials(supabaseAdmin);
+        if (!KORBA_CLIENT_KEY || !KORBA_SECRET_KEY) {
+          return new Response(JSON.stringify({ success: false, error: "Korba gateway credentials not configured." }), {
+            status: 200,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
 
         const sortedKeys = Object.keys(testPayload).sort();
         const messageParts = [];
@@ -2982,6 +2970,7 @@ serve(async (req: Request) => {
             "Authorization": `HMAC ${KORBA_CLIENT_KEY}:${signatureHex}`,
           },
           body: JSON.stringify(testPayload),
+          disableFallback: true,
         }, 20);
 
         const text = await res.text();

@@ -309,12 +309,17 @@ async function fulfillOrder(
     if (buyerProf?.api_access_enabled === true) isApiBuyer = true;
   }
 
-  if (order.customer_phone && !isApiBuyer) {
+  const smsTargetPhone = order.order_type === "utility"
+    ? (order.metadata?.payment_phone || order.metadata?.phone || order.customer_phone)
+    : order.customer_phone;
+
+  if (smsTargetPhone && !isApiBuyer) {
     try {
       const isUtility = order.order_type === "utility";
-      const networkName = order.network || "";
+      const networkName = order.utility_provider || order.network || "";
       const packageName = order.package_size || "";
       const isAirtime = String(packageName).toUpperCase() === "AIRTIME";
+      const utilAccount = order.utility_account_number || order.metadata?.meter_number || order.customer_phone;
       
       let displayPackage = `${networkName} ${packageName}`;
       if (isAirtime) {
@@ -326,28 +331,28 @@ async function fulfillOrder(
       let customMsg = "";
       if (isUtility) {
         if (token) {
-          customMsg = `Payment received! ECG Prepaid Token: ${token}\nMeter: ${order.customer_phone}\nAmount: GHS ${Number(order.amount).toFixed(2)}\nTxID: ${order.id}`;
+          customMsg = `Payment received! ECG Prepaid Token: ${token}\nMeter: ${utilAccount}\nAmount: GHS ${Number(order.amount).toFixed(2)}\nTxID: ${order.id}`;
         } else {
-          customMsg = `Payment received! Your ${networkName} payment for account ${order.customer_phone} of GHS ${Number(order.amount).toFixed(2)} is being processed.\nTxID: ${order.id}`;
+          customMsg = `Payment received! Your ${networkName || "Utility"} payment for account ${utilAccount} of GHS ${Number(order.amount).toFixed(2)} is being processed.\nTxID: ${order.id}`;
         }
       } else {
         customMsg = `Success! Your order for ${displayPackage} to ${order.customer_phone} has been processed.\nTxID: ${order.id}`;
       }
 
-      await sendPaymentSms(supabaseAdmin, order.customer_phone, "custom", { message: customMsg }, order.agent_id);
+      await sendPaymentSms(supabaseAdmin, smsTargetPhone, "custom", { message: customMsg }, order.agent_id);
     } catch (smsErr) {
       console.error("[verify-payment] Success SMS dispatch failed:", smsErr);
     }
 
     // Trigger Instant WhatsApp Push Receipt to Customer
     try {
-      sendWhatsAppOrderReceipt(order.customer_phone, {
+      sendWhatsAppOrderReceipt(smsTargetPhone, {
         id: order.id,
-        network: order.network,
+        network: order.utility_provider || order.network,
         package_size: order.package_size,
         amount: order.amount,
         order_type: order.order_type,
-        customer_phone: order.customer_phone,
+        customer_phone: smsTargetPhone,
         token: token || null,
         vouchers: order.metadata?.vouchers,
       }).catch((waErr) => console.warn("[verify-payment] WhatsApp order receipt error:", waErr));
@@ -1349,7 +1354,7 @@ serve(async (req: any) => {
               "Authorization": `HMAC ${KORBA_CLIENT_KEY}:${signatureHex}`,
             },
             body: JSON.stringify(statusPayload),
-            allowMutationFallback: true,
+            disableFallback: true,
           });
 
           const statusText = await statusRes.text();
@@ -2344,6 +2349,7 @@ serve(async (req: any) => {
           "purchase"
         );
       } else if (currentOrderType === "utility") {
+        const utilityPhone = claimedOrder.metadata?.payment_phone || claimedOrder.metadata?.phone || recipient;
         result = await callProviderApi(
           supabaseAdmin,
           provider,
@@ -2353,6 +2359,8 @@ serve(async (req: any) => {
             utility_provider: claimedOrder.utility_provider,
             utility_account_number: claimedOrder.utility_account_number,
             utility_account_name: claimedOrder.utility_account_name,
+            customer_phone: utilityPhone,
+            recipient: utilityPhone,
             amount: deliveryAmount,
             reference: targetReference,
             lookup_transaction_id: claimedOrder.metadata?.lookup_transaction_id,

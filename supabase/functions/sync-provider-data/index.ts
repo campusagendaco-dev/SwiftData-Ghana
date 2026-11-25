@@ -1161,9 +1161,9 @@ serve(async (req: Request) => {
     } else if (handlerType === "korba") {
       console.log(`Syncing Korba provider: ${provider.name}`);
 
-      const KORBA_CLIENT_ID = Deno.env.get("KORBA_CLIENT_ID") || "2419";
-      const KORBA_CLIENT_KEY = Deno.env.get("KORBA_CLIENT_KEY") || "";
-      const KORBA_SECRET_KEY = Deno.env.get("KORBA_SECRET_KEY") || "";
+      const KORBA_CLIENT_ID = Deno.env.get("KORBA_CLIENT_ID") || provider?.settings?.client_id || "2419";
+      const KORBA_CLIENT_KEY = Deno.env.get("KORBA_CLIENT_KEY") || provider?.api_key || provider?.settings?.client_key || "";
+      const KORBA_SECRET_KEY = Deno.env.get("KORBA_SECRET_KEY") || provider?.api_secret || provider?.settings?.secret_key || "";
 
       if (!KORBA_CLIENT_KEY || !KORBA_SECRET_KEY) {
         throw new Error("Korba credentials not configured in edge functions.");
@@ -1203,7 +1203,7 @@ serve(async (req: Request) => {
           },
           body: JSON.stringify(payload),
           disableFallback: true,
-        }, 7);
+        }, 20);
 
         const resText = await res.text();
         if (!res.ok || resText.includes("Gateway Timeout") || resText.includes("canceling statement")) {

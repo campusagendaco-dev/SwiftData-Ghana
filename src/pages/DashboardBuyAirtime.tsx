@@ -8,6 +8,7 @@ import {
   Sparkles, Flame, CheckCircle, RefreshCw
 } from "lucide-react";
 import { cn, detectNetwork } from "@/lib/utils";
+import { getFunctionErrorMessage } from "@/lib/function-errors";
 import { MTNLogo, TelecelLogo, AirtelTigoLogo } from "@/components/BrandLogos";
 import OrderStatusBanner from "@/components/OrderStatusBanner";
 import { useAppTheme } from "@/contexts/ThemeContext";
@@ -196,9 +197,10 @@ const DashboardBuyAirtime = () => {
           throw new Error(data?.error || "Airtime purchase failed.");
         }
       } catch (e: any) {
+        const msg = await getFunctionErrorMessage(e, "Failed to process wallet payment.");
         toast({
           title: "Wallet Payment Failed",
-          description: e.message || "Failed to process wallet payment.",
+          description: msg,
           variant: "destructive"
         });
       } finally {
