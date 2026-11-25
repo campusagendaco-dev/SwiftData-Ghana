@@ -1722,6 +1722,7 @@ const AdminSettings = () => {
                 </Label>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   {[
+                    { id: "cedi_heritage", label: "💵 New Ghana Cedis (2026)", url: "/assets/backgrounds/bg_cedi_heritage.jpg" },
                     { id: "traditional", label: "Ghana Drifting (Default)", url: "" },
                     { id: "slideshow", label: "🔄 Auto Slideshow", url: "/auto_switch" },
                     { id: "cyber_kente", label: "⚡ Cyber Kente Neon", url: "/assets/backgrounds/bg_cyber_kente.png" },
