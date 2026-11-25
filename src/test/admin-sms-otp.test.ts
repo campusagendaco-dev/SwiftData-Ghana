@@ -39,9 +39,11 @@ describe("what still needs the authenticator app", () => {
     }
   });
 
-  it("not everyday reads", () => {
+  it("not everyday reads or package availability toggles (while price edits still need the app)", () => {
     expect(needsAuthenticatorApp("system-payout-v1", "get_admins")).toBe(false);
     expect(needsAuthenticatorApp("admin-user-actions", "get_user_audit_logs")).toBe(false);
+    expect(needsAuthenticatorApp("system-payout-v1", "toggle_package_availability")).toBe(false);
+    expect(needsAuthenticatorApp("system-payout-v1", "save_package_settings")).toBe(true);
   });
 });
 

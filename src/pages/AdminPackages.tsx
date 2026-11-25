@@ -22,12 +22,15 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { useConfirmedCall } from "@/components/admin/ConfirmActionProvider";
+import { getFunctionErrorMessage } from "@/lib/function-errors";
 
 async function getValidSession() {
   const { data: { session } } = await supabase.auth.getSession();
-  if (session) return session;
+  if (session && (!session.expires_at || session.expires_at * 1000 > Date.now() + 30_000)) {
+    return session;
+  }
   const { data: { session: refreshed } } = await supabase.auth.refreshSession();
-  return refreshed;
+  return refreshed || session;
 }
 
 interface PackageSetting {
@@ -178,7 +181,8 @@ const AdminPackages = () => {
     });
 
     if (resError || resData?.error) {
-      toast({ title: "Creation Failed", description: resData?.error || resError?.message, variant: "destructive" });
+      const msg = resData?.error || await getFunctionErrorMessage(resError, "Failed to create package.");
+      toast({ title: "Creation Failed", description: msg, variant: "destructive" });
       return;
     }
 
@@ -494,11 +498,6 @@ const AdminPackages = () => {
       return {
         network: pkg.network,
         package_size: pkg.package_size,
-        cost_price: pkg.cost_price,
-        agent_price: pkg.agent_price,
-        sub_agent_price: pkg.sub_agent_price,
-        public_price: pkg.public_price,
-        api_price: pkg.api_price,
         is_unavailable: targetHold
       };
     });
@@ -512,12 +511,13 @@ const AdminPackages = () => {
 
     try {
       const { data, error } = await supabase.functions.invoke("system-payout-v1", {
-        body: { action: "save_package_settings", packages: updatedPackages },
+        body: { action: "toggle_package_availability", packages: updatedPackages },
         headers: { Authorization: `Bearer ${session.access_token}` },
       });
 
       if (error || data?.error) {
-        toast({ title: "Operation failed", description: data?.error || error?.message, variant: "destructive" });
+        const msg = data?.error || await getFunctionErrorMessage(error, "Failed to update MTN Mash Up status.");
+        toast({ title: "Operation failed", description: msg, variant: "destructive" });
         setUpdatingMashupHold(false);
         return;
       }
@@ -590,26 +590,21 @@ const AdminPackages = () => {
       return;
     }
 
-    const current = getSetting(network, size);
     const updatedPkg = {
       network,
       package_size: size,
-      cost_price: current.cost_price,
-      agent_price: current.agent_price,
-      sub_agent_price: current.sub_agent_price,
-      public_price: current.public_price,
-      api_price: current.api_price,
       is_unavailable: isUnavailable
     };
 
     try {
       const { data, error } = await supabase.functions.invoke("system-payout-v1", {
-        body: { action: "save_package_settings", packages: [updatedPkg] },
+        body: { action: "toggle_package_availability", packages: [updatedPkg] },
         headers: { Authorization: `Bearer ${session.access_token}` },
       });
 
       if (error || data?.error) {
-        toast({ title: "Failed to update status", description: data?.error || error?.message, variant: "destructive" });
+        const msg = data?.error || await getFunctionErrorMessage(error, "Failed to update package status.");
+        toast({ title: "Failed to update status", description: msg, variant: "destructive" });
         updateSetting(network, size, "is_unavailable", !isUnavailable);
       } else {
         toast({ 
@@ -657,7 +652,8 @@ const AdminPackages = () => {
     });
 
     if (error || data?.error) {
-      toast({ title: "Seed failed", description: data?.error || error?.message, variant: "destructive" });
+      const msg = data?.error || await getFunctionErrorMessage(error, "Failed to seed default prices.");
+      toast({ title: "Seed failed", description: msg, variant: "destructive" });
     } else {
       const next: Record<string, PackageSetting> = {};
       upserts.forEach((u) => { next[`${u.network}-${u.package_size}`] = u; });
@@ -739,7 +735,8 @@ const AdminPackages = () => {
       });
 
       if (error || data?.error) {
-        toast({ title: "Save failed", description: data?.error || error?.message, variant: "destructive" });
+        const msg = data?.error || await getFunctionErrorMessage(error, "Failed to save package settings.");
+        toast({ title: "Save failed", description: msg, variant: "destructive" });
         setSaving(false);
         return;
       }

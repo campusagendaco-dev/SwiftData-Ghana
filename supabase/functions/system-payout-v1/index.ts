@@ -127,6 +127,7 @@ type AdminUserAction =
   | "bulk_fulfill_api_orders"
   | "generate_api_key"
   | "save_package_settings"
+  | "toggle_package_availability"
   | "approve_all_pending_agents"
   | "reset_user_mfa"
   | "get_admins"
@@ -2588,6 +2589,56 @@ serve(async (req: Request) => {
             api_price: p.api_price ?? null,
             is_unavailable: !!p.is_unavailable,
             updated_at: new Date().toISOString(),
+          });
+        }
+        const upserts = Array.from(dedupedMap.values());
+
+        if (upserts.length === 0) {
+          return new Response(JSON.stringify({ success: true, saved: 0 }), {
+            status: 200,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        const { error: upsertError } = await supabaseAdmin
+          .from("global_package_settings")
+          .upsert(upserts, { onConflict: "network,package_size" });
+
+        if (upsertError) {
+          return new Response(JSON.stringify({ error: upsertError.message }), {
+            status: 500,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        return new Response(JSON.stringify({ success: true, saved: upserts.length }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      case "toggle_package_availability": {
+        // Everyday stock pause/resume only: never reads or writes any price column so SMS-logged-in
+        // admins can toggle out-of-stock status while price edits (save_package_settings) stay aal2-only.
+        const { packages } = body;
+        if (!Array.isArray(packages) || packages.length === 0) {
+          return new Response(JSON.stringify({ error: "packages array is required" }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        const dedupedMap = new Map<string, { network: string; package_size: string; is_unavailable: boolean; updated_at: string }>();
+        const nowIso = new Date().toISOString();
+        for (const p of packages) {
+          const net = String(p?.network || "").trim();
+          const size = String(p?.package_size || "").trim();
+          if (!net || !size) continue;
+          dedupedMap.set(`${net}::${size}`, {
+            network: net,
+            package_size: size,
+            is_unavailable: !!p.is_unavailable,
+            updated_at: nowIso,
           });
         }
         const upserts = Array.from(dedupedMap.values());

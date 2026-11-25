@@ -108,14 +108,14 @@ export async function verifyAdmin(
         .from("user_roles")
         .select("role, allowed_ips, otp_login_approved, otp_phone")
         .eq("user_id", user.id)
-        .eq("role", "admin")
-        .limit(1);
+        .eq("role", "admin");
 
       if (rolesError || !roles || roles.length === 0) {
         return { success: false, error: "Forbidden: Admin privileges required", status: 403 };
       }
 
-      const roleObj = roles[0];
+      // An admin can be listed more than once; prefer a row approved for SMS login.
+      const roleObj = roles.find(smsLoginAllowed) ?? roles[0];
 
       // 5. Enforce MFA (AAL2) OR Approved-Admin SMS OTP Session
       if (checkMfa) {
@@ -146,11 +146,12 @@ export async function verifyAdmin(
       }
 
       // 6. Enforce IP Whitelisting
-      if (checkIp && roleObj.allowed_ips && roleObj.allowed_ips.length > 0) {
+      const allowedIps = roles.flatMap((r: any) => Array.isArray(r.allowed_ips) ? r.allowed_ips : []);
+      if (checkIp && allowedIps.length > 0) {
         const clientIp = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() 
                       || req.headers.get("x-real-ip") 
                       || "0.0.0.0";
-        if (!roleObj.allowed_ips.includes(clientIp)) {
+        if (!allowedIps.includes(clientIp)) {
           return {
             success: false,
             error: `Forbidden: IP address ${clientIp} is not authorized for administrative access.`,
