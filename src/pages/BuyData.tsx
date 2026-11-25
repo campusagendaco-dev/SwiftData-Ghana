@@ -296,6 +296,9 @@ const BuyData = ({ initialNetwork, initialCategory }: BuyDataProps = {}) => {
   const [pkgLoading, setPkgLoading] = useState<boolean>(false);
   const [holidayMode, setHolidayMode] = useState<boolean>(() => Boolean(cachedCatalog?.holidayMode));
   const [holidayMessage, setHolidayMessage] = useState<string>(() => cachedCatalog?.holidayMessage || "");
+  const [maintenanceMessage, setMaintenanceMessage] = useState<string>(
+    () => (cachedCatalog as any)?.maintenanceMessage || "Notice: We are currently under maintenance. Operations will begin, God willing, on 1st December. Please stay tuned!"
+  );
   const [orderingDisabled, setOrderingDisabled] = useState<boolean>(() => Boolean(cachedCatalog?.orderingDisabled));
   const [priceMultipliers, setPriceMultipliers] = useState<Record<string, number>>(() => cachedCatalog?.priceMultipliers || { MTN: 1, Telecel: 1, AirtelTigo: 1 });
   const [networkStatusMap, setNetworkStatusMap] = useState<Record<string, string>>(() => cachedCatalog?.networkStatusMap || {});
@@ -403,6 +406,9 @@ const BuyData = ({ initialNetwork, initialCategory }: BuyDataProps = {}) => {
         if (sys) {
           setHolidayMode(Boolean(sys.holiday_mode_enabled));
           setHolidayMessage(String(sys.holiday_message || "Holiday mode active. Orders will resume soon."));
+          if (typeof sys.maintenance_message === "string") {
+            setMaintenanceMessage(sys.maintenance_message);
+          }
           setOrderingDisabled(Boolean(sys.disable_ordering));
           if (sys.active_payment_gateway) {
             setActiveGateway(sys.active_payment_gateway);
@@ -421,6 +427,7 @@ const BuyData = ({ initialNetwork, initialCategory }: BuyDataProps = {}) => {
           priceMultipliers: pricingCtx.multipliers,
           holidayMode: sys ? Boolean(sys.holiday_mode_enabled) : Boolean(prevCache?.holidayMode),
           holidayMessage: sys ? String(sys.holiday_message || "Holiday mode active. Orders will resume soon.") : (prevCache?.holidayMessage || ""),
+          maintenanceMessage: typeof sys?.maintenance_message === "string" ? sys.maintenance_message : ((prevCache as any)?.maintenanceMessage || ""),
           orderingDisabled: sys ? Boolean(sys.disable_ordering) : Boolean(prevCache?.orderingDisabled),
           activeGateway: sys?.active_payment_gateway || prevCache?.activeGateway || "paystack",
           mtnExpressModeEnabled: typeof sys?.mtn_express_mode_enabled === "boolean" ? sys.mtn_express_mode_enabled : (prevCache?.mtnExpressModeEnabled ?? true),
@@ -1062,8 +1069,10 @@ const BuyData = ({ initialNetwork, initialCategory }: BuyDataProps = {}) => {
             </div>
           </div>
           <h3 className="text-lg font-black text-foreground mb-2 uppercase tracking-wide">{selectedNetwork} Packages Updating</h3>
-          <p className="text-xs text-muted-foreground max-w-md leading-relaxed">
-            All {selectedNetwork} packages are currently being updated. Stock will resume shortly. Thank you for your patience!
+          <p className="text-xs sm:text-sm text-amber-200/90 max-w-md leading-relaxed font-medium">
+            {maintenanceMessage?.trim()
+              ? maintenanceMessage
+              : `All ${selectedNetwork} packages are currently being updated. Stock will resume shortly. Thank you for your patience!`}
           </p>
         </div>
       );
@@ -1240,7 +1249,7 @@ const BuyData = ({ initialNetwork, initialCategory }: BuyDataProps = {}) => {
         })}
       </div>
     );
-  }, [packages, selectedPkg?.size, handleCardClick, selectedNetwork]);
+  }, [packages, selectedPkg?.size, handleCardClick, selectedNetwork, maintenanceMessage]);
 
   const carrierGlowColor = useMemo(() => {
     switch (selectedNetwork) {

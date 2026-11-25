@@ -33,6 +33,7 @@ interface SystemSettings {
   mtn_express_mode_enabled?: boolean;
   holiday_mode_enabled: boolean;
   holiday_message: string;
+  maintenance_message: string;
   disable_ordering: boolean;
   dark_mode_enabled: boolean;
   store_visitor_popup_enabled: boolean;
@@ -141,6 +142,7 @@ const AdminSettings = () => {
     mtn_express_mode_enabled: false,
     holiday_mode_enabled: false,
     holiday_message: "",
+    maintenance_message: "Notice: We are currently under maintenance. Operations will begin, God willing, on 1st December. Please stay tuned!",
     disable_ordering: false,
     dark_mode_enabled: false,
     store_visitor_popup_enabled: false,
@@ -519,6 +521,7 @@ const AdminSettings = () => {
           mtn_express_mode_enabled: d.mtn_express_mode_enabled === true,
           holiday_mode_enabled: d.holiday_mode_enabled || false,
           holiday_message: d.holiday_message || "",
+          maintenance_message: d.maintenance_message || "",
           disable_ordering: d.disable_ordering || false,
           dark_mode_enabled: d.dark_mode_enabled || false,
           store_visitor_popup_enabled: d.store_visitor_popup_enabled || false,
@@ -2493,6 +2496,19 @@ const AdminSettings = () => {
                   />
                 </div>
               )}
+
+              <div className="space-y-2 pt-3 border-t border-border/50">
+                <Label>Packages Updating / Maintenance Notice</Label>
+                <p className="text-xs text-muted-foreground">
+                  Shown on the Buy Data page whenever a network&apos;s packages are paused/updating. Leave blank to use the default message.
+                </p>
+                <Textarea
+                  placeholder="Notice: We are currently under maintenance. Operations will begin, God willing, on 1st December. Please stay tuned!"
+                  value={settings.maintenance_message}
+                  onChange={(e) => setSettings({ ...settings, maintenance_message: e.target.value })}
+                  className="min-h-[90px]"
+                />
+              </div>
             </CardContent>
           </Card>
 

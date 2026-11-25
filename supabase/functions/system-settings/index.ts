@@ -13,6 +13,7 @@ const DEFAULT_SETTINGS = {
   backup_provider: "primary",
   holiday_mode_enabled: false,
   holiday_message: "Holiday mode is active. Orders will resume soon.",
+  maintenance_message: "Notice: We are currently under maintenance. Operations will begin, God willing, on 1st December. Please stay tuned!",
   disable_ordering: false,
   dark_mode_enabled: false,
   customer_service_number: "0548942122",
@@ -145,7 +146,7 @@ serve(async (req) => {
 
   const readSettings = async () => {
     const fullSelect =
-      "auto_api_switch, preferred_provider, backup_provider, holiday_mode_enabled, holiday_message, disable_ordering, dark_mode_enabled, customer_service_number, support_channel_link, active_api_source, secondary_price_markup_pct, sub_agent_base_fee, agent_activation_fee, traditional_background_enabled, background_custom_image_url, enable_privacy_shield, ai_recommender_enabled, scheduled_success_sms_message, scheduled_failed_sms_message, active_payment_gateway, auto_gateway_switch_by_package, beneficiary_verification_enabled, allow_non_beneficiary_continue";
+      "auto_api_switch, preferred_provider, backup_provider, holiday_mode_enabled, holiday_message, maintenance_message, disable_ordering, dark_mode_enabled, customer_service_number, support_channel_link, active_api_source, secondary_price_markup_pct, sub_agent_base_fee, agent_activation_fee, traditional_background_enabled, background_custom_image_url, enable_privacy_shield, ai_recommender_enabled, scheduled_success_sms_message, scheduled_failed_sms_message, active_payment_gateway, auto_gateway_switch_by_package, beneficiary_verification_enabled, allow_non_beneficiary_continue";
     const legacySelect =
       "auto_api_switch, preferred_provider, backup_provider, holiday_mode_enabled, holiday_message, disable_ordering, dark_mode_enabled, customer_service_number, support_channel_link, active_payment_gateway, beneficiary_verification_enabled, allow_non_beneficiary_continue";
 
@@ -178,6 +179,7 @@ serve(async (req) => {
       secondary_price_markup_pct: 0,
       holiday_mode_enabled: Boolean(data?.holiday_mode_enabled),
       holiday_message: String(data?.holiday_message || DEFAULT_SETTINGS.holiday_message),
+      maintenance_message: String(data?.maintenance_message ?? DEFAULT_SETTINGS.maintenance_message),
       disable_ordering: Boolean(data?.disable_ordering),
       dark_mode_enabled: Boolean(data?.dark_mode_enabled),
       customer_service_number:
