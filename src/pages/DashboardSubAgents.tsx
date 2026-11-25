@@ -263,9 +263,11 @@ const DashboardSubAgents = () => {
         supabase.from("profiles").update({ agent_prices: subAgentPrices }).eq("user_id", sa.user_id)
       );
     const results = await Promise.all(updates);
-    const failed = results.filter((r) => r.error).length;
+    const errors = results.filter((r) => r.error);
+    const failed = errors.length;
     if (failed > 0) {
-      toast({ title: `${failed} update(s) failed`, variant: "destructive" });
+      // e.g. "Price too low: MTN 30GB at GH₵0.10 is below the minimum of GH₵110.00…"
+      toast({ title: `${failed} update(s) failed`, description: errors[0].error?.message, variant: "destructive" });
     } else {
       toast({ title: "Prices pushed to all sub agents" });
     }
