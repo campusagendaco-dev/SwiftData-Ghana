@@ -15,7 +15,7 @@ import {
   Search, Zap, Gift, TrendingUp, FileDown, Activity, BookOpen, Hash,
   BarChart2, Ban, ChevronDown, ChevronUp, Copy, Lock, ShieldAlert,
   UserX, MapPin, LogIn, ShieldCheck, Bot,
-  Crosshair, Radio, Terminal, TriangleAlert, Play
+  Crosshair, Radio, Terminal, TriangleAlert, Play, ArrowRight
 } from "lucide-react";
 
 /* ─── interfaces ─────────────────────────────────────────────────── */
@@ -95,10 +95,10 @@ interface AttackPattern {
 
 /* ─── helpers ────────────────────────────────────────────────────── */
 const roleLabel = (p: ProfileRow) => {
-  if (p.is_sub_agent)               return { label: "Sub-Agent",     cls: "bg-blue-500/10 text-blue-400 border-blue-500/30" };
-  if (p.is_agent && p.agent_approved) return { label: "Agent",       cls: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" };
-  if (p.is_agent)                   return { label: "Pending Agent", cls: "bg-amber-500/10 text-amber-400 border-amber-500/30" };
-  return                                   { label: "Customer",      cls: "bg-zinc-800 text-zinc-400 border-zinc-700" };
+  if (p.is_sub_agent)               return { label: "Sub-Agent",     cls: "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30" };
+  if (p.is_agent && p.agent_approved) return { label: "Agent",       cls: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30" };
+  if (p.is_agent)                   return { label: "Pending Agent", cls: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30" };
+  return                                   { label: "Customer",      cls: "bg-muted text-foreground/75 border-border" };
 };
 const exportCsv = (rows: Record<string, unknown>[], filename: string) => {
   if (!rows.length) return;
@@ -135,13 +135,13 @@ const Pulse = ({ color = "bg-red-500" }: { color?: string }) => (
 );
 
 const TH = ({ children }: { children: ReactNode }) => (
-  <th className="text-left px-4 py-3 text-[9px] font-black uppercase tracking-[0.2em] text-zinc-500 whitespace-nowrap font-mono">{children}</th>
+  <th className="text-left px-4 py-3 text-[9px] font-semibold text-muted-foreground whitespace-nowrap">{children}</th>
 );
 
 const EmptyState = ({ icon: Icon = CheckCircle2, message }: { icon?: typeof Shield; message: string }) => (
   <div className="flex flex-col items-center justify-center py-10 gap-3 opacity-50">
     <Icon className="w-7 h-7 text-emerald-500" />
-    <p className="text-xs text-zinc-400 text-center font-bold font-mono">{message}</p>
+    <p className="text-xs text-foreground/75 text-center font-medium">{message}</p>
   </div>
 );
 
@@ -153,54 +153,54 @@ const SectionCard = ({
 }) => {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className={`rounded-xl border overflow-hidden ${threat && (count ?? 0) > 0 ? "border-red-500/30 bg-red-950/10" : "border-zinc-800 bg-zinc-900/60"}`}>
-      <div className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-white/[0.02] transition-colors">
+    <div className={`rounded-xl border overflow-hidden ${threat && (count ?? 0) > 0 ? "border-red-500/30 bg-red-500/10" : "border-border bg-muted/60"}`}>
+      <div className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-muted/50 transition-colors">
         <button type="button" onClick={() => setOpen(o => !o)} className="flex items-center gap-3 flex-1 text-left">
           <div className={`p-1.5 rounded-lg border ${color.replace("text-", "bg-").replace("400", "500/10")} ${color.replace("text-", "border-").replace("400", "500/20")}`}>
             <Icon className={`w-3.5 h-3.5 ${color}`} />
           </div>
-          <span className="font-black text-white text-xs uppercase tracking-[0.12em] font-mono">{title}</span>
+          <span className="font-semibold text-foreground text-xs">{title}</span>
           {count !== undefined && (
             <span className={`text-[10px] font-black px-2 py-0.5 rounded border tracking-widest font-mono ${
-              count > 0 ? `${color.replace("text-", "bg-").replace("400", "500/15")} ${color} ${color.replace("text-", "border-").replace("400", "500/30")}` : "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+              count > 0 ? `${color.replace("text-", "bg-").replace("400", "500/15")} ${color} ${color.replace("text-", "border-").replace("400", "500/30")}` : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
             }`}>{count}</span>
           )}
         </button>
         <div className="flex items-center gap-2 shrink-0">
           {onExport && (
             <button type="button" onClick={onExport}
-              className="flex items-center gap-1 text-[10px] text-zinc-500 hover:text-white transition-colors px-2 py-1 rounded hover:bg-zinc-800 font-mono">
+              className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded hover:bg-muted font-mono">
               <FileDown className="w-3 h-3" /> CSV
             </button>
           )}
-          <button type="button" onClick={() => setOpen(o => !o)} className="text-zinc-600">
+          <button type="button" onClick={() => setOpen(o => !o)} className="text-muted-foreground">
             {open ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
           </button>
         </div>
       </div>
-      {open && <div className="border-t border-zinc-800 p-5">{children}</div>}
+      {open && <div className="border-t border-border p-5">{children}</div>}
     </div>
   );
 };
 
 /* DEFCON badge */
 const DEFCON_CFG = {
-  1: { label: "DEFCON 1", sub: "ATTACK IN PROGRESS", text: "text-red-400", border: "border-red-500/40", bg: "bg-red-950/30", ring: "stroke-red-500", pulse: true },
-  2: { label: "DEFCON 2", sub: "CRITICAL THREAT",    text: "text-orange-400", border: "border-orange-500/40", bg: "bg-orange-950/20", ring: "stroke-orange-500", pulse: true },
-  3: { label: "DEFCON 3", sub: "ELEVATED",            text: "text-amber-400", border: "border-amber-500/40", bg: "bg-amber-950/10", ring: "stroke-amber-500", pulse: false },
-  4: { label: "DEFCON 4", sub: "GUARDED",             text: "text-cyan-400",  border: "border-cyan-500/30",  bg: "bg-cyan-950/10",  ring: "stroke-cyan-500",  pulse: false },
-  5: { label: "DEFCON 5", sub: "ALL CLEAR",           text: "text-emerald-400", border: "border-emerald-500/30", bg: "bg-emerald-950/10", ring: "stroke-emerald-500", pulse: false },
+  1: { label: "Under attack", sub: "Act now: automatic responses are running", text: "text-red-600 dark:text-red-400", border: "border-red-500/40", bg: "bg-red-500/10", ring: "stroke-red-500", pulse: true },
+  2: { label: "Critical", sub: "Serious threats found",    text: "text-orange-600 dark:text-orange-400", border: "border-orange-500/40", bg: "bg-orange-500/10", ring: "stroke-orange-500", pulse: true },
+  3: { label: "Elevated", sub: "A few things to check",            text: "text-amber-600 dark:text-amber-400", border: "border-amber-500/40", bg: "bg-amber-500/10", ring: "stroke-amber-500", pulse: false },
+  4: { label: "Guarded", sub: "Minor signals only",             text: "text-cyan-600 dark:text-cyan-400",  border: "border-cyan-500/30",  bg: "bg-cyan-500/10",  ring: "stroke-cyan-500",  pulse: false },
+  5: { label: "All clear", sub: "Nothing needs you right now",           text: "text-emerald-600 dark:text-emerald-400", border: "border-emerald-500/30", bg: "bg-emerald-500/10", ring: "stroke-emerald-500", pulse: false },
 } as const;
 
 /* Agent action type styling */
 const AGENT_TYPE_CFG = {
-  AUTO_SUSPEND:   { label: "SUSPEND",   color: "text-red-400",     bg: "bg-red-500/10",     border: "border-red-500/25",     icon: UserX },
-  AUTO_BLACKLIST: { label: "BLACKLIST", color: "text-orange-400",  bg: "bg-orange-500/10",  border: "border-orange-500/25",  icon: Ban },
-  BOT_DETECT:     { label: "BOT",       color: "text-rose-400",    bg: "bg-rose-500/10",    border: "border-rose-500/25",    icon: Bot },
-  SCAN:           { label: "SCAN",      color: "text-cyan-400",    bg: "bg-cyan-500/10",    border: "border-cyan-500/25",    icon: Radio },
-  ALERT:          { label: "ALERT",     color: "text-amber-400",   bg: "bg-amber-500/10",   border: "border-amber-500/25",   icon: TriangleAlert },
-  PATTERN:        { label: "PATTERN",   color: "text-purple-400",  bg: "bg-purple-500/10",  border: "border-purple-500/25",  icon: Crosshair },
-  GUARDIAN:       { label: "GUARDIAN",  color: "text-cyan-400",    bg: "bg-cyan-500/10",    border: "border-cyan-500/25",    icon: Shield },
+  AUTO_SUSPEND:   { label: "Suspend",   color: "text-red-600 dark:text-red-400",     bg: "bg-red-500/10",     border: "border-red-500/25",     icon: UserX },
+  AUTO_BLACKLIST: { label: "Blacklist", color: "text-orange-600 dark:text-orange-400",  bg: "bg-orange-500/10",  border: "border-orange-500/25",  icon: Ban },
+  BOT_DETECT:     { label: "Bot",       color: "text-rose-600 dark:text-rose-400",    bg: "bg-rose-500/10",    border: "border-rose-500/25",    icon: Bot },
+  SCAN:           { label: "Scan",      color: "text-cyan-600 dark:text-cyan-400",    bg: "bg-cyan-500/10",    border: "border-cyan-500/25",    icon: Radio },
+  ALERT:          { label: "Alert",     color: "text-amber-600 dark:text-amber-400",   bg: "bg-amber-500/10",   border: "border-amber-500/25",   icon: TriangleAlert },
+  PATTERN:        { label: "Pattern",   color: "text-purple-600 dark:text-purple-400",  bg: "bg-purple-500/10",  border: "border-purple-500/25",  icon: Crosshair },
+  GUARDIAN:       { label: "Guardian",  color: "text-cyan-600 dark:text-cyan-400",    bg: "bg-cyan-500/10",    border: "border-cyan-500/25",    icon: Shield },
 };
 
 /* ─── main component ─────────────────────────────────────────────── */
@@ -879,12 +879,12 @@ const AdminSecurity = () => {
   const totalThreats = clusters.length + referralGroups.length + failedUsers.length + velocityAccts.length;
   const maxSignup = Math.max(...signupTrend.map(d => d.count), 1);
   const STATS = [
-    { label: "Shared IPs",     value: clusters.length,       icon: Globe,      danger: clusters.length > 0,       color: "text-red-400",    bg: "bg-red-500/10 border-red-500/25"      },
-    { label: "Velocity Flags", value: velocityAccts.length,  icon: Zap,        danger: velocityAccts.length > 0,  color: "text-orange-400", bg: "bg-orange-500/10 border-orange-500/25"},
-    { label: "Referral Abuse", value: referralGroups.length, icon: Gift,       danger: referralGroups.length > 0, color: "text-purple-400", bg: "bg-purple-500/10 border-purple-500/25"},
-    { label: "High Logins",    value: highLogins.length,     icon: Hash,       danger: false,                     color: "text-amber-400",  bg: "bg-amber-500/10 border-amber-500/25"  },
-    { label: "High Fail Rate", value: failedUsers.length,    icon: TrendingUp, danger: failedUsers.length > 0,    color: "text-red-400",    bg: "bg-red-500/10 border-red-500/25"      },
-    { label: "Suspended",      value: suspendedCount,        icon: UserX,      danger: suspendedCount > 0,        color: "text-rose-400",   bg: "bg-rose-500/10 border-rose-500/25"    },
+    { label: "Shared IPs",     value: clusters.length,       icon: Globe,      danger: clusters.length > 0,       color: "text-red-600 dark:text-red-400",    bg: "bg-red-500/10 border-red-500/25"      },
+    { label: "Velocity Flags", value: velocityAccts.length,  icon: Zap,        danger: velocityAccts.length > 0,  color: "text-orange-600 dark:text-orange-400", bg: "bg-orange-500/10 border-orange-500/25"},
+    { label: "Referral Abuse", value: referralGroups.length, icon: Gift,       danger: referralGroups.length > 0, color: "text-purple-600 dark:text-purple-400", bg: "bg-purple-500/10 border-purple-500/25"},
+    { label: "High Logins",    value: highLogins.length,     icon: Hash,       danger: false,                     color: "text-amber-600 dark:text-amber-400",  bg: "bg-amber-500/10 border-amber-500/25"  },
+    { label: "High Fail Rate", value: failedUsers.length,    icon: TrendingUp, danger: failedUsers.length > 0,    color: "text-red-600 dark:text-red-400",    bg: "bg-red-500/10 border-red-500/25"      },
+    { label: "Suspended",      value: suspendedCount,        icon: UserX,      danger: suspendedCount > 0,        color: "text-rose-600 dark:text-rose-400",   bg: "bg-rose-500/10 border-rose-500/25"    },
   ];
 
   if (loading) return (
@@ -893,7 +893,7 @@ const AdminSecurity = () => {
         <Shield className="w-12 h-12 text-red-500/20 absolute inset-0" />
         <Loader2 className="w-12 h-12 text-red-500 animate-spin absolute inset-0" />
       </div>
-      <p className="text-zinc-500 text-[11px] font-black uppercase tracking-[0.3em] font-mono">Initializing Security Matrix…</p>
+      <p className="text-muted-foreground text-[11px] font-semibold">Loading security…</p>
     </div>
   );
 
@@ -902,49 +902,44 @@ const AdminSecurity = () => {
   const renderOverview = () => (
     <div className="space-y-4">
 
-      {/* DEFCON + auto-mode bar */}
-      <div className={`flex flex-col sm:flex-row items-stretch sm:items-center gap-3 p-4 rounded-xl border ${dc.border} ${dc.bg}`}>
-        {/* DEFCON block */}
-        <div className="flex items-center gap-4 flex-1">
-          <div className={`flex flex-col items-center justify-center w-20 h-16 rounded-lg border ${dc.border} bg-black/30`}>
-            <p className="text-[8px] font-black uppercase tracking-widest text-zinc-500 font-mono">DEFCON</p>
-            <p className={`text-4xl font-black ${dc.text} ${dc.pulse ? "animate-pulse" : ""} leading-none font-mono`}>{defcon}</p>
+      {/* Automatic protection bar */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 p-4 rounded-2xl border border-border bg-card">
+        {/* Automatic protection */}
+        <div className="flex items-center gap-3 flex-1">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <Bot className="h-5 w-5" />
           </div>
           <div>
-            <p className={`text-lg font-black ${dc.text} font-mono tracking-wider`}>{dc.label}</p>
-            <p className="text-[10px] text-zinc-500 font-mono uppercase tracking-widest">{dc.sub}</p>
-            <div className="flex items-center gap-3 mt-1.5">
-              <span className="text-[9px] text-zinc-600 font-mono">Health: {healthScore}/100</span>
-              <span className={`text-[9px] font-black font-mono ${scanning ? "text-cyan-400 animate-pulse" : "text-zinc-600"}`}>
-                {scanning ? "▶ SCANNING…" : `Next scan: ${autoCount}s`}
-              </span>
-            </div>
+            <p className="text-sm font-semibold text-foreground">Automatic protection</p>
+            <p className="text-xs text-muted-foreground">
+              {scanning ? "Scanning now…" : autoMode ? `Checks every ${AUTO_INTERVAL}s · next in ${autoCount}s` : "Paused: turn auto-response on to scan every minute"}
+            </p>
           </div>
         </div>
 
         {/* counters */}
-        <div className="flex items-center gap-4 sm:border-l border-zinc-800 sm:pl-4">
+        <div className="flex items-center gap-4 sm:border-l border-border sm:pl-4">
           <div className="text-center">
-            <p className="text-2xl font-black text-emerald-400 font-mono tabular-nums">{neutralized}</p>
-            <p className="text-[9px] text-zinc-600 font-mono uppercase tracking-widest">Neutralized</p>
+            <p className="text-2xl font-black text-emerald-600 dark:text-emerald-400  tabular-nums">{neutralized}</p>
+            <p className="text-[9px] text-muted-foreground">Neutralized</p>
           </div>
           <div className="text-center">
-            <p className="text-2xl font-black text-cyan-400 font-mono tabular-nums">{threatsAnalyzed}</p>
-            <p className="text-[9px] text-zinc-600 font-mono uppercase tracking-widest">Analyzed</p>
+            <p className="text-2xl font-black text-cyan-600 dark:text-cyan-400  tabular-nums">{threatsAnalyzed}</p>
+            <p className="text-[9px] text-muted-foreground">Analyzed</p>
           </div>
           <div className="text-center">
-            <p className="text-2xl font-black text-purple-400 font-mono tabular-nums">{attackPatterns.length}</p>
-            <p className="text-[9px] text-zinc-600 font-mono uppercase tracking-widest">Patterns</p>
+            <p className="text-2xl font-black text-purple-600 dark:text-purple-400  tabular-nums">{attackPatterns.length}</p>
+            <p className="text-[9px] text-muted-foreground">Patterns</p>
           </div>
         </div>
 
         {/* auto-mode & purge spam buttons */}
-        <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2 sm:border-l border-zinc-800 sm:pl-4">
+        <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2 sm:border-l border-border sm:pl-4">
           <button
             type="button"
             onClick={handlePurgeBotSpam}
             disabled={purgingSpam}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 font-mono text-xs font-black uppercase tracking-wider transition-all disabled:opacity-50"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 text-xs font-semibold transition-all disabled:opacity-50"
           >
             {purgingSpam ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
             Purge Bot Spam
@@ -956,13 +951,9 @@ const AdminSecurity = () => {
               if (!autoMode && !confirm("Enable AUTO-RESPONSE? The AI will automatically suspend accounts and blacklist IPs when threats are confirmed.")) return;
               setAutoMode(m => !m);
             }}
-            className={`flex items-center gap-2 px-3 py-2 rounded-lg border font-mono text-xs font-black uppercase tracking-widest transition-all ${
-              autoMode
-                ? "bg-red-500/15 border-red-500/40 text-red-400"
-                : "bg-zinc-900 border-zinc-700 text-zinc-500 hover:border-zinc-600"
-            }`}
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-semibold transition-all ${ autoMode ? "bg-red-500/15 border-red-500/40 text-red-600 dark:text-red-400" : "bg-muted border-border text-muted-foreground hover:border-foreground/30" }`}
           >
-            {autoMode ? <><Pulse color="bg-red-500" /> AUTO-RESPONSE ON</> : <><Play className="w-3 h-3" /> AUTO-RESPONSE OFF</>}
+            {autoMode ? <><Pulse color="bg-red-500" /> Auto-response on</> : <><Play className="w-3 h-3" /> Auto-response off</>}
           </button>
         </div>
       </div>
@@ -971,18 +962,18 @@ const AdminSecurity = () => {
       {attackPatterns.length > 0 && (
         <div className="space-y-2">
           {attackPatterns.map(p => {
-            const PTYPE = { SUBNET_SWEEP: "SUBNET SWEEP", VELOCITY_SWARM: "VELOCITY SWARM", REFERRAL_RING: "REFERRAL RING", BOT_CLUSTER: "BOT CLUSTER" };
+            const PTYPE = { SUBNET_SWEEP: "Subnet sweep", VELOCITY_SWARM: "Velocity swarm", REFERRAL_RING: "Referral ring", BOT_CLUSTER: "Bot cluster" };
             return (
-              <div key={p.id} className={`flex items-start gap-3 p-3.5 rounded-xl border ${p.severity === "critical" ? "border-red-500/40 bg-red-950/20" : "border-orange-500/30 bg-orange-950/10"}`}>
-                <Crosshair className={`w-4 h-4 mt-0.5 shrink-0 ${p.severity === "critical" ? "text-red-400" : "text-orange-400"}`} />
+              <div key={p.id} className={`flex items-start gap-3 p-3.5 rounded-xl border ${p.severity === "critical" ? "border-red-500/40 bg-red-500/10" : "border-orange-500/30 bg-orange-500/10"}`}>
+                <Crosshair className={`w-4 h-4 mt-0.5 shrink-0 ${p.severity === "critical" ? "text-red-600 dark:text-red-400" : "text-orange-600 dark:text-orange-400"}`} />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className={`text-[9px] font-black px-2 py-0.5 rounded border font-mono tracking-widest ${p.severity === "critical" ? "bg-red-500/10 text-red-400 border-red-500/30" : "bg-orange-500/10 text-orange-400 border-orange-500/30"}`}>{PTYPE[p.type]}</span>
-                    <span className="text-xs font-black text-white">{p.description}</span>
-                    <span className={`text-[9px] font-black px-2 py-0.5 rounded font-mono ${p.severity === "critical" ? "text-red-400" : "text-orange-400"}`}>{p.userCount} accounts</span>
+                    <span className={`text-[9px] font-black px-2 py-0.5 rounded border font-mono tracking-widest ${p.severity === "critical" ? "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/30" : "bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/30"}`}>{PTYPE[p.type]}</span>
+                    <span className="text-xs font-black text-foreground">{p.description}</span>
+                    <span className={`text-[9px] font-black px-2 py-0.5 rounded font-mono ${p.severity === "critical" ? "text-red-600 dark:text-red-400" : "text-orange-600 dark:text-orange-400"}`}>{p.userCount} accounts</span>
                   </div>
-                  <p className="text-[11px] text-zinc-500 font-mono mt-0.5">{p.details}</p>
-                  {p.ips && <p className="text-[10px] text-zinc-600 font-mono mt-0.5">{p.ips.join(" · ")}</p>}
+                  <p className="text-[11px] text-muted-foreground font-mono mt-0.5">{p.details}</p>
+                  {p.ips && <p className="text-[10px] text-muted-foreground font-mono mt-0.5">{p.ips.join(" · ")}</p>}
                 </div>
                 {p.severity === "critical" && <Pulse />}
               </div>
@@ -995,68 +986,68 @@ const AdminSecurity = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
 
         {/* Health score */}
-        <div className={`lg:col-span-1 rounded-xl border border-zinc-800 p-5 relative overflow-hidden bg-zinc-900/60`}>
-          <div className="absolute top-0 right-0 w-24 h-24 border-t-2 border-r-2 border-zinc-700/30" />
-          <p className="text-[9px] font-black uppercase tracking-[0.3em] text-zinc-500 mb-3 font-mono">// Health Matrix</p>
+        <div className={`lg:col-span-1 rounded-xl border border-border p-5 relative overflow-hidden bg-card`}>
+          <div className="absolute top-0 right-0 w-24 h-24 border-t-2 border-r-2 border-border/40" />
+          <p className="text-[9px] font-semibold text-muted-foreground mb-3">System health</p>
           <div className="flex items-center gap-4 mb-4">
             <svg className="w-16 h-16 -rotate-90 shrink-0" viewBox="0 0 64 64">
-              <circle cx="32" cy="32" r="26" fill="none" stroke="currentColor" strokeWidth="5" className="text-zinc-800" />
+              <circle cx="32" cy="32" r="26" fill="none" stroke="currentColor" strokeWidth="5" className="text-muted-foreground/60" />
               <circle cx="32" cy="32" r="26" fill="none" strokeWidth="5" strokeLinecap="round"
                 className={dc.ring} strokeDasharray={`${2 * Math.PI * 26}`}
                 strokeDashoffset={`${2 * Math.PI * 26 * (1 - healthScore / 100)}`}
                 style={{ transition: "stroke-dashoffset 1s ease" }} />
             </svg>
             <div>
-              <p className={`text-5xl font-black ${dc.text} tabular-nums font-mono leading-none`}>{healthScore}</p>
-              <p className="text-zinc-500 text-xs font-mono">/ 100</p>
+              <p className={`text-5xl font-black ${dc.text} tabular-nums  leading-none`}>{healthScore}</p>
+              <p className="text-muted-foreground text-xs font-mono">/ 100</p>
             </div>
           </div>
-          <div className="w-full h-1 bg-zinc-800 rounded-full overflow-hidden mb-3">
+          <div className="w-full h-1 bg-muted rounded-full overflow-hidden mb-3">
             <div className={`h-full rounded-full transition-all duration-700 ${defcon <= 2 ? "bg-red-500" : defcon === 3 ? "bg-amber-500" : "bg-emerald-500"}`} style={{ width: `${healthScore}%` }} />
           </div>
           <div className="space-y-1.5">
-            {clusters.length > 0 && <div className="flex items-center gap-2 text-[11px] text-red-400 font-mono"><Pulse />{clusters.length} shared IP cluster{clusters.length !== 1 ? "s" : ""}</div>}
-            {referralGroups.length > 0 && <div className="flex items-center gap-2 text-[11px] text-purple-400 font-mono"><Pulse color="bg-purple-500" />{referralGroups.length} referral abuse pattern{referralGroups.length !== 1 ? "s" : ""}</div>}
-            {failedUsers.length > 0 && <div className="flex items-center gap-2 text-[11px] text-orange-400 font-mono"><Pulse color="bg-orange-500" />{failedUsers.length} high failure account{failedUsers.length !== 1 ? "s" : ""}</div>}
-            {totalThreats === 0 && <div className="flex items-center gap-2 text-[11px] text-emerald-400 font-mono"><CheckCircle2 className="w-3 h-3" />No active threats</div>}
+            {clusters.length > 0 && <div className="flex items-center gap-2 text-[11px] text-red-600 dark:text-red-400 font-mono"><Pulse />{clusters.length} shared IP cluster{clusters.length !== 1 ? "s" : ""}</div>}
+            {referralGroups.length > 0 && <div className="flex items-center gap-2 text-[11px] text-purple-600 dark:text-purple-400 font-mono"><Pulse color="bg-purple-500" />{referralGroups.length} referral abuse pattern{referralGroups.length !== 1 ? "s" : ""}</div>}
+            {failedUsers.length > 0 && <div className="flex items-center gap-2 text-[11px] text-orange-600 dark:text-orange-400 font-mono"><Pulse color="bg-orange-500" />{failedUsers.length} high failure account{failedUsers.length !== 1 ? "s" : ""}</div>}
+            {totalThreats === 0 && <div className="flex items-center gap-2 text-[11px] text-emerald-600 dark:text-emerald-400"><CheckCircle2 className="w-3 h-3" />No active threats</div>}
           </div>
         </div>
 
         {/* Live event terminal */}
-        <div className="rounded-xl border border-cyan-500/20 bg-zinc-950 flex flex-col overflow-hidden">
+        <div className="rounded-xl border border-cyan-500/20 bg-card flex flex-col overflow-hidden">
           <div className="flex items-center justify-between px-4 py-2.5 border-b border-cyan-500/20 bg-cyan-500/5">
-            <div className="flex items-center gap-2"><Pulse color="bg-cyan-500" /><span className="text-[10px] font-black uppercase tracking-[0.25em] text-cyan-400 font-mono">Live Events</span></div>
-            <button type="button" onClick={() => setLiveAlerts([])} className="text-[9px] text-zinc-600 hover:text-white font-black font-mono tracking-widest">CLR</button>
+            <div className="flex items-center gap-2"><Pulse color="bg-cyan-500" /><span className="text-[10px] font-semibold text-cyan-600 dark:text-cyan-400">Live Events</span></div>
+            <button type="button" onClick={() => setLiveAlerts([])} className="text-[9px] text-muted-foreground hover:text-foreground font-medium">Clear</button>
           </div>
           <div className="flex-1 p-3 space-y-1.5 overflow-y-auto max-h-44 scrollbar-none">
             {liveAlerts.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full gap-2 py-6">
                 <Globe className="w-5 h-5 text-cyan-500/30" />
-                <p className="text-[9px] text-zinc-600 font-mono uppercase tracking-widest">Awaiting events…</p>
+                <p className="text-[9px] text-muted-foreground">Awaiting events…</p>
               </div>
             ) : liveAlerts.map(a => (
               <div key={a.id} className="border-l border-cyan-500/30 pl-2 py-0.5">
                 <span className="text-[8px] text-cyan-500/40 font-mono">{a.time.toLocaleTimeString()}</span>
-                <p className="text-[10px] text-zinc-400 font-mono leading-tight">{a.message}</p>
+                <p className="text-[10px] text-foreground/75 font-mono leading-tight">{a.message}</p>
               </div>
             ))}
           </div>
         </div>
 
         {/* AI agent feed */}
-        <div className="rounded-xl border border-purple-500/20 bg-zinc-950 flex flex-col overflow-hidden">
+        <div className="rounded-xl border border-purple-500/20 bg-card flex flex-col overflow-hidden">
           <div className="flex items-center justify-between px-4 py-2.5 border-b border-purple-500/20 bg-purple-500/5">
             <div className="flex items-center gap-2">
-              {autoMode ? <Pulse color="bg-purple-500" /> : <span className="w-2 h-2 rounded-full bg-zinc-700 shrink-0" />}
-              <span className="text-[10px] font-black uppercase tracking-[0.25em] text-purple-400 font-mono">AI Agent</span>
+              {autoMode ? <Pulse color="bg-purple-500" /> : <span className="w-2 h-2 rounded-full bg-muted-foreground/30 shrink-0" />}
+              <span className="text-[10px] font-semibold text-purple-600 dark:text-purple-400">AI Agent</span>
             </div>
-            <button type="button" onClick={() => setAgentFeed([])} className="text-[9px] text-zinc-600 hover:text-white font-black font-mono tracking-widest">CLR</button>
+            <button type="button" onClick={() => setAgentFeed([])} className="text-[9px] text-muted-foreground hover:text-foreground font-medium">Clear</button>
           </div>
           <div className="flex-1 p-3 space-y-1.5 overflow-y-auto max-h-44 scrollbar-none">
             {agentFeed.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full gap-2 py-6">
                 <Bot className="w-5 h-5 text-purple-500/30" />
-                <p className="text-[9px] text-zinc-600 font-mono uppercase tracking-widest">{autoMode ? "Agent initializing…" : "Agent paused"}</p>
+                <p className="text-[9px] text-muted-foreground">{autoMode ? "Agent initializing…" : "Agent paused"}</p>
               </div>
             ) : agentFeed.slice(0, 15).map(a => {
               const cfg = AGENT_TYPE_CFG[a.type];
@@ -1064,12 +1055,12 @@ const AdminSecurity = () => {
                 <div key={a.id} className={`border-l-2 pl-2 py-0.5 ${a.severity === "critical" ? "border-red-500/50" : a.severity === "high" ? "border-orange-500/40" : a.severity === "medium" ? "border-amber-500/30" : "border-cyan-500/20"}`}>
                   <div className="flex items-center gap-1.5 mb-0.5">
                     <span className={`text-[8px] font-black px-1.5 py-0 rounded font-mono ${cfg.bg} ${cfg.color} ${cfg.border} border`}>{cfg.label}</span>
-                    <span className="text-[8px] text-zinc-600 font-mono">{a.timestamp.toLocaleTimeString()}</span>
-                    {a.status === "executing" && <span className="text-[8px] text-amber-400 font-mono animate-pulse">EXEC…</span>}
-                    {a.status === "done" && <span className="text-[8px] text-emerald-400 font-mono">✓</span>}
-                    {a.status === "failed" && <span className="text-[8px] text-red-400 font-mono">✗</span>}
+                    <span className="text-[8px] text-muted-foreground font-mono">{a.timestamp.toLocaleTimeString()}</span>
+                    {a.status === "executing" && <span className="text-[8px] text-amber-600 dark:text-amber-400 font-mono animate-pulse">Running…</span>}
+                    {a.status === "done" && <span className="text-[8px] text-emerald-600 dark:text-emerald-400 font-mono">✓</span>}
+                    {a.status === "failed" && <span className="text-[8px] text-red-600 dark:text-red-400 font-mono">✗</span>}
                   </div>
-                  <p className="text-[10px] text-zinc-400 font-mono leading-tight">{a.reasoning}</p>
+                  <p className="text-[10px] text-foreground/75 font-mono leading-tight">{a.reasoning}</p>
                 </div>
               );
             })}
@@ -1080,39 +1071,39 @@ const AdminSecurity = () => {
       {/* Stats grid */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         {STATS.map(({ label, value, icon: Icon, danger, color, bg }) => (
-          <div key={label} className={`rounded-xl border p-4 relative overflow-hidden ${danger && value > 0 ? bg : "bg-zinc-900 border-zinc-800"}`}>
+          <div key={label} className={`rounded-xl border p-4 relative overflow-hidden ${danger && value > 0 ? bg : "bg-card border-border"}`}>
             {danger && value > 0 && <div className="absolute top-2 right-2"><Pulse color={color.replace("text-", "bg-")} /></div>}
-            <Icon className={`w-4 h-4 mb-3 ${danger && value > 0 ? color : "text-zinc-600"}`} />
-            <p className={`text-3xl font-black tabular-nums leading-none mb-1 font-mono ${danger && value > 0 ? color : "text-white"}`}>{value}</p>
-            <p className="text-[9px] text-zinc-500 font-black uppercase tracking-[0.15em] leading-tight font-mono">{label}</p>
+            <Icon className={`w-4 h-4 mb-3 ${danger && value > 0 ? color : "text-muted-foreground"}`} />
+            <p className={`text-3xl font-black tabular-nums leading-none mb-1  ${danger && value > 0 ? color : "text-foreground"}`}>{value}</p>
+            <p className="text-[11px] text-muted-foreground font-medium leading-tight">{label}</p>
           </div>
         ))}
       </div>
 
       {/* Signup trend */}
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-5">
+      <div className="rounded-xl border border-border bg-card p-5">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2.5">
             <BarChart2 className="w-4 h-4 text-cyan-500" />
-            <span className="font-black text-white text-xs uppercase tracking-[0.12em] font-mono">Signup Trend</span>
-            <span className="text-[9px] bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 px-2 py-0.5 rounded font-black font-mono tracking-widest">14D</span>
+            <span className="font-semibold text-foreground text-xs">Signup Trend</span>
+            <span className="text-[9px] bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/20 px-2 py-0.5 rounded-full font-medium">14 days</span>
           </div>
           <div className="text-right">
-            <span className="text-2xl font-black text-cyan-400 tabular-nums font-mono">{signupTrend.reduce((s, d) => s + d.count, 0)}</span>
-            <p className="text-[9px] text-zinc-500 font-mono">new accounts</p>
+            <span className="text-2xl font-black text-cyan-600 dark:text-cyan-400 tabular-nums ">{signupTrend.reduce((s, d) => s + d.count, 0)}</span>
+            <p className="text-[9px] text-muted-foreground">new accounts</p>
           </div>
         </div>
         <div className="flex items-end gap-0.5 h-14">
           {signupTrend.map(day => (
             <div key={day.date} className="flex flex-col items-center flex-1 group cursor-default">
-              <span className="text-[8px] text-zinc-500 opacity-0 group-hover:opacity-100 transition-opacity font-mono">{day.count}</span>
+              <span className="text-[8px] text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity font-mono">{day.count}</span>
               <div className="w-full bg-cyan-500/20 hover:bg-cyan-500 rounded-sm transition-all" style={{ height: `${Math.max(2, (day.count / maxSignup) * 48)}px` }} title={`${day.date}: ${day.count}`} />
             </div>
           ))}
         </div>
         <div className="flex justify-between mt-1">
-          <span className="text-[9px] text-zinc-600 font-mono">{signupTrend[0]?.date.slice(5)}</span>
-          <span className="text-[9px] text-zinc-600 font-mono">{signupTrend[signupTrend.length - 1]?.date.slice(5)}</span>
+          <span className="text-[9px] text-muted-foreground font-mono">{signupTrend[0]?.date.slice(5)}</span>
+          <span className="text-[9px] text-muted-foreground font-mono">{signupTrend[signupTrend.length - 1]?.date.slice(5)}</span>
         </div>
       </div>
     </div>
@@ -1121,15 +1112,15 @@ const AdminSecurity = () => {
   const renderThreats = () => (
     <div className="space-y-4">
       {totalThreats > 0 && (
-        <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-red-500/30 bg-red-950/20">
+        <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-red-500/30 bg-red-500/10">
           <Pulse />
-          <p className="text-xs font-black text-red-400 uppercase tracking-widest font-mono">
+          <p className="text-xs font-semibold text-red-600 dark:text-red-400">
             {totalThreats} active threat signal{totalThreats !== 1 ? "s" : ""} — AI response {autoMode ? "armed" : "in manual mode"}
           </p>
         </div>
       )}
 
-      <SectionCard title="Shared IP Groups" count={fClusters.length} icon={Globe} color="text-red-400" threat
+      <SectionCard title="Shared IP Groups" count={fClusters.length} icon={Globe} color="text-red-600 dark:text-red-400" threat
         onExport={() => exportCsv(clusters.flatMap(c => c.accounts.map(a => ({ ip: c.ip, location: c.location, ...a } as Record<string, unknown>))), "shared_ips.csv")}
       >
         {fClusters.length === 0 ? <EmptyState icon={Globe} message="No shared IP addresses detected." /> : (
@@ -1139,39 +1130,39 @@ const AdminSecurity = () => {
               const sev = cluster.accounts.length >= 5 ? "critical" : cluster.accounts.length >= 3 ? "high" : "medium";
               const autoHandled = handledRef.current.ips.has(cluster.ip);
               return (
-                <div key={cluster.ip} className={`rounded-xl border overflow-hidden ${sev === "critical" ? "border-red-500/40 bg-red-950/15" : sev === "high" ? "border-orange-500/30 bg-orange-950/10" : "border-amber-500/20 bg-amber-950/5"}`}>
+                <div key={cluster.ip} className={`rounded-xl border overflow-hidden ${sev === "critical" ? "border-red-500/40 bg-red-500/10" : sev === "high" ? "border-orange-500/30 bg-orange-500/10" : "border-amber-500/20 bg-amber-500/10"}`}>
                   <div className="flex items-center justify-between px-4 py-3">
                     <button type="button" onClick={() => setExpandedIp(exp ? null : cluster.ip)} className="flex-1 flex items-center gap-3 text-left flex-wrap">
-                      {exp ? <ChevronUp className="w-3 h-3 text-red-400 shrink-0" /> : <ChevronDown className="w-3 h-3 text-zinc-500 shrink-0" />}
-                      <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded border font-mono tracking-wider ${sev === "critical" ? "text-red-400 bg-red-500/10 border-red-500/30" : sev === "high" ? "text-orange-400 bg-orange-500/10 border-orange-500/30" : "text-amber-400 bg-amber-500/10 border-amber-500/30"}`}>{sev}</span>
-                      <span className="font-mono text-sm font-bold text-white">{cluster.ip}</span>
+                      {exp ? <ChevronUp className="w-3 h-3 text-red-600 dark:text-red-400 shrink-0" /> : <ChevronDown className="w-3 h-3 text-muted-foreground shrink-0" />}
+                      <span className={`text-[9px] font-semibold px-2 py-0.5 rounded border ${sev === "critical" ? "text-red-600 dark:text-red-400 bg-red-500/10 border-red-500/30" : sev === "high" ? "text-orange-600 dark:text-orange-400 bg-orange-500/10 border-orange-500/30" : "text-amber-600 dark:text-amber-400 bg-amber-500/10 border-amber-500/30"}`}>{sev}</span>
+                      <span className="font-mono text-sm font-bold text-foreground">{cluster.ip}</span>
                       {cluster.location && <span className="flex items-center gap-1 text-[10px] text-emerald-500/70 font-mono"><MapPin className="w-3 h-3" />{cluster.location}</span>}
-                      <span className="text-[9px] font-black bg-red-500/10 text-red-400 border border-red-500/20 px-2 py-0.5 rounded font-mono">{cluster.accounts.length} accounts</span>
-                      {autoHandled && <span className="text-[9px] font-black bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded font-mono">AI NEUTRALIZED</span>}
+                      <span className="text-[9px] font-black bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20 px-2 py-0.5 rounded font-mono">{cluster.accounts.length} accounts</span>
+                      {autoHandled && <span className="text-[9px] font-black bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded">Stopped by AI</span>}
                     </button>
                     <div className="flex items-center gap-2 shrink-0 ml-2">
-                      <button type="button" onClick={() => copyText(cluster.ip, "IP copied")} className="p-1.5 rounded text-zinc-600 hover:text-white hover:bg-zinc-800 transition-all"><Copy className="w-3 h-3" /></button>
+                      <button type="button" onClick={() => copyText(cluster.ip, "IP copied")} className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-all"><Copy className="w-3 h-3" /></button>
                       <button type="button" onClick={() => handleBulkSuspend(cluster.accounts.map(a => a.user_id), true)}
-                        className="text-[9px] font-black uppercase bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded transition-all tracking-widest font-mono">
+                        className="text-[9px] font-semibold bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded transition-all">
                         SUSPEND ALL
                       </button>
                     </div>
                   </div>
                   {exp && (
-                    <div className="border-t border-zinc-800/60 divide-y divide-zinc-800/40">
+                    <div className="border-t border-border/60 divide-y divide-border/40">
                       {cluster.accounts.map(acc => {
                         const role = roleLabel(acc);
                         return (
-                          <div key={acc.user_id} className="flex items-center justify-between px-4 py-2.5 bg-zinc-950/50">
+                          <div key={acc.user_id} className="flex items-center justify-between px-4 py-2.5 bg-card/60">
                             <div className="min-w-0">
-                              <p className="text-sm font-black text-white truncate">{acc.full_name || "—"}</p>
-                              <p className="text-[11px] text-zinc-500 font-mono truncate">{acc.email}</p>
-                              {acc.last_seen_at && <p className="text-[10px] text-zinc-600 font-mono">{fmt(acc.last_seen_at)}</p>}
+                              <p className="text-sm font-black text-foreground truncate">{acc.full_name || "—"}</p>
+                              <p className="text-[11px] text-muted-foreground font-mono truncate">{acc.email}</p>
+                              {acc.last_seen_at && <p className="text-[10px] text-muted-foreground font-mono">{fmt(acc.last_seen_at)}</p>}
                             </div>
                             <div className="flex items-center gap-1.5 shrink-0 ml-3">
-                              {acc.is_suspended && <span className="text-[9px] font-black px-2 py-0.5 rounded border bg-red-500/10 text-red-400 border-red-500/20 font-mono">SUSPENDED</span>}
+                              {acc.is_suspended && <span className="text-[9px] font-black px-2 py-0.5 rounded border bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20 font-mono">Suspended</span>}
                               <span className={`text-[9px] font-black px-2 py-0.5 rounded border ${role.cls}`}>{role.label}</span>
-                              <span className="text-[10px] text-zinc-500 font-mono">{acc.login_count ?? 0}×</span>
+                              <span className="text-[10px] text-muted-foreground font-mono">{acc.login_count ?? 0}×</span>
                             </div>
                           </div>
                         );
@@ -1185,27 +1176,27 @@ const AdminSecurity = () => {
         )}
       </SectionCard>
 
-      <SectionCard title="Account Velocity" count={fVelocity.length} icon={Zap} color="text-orange-400" threat
+      <SectionCard title="Account Velocity" count={fVelocity.length} icon={Zap} color="text-orange-600 dark:text-orange-400" threat
         onExport={() => exportCsv(fVelocity as unknown as Record<string, unknown>[], "velocity.csv")}
       >
         {fVelocity.length === 0 ? <EmptyState icon={Zap} message="No accounts placed orders within 5 minutes of signup." /> : (
-          <div className="overflow-x-auto rounded-lg border border-zinc-800 overflow-hidden">
+          <div className="overflow-x-auto rounded-lg border border-border overflow-hidden">
             <table className="w-full text-sm">
-              <thead><tr className="bg-zinc-900 border-b border-zinc-800"><TH>User</TH><TH>Joined</TH><TH>First Order</TH><TH>Delay</TH><TH>Status</TH></tr></thead>
+              <thead><tr className="bg-muted border-b border-border"><TH>User</TH><TH>Joined</TH><TH>First Order</TH><TH>Delay</TH><TH>Status</TH></tr></thead>
               <tbody>
                 {fVelocity.map(v => {
                   const isBot = v.minutes_to_first_order <= 1;
                   const autoHandled = handledRef.current.users.has(v.user_id);
                   return (
-                    <tr key={v.user_id} className={`border-b border-zinc-800/60 hover:bg-zinc-900/60 transition-colors ${isBot ? "bg-red-950/10" : ""}`}>
-                      <td className="px-4 py-3"><p className="font-black text-white">{v.full_name || "—"}</p><p className="text-[11px] text-zinc-500 font-mono">{v.email}</p></td>
-                      <td className="px-4 py-3 text-xs text-zinc-500 font-mono">{fmt(v.joined_at)}</td>
-                      <td className="px-4 py-3 text-xs text-zinc-500 font-mono">{fmt(v.first_order_at)}</td>
-                      <td className="px-4 py-3"><span className={`text-sm font-black font-mono ${isBot ? "text-red-400 animate-pulse" : "text-orange-400"}`}>{v.minutes_to_first_order}m</span></td>
+                    <tr key={v.user_id} className={`border-b border-border/60 hover:bg-muted transition-colors ${isBot ? "bg-red-500/10" : ""}`}>
+                      <td className="px-4 py-3"><p className="font-black text-foreground">{v.full_name || "—"}</p><p className="text-[11px] text-muted-foreground font-mono">{v.email}</p></td>
+                      <td className="px-4 py-3 text-xs text-muted-foreground font-mono">{fmt(v.joined_at)}</td>
+                      <td className="px-4 py-3 text-xs text-muted-foreground font-mono">{fmt(v.first_order_at)}</td>
+                      <td className="px-4 py-3"><span className={`text-sm font-black font-mono ${isBot ? "text-red-600 dark:text-red-400 animate-pulse" : "text-orange-600 dark:text-orange-400"}`}>{v.minutes_to_first_order}m</span></td>
                       <td className="px-4 py-3">
-                        {autoHandled ? <span className="text-[9px] font-black text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded font-mono">AI SUSPENDED</span>
-                          : isBot ? <span className="text-[9px] font-black text-red-400 bg-red-500/10 border border-red-500/20 px-2 py-0.5 rounded font-mono animate-pulse">BOT CONFIRMED</span>
-                          : <span className="text-[9px] font-black text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded font-mono">SUSPICIOUS</span>}
+                        {autoHandled ? <span className="text-[9px] font-black text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded">Suspended by AI</span>
+                          : isBot ? <span className="text-[9px] font-black text-red-600 dark:text-red-400 bg-red-500/10 border border-red-500/20 px-2 py-0.5 rounded animate-pulse">Confirmed bot</span>
+                          : <span className="text-[9px] font-black text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded font-mono">Suspicious</span>}
                       </td>
                     </tr>
                   );
@@ -1216,23 +1207,23 @@ const AdminSecurity = () => {
         )}
       </SectionCard>
 
-      <SectionCard title="Referral Abuse" count={fReferrals.length} icon={Gift} color="text-purple-400" threat
+      <SectionCard title="Referral Abuse" count={fReferrals.length} icon={Gift} color="text-purple-600 dark:text-purple-400" threat
         onExport={() => exportCsv(referralGroups.flatMap(g => g.members.map(m => ({ referrer: g.referrer_email, ...m } as Record<string, unknown>))), "referral_abuse.csv")}
       >
         {fReferrals.length === 0 ? <EmptyState icon={Gift} message="No referral codes with 5+ signups." /> : (
           <div className="space-y-2">
             {fReferrals.map(g => (
-              <div key={g.referrer_id} className="rounded-lg border border-purple-500/20 bg-purple-950/10 p-4">
+              <div key={g.referrer_id} className="rounded-lg border border-purple-500/20 bg-purple-500/10 p-4">
                 <div className="flex items-center justify-between mb-3">
-                  <div><p className="font-black text-white text-sm">{g.referrer_name}</p><p className="text-[11px] text-zinc-500 font-mono">{g.referrer_email}</p></div>
-                  <span className="text-[9px] font-black bg-purple-500/10 text-purple-400 border border-purple-500/20 px-2 py-0.5 rounded font-mono">{g.count} referrals</span>
+                  <div><p className="font-black text-foreground text-sm">{g.referrer_name}</p><p className="text-[11px] text-muted-foreground font-mono">{g.referrer_email}</p></div>
+                  <span className="text-[9px] font-black bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20 px-2 py-0.5 rounded font-mono">{g.count} referrals</span>
                 </div>
                 <div className="space-y-1">
                   {g.members.map(m => (
-                    <div key={m.user_id} className="flex items-center gap-2 text-[11px] bg-zinc-950 border border-zinc-800 px-3 py-1.5 rounded font-mono">
-                      <span className="text-white font-bold">{m.full_name || "—"}</span>
-                      <span className="text-zinc-700">·</span>
-                      <span className="text-zinc-500">{m.email}</span>
+                    <div key={m.user_id} className="flex items-center gap-2 text-[11px] bg-card border border-border px-3 py-1.5 rounded font-mono">
+                      <span className="text-foreground font-bold">{m.full_name || "—"}</span>
+                      <span className="text-muted-foreground/70">·</span>
+                      <span className="text-muted-foreground">{m.email}</span>
                     </div>
                   ))}
                 </div>
@@ -1242,23 +1233,23 @@ const AdminSecurity = () => {
         )}
       </SectionCard>
 
-      <SectionCard title="High Failure Rate" count={fFailed.length} icon={TrendingUp} color="text-red-400" threat
+      <SectionCard title="High Failure Rate" count={fFailed.length} icon={TrendingUp} color="text-red-600 dark:text-red-400" threat
         onExport={() => exportCsv(fFailed as unknown as Record<string, unknown>[], "failed_rate.csv")}
       >
         {fFailed.length === 0 ? <EmptyState icon={TrendingUp} message="No users with ≥50% failure rate (min 5 orders)." /> : (
-          <div className="overflow-x-auto rounded-lg border border-zinc-800 overflow-hidden">
+          <div className="overflow-x-auto rounded-lg border border-border overflow-hidden">
             <table className="w-full text-sm">
-              <thead><tr className="bg-zinc-900 border-b border-zinc-800"><TH>User</TH><TH>Orders</TH><TH>Failed</TH><TH>Rate</TH></tr></thead>
+              <thead><tr className="bg-muted border-b border-border"><TH>User</TH><TH>Orders</TH><TH>Failed</TH><TH>Rate</TH></tr></thead>
               <tbody>
                 {fFailed.map(u => (
-                  <tr key={u.user_id} className="border-b border-zinc-800/60 hover:bg-zinc-900/60 transition-colors">
-                    <td className="px-4 py-3"><p className="font-black text-white">{u.full_name || "—"}</p><p className="text-[11px] text-zinc-500 font-mono">{u.email}</p></td>
-                    <td className="px-4 py-3 text-xs text-zinc-400 font-black font-mono">{u.total}</td>
-                    <td className="px-4 py-3 text-xs text-red-400 font-black font-mono">{u.failed}</td>
+                  <tr key={u.user_id} className="border-b border-border/60 hover:bg-muted transition-colors">
+                    <td className="px-4 py-3"><p className="font-black text-foreground">{u.full_name || "—"}</p><p className="text-[11px] text-muted-foreground font-mono">{u.email}</p></td>
+                    <td className="px-4 py-3 text-xs text-foreground/75 font-black font-mono">{u.total}</td>
+                    <td className="px-4 py-3 text-xs text-red-600 dark:text-red-400 font-black font-mono">{u.failed}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        <div className="w-16 h-1 bg-zinc-800 rounded-full overflow-hidden"><div className="h-full bg-red-500 rounded-full" style={{ width: `${u.rate}%` }} /></div>
-                        <span className="text-xs font-black text-red-400 font-mono">{u.rate}%</span>
+                        <div className="w-16 h-1 bg-muted rounded-full overflow-hidden"><div className="h-full bg-red-500 rounded-full" style={{ width: `${u.rate}%` }} /></div>
+                        <span className="text-xs font-black text-red-600 dark:text-red-400 font-mono">{u.rate}%</span>
                       </div>
                     </td>
                   </tr>
@@ -1273,22 +1264,22 @@ const AdminSecurity = () => {
 
   const renderActivity = () => (
     <div className="space-y-4">
-      <SectionCard title="Recent Logins" count={fLogins.length} icon={LogIn} color="text-cyan-400"
+      <SectionCard title="Recent Logins" count={fLogins.length} icon={LogIn} color="text-cyan-600 dark:text-cyan-400"
         onExport={() => exportCsv(fLogins.map(l => ({ ...l } as Record<string, unknown>)), "recent_logins.csv")}
       >
-        <div className="overflow-x-auto rounded-lg border border-zinc-800 overflow-hidden">
+        <div className="overflow-x-auto rounded-lg border border-border overflow-hidden">
           <table className="w-full text-sm">
-            <thead><tr className="bg-zinc-900 border-b border-zinc-800"><TH>User</TH><TH>IP</TH><TH>Location</TH><TH>Last Seen</TH><TH>Logins</TH></tr></thead>
+            <thead><tr className="bg-muted border-b border-border"><TH>User</TH><TH>IP</TH><TH>Location</TH><TH>Last Seen</TH><TH>Logins</TH></tr></thead>
             <tbody>
               {fLogins.map(l => (
-                <tr key={l.user_id} className="border-b border-zinc-800/60 hover:bg-zinc-900/60 transition-colors">
-                  <td className="px-4 py-3"><p className="font-black text-white">{l.full_name || "—"}</p><p className="text-[11px] text-zinc-500 font-mono">{l.email}</p></td>
+                <tr key={l.user_id} className="border-b border-border/60 hover:bg-muted transition-colors">
+                  <td className="px-4 py-3"><p className="font-black text-foreground">{l.full_name || "—"}</p><p className="text-[11px] text-muted-foreground font-mono">{l.email}</p></td>
                   <td className="px-4 py-3">
-                    {l.last_ip ? <div className="flex items-center gap-1.5"><span className="font-mono text-xs text-cyan-400/80 font-bold">{l.last_ip}</span><button type="button" onClick={() => copyText(l.last_ip!, "IP copied")} className="text-zinc-600 hover:text-white"><Copy className="w-3 h-3" /></button></div> : <span className="text-zinc-700">—</span>}
+                    {l.last_ip ? <div className="flex items-center gap-1.5"><span className="font-mono text-xs text-cyan-400/80 font-bold">{l.last_ip}</span><button type="button" onClick={() => copyText(l.last_ip!, "IP copied")} className="text-muted-foreground hover:text-foreground"><Copy className="w-3 h-3" /></button></div> : <span className="text-muted-foreground/70">—</span>}
                   </td>
-                  <td className="px-4 py-3 text-xs font-bold text-emerald-500/70">{l.last_location || <span className="text-zinc-700">—</span>}</td>
-                  <td className="px-4 py-3 text-xs text-zinc-500 font-mono">{fmt(l.last_seen_at)}</td>
-                  <td className="px-4 py-3"><span className="text-xs font-black text-zinc-400 font-mono">{l.login_count ?? 0}</span></td>
+                  <td className="px-4 py-3 text-xs font-bold text-emerald-500/70">{l.last_location || <span className="text-muted-foreground/70">—</span>}</td>
+                  <td className="px-4 py-3 text-xs text-muted-foreground font-mono">{fmt(l.last_seen_at)}</td>
+                  <td className="px-4 py-3"><span className="text-xs font-black text-foreground/75 font-mono">{l.login_count ?? 0}</span></td>
                 </tr>
               ))}
             </tbody>
@@ -1296,20 +1287,20 @@ const AdminSecurity = () => {
         </div>
       </SectionCard>
 
-      <SectionCard title="High Login Frequency" count={fHighLogin.length} icon={Hash} color="text-amber-400"
+      <SectionCard title="High Login Frequency" count={fHighLogin.length} icon={Hash} color="text-amber-600 dark:text-amber-400"
         onExport={() => exportCsv(fHighLogin.map(p => ({ ...p } as unknown as Record<string, unknown>)), "high_logins.csv")}
       >
         {fHighLogin.length === 0 ? <EmptyState icon={Hash} message="No accounts with 50+ logins." /> : (
-          <div className="overflow-x-auto rounded-lg border border-zinc-800 overflow-hidden">
+          <div className="overflow-x-auto rounded-lg border border-border overflow-hidden">
             <table className="w-full text-sm">
-              <thead><tr className="bg-zinc-900 border-b border-zinc-800"><TH>User</TH><TH>Logins</TH><TH>IP</TH><TH>Location</TH><TH>Role</TH></tr></thead>
+              <thead><tr className="bg-muted border-b border-border"><TH>User</TH><TH>Logins</TH><TH>IP</TH><TH>Location</TH><TH>Role</TH></tr></thead>
               <tbody>
                 {fHighLogin.map(p => {
                   const role = roleLabel(p);
                   return (
-                    <tr key={p.user_id} className="border-b border-zinc-800/60 hover:bg-zinc-900/60 transition-colors">
-                      <td className="px-4 py-3"><p className="font-black text-white">{p.full_name || "—"}</p><p className="text-[11px] text-zinc-500 font-mono">{p.email}</p></td>
-                      <td className="px-4 py-3"><span className="text-xl font-black text-amber-400 font-mono">{p.login_count}</span></td>
+                    <tr key={p.user_id} className="border-b border-border/60 hover:bg-muted transition-colors">
+                      <td className="px-4 py-3"><p className="font-black text-foreground">{p.full_name || "—"}</p><p className="text-[11px] text-muted-foreground font-mono">{p.email}</p></td>
+                      <td className="px-4 py-3"><span className="text-xl font-black text-amber-600 dark:text-amber-400 ">{p.login_count}</span></td>
                       <td className="px-4 py-3"><span className="font-mono text-xs text-cyan-400/60">{p.last_ip || "—"}</span></td>
                       <td className="px-4 py-3 text-xs font-bold text-emerald-500/60">{p.last_location || "—"}</td>
                       <td className="px-4 py-3"><span className={`text-[9px] font-black px-2 py-0.5 rounded border ${role.cls}`}>{role.label}</span></td>
@@ -1327,59 +1318,59 @@ const AdminSecurity = () => {
   const renderAccess = () => (
     <div className="space-y-4">
       {/* Auto-response rules */}
-      <div className="rounded-xl border border-purple-500/20 bg-purple-950/10 p-5">
+      <div className="rounded-xl border border-purple-500/20 bg-purple-500/10 p-5">
         <div className="flex items-center gap-2 mb-4">
-          <Bot className="w-4 h-4 text-purple-400" />
-          <span className="font-black text-white text-xs uppercase tracking-[0.12em] font-mono">Active Auto-Response Rules</span>
-          {autoMode ? <Pulse color="bg-purple-500" /> : <span className="text-[9px] text-zinc-500 font-mono">(paused)</span>}
+          <Bot className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+          <span className="font-semibold text-foreground text-xs">Active Auto-Response Rules</span>
+          {autoMode ? <Pulse color="bg-purple-500" /> : <span className="text-[9px] text-muted-foreground font-mono">(paused)</span>}
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {[
-            { rule: "IP Cluster ≥5 accounts", action: "Auto-suspend all + blacklist IP", sev: "CRITICAL", color: "text-red-400", bg: "bg-red-500/10", border: "border-red-500/20" },
-            { rule: "Velocity ≤1 minute",      action: "Auto-suspend as confirmed bot",  sev: "CRITICAL", color: "text-red-400", bg: "bg-red-500/10", border: "border-red-500/20" },
-            { rule: "Subnet sweep detected",   action: "Pattern alert + flag cluster",   sev: "HIGH",     color: "text-orange-400", bg: "bg-orange-500/10", border: "border-orange-500/20" },
-            { rule: "Velocity swarm ≥3 accts", action: "Pattern alert + escalate",       sev: "HIGH",     color: "text-orange-400", bg: "bg-orange-500/10", border: "border-orange-500/20" },
-            { rule: "Referral ring ≥8 accts",  action: "Pattern alert + log",            sev: "MEDIUM",   color: "text-amber-400",  bg: "bg-amber-500/10",  border: "border-amber-500/20"  },
-            { rule: "Realtime blacklist add",   action: "Live feed update + alert",       sev: "INFO",     color: "text-cyan-400",   bg: "bg-cyan-500/10",   border: "border-cyan-500/20"   },
+            { rule: "IP Cluster ≥5 accounts", action: "Auto-suspend all + blacklist IP", sev: "Critical", color: "text-red-600 dark:text-red-400", bg: "bg-red-500/10", border: "border-red-500/20" },
+            { rule: "Velocity ≤1 minute",      action: "Auto-suspend as confirmed bot",  sev: "Critical", color: "text-red-600 dark:text-red-400", bg: "bg-red-500/10", border: "border-red-500/20" },
+            { rule: "Subnet sweep detected",   action: "Pattern alert + flag cluster",   sev: "High",     color: "text-orange-600 dark:text-orange-400", bg: "bg-orange-500/10", border: "border-orange-500/20" },
+            { rule: "Velocity swarm ≥3 accts", action: "Pattern alert + escalate",       sev: "High",     color: "text-orange-600 dark:text-orange-400", bg: "bg-orange-500/10", border: "border-orange-500/20" },
+            { rule: "Referral ring ≥8 accts",  action: "Pattern alert + log",            sev: "Medium",   color: "text-amber-600 dark:text-amber-400",  bg: "bg-amber-500/10",  border: "border-amber-500/20"  },
+            { rule: "Realtime blacklist add",   action: "Live feed update + alert",       sev: "Info",     color: "text-cyan-600 dark:text-cyan-400",   bg: "bg-cyan-500/10",   border: "border-cyan-500/20"   },
           ].map(r => (
             <div key={r.rule} className={`flex items-start gap-3 p-3 rounded-lg border ${r.border} ${r.bg}`}>
               <div className={`w-1 h-full min-h-8 rounded-full ${r.bg.replace("/10", "")} shrink-0`} />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-0.5">
-                  <span className={`text-[9px] font-black px-1.5 py-0 rounded font-mono border ${r.border} ${r.color} ${r.bg}`}>{r.sev}</span>
-                  <span className="text-[10px] font-black text-white font-mono truncate">{r.rule}</span>
+                  <span className={`text-[10px] px-1.5 py-0 rounded-full font-semibold border ${r.border} ${r.color} ${r.bg}`}>{r.sev}</span>
+                  <span className="text-xs font-semibold text-foreground truncate">{r.rule}</span>
                 </div>
-                <p className="text-[10px] text-zinc-500 font-mono">{r.action}</p>
+                <p className="text-[11px] text-muted-foreground">{r.action}</p>
               </div>
-              <CheckCircle2 className={`w-3.5 h-3.5 shrink-0 ${autoMode ? "text-emerald-400" : "text-zinc-700"}`} />
+              <CheckCircle2 className={`w-3.5 h-3.5 shrink-0 ${autoMode ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground/70"}`} />
             </div>
           ))}
         </div>
       </div>
 
       {/* Platform controls */}
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-5">
+      <div className="rounded-xl border border-border bg-card p-5">
         <div className="flex items-center gap-2 mb-5">
           <div className="p-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20"><Lock className="w-3.5 h-3.5 text-amber-500" /></div>
-          <span className="font-black text-white text-xs uppercase tracking-[0.12em] font-mono">Platform Controls</span>
+          <span className="font-semibold text-foreground text-xs">Platform Controls</span>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {[
-            { key: "registration_enabled", label: "User Registration", desc: "Allow new users to sign up", active: sysSettings?.registration_enabled, activeColor: "border-emerald-500/30 bg-emerald-500/10 text-emerald-400", inactiveColor: "border-red-500/30 bg-red-500/10 text-red-400", activeLabel: "OPEN", inactiveLabel: "LOCKED" },
-            { key: "maintenance_mode", label: "Maintenance Mode", desc: "Show maintenance message at checkout", active: sysSettings?.maintenance_mode, activeColor: "border-amber-500/30 bg-amber-500/10 text-amber-400", inactiveColor: "border-zinc-700 bg-zinc-800 text-zinc-500", activeLabel: "ACTIVE", inactiveLabel: "OFF" },
+            { key: "registration_enabled", label: "User Registration", desc: "Allow new users to sign up", active: sysSettings?.registration_enabled, activeColor: "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400", inactiveColor: "border-red-500/30 bg-red-500/10 text-red-600 dark:text-red-400", activeLabel: "Open", inactiveLabel: "Locked" },
+            { key: "maintenance_mode", label: "Maintenance Mode", desc: "Show maintenance message at checkout", active: sysSettings?.maintenance_mode, activeColor: "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400", inactiveColor: "border-border bg-muted text-muted-foreground", activeLabel: "On", inactiveLabel: "Off" },
           ].map(s => (
-            <div key={s.key} className="flex items-center justify-between p-4 rounded-lg bg-zinc-950 border border-zinc-800">
-              <div><p className="font-black text-sm text-white">{s.label}</p><p className="text-[11px] text-zinc-500 mt-0.5">{s.desc}</p></div>
+            <div key={s.key} className="flex items-center justify-between p-4 rounded-lg bg-card border border-border">
+              <div><p className="font-black text-sm text-foreground">{s.label}</p><p className="text-[11px] text-muted-foreground mt-0.5">{s.desc}</p></div>
               <button type="button" onClick={() => toggleSetting(s.key, !s.active)}
-                className={`px-3 py-1.5 rounded text-[9px] font-black uppercase tracking-widest border font-mono transition-all ${s.active ? s.activeColor : s.inactiveColor}`}>
+                className={`px-3 py-1.5 rounded text-[9px] font-semibold border transition-all ${s.active ? s.activeColor : s.inactiveColor}`}>
                 {s.active ? s.activeLabel : s.inactiveLabel}
               </button>
             </div>
           ))}
         </div>
-        <div className="mt-3 pt-3 border-t border-zinc-800">
+        <div className="mt-3 pt-3 border-t border-border">
           <Button onClick={handlePurge} disabled={purging}
-            className="gap-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 rounded-lg text-xs h-9 font-mono uppercase tracking-widest">
+            className="gap-2 bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 border border-red-500/20 rounded-lg text-xs h-9">
             {purging ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Ban className="w-3.5 h-3.5" />}
             Purge Test Accounts
           </Button>
@@ -1387,37 +1378,37 @@ const AdminSecurity = () => {
       </div>
 
       {/* Blocklist */}
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 overflow-hidden">
-        <div className="flex items-center gap-3 px-5 py-3.5 border-b border-zinc-800">
+      <div className="rounded-xl border border-border bg-card overflow-hidden">
+        <div className="flex items-center gap-3 px-5 py-3.5 border-b border-border">
           <div className="p-1.5 rounded-lg bg-red-500/10 border border-red-500/20"><Shield className="w-3.5 h-3.5 text-red-500" /></div>
-          <span className="font-black text-white text-xs uppercase tracking-[0.12em] font-mono">IP & Domain Blocklist</span>
-          <span className="text-[9px] font-black bg-red-500/10 text-red-400 border border-red-500/20 px-2 py-0.5 rounded font-mono">{blacklist.length}</span>
+          <span className="font-semibold text-foreground text-xs">IP & Domain Blocklist</span>
+          <span className="text-[9px] font-black bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20 px-2 py-0.5 rounded font-mono">{blacklist.length}</span>
         </div>
         <div className="p-5 space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
             <select title="Block type" value={blType} onChange={e => setBlType(e.target.value)}
-              className="bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-white outline-none focus:ring-1 focus:ring-red-500/30 font-mono">
+              className="bg-card border border-border rounded-lg px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-red-500/30 font-mono">
               <option value="ip">IP Address</option>
               <option value="domain">Email Domain</option>
             </select>
             <Input value={blValue} onChange={e => setBlValue(e.target.value)} placeholder="192.168.1.1 or @domain.com"
-              className="sm:col-span-2 bg-zinc-950 border-zinc-800 text-white rounded-lg font-mono placeholder:text-zinc-600" />
+              className="sm:col-span-2 bg-card border-border text-foreground rounded-lg font-mono placeholder:text-muted-foreground" />
             <Button onClick={() => { if (blValue.trim()) handleBlacklist("add", blValue.trim(), blType, blReason || "Manual block"); }}
-              className="bg-red-600 hover:bg-red-700 text-white rounded-lg font-black uppercase tracking-widest font-mono text-xs">
-              BLOCK
+              className="bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold text-xs">
+              Block
             </Button>
           </div>
           {blacklist.length === 0 ? <EmptyState icon={Shield} message="No IPs or domains blocked." /> : (
-            <div className="rounded-lg border border-zinc-800 divide-y divide-zinc-800 overflow-hidden">
+            <div className="rounded-lg border border-border divide-y divide-border overflow-hidden">
               {blacklist.map(item => (
-                <div key={item.id} className="flex items-center justify-between px-4 py-3 bg-zinc-950 hover:bg-zinc-900 transition-colors">
+                <div key={item.id} className="flex items-center justify-between px-4 py-3 bg-card hover:bg-muted transition-colors">
                   <div className="flex items-center gap-3 min-w-0">
-                    <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-red-500/10 text-red-400 border border-red-500/20 shrink-0 font-mono">{item.type}</span>
-                    <span className="text-sm font-mono text-white font-black truncate">{item.value}</span>
-                    {item.reason && <span className="text-[10px] text-zinc-600 font-mono truncate hidden sm:block">{item.reason}</span>}
+                    <span className="text-[9px] font-semibold px-2 py-0.5 rounded bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20 shrink-0">{item.type}</span>
+                    <span className="text-sm font-mono text-foreground font-black truncate">{item.value}</span>
+                    {item.reason && <span className="text-[10px] text-muted-foreground font-mono truncate hidden sm:block">{item.reason}</span>}
                   </div>
                   <button type="button" onClick={() => handleBlacklist("remove", item.value)}
-                    className="text-[9px] font-black text-zinc-600 hover:text-red-400 transition-colors ml-3 shrink-0 uppercase tracking-widest font-mono">REMOVE</button>
+                    className="text-[9px] font-semibold text-muted-foreground hover:text-red-400 transition-colors ml-3 shrink-0">Remove</button>
                 </div>
               ))}
             </div>
@@ -1426,15 +1417,15 @@ const AdminSecurity = () => {
       </div>
 
       {/* Device Fingerprint Audit */}
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-zinc-800">
+      <div className="rounded-xl border border-border bg-card overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-border">
           <div className="flex items-center gap-3">
             <div className="p-1.5 rounded-lg bg-red-500/10 border border-red-500/20"><ShieldAlert className="w-3.5 h-3.5 text-red-500" /></div>
-            <span className="font-black text-white text-xs uppercase tracking-[0.12em] font-mono">Device Fingerprint Audit</span>
-            <span className="text-[9px] font-black bg-red-500/10 text-red-400 border border-red-500/20 px-2 py-0.5 rounded font-mono">{fDeviceClusters.length} devices</span>
+            <span className="font-semibold text-foreground text-xs">Device Fingerprint Audit</span>
+            <span className="text-[9px] font-black bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20 px-2 py-0.5 rounded font-mono">{fDeviceClusters.length} devices</span>
           </div>
           <button type="button" onClick={() => exportCsv(deviceClusters.flatMap(c => c.accounts.map(a => ({ device_id: c.device_id, is_blocked: c.is_blocked, ...a } as Record<string, unknown>))), "device_clusters.csv")}
-            className="flex items-center gap-1 text-[10px] text-zinc-500 hover:text-white transition-colors px-2 py-1 rounded hover:bg-zinc-800 font-mono">
+            className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded hover:bg-muted font-mono">
             <FileDown className="w-3 h-3" /> CSV
           </button>
         </div>
@@ -1445,45 +1436,41 @@ const AdminSecurity = () => {
                 const exp = expandedDevice === cluster.device_id;
                 const hasSuspended = cluster.is_blocked;
                 return (
-                  <div key={cluster.device_id} className={`rounded-xl border overflow-hidden ${hasSuspended ? "border-red-500/40 bg-red-950/15" : "border-zinc-800 bg-zinc-950/40"}`}>
+                  <div key={cluster.device_id} className={`rounded-xl border overflow-hidden ${hasSuspended ? "border-red-500/40 bg-red-500/10" : "border-border bg-card/60"}`}>
                     <div className="flex items-center justify-between px-4 py-3">
                       <button type="button" onClick={() => setExpandedDevice(exp ? null : cluster.device_id)} className="flex-1 flex items-center gap-3 text-left flex-wrap min-w-0">
-                        {exp ? <ChevronUp className="w-3 h-3 text-red-400 shrink-0" /> : <ChevronDown className="w-3 h-3 text-zinc-500 shrink-0" />}
-                        <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded border font-mono tracking-wider ${hasSuspended ? "text-red-400 bg-red-500/10 border-red-500/30" : "text-zinc-400 bg-zinc-850 border-zinc-700"}`}>
-                          {hasSuspended ? "BLOCKED DEVICE" : "ACTIVE DEVICE"}
+                        {exp ? <ChevronUp className="w-3 h-3 text-red-600 dark:text-red-400 shrink-0" /> : <ChevronDown className="w-3 h-3 text-muted-foreground shrink-0" />}
+                        <span className={`text-[9px] font-semibold px-2 py-0.5 rounded border ${hasSuspended ? "text-red-600 dark:text-red-400 bg-red-500/10 border-red-500/30" : "text-foreground/75 bg-muted border-border"}`}>
+                          {hasSuspended ? "Blocked device" : "Active device"}
                         </span>
-                        <span className="font-mono text-xs font-bold text-white truncate max-w-[200px] sm:max-w-xs">{cluster.device_id}</span>
-                        <span className="text-[9px] font-black bg-zinc-800 text-zinc-400 border border-zinc-700 px-2 py-0.5 rounded font-mono">
+                        <span className="font-mono text-xs font-bold text-foreground truncate max-w-[200px] sm:max-w-xs">{cluster.device_id}</span>
+                        <span className="text-[9px] font-black bg-muted text-foreground/75 border border-border px-2 py-0.5 rounded font-mono">
                           {cluster.accounts.length} linked account{cluster.accounts.length !== 1 ? "s" : ""}
                         </span>
                       </button>
                       <div className="flex items-center gap-2 shrink-0 ml-2">
-                        <button type="button" onClick={() => copyText(cluster.device_id, "Device ID copied")} className="p-1.5 rounded text-zinc-600 hover:text-white hover:bg-zinc-800 transition-all"><Copy className="w-3 h-3" /></button>
+                        <button type="button" onClick={() => copyText(cluster.device_id, "Device ID copied")} className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-all"><Copy className="w-3 h-3" /></button>
                         <button type="button" onClick={() => handleBulkSuspend(cluster.accounts.map(a => a.user_id), !hasSuspended)}
-                          className={`text-[9px] font-black uppercase px-3 py-1.5 rounded transition-all tracking-widest font-mono ${
-                            hasSuspended 
-                              ? "bg-emerald-600 hover:bg-emerald-700 text-white" 
-                              : "bg-red-600 hover:bg-red-700 text-white"
-                          }`}>
-                          {hasSuspended ? "RESTORE ALL" : "SUSPEND ALL"}
+                          className={`text-[9px] font-semibold px-3 py-1.5 rounded transition-all ${ hasSuspended ? "bg-emerald-600 hover:bg-emerald-700 text-white" : "bg-red-600 hover:bg-red-700 text-white" }`}>
+                          {hasSuspended ? "Restore all" : "Suspend all"}
                         </button>
                       </div>
                     </div>
                     {exp && (
-                      <div className="border-t border-zinc-800/60 divide-y divide-zinc-800/40">
+                      <div className="border-t border-border/60 divide-y divide-border/40">
                         {cluster.accounts.map(acc => {
                           const role = roleLabel(acc);
                           return (
-                            <div key={acc.user_id} className="flex items-center justify-between px-4 py-2.5 bg-zinc-950/50">
+                            <div key={acc.user_id} className="flex items-center justify-between px-4 py-2.5 bg-card/60">
                               <div className="min-w-0">
-                                <p className="text-sm font-black text-white truncate">{acc.full_name || "—"}</p>
-                                <p className="text-[11px] text-zinc-500 font-mono truncate">{acc.email}</p>
-                                {acc.last_seen_at && <p className="text-[10px] text-zinc-600 font-mono">Seen: {fmt(acc.last_seen_at)}</p>}
+                                <p className="text-sm font-black text-foreground truncate">{acc.full_name || "—"}</p>
+                                <p className="text-[11px] text-muted-foreground font-mono truncate">{acc.email}</p>
+                                {acc.last_seen_at && <p className="text-[10px] text-muted-foreground font-mono">Seen: {fmt(acc.last_seen_at)}</p>}
                               </div>
                               <div className="flex items-center gap-1.5 shrink-0 ml-3">
-                                {acc.is_suspended && <span className="text-[9px] font-black px-2 py-0.5 rounded border bg-red-500/10 text-red-400 border-red-500/20 font-mono">SUSPENDED</span>}
+                                {acc.is_suspended && <span className="text-[9px] font-black px-2 py-0.5 rounded border bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20 font-mono">Suspended</span>}
                                 <span className={`text-[9px] font-black px-2 py-0.5 rounded border ${role.cls}`}>{role.label}</span>
-                                <span className="text-[10px] text-zinc-500 font-mono">{acc.login_count ?? 0}× logins</span>
+                                <span className="text-[10px] text-muted-foreground font-mono">{acc.login_count ?? 0}× logins</span>
                               </div>
                             </div>
                           );
@@ -1508,62 +1495,62 @@ const AdminSecurity = () => {
   const renderAdmins = () => (
     <div className="space-y-5">
       <Database2faCheckCard adminsWithout2fa={adminsWithout2fa} />
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-5">
+      <div className="rounded-xl border border-border bg-card p-5">
         <div className="flex items-center gap-2 mb-4">
           <div className="p-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20"><ShieldCheck className="w-3.5 h-3.5 text-amber-500" /></div>
-          <span className="font-black text-white text-xs uppercase tracking-[0.12em] font-mono">Grant Administrator Privileges</span>
+          <span className="font-semibold text-foreground text-xs">Grant Administrator Privileges</span>
         </div>
-        <p className="text-xs text-zinc-500 mb-4 font-mono">Promote an existing user to permanent Administrator. They gain full access to wallets, providers, and user management.</p>
+        <p className="text-xs text-muted-foreground mb-4">Promote an existing user to permanent Administrator. They gain full access to wallets, providers, and user management.</p>
         <div className="flex flex-col sm:flex-row gap-2 max-w-2xl">
           <Input placeholder="Enter account email…" value={newAdminEmail} onChange={e => setNewAdminEmail(e.target.value)}
-            className="bg-zinc-950 border-zinc-800 text-white rounded-lg font-mono placeholder:text-zinc-600"
+            className="bg-card border-border text-foreground rounded-lg font-mono placeholder:text-muted-foreground"
             onKeyDown={e => { if (e.key === "Enter") void handleAddAdmin(); }} />
           <Button onClick={handleAddAdmin} disabled={addingAdmin || !newAdminEmail.trim()}
-            className="gap-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-black uppercase tracking-widest font-mono text-xs shrink-0">
+            className="gap-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-semibold text-xs shrink-0">
             {addingAdmin ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
             Grant Admin
           </Button>
         </div>
       </div>
 
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-zinc-800">
+      <div className="rounded-xl border border-border bg-card overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-border">
           <div className="flex items-center gap-3">
             <div className="p-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20"><Lock className="w-3.5 h-3.5 text-emerald-500" /></div>
-            <span className="font-black text-white text-xs uppercase tracking-[0.12em] font-mono">System Administrators</span>
-            <span className="text-[9px] font-black bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded font-mono">{adminsList.length}</span>
+            <span className="font-semibold text-foreground text-xs">System Administrators</span>
+            <span className="text-[9px] font-black bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded font-mono">{adminsList.length}</span>
           </div>
-          <button type="button" onClick={() => void fetchAdmins()} className="text-zinc-600 hover:text-white transition-colors">
+          <button type="button" onClick={() => void fetchAdmins()} className="text-muted-foreground hover:text-foreground transition-colors">
             <RefreshCw className={`w-3.5 h-3.5 ${loadingAdmins ? "animate-spin" : ""}`} />
           </button>
         </div>
         {loadingAdmins && adminsList.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 gap-3">
             <Loader2 className="w-7 h-7 text-amber-500 animate-spin" />
-            <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest font-mono">Fetching roster…</p>
+            <p className="text-[10px] font-bold text-muted-foreground">Fetching roster…</p>
           </div>
         ) : adminsList.length === 0 ? (
           <EmptyState icon={ShieldAlert} message="No administrators returned. Check edge log." />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead><tr className="bg-zinc-950 border-b border-zinc-800"><TH>Administrator</TH><TH>MFA</TH><TH>SMS login</TH><TH>Last Sign-in</TH><TH>Last Seen</TH><TH>IP Lock</TH><TH>Actions</TH></tr></thead>
+              <thead><tr className="bg-card border-b border-border"><TH>Administrator</TH><TH>MFA</TH><TH>SMS login</TH><TH>Last Sign-in</TH><TH>Last Seen</TH><TH>IP Lock</TH><TH>Actions</TH></tr></thead>
               <tbody>
                 {adminsList.map(adm => {
                   const isMe = adm.user_id === session?.user.id;
                   return (
-                    <tr key={adm.user_id} className="border-b border-zinc-800/60 hover:bg-zinc-900/60 transition-colors">
+                    <tr key={adm.user_id} className="border-b border-border/60 hover:bg-muted transition-colors">
                       <td className="px-4 py-4">
                         <div className="flex items-center gap-2.5">
-                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-black text-xs ${isMe ? "bg-amber-500/20 text-amber-400 border border-amber-500/30" : "bg-zinc-800 text-zinc-400 border border-zinc-700"}`}>
+                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-black text-xs ${isMe ? "bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30" : "bg-muted text-foreground/75 border border-border"}`}>
                             {(adm.full_name || adm.email || "?").charAt(0).toUpperCase()}
                           </div>
                           <div>
                             <div className="flex items-center gap-2">
-                              <p className="font-black text-white text-sm">{adm.full_name || "Unnamed"}</p>
-                              {isMe && <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-mono">YOU</span>}
+                              <p className="font-black text-foreground text-sm">{adm.full_name || "Unnamed"}</p>
+                              {isMe && <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 font-mono">You</span>}
                             </div>
-                            <p className="text-[11px] text-zinc-500 font-mono">{adm.email}</p>
+                            <p className="text-[11px] text-muted-foreground font-mono">{adm.email}</p>
                           </div>
                         </div>
                       </td>
@@ -1572,24 +1559,24 @@ const AdminSecurity = () => {
                       </td>
                       <td className="px-4 py-4 text-[10px] font-mono">
                         {adm.sms_login
-                          ? <span className="text-amber-400">On · {adm.sms_phone_masked}</span>
-                          : <span className="text-zinc-600">Off</span>}
+                          ? <span className="text-amber-600 dark:text-amber-400">On · {adm.sms_phone_masked}</span>
+                          : <span className="text-muted-foreground">Off</span>}
                         <button type="button" onClick={() => void handleSmsLogin(adm, !adm.sms_login)}
-                          className="ml-2 text-[9px] font-black uppercase tracking-widest text-zinc-500 hover:text-white">
+                          className="ml-2 text-[9px] font-semibold text-muted-foreground hover:text-foreground">
                           {adm.sms_login ? "Switch off" : isMe ? "Switch on for me" : "Switch on"}
                         </button>
                       </td>
-                      <td className="px-4 py-4 text-xs font-mono text-zinc-500">{fmt(adm.last_sign_in_at ?? null)}</td>
-                      <td className="px-4 py-4 text-xs font-mono text-zinc-500">{fmt(adm.last_seen_at)}</td>
+                      <td className="px-4 py-4 text-xs font-mono text-muted-foreground">{fmt(adm.last_sign_in_at ?? null)}</td>
+                      <td className="px-4 py-4 text-xs font-mono text-muted-foreground">{fmt(adm.last_seen_at)}</td>
                       <td className="px-4 py-4">
-                        {adm.allowed_ips?.length ? <span className="text-[10px] font-black text-emerald-400 flex items-center gap-1 font-mono"><Lock className="w-3 h-3" />{adm.allowed_ips.length} IPs</span>
-                          : <span className="text-[10px] text-zinc-600 flex items-center gap-1 font-mono"><Globe className="w-3 h-3" />Global</span>}
+                        {adm.allowed_ips?.length ? <span className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 flex items-center gap-1 font-mono"><Lock className="w-3 h-3" />{adm.allowed_ips.length} IPs</span>
+                          : <span className="text-[10px] text-muted-foreground flex items-center gap-1 font-mono"><Globe className="w-3 h-3" />Global</span>}
                       </td>
                       <td className="px-4 py-4">
                         {!isMe
                           ? <Button size="sm" variant="ghost" onClick={() => handleRevokeAdmin(adm.user_id, adm.full_name || adm.email)}
-                              className="h-7 text-[9px] font-black text-zinc-600 hover:text-red-400 hover:bg-red-500/5 px-3 rounded uppercase tracking-widest font-mono">REVOKE</Button>
-                          : <span className="text-[10px] text-zinc-700 italic px-3">—</span>}
+                              className="h-7 text-[9px] font-semibold text-muted-foreground hover:text-red-400 hover:bg-red-500/5 px-3 rounded">Revoke</Button>
+                          : <span className="text-[10px] text-muted-foreground/70 italic px-3">—</span>}
                       </td>
                     </tr>
                   );
@@ -1603,35 +1590,30 @@ const AdminSecurity = () => {
   );
 
   const renderAudit = () => (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 overflow-hidden">
-      <div className="flex items-center justify-between px-5 py-3.5 border-b border-zinc-800">
+    <div className="rounded-xl border border-border bg-card overflow-hidden">
+      <div className="flex items-center justify-between px-5 py-3.5 border-b border-border">
         <div className="flex items-center gap-3">
-          <div className="p-1.5 rounded-lg bg-violet-500/10 border border-violet-500/20"><BookOpen className="w-3.5 h-3.5 text-violet-400" /></div>
-          <span className="font-black text-white text-xs uppercase tracking-[0.12em] font-mono">Admin Action Log</span>
-          <span className="text-[9px] font-black bg-violet-500/10 text-violet-400 border border-violet-500/20 px-2 py-0.5 rounded font-mono">Last 50</span>
+          <div className="p-1.5 rounded-lg bg-violet-500/10 border border-violet-500/20"><BookOpen className="w-3.5 h-3.5 text-violet-600 dark:text-violet-400" /></div>
+          <span className="font-semibold text-foreground text-xs">Admin Action Log</span>
+          <span className="text-[9px] font-black bg-violet-500/10 text-violet-600 dark:text-violet-400 border border-violet-500/20 px-2 py-0.5 rounded font-mono">Last 50</span>
         </div>
         <button type="button" onClick={() => exportCsv(actionLog as unknown as Record<string, unknown>[], "admin_log.csv")}
-          className="flex items-center gap-1.5 text-[9px] text-zinc-500 hover:text-white transition-colors px-2 py-1 rounded hover:bg-zinc-800 font-black font-mono uppercase tracking-widest">
+          className="flex items-center gap-1.5 text-[9px] text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded hover:bg-muted font-semibold">
           <FileDown className="w-3 h-3" /> CSV
         </button>
       </div>
       {actionLog.length === 0 ? <div className="p-5"><EmptyState icon={BookOpen} message="No admin actions recorded yet." /></div> : (
-        <div className="divide-y divide-zinc-800/60">
+        <div className="divide-y divide-border/60">
           {actionLog.map(entry => (
-            <div key={entry.id} className="flex items-center justify-between px-5 py-3 bg-zinc-950 hover:bg-zinc-900 transition-colors gap-4">
+            <div key={entry.id} className="flex items-center justify-between px-5 py-3 bg-card hover:bg-muted transition-colors gap-4">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded border font-mono tracking-widest ${
-                    entry.action.includes("suspend") ? "bg-red-500/10 text-red-400 border-red-500/20" :
-                    entry.action.includes("approve") || entry.action.includes("unsuspend") ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" :
-                    entry.action.includes("reject") ? "bg-orange-500/10 text-orange-400 border-orange-500/20" :
-                    "bg-zinc-800 text-zinc-400 border-zinc-700"
-                  }`}>{entry.action.replace(/_/g, " ")}</span>
-                  <span className="text-xs font-bold text-zinc-300">{entry.target_email || "—"}</span>
-                  <span className="text-[10px] text-zinc-600 font-mono hidden sm:block">by {entry.admin_email}</span>
+                  <span className={`text-[9px] font-semibold px-2 py-0.5 rounded border ${ entry.action.includes("suspend") ? "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20" : entry.action.includes("approve") || entry.action.includes("unsuspend") ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20" : entry.action.includes("reject") ? "bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/20" : "bg-muted text-foreground/75 border-border" }`}>{entry.action.replace(/_/g, " ")}</span>
+                  <span className="text-xs font-bold text-foreground/85">{entry.target_email || "—"}</span>
+                  <span className="text-[10px] text-muted-foreground font-mono hidden sm:block">by {entry.admin_email}</span>
                 </div>
               </div>
-              <span className="text-[9px] text-zinc-600 font-mono shrink-0">{fmt(entry.created_at)}</span>
+              <span className="text-[9px] text-muted-foreground font-mono shrink-0">{fmt(entry.created_at)}</span>
             </div>
           ))}
         </div>
@@ -1649,7 +1631,7 @@ const AdminSecurity = () => {
         role: "Monitor · Learn · Propose",
         schedule: "Every 15 min",
         icon: Bot,
-        color: "text-emerald-400",
+        color: "text-emerald-600 dark:text-emerald-400",
         border: "border-emerald-500/25",
         bg: "bg-emerald-500/10",
         pulse: "bg-emerald-500",
@@ -1662,7 +1644,7 @@ const AdminSecurity = () => {
         role: "Fraud · Liquidity · Network Healing",
         schedule: "Every 1 min",
         icon: Shield,
-        color: "text-amber-400",
+        color: "text-amber-600 dark:text-amber-400",
         border: "border-amber-500/25",
         bg: "bg-amber-500/10",
         pulse: "bg-amber-500",
@@ -1675,7 +1657,7 @@ const AdminSecurity = () => {
         role: "24/7 Security Patrol",
         schedule: "Every 5 min",
         icon: ShieldAlert,
-        color: "text-cyan-400",
+        color: "text-cyan-600 dark:text-cyan-400",
         border: "border-cyan-500/25",
         bg: "bg-cyan-500/10",
         pulse: "bg-cyan-500",
@@ -1688,7 +1670,7 @@ const AdminSecurity = () => {
         role: "Cross-Signal Correlation",
         schedule: "Every 5 min",
         icon: Crosshair,
-        color: "text-red-400",
+        color: "text-red-600 dark:text-red-400",
         border: "border-red-500/25",
         bg: "bg-red-500/10",
         pulse: "bg-red-500",
@@ -1701,7 +1683,7 @@ const AdminSecurity = () => {
         role: "Anti-Money Laundering",
         schedule: "Every 10 min",
         icon: TrendingUp,
-        color: "text-purple-400",
+        color: "text-purple-600 dark:text-purple-400",
         border: "border-purple-500/25",
         bg: "bg-purple-500/10",
         pulse: "bg-purple-500",
@@ -1714,7 +1696,7 @@ const AdminSecurity = () => {
         role: "Multi-Account Fraud",
         schedule: "Every 20 min",
         icon: UserX,
-        color: "text-orange-400",
+        color: "text-orange-600 dark:text-orange-400",
         border: "border-orange-500/25",
         bg: "bg-orange-500/10",
         pulse: "bg-orange-500",
@@ -1727,7 +1709,7 @@ const AdminSecurity = () => {
         role: "Self-Learning Loop",
         schedule: "Every 15 min",
         icon: Radio,
-        color: "text-teal-400",
+        color: "text-teal-600 dark:text-teal-400",
         border: "border-teal-500/25",
         bg: "bg-teal-500/10",
         pulse: "bg-teal-500",
@@ -1739,23 +1721,23 @@ const AdminSecurity = () => {
     <div className="space-y-5">
 
       {/* ── Fleet status header ── */}
-      <div className="rounded-xl border border-cyan-500/25 bg-zinc-950 p-5 relative overflow-hidden">
+      <div className="rounded-xl border border-cyan-500/25 bg-card p-5 relative overflow-hidden">
         <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: "repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,255,255,0.012) 2px, rgba(0,255,255,0.012) 4px)" }} />
         <div className="relative flex items-start gap-4">
           <div className="w-12 h-12 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center relative overflow-hidden shrink-0">
             <div className="absolute inset-0 bg-cyan-500/10 animate-pulse" />
-            <Bot className="w-6 h-6 text-cyan-400 relative z-10" />
+            <Bot className="w-6 h-6 text-cyan-600 dark:text-cyan-400 relative z-10" />
           </div>
           <div className="flex-1">
-            <p className="text-[9px] font-black uppercase tracking-[0.3em] text-zinc-600 font-mono">// Autonomous AI Defense Network</p>
-            <h2 className="text-base font-black text-cyan-400 uppercase tracking-wide font-mono mt-0.5">AI Agent Fleet — {AGENT_FLEET.length} Agents Deployed</h2>
+            <p className="text-[9px] font-semibold text-muted-foreground">// Autonomous AI Defense Network</p>
+            <h2 className="text-base font-semibold text-cyan-600 dark:text-cyan-400 tracking-wide mt-0.5">AI Agent Fleet — {AGENT_FLEET.length} Agents Deployed</h2>
             <div className="flex items-center gap-3 mt-2 flex-wrap">
-              <span className="flex items-center gap-1.5 px-2 py-1 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[9px] font-black uppercase tracking-widest font-mono"><Pulse color="bg-emerald-500" />ALL AGENTS ACTIVE</span>
-              <span className="text-[9px] text-zinc-600 font-mono">Next UI scan: {autoCount}s</span>
-              <span className="text-[9px] text-zinc-600 font-mono">Neutralized: {neutralized}</span>
+              <span className="flex items-center gap-1.5 px-2 py-1 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-[9px] font-semibold"><Pulse color="bg-emerald-500" />All agents active</span>
+              <span className="text-[9px] text-muted-foreground font-mono">Next UI scan: {autoCount}s</span>
+              <span className="text-[9px] text-muted-foreground font-mono">Neutralized: {neutralized}</span>
             </div>
           </div>
-          <button type="button" onClick={() => void fetchData(true)} className="w-8 h-8 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-600 hover:text-white flex items-center justify-center shrink-0">
+          <button type="button" onClick={() => void fetchData(true)} className="w-8 h-8 rounded-lg bg-muted border border-border text-muted-foreground hover:text-foreground flex items-center justify-center shrink-0">
             <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} />
           </button>
         </div>
@@ -1772,7 +1754,7 @@ const AdminSecurity = () => {
           const autonomyMode = dbAgent?.autonomy_mode === "propose" ? "propose" : "observe_only";
           
           return (
-            <div key={agent.key} className={`rounded-xl border ${agent.border} bg-zinc-950 p-4 relative overflow-hidden ${!isActive ? "opacity-60" : ""}`}>
+            <div key={agent.key} className={`rounded-xl border ${agent.border} bg-card p-4 relative overflow-hidden ${!isActive ? "opacity-60" : ""}`}>
               {/* subtle scan-line top accent */}
               <div className={`absolute top-0 left-0 right-0 h-0.5 ${agent.bg}`} />
               <div className="flex items-start justify-between mb-3">
@@ -1804,11 +1786,11 @@ const AdminSecurity = () => {
                     className={`flex items-center gap-1.5 px-2 py-0.5 rounded border text-[9px] font-black font-mono uppercase tracking-widest ${
                       isActive
                         ? `${agent.border} ${agent.bg} ${agent.color}`
-                        : "border-zinc-800 bg-zinc-900 text-zinc-500"
+                        : "border-border bg-muted text-muted-foreground"
                     }`}
                   >
                     {isActive && <Pulse color={agent.pulse} />}
-                    {isActive ? "LIVE" : "PAUSED"}
+                    {isActive ? "Live" : "Paused"}
                   </button>
                   <button
                     type="button"
@@ -1833,21 +1815,21 @@ const AdminSecurity = () => {
                         void fetchData(true);
                       }
                     }}
-                    className="p-1 rounded bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white hover:border-cyan-500/40"
+                    className="p-1 rounded bg-muted border border-border text-foreground/75 hover:text-foreground hover:border-cyan-500/40"
                   >
                     <Play className="w-3 h-3" />
                   </button>
                 </div>
               </div>
-              <p className={`text-xs font-black ${agent.color} font-mono uppercase tracking-wide mb-0.5`}>{agent.name}</p>
-              <p className="text-[10px] text-zinc-500 font-mono mb-2">{agent.role}</p>
-              <p className="text-[10px] text-zinc-600 leading-relaxed mb-3">{agent.description}</p>
+              <p className={`text-xs font-semibold ${agent.color} tracking-wide mb-0.5`}>{agent.name}</p>
+              <p className="text-[10px] text-muted-foreground font-mono mb-2">{agent.role}</p>
+              <p className="text-[10px] text-muted-foreground leading-relaxed mb-3">{agent.description}</p>
               
-              <div className="flex items-center justify-between pt-2 border-t border-zinc-800 flex-wrap gap-2">
+              <div className="flex items-center justify-between pt-2 border-t border-border flex-wrap gap-2">
                 <div className="flex flex-col">
-                  <span className="text-[9px] text-zinc-600 font-mono">{agent.schedule}</span>
+                  <span className="text-[9px] text-muted-foreground font-mono">{agent.schedule}</span>
                   {dbAgent?.last_run_at && (
-                    <span className="text-[8px] text-zinc-700 font-mono">Last: {fmt(dbAgent.last_run_at)}</span>
+                    <span className="text-[8px] text-muted-foreground/70 font-mono">Last: {fmt(dbAgent.last_run_at)}</span>
                   )}
                 </div>
                 <div className="flex items-center gap-1.5">
@@ -1872,7 +1854,7 @@ const AdminSecurity = () => {
                         toast({ title: `${agent.name} mode updated`, description: modeVal === "propose" ? "Proposes actions for approval" : "Watch only" });
                       }
                     }}
-                    className="text-[9px] font-bold font-mono bg-zinc-900 border border-zinc-800 rounded px-1.5 py-0.5 text-amber-400 focus:outline-none focus:border-amber-500/50"
+                    className="text-[9px] font-bold font-mono bg-muted border border-border rounded px-1.5 py-0.5 text-amber-600 dark:text-amber-400 focus:outline-none focus:border-amber-500/50"
                   >
                     <option value="observe_only">Watch only</option>
                     <option value="propose">Propose</option>
@@ -1895,7 +1877,7 @@ const AdminSecurity = () => {
                         toast({ title: `${agent.name} Rerouted`, description: `Agent model updated to ${modelVal}` });
                       }
                     }}
-                    className="text-[9px] font-bold font-mono bg-zinc-900 border border-zinc-800 rounded px-1.5 py-0.5 text-cyan-400 focus:outline-none focus:border-cyan-500/50"
+                    className="text-[9px] font-bold font-mono bg-muted border border-border rounded px-1.5 py-0.5 text-cyan-600 dark:text-cyan-400 focus:outline-none focus:border-cyan-500/50"
                   >
                     <option value="gemini-3.6-flash">Gemini 3.6 Flash (current default)</option>
                     <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
@@ -1914,44 +1896,42 @@ const AdminSecurity = () => {
       </div>
 
       {/* Full agent feed */}
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-zinc-800">
+      <div className="rounded-xl border border-border bg-card overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-border">
           <div className="flex items-center gap-3">
-            <Terminal className="w-3.5 h-3.5 text-purple-400" />
-            <span className="font-black text-white text-xs uppercase tracking-[0.12em] font-mono">AI Agent Decision Log</span>
-            <span className="text-[9px] font-black bg-purple-500/10 text-purple-400 border border-purple-500/20 px-2 py-0.5 rounded font-mono">{agentFeed.length}</span>
+            <Terminal className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+            <span className="font-semibold text-foreground text-xs">AI Agent Decision Log</span>
+            <span className="text-[9px] font-black bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20 px-2 py-0.5 rounded font-mono">{agentFeed.length}</span>
           </div>
-          <button type="button" onClick={() => setAgentFeed([])} className="text-[9px] text-zinc-600 hover:text-white font-black font-mono uppercase tracking-widest">CLEAR</button>
+          <button type="button" onClick={() => setAgentFeed([])} className="text-[9px] text-muted-foreground hover:text-foreground font-semibold">Clear</button>
         </div>
         {agentFeed.length === 0 ? (
           <div className="p-5"><EmptyState icon={Bot} message="Agent initializing — awaiting threat data…" /></div>
         ) : (
-          <div className="divide-y divide-zinc-800/60 max-h-[500px] overflow-y-auto">
+          <div className="divide-y divide-border/60 max-h-[500px] overflow-y-auto">
             {agentFeed.map(a => {
               const cfg = AGENT_TYPE_CFG[a.type];
               const AIcon = cfg.icon;
               return (
-                <div key={a.id} className={`p-4 hover:bg-zinc-900/60 transition-colors ${a.status === "executing" ? "bg-amber-950/10" : ""}`}>
+                <div key={a.id} className={`p-4 hover:bg-muted transition-colors ${a.status === "executing" ? "bg-amber-500/10" : ""}`}>
                   <div className="flex items-center justify-between mb-1.5">
                     <div className="flex items-center gap-2 flex-wrap">
                       <div className={`flex items-center gap-1 px-2 py-0.5 rounded border ${cfg.bg} ${cfg.color} ${cfg.border}`}>
                         <AIcon className={`w-3 h-3 ${cfg.color}`} />
                         <span className="text-[9px] font-black font-mono tracking-widest">{cfg.label}</span>
                       </div>
-                      <span className={`text-[9px] font-black px-1.5 py-0 rounded font-mono ${
-                        a.severity === "critical" ? "bg-red-500/10 text-red-400" : a.severity === "high" ? "bg-orange-500/10 text-orange-400" : a.severity === "medium" ? "bg-amber-500/10 text-amber-400" : "bg-zinc-800 text-zinc-500"
-                      }`}>{a.severity.toUpperCase()}</span>
-                      {a.count !== undefined && <span className="text-[9px] text-zinc-500 font-mono">{a.count} accounts</span>}
+                      <span className={`text-[9px] font-black px-1.5 py-0 rounded font-mono ${ a.severity === "critical" ? "bg-red-500/10 text-red-600 dark:text-red-400" : a.severity === "high" ? "bg-orange-500/10 text-orange-600 dark:text-orange-400" : a.severity === "medium" ? "bg-amber-500/10 text-amber-600 dark:text-amber-400" : "bg-muted text-muted-foreground" }`}>{a.severity.toUpperCase()}</span>
+                      {a.count !== undefined && <span className="text-[9px] text-muted-foreground font-mono">{a.count} accounts</span>}
                     </div>
                     <div className="flex items-center gap-2">
-                      {a.status === "executing" && <span className="text-[9px] text-amber-400 font-mono animate-pulse">EXECUTING…</span>}
-                      {a.status === "done"      && <span className="text-[9px] text-emerald-400 font-mono">✓ DONE</span>}
-                      {a.status === "failed"    && <span className="text-[9px] text-red-400 font-mono">✗ FAILED</span>}
-                      <span className="text-[9px] text-zinc-600 font-mono">{a.timestamp.toLocaleTimeString()}</span>
+                      {a.status === "executing" && <span className="text-[9px] text-amber-600 dark:text-amber-400 font-mono animate-pulse">Running…</span>}
+                      {a.status === "done"      && <span className="text-[9px] text-emerald-600 dark:text-emerald-400 font-mono">✓ Done</span>}
+                      {a.status === "failed"    && <span className="text-[9px] text-red-600 dark:text-red-400 font-mono">✗ Failed</span>}
+                      <span className="text-[9px] text-muted-foreground font-mono">{a.timestamp.toLocaleTimeString()}</span>
                     </div>
                   </div>
-                  <p className="text-[11px] text-zinc-400 font-mono">{a.reasoning}</p>
-                  {a.target !== "system" && <p className="text-[10px] text-zinc-600 font-mono mt-0.5">Target: {a.target}</p>}
+                  <p className="text-[11px] text-foreground/75 font-mono">{a.reasoning}</p>
+                  {a.target !== "system" && <p className="text-[10px] text-muted-foreground font-mono mt-0.5">Target: {a.target}</p>}
                 </div>
               );
             })}
@@ -1960,27 +1940,23 @@ const AdminSecurity = () => {
       </div>
 
       {/* Sentinel DB log */}
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 overflow-hidden">
-        <div className="flex items-center gap-3 px-5 py-3.5 border-b border-zinc-800">
+      <div className="rounded-xl border border-border bg-card overflow-hidden">
+        <div className="flex items-center gap-3 px-5 py-3.5 border-b border-border">
           <Shield className="w-3.5 h-3.5 text-cyan-500" />
-          <span className="font-black text-white text-xs uppercase tracking-[0.12em] font-mono">Sentinel Action DB</span>
+          <span className="font-semibold text-foreground text-xs">Sentinel Action DB</span>
         </div>
         {guardianLogs.length === 0 ? <div className="p-5"><EmptyState icon={Bot} message="Sentinel has not executed recent actions." /></div> : (
-          <div className="divide-y divide-zinc-800/60">
+          <div className="divide-y divide-border/60">
             {guardianLogs.map(log => (
-              <div key={log.id} className="p-4 bg-zinc-950 hover:bg-zinc-900/60 transition-colors">
+              <div key={log.id} className="p-4 bg-card hover:bg-muted transition-colors">
                 <div className="flex items-center justify-between mb-1.5">
                   <div className="flex items-center gap-2">
-                    <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded border font-mono tracking-widest ${
-                      log.action_type === "lock_terminal" ? "bg-red-500/10 text-red-400 border-red-500/20" :
-                      log.action_type === "broadcast_outage" ? "bg-orange-500/10 text-orange-400 border-orange-500/20" :
-                      "bg-cyan-500/10 text-cyan-400 border-cyan-500/20"
-                    }`}>{log.action_type.replace(/_/g, " ")}</span>
-                    {log.metadata?.target && <span className="text-xs font-bold text-zinc-300 font-mono">→ {String(log.metadata.target).slice(0, 12)}…</span>}
+                    <span className={`text-[9px] font-semibold px-2 py-0.5 rounded border ${ log.action_type === "lock_terminal" ? "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20" : log.action_type === "broadcast_outage" ? "bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/20" : "bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/20" }`}>{log.action_type.replace(/_/g, " ")}</span>
+                    {log.metadata?.target && <span className="text-xs font-bold text-foreground/85 font-mono">→ {String(log.metadata.target).slice(0, 12)}…</span>}
                   </div>
-                  <span className="text-[9px] text-zinc-600 font-mono">{fmt(log.created_at)}</span>
+                  <span className="text-[9px] text-muted-foreground font-mono">{fmt(log.created_at)}</span>
                 </div>
-                <p className="text-[11px] text-zinc-500 font-mono">{log.reasoning}</p>
+                <p className="text-[11px] text-muted-foreground font-mono">{log.reasoning}</p>
               </div>
             ))}
           </div>
@@ -2018,46 +1994,26 @@ const AdminSecurity = () => {
         </DialogContent>
       </Dialog>
 
-      {/* DEFCON 1-2 critical alert banner */}
-      {defcon <= 2 && (
-        <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl border border-red-500/50 bg-red-950/30 animate-pulse">
-          <Pulse /><Pulse />
-          <p className="text-xs font-black text-red-400 uppercase tracking-widest font-mono flex-1">
-            {defcon === 1 ? "DEFCON 1 — ACTIVE ATTACK IN PROGRESS — ALL RESPONSES ARMED" : "DEFCON 2 — CRITICAL THREAT LEVEL — AUTO-RESPONSE ENGAGED"}
-          </p>
-          <Pulse /><Pulse />
-        </div>
-      )}
-
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-800 pb-5">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="relative">
-            <div className="p-2.5 rounded-xl bg-red-500/10 border border-red-500/20">
-              <Shield className="w-5 h-5 text-red-500" />
-            </div>
-            {totalThreats > 0 && <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-zinc-950 animate-pulse" />}
+          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+            <Shield className="h-5 w-5" />
           </div>
           <div>
-            <h1 className="font-black text-xl text-white tracking-tight uppercase font-mono">Security Center</h1>
-            <p className="text-[10px] text-zinc-600 font-mono mt-0.5 uppercase tracking-widest">AI-Powered · Auto-Response · Real-Time</p>
+            <h1 className="text-xl font-bold tracking-tight text-foreground">Security</h1>
+            <p className="text-xs text-muted-foreground">Threats, access and admin safety in one place</p>
           </div>
-          {totalThreats > 0 && (
-            <div className="flex items-center gap-1.5 px-3 py-1 rounded border border-red-500/30 bg-red-950/20 ml-2">
-              <Pulse />
-              <span className="text-[10px] font-black text-red-400 uppercase tracking-widest font-mono">{totalThreats} Active</span>
-            </div>
-          )}
         </div>
         <div className="flex items-center gap-2">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3 h-3 text-zinc-600" />
+          <div className="relative flex-1 sm:flex-none">
+            <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input placeholder="Search users, IPs…" value={search} onChange={e => setSearch(e.target.value)}
-              className="pl-8 h-8 w-48 bg-zinc-950 border-zinc-800 text-white placeholder:text-zinc-600 rounded-lg text-xs font-mono focus-visible:ring-red-500/20" />
+              className="h-9 w-full sm:w-56 rounded-xl border-border bg-card pl-9 text-sm text-foreground placeholder:text-muted-foreground" />
           </div>
-          <button type="button" onClick={() => void fetchData(true)} title="Refresh"
-            className="flex items-center justify-center w-8 h-8 rounded-lg bg-zinc-950 border border-zinc-800 text-zinc-600 hover:text-white hover:bg-zinc-900 transition-all">
-            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} />
+          <button type="button" onClick={() => void fetchData(true)} title="Refresh" aria-label="Refresh"
+            className="flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+            <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
           </button>
           <button type="button"
             onClick={() => exportCsv([
@@ -2065,26 +2021,64 @@ const AdminSecurity = () => {
               ...velocityAccts.map(v => ({ section: "velocity", ...v } as Record<string, unknown>)),
               ...failedUsers.map(u => ({ section: "failed_orders", ...u } as Record<string, unknown>)),
             ], "security_export.csv")}
-            className="flex items-center gap-1.5 h-8 px-3 rounded-lg bg-zinc-950 border border-zinc-800 text-zinc-500 hover:text-white hover:bg-zinc-900 transition-all text-[10px] font-black font-mono uppercase tracking-widest">
-            <FileDown className="w-3 h-3" /> Export
+            className="flex h-9 items-center gap-1.5 rounded-xl border border-border bg-card px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+            <FileDown className="h-4 w-4" /> Export
           </button>
         </div>
       </div>
 
+      {/* Status: one plain sentence, then the four numbers that matter */}
+      <div className={`rounded-2xl border p-4 sm:p-5 ${totalThreats === 0 ? "border-emerald-500/30 bg-emerald-500/[0.06]" : defcon <= 2 ? "border-red-500/40 bg-red-500/[0.07]" : "border-amber-500/40 bg-amber-500/[0.07]"}`}>
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3">
+            <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${totalThreats === 0 ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" : defcon <= 2 ? "bg-red-500/15 text-red-600 dark:text-red-400" : "bg-amber-500/15 text-amber-600 dark:text-amber-400"}`}>
+              {totalThreats === 0 ? <ShieldCheck className="h-5 w-5" /> : <ShieldAlert className={`h-5 w-5 ${defcon <= 2 ? "animate-pulse" : ""}`} />}
+            </div>
+            <div>
+              <p className="text-base font-bold text-foreground">
+                {totalThreats === 0 ? "All clear" : `${totalThreats} ${totalThreats === 1 ? "thing needs" : "things need"} you`}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {totalThreats === 0 ? "Nothing needs you right now" : `${dc.label} · ${dc.sub}`}
+                {autoMode ? ` · auto-scan in ${autoCount}s` : " · auto-scan paused"}
+              </p>
+            </div>
+          </div>
+          {totalThreats > 0 && (
+            <Button size="sm" onClick={() => setTab("threats")} className="mt-2 h-8 rounded-xl sm:mt-0">
+              Review threats <ArrowRight className="ml-1 h-3.5 w-3.5" />
+            </Button>
+          )}
+        </div>
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {([
+            { label: "Open threats", value: totalThreats, hint: totalThreats ? "to review" : "none", go: "threats" as TabId, warn: totalThreats > 0 },
+            { label: "Health score", value: `${healthScore}%`, hint: dc.label.toLowerCase(), go: "overview" as TabId, warn: healthScore < 70 },
+            { label: "Blocked", value: blacklist.length, hint: "IPs, devices, numbers", go: "access" as TabId, warn: false },
+            { label: "Suspended", value: suspendedCount, hint: "accounts", go: "threats" as TabId, warn: false },
+          ]).map(s => (
+            <button key={s.label} type="button" onClick={() => setTab(s.go)}
+              className="rounded-xl border border-border/70 bg-card/70 p-3 text-left transition-colors hover:bg-muted/60">
+              <p className="text-[11px] font-medium text-muted-foreground">{s.label}</p>
+              <p className={`mt-0.5 text-xl font-bold tabular-nums ${s.warn ? "text-red-600 dark:text-red-400" : "text-foreground"}`}>{s.value}</p>
+              <p className="text-[11px] text-muted-foreground">{s.hint}</p>
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Tabs */}
-      <div className="flex items-center gap-0.5 p-1 bg-zinc-950 border border-zinc-800 rounded-xl w-fit overflow-x-auto">
+      <div className="-mx-1 flex items-center gap-1.5 overflow-x-auto px-1 pb-1">
         {TABS.map(t => {
           const active = tab === t.id;
           const Icon = t.icon;
           const danger = (t.id === "threats" && totalThreats > 0) || (t.id === "access" && !!sysSettings?.maintenance_mode);
           return (
             <button key={t.id} type="button" onClick={() => setTab(t.id)}
-              className={`relative flex items-center gap-2 px-3.5 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap font-mono ${
-                active ? "bg-zinc-800 text-white border border-zinc-700" : "text-zinc-600 hover:text-zinc-300 hover:bg-zinc-900 border border-transparent"
-              }`}>
-              <Icon className="w-3 h-3" />
+              className={`relative flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors ${active ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground"}`}>
+              <Icon className="h-3.5 w-3.5" />
               {t.label}
-              {danger && !active && <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" />}
+              {danger && !active && <span className="h-1.5 w-1.5 rounded-full bg-red-500" />}
             </button>
           );
         })}

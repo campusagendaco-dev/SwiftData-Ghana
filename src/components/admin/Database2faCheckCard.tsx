@@ -32,6 +32,10 @@ export default function Database2faCheckCard({ adminsWithout2fa }: { adminsWitho
       setState(error.code === "PGRST202" ? { kind: "missing" } : { kind: "error", message: error.message || "Check failed" });
       return;
     }
+    if (!data || typeof data !== "object") {
+      setState({ kind: "error", message: "The check returned no report" });
+      return;
+    }
     setState({ kind: "ready", report: data as Report });
   }, []);
 
@@ -71,8 +75,8 @@ export default function Database2faCheckCard({ adminsWithout2fa }: { adminsWitho
           <p className={tone(state.report.has_role_requires_2fa)}>
             Role check requires 2FA: {state.report.has_role_requires_2fa ? "Yes" : "No"}
           </p>
-          <p>Policies with their own admin check: {state.report.policies.length}</p>
-          {state.report.policies.length > 0 && (
+          <p>Policies with their own admin check: {(state.report.policies ?? []).length}</p>
+          {(state.report.policies ?? []).length > 0 && (
             <ul className="ml-4 list-disc space-y-0.5 font-mono text-xs text-muted-foreground">
               {state.report.policies.map((p) => (
                 <li key={`${p.table}/${p.policy}`}>{`${p.table} / ${p.policy} (${p.command})`}</li>
