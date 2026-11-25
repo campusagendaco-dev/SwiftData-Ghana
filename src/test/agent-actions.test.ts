@@ -49,6 +49,33 @@ describe("runAutoAction", () => {
     expect(sms.sendAdmin).not.toHaveBeenCalled();
   });
 
+  it("just after midnight, a topic texted before midnight still isn't repeated", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-11-25T00:10:00Z"));
+      const db = fakeDb({ sentinel_actions: [{ action_type: "notify_admin", ts: "2026-11-24T23:50:00.000Z", metadata: { sms_sent: true, topic: "mtn-down" } }] });
+      const sms = fakeSms();
+      await runAutoAction(db, "ops_worker", { type: "notify_admin", params: { message: "MTN down again", topic: "mtn-down" } }, { sms });
+      expect(sms.sendAdmin).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("yesterday's texts don't count toward today's limit", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-11-25T00:10:00Z"));
+      const rows = Array.from({ length: 10 }, (_, i) => ({ action_type: "notify_admin", ts: `2026-11-24T23:${String(15 + i).padStart(2, "0")}:00.000Z`, metadata: { sms_sent: true, topic: `t${i}` } }));
+      const db = fakeDb({ sentinel_actions: rows });
+      const sms = fakeSms();
+      await runAutoAction(db, "ops_worker", { type: "notify_admin", params: { message: "New problem", topic: "fresh" } }, { sms });
+      expect(sms.sendAdmin).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("texts a new topic and records that it did", async () => {
     const db = fakeDb();
     const sms = fakeSms();

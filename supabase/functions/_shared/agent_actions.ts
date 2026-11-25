@@ -134,15 +134,19 @@ export async function runAutoAction(db: any, agentName: string, action: AgentAct
     const topic = String(p.topic || message.slice(0, 30));
     const startOfDay = new Date();
     startOfDay.setUTCHours(0, 0, 0, 0);
+    const dayStart = startOfDay.toISOString();
+    const hourAgo = new Date(Date.now() - TOPIC_SMS_WINDOW_MS).toISOString();
+    // Look back to whichever is earlier: just after midnight the last hour starts yesterday,
+    // and a topic texted at 23:50 must still block a repeat at 00:10.
     const { data: recent } = await db
       .from("sentinel_actions")
       .select("ts, metadata")
       .eq("action_type", "notify_admin")
-      .gte("ts", startOfDay.toISOString())
+      .gte("ts", hourAgo < dayStart ? hourAgo : dayStart)
       .limit(500);
-    const sentToday = (recent || []).filter((r: any) => r?.metadata?.sms_sent === true);
-    const hourAgo = new Date(Date.now() - TOPIC_SMS_WINDOW_MS).toISOString();
-    const topicRecent = sentToday.some((r: any) => r.metadata?.topic === topic && r.ts > hourAgo);
+    const sent = (recent || []).filter((r: any) => r?.metadata?.sms_sent === true);
+    const sentToday = sent.filter((r: any) => String(r.ts) >= dayStart);
+    const topicRecent = sent.some((r: any) => r.metadata?.topic === topic && r.ts > hourAgo);
     let smsSent = false;
     if (sentToday.length < ADMIN_SMS_PER_DAY && !topicRecent) {
       smsSent = await ctx.sms.sendAdmin(db, `[${agentName}] ${message}`).catch(() => false);
