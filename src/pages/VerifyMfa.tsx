@@ -401,6 +401,15 @@ const VerifyMfa = () => {
           </div>
         )}
 
+        {/* Tell an admin why the SMS option isn't offered, and how to switch it on */}
+        {adminOtpInfo && !adminOtpInfo.eligible && isAdmin && method === "totp" && (
+          <p className="mt-4 rounded-xl bg-muted/60 px-3 py-2 text-[11.5px] leading-relaxed text-muted-foreground">
+            SMS sign-in is off for this account. Sign in with your authenticator app this time, then open{" "}
+            <span className="font-semibold text-foreground">Admin → Security → Administrators</span> and press{" "}
+            <span className="font-semibold text-foreground">Switch on for me</span>.
+          </p>
+        )}
+
         {method === "otp" && !smsSent ? (
           <div className="mt-6 space-y-3">
             {error && (

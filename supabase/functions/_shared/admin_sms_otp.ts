@@ -73,8 +73,10 @@ const mask = (phone233: string) => {
 };
 
 async function adminRole(db: any, userId: string): Promise<RoleRow | null> {
-  const { data } = await db.from("user_roles").select("user_id, role, otp_login_approved, otp_phone").eq("user_id", userId).eq("role", "admin").maybeSingle();
-  return data ?? null;
+  // An admin can be listed more than once; .maybeSingle() would fail and hide the SMS option.
+  const { data } = await db.from("user_roles").select("user_id, role, otp_login_approved, otp_phone").eq("user_id", userId).eq("role", "admin");
+  const rows = (Array.isArray(data) ? data : data ? [data] : []) as RoleRow[];
+  return rows.find(smsLoginAllowed) ?? rows[0] ?? null;
 }
 
 export async function smsStatus(db: any, input: { userId: string; sessionId: string }, deps: SmsDeps): Promise<Res> {

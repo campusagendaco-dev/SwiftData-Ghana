@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   MAX_SMS_CODES_PER_DAY,
   SMS_SESSION_HOURS,
@@ -40,6 +42,33 @@ describe("what still needs the authenticator app", () => {
   it("not everyday reads", () => {
     expect(needsAuthenticatorApp("system-payout-v1", "get_admins")).toBe(false);
     expect(needsAuthenticatorApp("admin-user-actions", "get_user_audit_logs")).toBe(false);
+  });
+});
+
+describe("an admin listed twice", () => {
+  it("still gets the SMS option when one of the entries is switched on", async () => {
+    const db = fakeDb({
+      user_roles: [
+        { user_id: "a1", role: "admin", otp_login_approved: false, otp_phone: null },
+        { user_id: "a1", role: "admin", otp_login_approved: true, otp_phone: "233241112222" },
+      ],
+      profiles: [],
+      admin_otp_sessions: [],
+    });
+    const res = await smsStatus(db, { userId: "a1", sessionId: "s1" }, deps());
+    expect(res.body).toMatchObject({ success: true, eligible: true });
+  });
+});
+
+describe("the screens explain the SMS login", () => {
+  const read = (...p: string[]) => readFileSync(join(__dirname, "..", ...p), "utf8");
+  it("switching on for yourself first offers to verify your phone by SMS code", () => {
+    const src = read("pages", "AdminSecurity.tsx");
+    expect(src).toMatch(/<PhoneOtpField[\s\S]{0,600}onVerified=/);
+    expect(src).toMatch(/self && on && !profile\?\.phone_verified/);
+  });
+  it("the sign-in screen tells an admin why SMS isn't offered", () => {
+    expect(read("pages", "VerifyMfa.tsx")).toMatch(/adminOtpInfo && !adminOtpInfo\.eligible && isAdmin/);
   });
 });
 

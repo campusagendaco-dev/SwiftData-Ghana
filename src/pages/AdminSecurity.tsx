@@ -6,6 +6,8 @@ import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useConfirmedCall } from "@/components/admin/ConfirmActionProvider";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import PhoneOtpField from "@/components/PhoneOtpField";
 import AdminTwoFactorBadge, { adminRowMfaStatus, type AdminMfaStatus } from "@/components/admin/AdminTwoFactorBadge";
 import Database2faCheckCard from "@/components/admin/Database2faCheckCard";
 import {
@@ -218,7 +220,11 @@ const AUTO_INTERVAL = 60; // seconds between auto-scans
 
 const AdminSecurity = () => {
   const { toast }   = useToast();
-  const { session } = useAuth();
+  const { session, profile, refreshProfile } = useAuth();
+  // "Switch on for me" when your own phone isn't verified yet
+  const [verifyPhoneFor, setVerifyPhoneFor] = useState<SystemAdmin | null>(null);
+  const [myPhoneInput, setMyPhoneInput] = useState("");
+  const [myPhoneVerified, setMyPhoneVerified] = useState<string | null>(null);
   const confirmed = useConfirmedCall();
   const [tab, setTab]     = useState<TabId>("overview");
   const [search, setSearch] = useState("");
@@ -683,8 +689,15 @@ const AdminSecurity = () => {
   // SMS login: an admin with the authenticator app switches it on, pinning the phone the codes go
   // to, or off (which also ends their SMS sessions). For yourself, the server pins your own
   // verified phone and tells the other admins.
-  const handleSmsLogin = async (adm: SystemAdmin, on: boolean) => {
+  const handleSmsLogin = async (adm: SystemAdmin, on: boolean, phoneJustVerified = false) => {
     const self = adm.user_id === session?.user?.id;
+    // Your own SMS login pins your own verified phone: verify it here first if needed.
+    if (self && on && !profile?.phone_verified && !phoneJustVerified) {
+      setMyPhoneInput(profile?.phone || "");
+      setMyPhoneVerified(null);
+      setVerifyPhoneFor(adm);
+      return;
+    }
     const name = self ? "yourself" : adm.full_name || adm.email;
     let phone: string | null = null;
     if (on && !self) {
@@ -1980,6 +1993,30 @@ const AdminSecurity = () => {
   /* ══ MAIN RENDER ═════════════════════════════════════════════════ */
   return (
     <div className="space-y-5 pb-10">
+
+      <Dialog open={Boolean(verifyPhoneFor)} onOpenChange={(open) => { if (!open) setVerifyPhoneFor(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Verify your phone first</DialogTitle>
+            <DialogDescription>
+              Your SMS sign-in codes can only go to your own verified phone. Enter your Ghana number and the code we text you.
+            </DialogDescription>
+          </DialogHeader>
+          <PhoneOtpField
+            phone={myPhoneInput}
+            onPhoneChange={setMyPhoneInput}
+            verifiedPhone={myPhoneVerified}
+            onVerified={async (norm) => {
+              setMyPhoneVerified(norm);
+              await refreshProfile();
+              const adm = verifyPhoneFor;
+              setVerifyPhoneFor(null);
+              if (adm) void handleSmsLogin(adm, true, true);
+            }}
+            onResetVerification={() => setMyPhoneVerified(null)}
+          />
+        </DialogContent>
+      </Dialog>
 
       {/* DEFCON 1-2 critical alert banner */}
       {defcon <= 2 && (

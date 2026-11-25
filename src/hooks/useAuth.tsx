@@ -11,6 +11,8 @@ export interface Profile {
   full_name: string;
   email: string;
   phone: string;
+  /** Set only by the server once the phone is confirmed with an SMS code. */
+  phone_verified?: boolean;
   whatsapp_number: string;
   support_number: string;
   store_name: string;
