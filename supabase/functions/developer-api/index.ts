@@ -823,9 +823,12 @@ serve(async (req: Request) => {
       ? rawAllowed
       : ["balance", "plans", "buy", "orders"];
     const canonicalAction = ACTION_PERMISSION_MAP[finalAction] || finalAction;
+    const isReadOnlyLookup = finalAction === "validate_bill" || finalAction === "ecg_lookup";
+    const lookupPermitted = isReadOnlyLookup && (allowedActions.includes("plans") || allowedActions.includes("buy"));
     if (
       !allowedActions.includes(finalAction) &&
       !allowedActions.includes(canonicalAction) &&
+      !lookupPermitted &&
       !["index", "service_status"].includes(finalAction)
     ) {
       return json({ success: false, error: `Action '${finalAction}' not permitted.` }, 403);
