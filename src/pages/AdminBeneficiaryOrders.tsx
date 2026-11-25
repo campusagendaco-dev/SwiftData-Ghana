@@ -105,7 +105,7 @@ export default function AdminBeneficiaryOrders() {
 
     const { data: provider } = await supabase
       .from("providers")
-      .select("api_key, base_url")
+      .select("base_url")
       .eq("handler_type", "datahub")
       .eq("is_active", true)
       .maybeSingle();
@@ -115,7 +115,9 @@ export default function AdminBeneficiaryOrders() {
     // below is skipped entirely and every batch goes straight to the edge function,
     // which fetches the key server-side and never exposes it to the client.
     const providerData = (provider || {}) as Record<string, any>;
-    const apiKey = (providerData.api_key || "") as string;
+    // Supplier keys are never sent to browsers (20261125030000): batches always go through the
+    // edge function, which reads the key on the server.
+    const apiKey = "";
     const baseUrl = ((providerData.base_url || "https://user.datahubgh.com/api/external") as string).trim().replace(/\/+$/, "");
     const targetUrl = baseUrl.endsWith("/purchases/submit-numbers")
       ? baseUrl

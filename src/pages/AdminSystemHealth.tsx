@@ -53,7 +53,7 @@ const AdminSystemHealth = () => {
       setTableStats(counts);
 
       // 2. Fetch Live Providers
-      const { data: providers } = await supabase.from("providers").select("*");
+      const { data: providers } = await (supabase as any).from("providers_public").select("*");
       if (providers) {
         const datahub = providers.find(p => p.handler_type === "datahub" || p.name?.toLowerCase().includes("datahub"));
         const datamart = providers.find(p => p.handler_type === "datamart" || p.name?.toLowerCase().includes("datamart"));

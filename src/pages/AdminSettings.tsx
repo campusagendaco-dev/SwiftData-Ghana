@@ -805,8 +805,8 @@ const AdminSettings = () => {
 
   const fetchProviders = async () => {
     setLoadingProviders(true);
-    const { data, error } = await supabase
-      .from("providers")
+    const { data, error } = await (supabase as any)
+      .from("providers_public")
       .select("*")
       .order("priority", { ascending: true });
     

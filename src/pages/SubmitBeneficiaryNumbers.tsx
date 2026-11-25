@@ -628,9 +628,11 @@ export default function SubmitBeneficiaryNumbers() {
           // (admins, via RLS) — regular/anonymous users fall straight through to
           // Tier 2+, which fetch the key server-side and never expose it client-side.
           try {
+            // Supplier keys are never readable in browsers (20261125030000), so this always falls
+            // through to the server-side tiers below, which read the key on the server.
             const { data: providerData } = await supabase
               .from("providers" as any)
-              .select("api_key, base_url")
+              .select("base_url")
               .eq("handler_type", "datahub")
               .eq("is_active", true)
               .maybeSingle();

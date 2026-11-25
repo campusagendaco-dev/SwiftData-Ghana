@@ -356,7 +356,7 @@ export default function AdminOrders() {
   }, []);
 
   const fetchProviders = useCallback(async () => {
-    const { data } = await supabase.from("providers").select("*").order("name", { ascending: true });
+    const { data } = await (supabase as any).from("providers_public").select("*").order("name", { ascending: true });
     setProviders(data || []);
   }, []);
 
@@ -620,7 +620,7 @@ export default function AdminOrders() {
   const syncAllProviderBalances = async () => {
     setSyncingBalances(true);
     try {
-      const { data: updatedProviders } = await supabase.from("providers").select("*").order("name", { ascending: true });
+      const { data: updatedProviders } = await (supabase as any).from("providers_public").select("*").order("name", { ascending: true });
       if (updatedProviders) setProviders(updatedProviders);
 
       const activeDataProviders = (updatedProviders || []).filter((p: any) => p.is_active && p.handler_type);
@@ -634,7 +634,7 @@ export default function AdminOrders() {
         }
       }
 
-      const { data: finalProviders } = await supabase.from("providers").select("*").order("name", { ascending: true });
+      const { data: finalProviders } = await (supabase as any).from("providers_public").select("*").order("name", { ascending: true });
       if (finalProviders) setProviders(finalProviders);
 
       toast({ title: "Balances Updated 🔄", description: "Provider API gateway balances have been refreshed." });

@@ -102,7 +102,7 @@ const AdminMashUpOrders = () => {
 
   useEffect(() => {
     const fetchProviders = async () => {
-      const { data } = await supabase.from("providers").select("*");
+      const { data } = await (supabase as any).from("providers_public").select("*");
       setProviders(data || []);
     };
     fetchProviders();

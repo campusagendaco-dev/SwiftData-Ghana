@@ -1,6 +1,24 @@
 import { fetchViaDb } from "../db_proxy.ts";
 import { ProviderAdapter, ProviderResponse, PurchaseData } from "./types.ts";
 import { normalizeRecipient, parseProviderResponse, parseCapacity } from "./utils.ts";
+import { extractPrepaidToken } from "../korba_token.ts";
+import { notifyAdmins } from "../logger.ts";
+
+// Missing keys must never be silent: tell the admins (at most once an hour).
+const KEYS_MISSING_TITLE = "Korba keys missing";
+async function alertKorbaKeysMissing(supabaseAdmin: any): Promise<void> {
+  try {
+    const since = new Date(Date.now() - 3_600_000).toISOString();
+    const { data: recent } = await supabaseAdmin.from("user_notifications").select("id")
+      .eq("title", KEYS_MISSING_TITLE).gte("created_at", since).limit(1);
+    if (Array.isArray(recent) && recent.length > 0) return;
+    notifyAdmins(supabaseAdmin, {
+      title: KEYS_MISSING_TITLE,
+      message: "Korba orders can't be sent or checked because the Korba keys aren't set. Add KORBA_CLIENT_KEY and KORBA_SECRET_KEY in Supabase secrets.",
+      type: "error",
+    });
+  } catch { /* never block an order on the alert */ }
+}
 
 export class KorbaAdapter implements ProviderAdapter {
   mapNetwork(rawNetwork: string): string {
@@ -21,6 +39,7 @@ export class KorbaAdapter implements ProviderAdapter {
     const KORBA_SECRET_KEY = Deno.env.get("KORBA_SECRET_KEY") || provider?.api_secret || provider?.settings?.secret_key || "";
 
     if (!KORBA_CLIENT_KEY || !KORBA_SECRET_KEY) {
+      await alertKorbaKeysMissing(supabaseAdmin);
       return { ok: false, reason: "Korba credentials not configured (check database settings or env)." };
     }
 
@@ -340,23 +359,8 @@ export class KorbaAdapter implements ProviderAdapter {
       if (semantic.ok) {
         let token: string | null = null;
         try {
-          const parsed = JSON.parse(resText);
-          token =
-            parsed.prepaid_token ||
-            parsed.prepaidToken ||
-            parsed.token ||
-            parsed.data?.prepaid_token ||
-            parsed.data?.token ||
-            parsed.results?.prepaid_token ||
-            parsed.results?.token ||
-            parsed.results?.data?.prepaid_token ||
-            parsed.results?.data?.token ||
-            null;
-          if (!token) {
-            const msgText = String(parsed.message || parsed.results?.message || parsed.results || "");
-            const m = msgText.match(/\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b/) || msgText.match(/\b\d{20}\b/);
-            if (m) token = m[0].replace(/[-\s]/g, "");
-          }
+          const delivered = String(semantic.status || "").toLowerCase() === "fulfilled";
+          token = extractPrepaidToken({ prepaid_token: (semantic as any).prepaid_token, ...JSON.parse(resText) }, { delivered });
         } catch { /* ignore */ }
         
         return { 
@@ -387,6 +391,8 @@ export class KorbaAdapter implements ProviderAdapter {
     const KORBA_SECRET_KEY = Deno.env.get("KORBA_SECRET_KEY") || provider?.api_secret || provider?.settings?.secret_key || "";
 
     if (!KORBA_CLIENT_KEY || !KORBA_SECRET_KEY) {
+      // Stay "processing" (never mark a possibly-delivered order failed), but say so.
+      await alertKorbaKeysMissing(supabaseAdmin);
       return { ok: false, status: "processing", reason: "Korba credentials not configured." };
     }
 
@@ -470,20 +476,7 @@ export class KorbaAdapter implements ProviderAdapter {
           const isDelivered = rawStatus === "000" || rawStatus === "0000" || codeStr === "000" || codeStr === "0000" || rawStatus === "SUCCESS" || rawStatus === "SUCCESSFUL" || rawStatus === "FULFILLED" || rawStatus === "COMPLETED" || rawStatus === "DELIVERED";
           const isFailed = rawStatus === "FAILED" || rawStatus === "ERROR" || rawStatus === "REJECTED" || rawStatus === "CANCELLED";
 
-          let token: string | null =
-            parsed.prepaid_token ||
-            parsed.prepaidToken ||
-            parsed.token ||
-            parsed.data?.prepaid_token ||
-            parsed.data?.token ||
-            parsed.results?.prepaid_token ||
-            parsed.results?.token ||
-            null;
-          if (!token) {
-            const msgText = String(parsed.message || parsed.results?.message || "");
-            const m = msgText.match(/\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b/) || msgText.match(/\b\d{20}\b/);
-            if (m) token = m[0].replace(/[-\s]/g, "");
-          }
+          const token = extractPrepaidToken(parsed, { delivered: isDelivered });
 
           const currentResult: ProviderResponse = {
             ok: true,
