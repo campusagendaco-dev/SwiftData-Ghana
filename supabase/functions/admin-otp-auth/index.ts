@@ -15,8 +15,11 @@ import { requestSmsCode, setSmsApproval, smsStatus, verifySmsCode, type SmsDeps 
 
 declare const Deno: any;
 
-const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+const json = (body: unknown, status = 200, extraHeaders?: Record<string, string>) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json", ...(extraHeaders || {}) },
+  });
 
 function jwtSessionId(token: string): string {
   try {
@@ -94,7 +97,11 @@ serve(async (req: Request) => {
       : action === "request_otp" ? await requestSmsCode(db, input, deps)
       : action === "verify_otp" ? await verifySmsCode(db, { ...input, code: String(body?.otp || "") }, deps)
       : { status: 400, body: { error: `Unknown action: ${action}` } };
-    return json(res.body, res.status);
+    const retryAfter =
+      res.status === 429 && typeof (res.body as any)?.retry_after_seconds === "number"
+        ? { "Retry-After": String((res.body as any).retry_after_seconds) }
+        : undefined;
+    return json(res.body, res.status, retryAfter);
   } catch (err: any) {
     console.error("[admin-otp-auth] Error:", err);
     return json({ error: "Something went wrong. Please use your authenticator app." }, 500);

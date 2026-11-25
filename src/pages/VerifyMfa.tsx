@@ -2,9 +2,24 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
+import { clearAdminOtpStatusCache, fetchAdminOtpStatus } from "@/lib/adminOtpStatus";
 import { ShieldAlert, Lock, ArrowRight, Loader2, AlertCircle, Smartphone, KeyRound, Send } from "lucide-react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
+
+async function extractEdgeFunctionErrorBody(err: any): Promise<Record<string, any> | null> {
+  try {
+    const ctx = err?.context;
+    if (ctx && typeof ctx.json === "function") {
+      const target = typeof ctx.clone === "function" ? ctx.clone() : ctx;
+      const parsed = await target.json();
+      if (parsed && typeof parsed === "object") return parsed;
+    }
+  } catch {
+    // ignore JSON parse errors
+  }
+  return null;
+}
 
 const VerifyMfa = () => {
   const { user, isAdmin, loading: authLoading, refreshMfaStatus, refreshAdminOtpStatus } = useAuth();
@@ -16,14 +31,22 @@ const VerifyMfa = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [factorId, setFactorId] = useState<string | null>(null);
-  const [adminOtpInfo, setAdminOtpInfo] = useState<{ eligible: boolean; has_phone: boolean; masked_phone: string | null } | null>(null);
+  const [adminOtpInfo, setAdminOtpInfo] = useState<{
+    eligible: boolean;
+    has_phone: boolean;
+    masked_phone: string | null;
+    daily_limit_reached?: boolean;
+    codes_remaining_today?: number;
+  } | null>(null);
   const [smsSent, setSmsSent] = useState(false);
   const [sendingSms, setSendingSms] = useState(false);
+  const [cooldownSeconds, setCooldownSeconds] = useState(0);
   
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const verifyingRef = useRef(false);
   const verifiedSuccessRef = useRef(false);
   const lastSubmittedCodeRef = useRef<string>("");
+  const checkedStatusUserIdRef = useRef<string | null>(null);
 
   // Fetch active MFA TOTP factor on load
   useEffect(() => {
@@ -73,24 +96,46 @@ const VerifyMfa = () => {
     };
   }, [authLoading, user?.id, isAdmin, navigate]);
 
+  // Tick down client-side SMS resend cooldown
+  useEffect(() => {
+    if (cooldownSeconds <= 0) return;
+    const timer = window.setInterval(() => {
+      setCooldownSeconds((prev) => (prev <= 1 ? 0 : prev - 1));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [cooldownSeconds]);
+
   // Check server-side if caller is an approved admin eligible for Admin SMS OTP (works at AAL1 before 2FA)
+  // Deduplicated with useAuth via fetchAdminOtpStatus so mount/refresh never fires duplicate requests.
   useEffect(() => {
     if (authLoading || !user?.id) return;
+    if (checkedStatusUserIdRef.current === user.id) return;
+    checkedStatusUserIdRef.current = user.id;
     let cancelled = false;
     (async () => {
       try {
-        const { data } = await supabase.functions.invoke("admin-otp-auth", {
-          body: { action: "status" },
-        });
-        if (cancelled) return;
-        if (data?.has_valid_session) {
+        const data = await fetchAdminOtpStatus(user.id);
+        if (cancelled || !data) return;
+        if (data.has_valid_session) {
           verifiedSuccessRef.current = true;
-          await refreshAdminOtpStatus();
+          await refreshAdminOtpStatus?.();
           navigate("/admin", { replace: true });
           return;
         }
-        if (data?.success && data?.eligible) {
-          setAdminOtpInfo({ eligible: true, has_phone: Boolean(data.has_phone), masked_phone: data.masked_phone || null });
+        if (data.success && data.eligible) {
+          setAdminOtpInfo({
+            eligible: true,
+            has_phone: Boolean(data.has_phone),
+            masked_phone: data.masked_phone || null,
+            daily_limit_reached: Boolean(data.daily_limit_reached),
+            codes_remaining_today: typeof data.codes_remaining_today === "number" ? data.codes_remaining_today : undefined,
+          });
+          if (typeof data.cooldown_seconds === "number" && data.cooldown_seconds > 0) {
+            setCooldownSeconds(data.cooldown_seconds);
+          }
+          if (data.has_pending_code) {
+            setSmsSent(true);
+          }
         } else {
           setAdminOtpInfo({ eligible: false, has_phone: false, masked_phone: null });
         }
@@ -104,15 +149,46 @@ const VerifyMfa = () => {
   }, [authLoading, user?.id, navigate, refreshAdminOtpStatus]);
 
   const handleRequestAdminSmsOtp = async () => {
+    if (sendingSms) return;
+    if (adminOtpInfo?.daily_limit_reached) {
+      setError("You've reached the daily SMS code limit. Please use your authenticator app.");
+      return;
+    }
+    if (cooldownSeconds > 0) {
+      setError(`A code was just sent. Please wait ${cooldownSeconds}s before requesting another.`);
+      return;
+    }
     setSendingSms(true);
     setError("");
     try {
       const { data, error: fnErr } = await supabase.functions.invoke("admin-otp-auth", {
         body: { action: "request_otp" },
       });
-      if (fnErr) throw fnErr;
+      if (fnErr) {
+        const errBody = await extractEdgeFunctionErrorBody(fnErr);
+        if (typeof errBody?.retry_after_seconds === "number" && errBody.retry_after_seconds > 0) {
+          setCooldownSeconds(errBody.retry_after_seconds);
+        }
+        if (errBody?.daily_limit_reached) {
+          setAdminOtpInfo((prev) => (prev ? { ...prev, daily_limit_reached: true, codes_remaining_today: 0 } : prev));
+        }
+        throw new Error(errBody?.error || fnErr.message || "Could not send Admin OTP.");
+      }
       if (data?.error) throw new Error(data.error);
+      clearAdminOtpStatusCache(user?.id);
       setSmsSent(true);
+      setCooldownSeconds(typeof data?.cooldown_seconds === "number" ? data.cooldown_seconds : 60);
+      if (typeof data?.codes_remaining_today === "number") {
+        setAdminOtpInfo((prev) =>
+          prev
+            ? {
+                ...prev,
+                codes_remaining_today: data.codes_remaining_today,
+                daily_limit_reached: data.codes_remaining_today <= 0,
+              }
+            : prev
+        );
+      }
       setOtp(["", "", "", "", "", ""]);
       toast.success(data?.message || "Admin verification code sent via SMS.");
       setTimeout(() => inputRefs.current[0]?.focus(), 100);
@@ -245,12 +321,16 @@ const VerifyMfa = () => {
         const { data, error: verifyErr } = await supabase.functions.invoke("admin-otp-auth", {
           body: { action: "verify_otp", otp: fullCode },
         });
-        if (verifyErr) throw verifyErr;
+        if (verifyErr) {
+          const errBody = await extractEdgeFunctionErrorBody(verifyErr);
+          throw new Error(errBody?.error || verifyErr.message || "Invalid verification code.");
+        }
         if (data?.error) throw new Error(data.error);
 
         verifiedSuccessRef.current = true;
+        clearAdminOtpStatusCache(user?.id);
         toast.success("Admin SMS OTP verified! Welcome back.");
-        await refreshAdminOtpStatus();
+        await refreshAdminOtpStatus?.(true);
         navigate("/admin", { replace: true });
         return;
       }
@@ -425,10 +505,17 @@ const VerifyMfa = () => {
                   Add your phone number in your profile settings (or update it in Admin Users) to receive 6-digit Admin SMS OTPs. Until then, use your 2FA App.
                 </p>
               </div>
+            ) : adminOtpInfo?.daily_limit_reached ? (
+              <div className="rounded-2xl bg-amber-500/15 border border-amber-500/30 p-4 text-left text-xs text-foreground space-y-1">
+                <p className="font-bold text-amber-400">Daily SMS code limit reached</p>
+                <p className="text-muted-foreground leading-relaxed">
+                  You have used all SMS verification codes for today. Please use your authenticator app to sign in.
+                </p>
+              </div>
             ) : (
               <button
                 type="button"
-                disabled={sendingSms}
+                disabled={sendingSms || cooldownSeconds > 0}
                 onClick={() => void handleRequestAdminSmsOtp()}
                 className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-primary text-sm font-bold text-primary-foreground transition active:scale-[0.98] disabled:opacity-50"
               >
@@ -436,6 +523,11 @@ const VerifyMfa = () => {
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
                     Sending Admin OTP...
+                  </>
+                ) : cooldownSeconds > 0 ? (
+                  <>
+                    <Send className="h-4 w-4" />
+                    Wait {cooldownSeconds}s to send code
                   </>
                 ) : (
                   <>
@@ -503,14 +595,18 @@ const VerifyMfa = () => {
         {method === "otp" ? (
           <div className="mt-4 flex items-center justify-center gap-3 text-xs text-muted-foreground">
             <span>Code expires in 5 minutes.</span>
-            {smsSent && (
+            {smsSent && !adminOtpInfo?.daily_limit_reached && (
               <button
                 type="button"
-                disabled={sendingSms}
+                disabled={sendingSms || cooldownSeconds > 0}
                 onClick={() => void handleRequestAdminSmsOtp()}
                 className="font-semibold text-primary hover:underline disabled:opacity-50"
               >
-                {sendingSms ? "Sending..." : "Resend SMS"}
+                {sendingSms
+                  ? "Sending..."
+                  : cooldownSeconds > 0
+                  ? `Resend in ${cooldownSeconds}s`
+                  : "Resend SMS"}
               </button>
             )}
           </div>

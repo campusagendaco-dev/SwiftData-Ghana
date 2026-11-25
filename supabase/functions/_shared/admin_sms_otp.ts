@@ -12,6 +12,7 @@ export const SMS_SESSION_HOURS = 4;
 export const MAX_SMS_CODES_PER_DAY = 5;
 const CODE_TTL_MS = 5 * 60_000;
 const COOLDOWN_MS = 60_000;
+export const COOLDOWN_SECONDS = Math.ceil(COOLDOWN_MS / 1000);
 const MAX_ATTEMPTS = 5;
 const SERVICE_ROLE_USER_ID = "00000000-0000-0000-0000-000000000000";
 
@@ -81,17 +82,74 @@ async function adminRole(db: any, userId: string): Promise<RoleRow | null> {
 
 export async function smsStatus(db: any, input: { userId: string; sessionId: string }, deps: SmsDeps): Promise<Res> {
   const role = await adminRole(db, input.userId);
-  if (!role) return { status: 200, body: { success: true, eligible: false, has_phone: false, masked_phone: null, has_valid_session: false } };
+  if (!role) {
+    return {
+      status: 200,
+      body: {
+        success: true,
+        eligible: false,
+        has_phone: false,
+        masked_phone: null,
+        has_valid_session: false,
+        cooldown_seconds: 0,
+        daily_limit_reached: false,
+        codes_remaining_today: MAX_SMS_CODES_PER_DAY,
+        has_pending_code: false,
+      },
+    };
+  }
   const eligible = smsLoginAllowed(role);
   let has_valid_session = false;
   let expires_at: string | null = null;
+  let cooldown_seconds = 0;
+  let daily_limit_reached = false;
+  let codes_remaining_today = MAX_SMS_CODES_PER_DAY;
+  let has_pending_code = false;
   if (eligible && input.sessionId) {
     const { data: s } = await db.from("admin_otp_sessions").select("id, expires_at").eq("user_id", input.userId).eq("session_id", input.sessionId)
       .not("verified_at", "is", null).gt("expires_at", deps.now.toISOString()).limit(1).maybeSingle();
     has_valid_session = Boolean(s);
     expires_at = s?.expires_at ?? null;
+    if (!has_valid_session) {
+      const dayAgo = new Date(deps.now.getTime() - 86_400_000).toISOString();
+      const { data: today } = await db.from("admin_otp_sessions").select("id, session_id, created_at, verified_at, otp_expires_at").eq("user_id", input.userId).gte("created_at", dayAgo).limit(MAX_SMS_CODES_PER_DAY + 1);
+      const recent = Array.isArray(today) ? today : [];
+      codes_remaining_today = Math.max(0, MAX_SMS_CODES_PER_DAY - recent.length);
+      daily_limit_reached = recent.length >= MAX_SMS_CODES_PER_DAY;
+      let maxCooldownMs = 0;
+      for (const r of recent) {
+        const createdMs = r?.created_at ? new Date(r.created_at).getTime() : 0;
+        if (createdMs > 0) {
+          const remainingMs = COOLDOWN_MS - (deps.now.getTime() - createdMs);
+          if (remainingMs > maxCooldownMs) maxCooldownMs = remainingMs;
+        }
+        if (
+          r?.session_id === input.sessionId &&
+          !r?.verified_at &&
+          r?.otp_expires_at &&
+          new Date(r.otp_expires_at).getTime() > deps.now.getTime()
+        ) {
+          has_pending_code = true;
+        }
+      }
+      cooldown_seconds = maxCooldownMs > 0 ? Math.max(1, Math.ceil(maxCooldownMs / 1000)) : 0;
+    }
   }
-  return { status: 200, body: { success: true, eligible, has_phone: eligible, masked_phone: eligible ? mask(String(role.otp_phone)) : null, has_valid_session, expires_at } };
+  return {
+    status: 200,
+    body: {
+      success: true,
+      eligible,
+      has_phone: eligible,
+      masked_phone: eligible ? mask(String(role.otp_phone)) : null,
+      has_valid_session,
+      expires_at,
+      cooldown_seconds,
+      daily_limit_reached,
+      codes_remaining_today,
+      has_pending_code,
+    },
+  };
 }
 
 export async function requestSmsCode(db: any, input: { userId: string; sessionId: string }, deps: SmsDeps): Promise<Res> {
@@ -101,9 +159,33 @@ export async function requestSmsCode(db: any, input: { userId: string; sessionId
   const dayAgo = new Date(deps.now.getTime() - 86_400_000).toISOString();
   const { data: today } = await db.from("admin_otp_sessions").select("id, created_at").eq("user_id", input.userId).gte("created_at", dayAgo).limit(MAX_SMS_CODES_PER_DAY + 1);
   const recent = today || [];
-  if (recent.length >= MAX_SMS_CODES_PER_DAY) return { status: 429, body: { error: `You've asked for ${MAX_SMS_CODES_PER_DAY} SMS codes today. Use your authenticator app.` } };
-  if (recent.some((r: any) => deps.now.getTime() - new Date(r.created_at).getTime() < COOLDOWN_MS)) {
-    return { status: 429, body: { error: "A code was just sent. Please wait a minute." } };
+  if (recent.length >= MAX_SMS_CODES_PER_DAY) {
+    return {
+      status: 429,
+      body: {
+        error: `You've asked for ${MAX_SMS_CODES_PER_DAY} SMS codes today. Use your authenticator app.`,
+        daily_limit_reached: true,
+        codes_remaining_today: 0,
+      },
+    };
+  }
+  let maxCooldownMs = 0;
+  for (const r of recent) {
+    const createdMs = r?.created_at ? new Date(r.created_at).getTime() : 0;
+    if (createdMs > 0) {
+      const remainingMs = COOLDOWN_MS - (deps.now.getTime() - createdMs);
+      if (remainingMs > maxCooldownMs) maxCooldownMs = remainingMs;
+    }
+  }
+  if (maxCooldownMs > 0) {
+    const retryAfter = Math.max(1, Math.ceil(maxCooldownMs / 1000));
+    return {
+      status: 429,
+      body: {
+        error: `A code was just sent. Please wait ${retryAfter}s before requesting another.`,
+        retry_after_seconds: retryAfter,
+      },
+    };
   }
   const id = crypto.randomUUID();
   const code = (deps.makeCode ?? sixDigits)();
@@ -122,7 +204,16 @@ export async function requestSmsCode(db: any, input: { userId: string; sessionId
   if (error) return { status: 500, body: { error: error.message } };
   const sent = await deps.sendSms(localGhPhone(role!.otp_phone) || String(role!.otp_phone), `SwiftData admin sign-in code: ${code}. It expires in 5 minutes. Never share it.`);
   if (!sent) return { status: 503, body: { error: "We couldn't send the SMS. Use your authenticator app." } };
-  return { status: 200, body: { success: true, masked_phone: mask(String(role!.otp_phone)), message: `Code sent to ${mask(String(role!.otp_phone))}.` } };
+  return {
+    status: 200,
+    body: {
+      success: true,
+      masked_phone: mask(String(role!.otp_phone)),
+      message: `Code sent to ${mask(String(role!.otp_phone))}.`,
+      cooldown_seconds: COOLDOWN_SECONDS,
+      codes_remaining_today: Math.max(0, MAX_SMS_CODES_PER_DAY - (recent.length + 1)),
+    },
+  };
 }
 
 export async function verifySmsCode(db: any, input: { userId: string; sessionId: string; code: string }, deps: SmsDeps): Promise<Res> {
