@@ -1746,6 +1746,8 @@ const AdminSettings = () => {
                     { id: "rec1", label: "Abstract Data Flow", url: "/assets/backgrounds/bg_data_flow.png" },
                     { id: "rec2", label: "Frosted Mesh Gradient", url: "/assets/backgrounds/bg_mesh_gradient.png" },
                     { id: "rec3", label: "Premium Gold Ribbons", url: "/assets/backgrounds/bg_gold_ribbons.png" },
+                    { id: "cedi_night", label: "💵 Cedi Night", url: "/assets/backgrounds/bg_cedi_night.webp" },
+                    { id: "cedi_golden", label: "💰 Golden Cedis", url: "/assets/backgrounds/bg_cedi_golden.webp" },
                   ].map((preset) => {
                     const isSelected = settings.background_custom_image_url === preset.url;
                     return (

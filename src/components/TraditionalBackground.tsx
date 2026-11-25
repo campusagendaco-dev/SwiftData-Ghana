@@ -28,6 +28,8 @@ const SLIDESHOW_BACKGROUNDS = [
   "/assets/backgrounds/bg_world_cup_stars.webp",
   "/assets/backgrounds/bg_world_cup_stadium.webp",
   "/assets/backgrounds/bg_world_cup_abstract.webp",
+  "/assets/backgrounds/bg_cedi_night.webp",
+  "/assets/backgrounds/bg_cedi_golden.webp",
 ];
 
 export const TraditionalBackground = memo(({ className = "fixed inset-0 z-20 opacity-[0.35] dark:opacity-[0.45] pointer-events-none" }: { className?: string }) => {
