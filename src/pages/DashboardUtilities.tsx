@@ -9,6 +9,7 @@ import {
   CheckCircle2, AlertCircle, Info, Plus, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getFunctionErrorMessage } from "@/lib/function-errors";
 import { ECGLogo, NEDCOLogo, GhanaWaterLogo, DSTVLogo, GOTVLogo, StarTimesLogo, KweseTVLogo, GBCTVLogo } from "@/components/BrandLogos";
 import { useConnectivity } from "@/hooks/useConnectivity";
 import { WifiOff } from "lucide-react";
@@ -129,9 +130,51 @@ const DashboardUtilities = () => {
     }
   }, []);
 
-  const saveMeter = (meterNum: string, name: string, prov: string, type: string) => {
+  const isGhanaPhone = (val: string) => {
+    const digits = val.replace(/\D/g, "");
+    return (
+      ((digits.startsWith("02") || digits.startsWith("05")) && digits.length === 10) ||
+      ((digits.startsWith("2332") || digits.startsWith("2335")) && digits.length === 12) ||
+      ((digits.startsWith("2") || digits.startsWith("5")) && digits.length === 9)
+    );
+  };
+
+  const normalizeMeter = (m: any) => ({
+    ...m,
+    id: m.id || m.meterId || m.meter_id || null,
+    meterId: m.meterId || m.id || m.meter_id || null,
+    meterNumber: m.meterNumber || m.meter_number || m.meter_no || null,
+    customerName: m.customerName || m.customer_name || m.name || m.alias || null,
+    meterCategory: m.meterCategory || m.meter_category || null,
+    accountNumber: m.accountNumber || m.account_number || null,
+  });
+
+  const clearVerification = () => {
+    setAccountName(null);
+    setVerifyError(null);
+    setLookupTxId(null);
+    setMeters(null);
+    setSelectedMeter(null);
+  };
+
+  const saveMeter = (
+    meterNum: string,
+    name: string,
+    prov: string,
+    type: string,
+    extra?: { meterId?: string | null; meterCategory?: string | null; accountNumber?: string | null }
+  ) => {
     if (!meterNum) return;
-    const newItem = { meterNumber: meterNum, name, provider: prov, type, id: crypto.randomUUID() };
+    const newItem = {
+      meterNumber: meterNum,
+      name,
+      provider: prov,
+      type,
+      meterId: extra?.meterId || null,
+      meterCategory: extra?.meterCategory || null,
+      accountNumber: extra?.accountNumber || null,
+      id: crypto.randomUUID(),
+    };
     const filtered = savedMeters.filter(m => m.meterNumber !== meterNum);
     const updated = [newItem, ...filtered].slice(0, 10);
     setSavedMeters(updated);
@@ -153,11 +196,7 @@ const DashboardUtilities = () => {
     setAccountNumber("");
     setPhoneNumber("");
     setAmount("");
-    setAccountName(null);
-    setVerifyError(null);
-    setLookupTxId(null);
-    setMeters(null);
-    setSelectedMeter(null);
+    clearVerification();
   };
 
   const handleTabChange = (id: UtilityType) => {
@@ -175,8 +214,7 @@ const DashboardUtilities = () => {
       return;
     }
     setVerifying(true);
-    setAccountName(null);
-    setVerifyError(null);
+    clearVerification();
     
     try {
       const { data, error } = await supabase.functions.invoke("utility-lookup", {
@@ -189,25 +227,31 @@ const DashboardUtilities = () => {
       });
 
       if (error || !data?.success) {
-        setVerifyError(data?.error || error?.message || "Account verification failed.");
-      } else if (data.customer_name || data.accountName || (data.meters && data.meters.length > 0)) {
-        const resolvedName = data.customer_name || data.accountName || (data.meters?.[0]?.customerName || data.meters?.[0]?.alias);
+        const errMsg = data?.error || (await getFunctionErrorMessage(error, "Account verification failed."));
+        setVerifyError(errMsg);
+      } else if (data.customer_name || data.accountName || (Array.isArray(data.meters) && data.meters.length > 0)) {
+        const normalizedMeters = Array.isArray(data.meters) ? data.meters.map(normalizeMeter) : [];
+        const resolvedName = data.customer_name || data.accountName || (normalizedMeters[0]?.customerName || normalizedMeters[0]?.alias);
         setAccountName(resolvedName);
         const txId = data.raw?.data?.transaction_id || data.raw?.transaction_id || data.raw?.transactionId;
         if (txId) {
           setLookupTxId(txId);
         }
         
-        if (data.meters && Array.isArray(data.meters) && data.meters.length > 0) {
+        if (normalizedMeters.length > 0) {
           const matchedMeter =
             (preferredMeterNumber
-              ? data.meters.find((m: any) => String(m.meterNumber || "").trim() === preferredMeterNumber.trim())
-              : null) || data.meters[0];
-          setMeters(data.meters);
+              ? normalizedMeters.find((m: any) => String(m.meterNumber || "").trim() === preferredMeterNumber.trim())
+              : null) || normalizedMeters[0];
+          setMeters(normalizedMeters);
           setSelectedMeter(matchedMeter);
           const mName = matchedMeter.customerName || matchedMeter.alias || resolvedName;
           setAccountName(mName);
-          saveMeter(matchedMeter.meterNumber, mName, targetProvider, activeTab);
+          saveMeter(matchedMeter.meterNumber, mName, targetProvider, activeTab, {
+            meterId: matchedMeter.id,
+            meterCategory: matchedMeter.meterCategory,
+            accountNumber: matchedMeter.accountNumber,
+          });
         } else {
           setMeters(null);
           setSelectedMeter(null);
@@ -219,7 +263,8 @@ const DashboardUtilities = () => {
         setVerifyError("Could not verify account name.");
       }
     } catch (err: any) {
-      setVerifyError("Network error. Please try again.");
+      const errMsg = await getFunctionErrorMessage(err, "Network error. Please try again.");
+      setVerifyError(errMsg);
     } finally {
       setVerifying(false);
     }
@@ -236,13 +281,17 @@ const DashboardUtilities = () => {
       toast({ title: "Please fill in all required fields", variant: "destructive" });
       return;
     }
+    if (!isGhanaPhone(cleanPhone)) {
+      toast({ title: "Invalid phone number", description: "Please enter a valid 10-digit Ghana mobile number (e.g. 0244123456).", variant: "destructive" });
+      return;
+    }
     setRegistering(true);
     try {
       const { data, error } = await supabase.functions.invoke("utility-lookup", {
         body: {
           action: "add_meter",
           utility_type: "electricity",
-          provider: "ECG Prepaid",
+          provider: regCategory === "POSTPAID" ? "ECG Postpaid" : "ECG Prepaid",
           alias: cleanAlias,
           meter_number: cleanMeter,
           phone_number: cleanPhone,
@@ -252,15 +301,7 @@ const DashboardUtilities = () => {
       });
 
       if (error || !data?.success) {
-        let errMsg = data?.error || error?.message || "Could not register meter.";
-        if (!data?.error && error && typeof (error as any).context?.json === "function") {
-          try {
-            const errBody = await (error as any).context.json();
-            if (errBody?.error) errMsg = errBody.error;
-          } catch {
-            // ignore JSON parse errors
-          }
-        }
+        const errMsg = data?.error || (await getFunctionErrorMessage(error, "Could not register meter."));
         toast({ title: "Registration failed", description: errMsg, variant: "destructive" });
       } else {
         toast({
@@ -281,51 +322,60 @@ const DashboardUtilities = () => {
         void handleVerify(cleanPhone, cleanMeter);
       }
     } catch (err: any) {
-      toast({ title: "Network error", description: err?.message || "Please try again later.", variant: "destructive" });
+      const errMsg = await getFunctionErrorMessage(err, "Please try again later.");
+      toast({ title: "Network error", description: errMsg, variant: "destructive" });
     } finally {
       setRegistering(false);
     }
   };
 
   const handlePay = async () => {
-    if (!accountName || !amount || !provider) {
-      toast({ title: "Please verify account and enter amount", variant: "destructive" });
+    const numAmt = Number(amount);
+    const minAmt = payMethod === "wallet" ? 1 : 5;
+    if (!accountName || !provider || !Number.isFinite(numAmt) || numAmt < minAmt) {
+      toast({
+        title: "Check payment details",
+        description: `Please verify your account and enter an amount of at least GHS ${minAmt.toFixed(2)}.`,
+        variant: "destructive",
+      });
       return;
     }
 
-
-
-    setLoading(true);
-    const numAmount = Number(amount);
-
     if (payMethod === "wallet") {
-      const { data, error } = await supabase.functions.invoke("wallet-pay-utility", {
-        body: {
-          utility_type: activeTab,
-          utility_provider: provider,
-          utility_account_number: selectedMeter ? selectedMeter.meterNumber : accountNumber.trim(),
-          utility_account_name: selectedMeter ? (selectedMeter.customerName || selectedMeter.alias) : accountName,
-          amount: numAmount,
-          lookup_transaction_id: lookupTxId,
-          metadata: selectedMeter ? {
-            meter_id: selectedMeter.id,
-            meter_number: selectedMeter.meterNumber,
-            meter_category: selectedMeter.meterCategory,
-            account_number: selectedMeter.accountNumber
-          } : undefined
-        },
-      });
-      if (error || data?.error) {
-        toast({ title: "Payment failed", description: data?.error || "Insufficient balance or server error.", variant: "destructive" });
+      setLoading(true);
+      try {
+        const { data, error } = await supabase.functions.invoke("wallet-pay-utility", {
+          body: {
+            utility_type: activeTab,
+            utility_provider: provider,
+            utility_account_number: selectedMeter?.meterNumber || accountNumber.trim() || phoneNumber.trim(),
+            utility_account_name: selectedMeter ? (selectedMeter.customerName || selectedMeter.alias || accountName) : accountName,
+            amount: numAmt,
+            lookup_transaction_id: lookupTxId,
+            metadata: selectedMeter ? {
+              meter_id: selectedMeter.id,
+              meter_number: selectedMeter.meterNumber,
+              meter_category: selectedMeter.meterCategory,
+              account_number: selectedMeter.accountNumber
+            } : undefined
+          },
+        });
+        if (error || data?.error) {
+          const errMsg = data?.error || (await getFunctionErrorMessage(error, "Insufficient balance or server error."));
+          toast({ title: "Payment failed", description: errMsg, variant: "destructive" });
+          return;
+        }
+        toast({ title: "Payment Successful!", description: "Your bill payment order has been initiated." });
+        if (data?.order_id) {
+          navigate(`/order-status?reference=${data.order_id}`);
+        }
+        reset();
+      } catch (err: any) {
+        const errMsg = await getFunctionErrorMessage(err, "Failed to process wallet payment.");
+        toast({ title: "Payment failed", description: errMsg, variant: "destructive" });
+      } finally {
         setLoading(false);
-        return;
       }
-      toast({ title: "Payment Successful!", description: "Your bill payment order has been initiated." });
-      setLoading(false);
-      if (data.order_id) {
-        navigate(`/order-status?reference=${data.order_id}`);
-      }
-      reset();
       return;
     }
 
@@ -333,8 +383,9 @@ const DashboardUtilities = () => {
   };
 
   const numAmount = Number(amount);
+  const minPayAmount = payMethod === "wallet" ? 1 : 5;
   const canVerify = !!provider && (!!accountNumber.trim() || !!phoneNumber.trim());
-  const canPay = !!accountName && numAmount > 0;
+  const canPay = !!accountName && Number.isFinite(numAmount) && numAmount >= minPayAmount;
 
   return (
     <div className="p-4 md:p-8 max-w-5xl space-y-8 animate-in fade-in duration-500">
@@ -382,7 +433,7 @@ const DashboardUtilities = () => {
               {PROVIDERS[activeTab].map((p) => (
                 <button
                   key={p.name}
-                  onClick={() => { setProvider(p.name); setAccountName(null); setVerifyError(null); }}
+                  onClick={() => { setProvider(p.name); clearVerification(); }}
                   className={cn(
                     "relative flex items-center gap-3 px-4 py-3.5 rounded-2xl border text-left text-sm font-bold transition-all",
                     provider === p.name
@@ -415,8 +466,20 @@ const DashboardUtilities = () => {
                       setActiveTab(m.type);
                       setAccountNumber(m.meterNumber);
                       setAccountName(m.name);
+                      setVerifyError(null);
+                      setLookupTxId(null);
                       setMeters(null);
-                      setSelectedMeter(null);
+                      setSelectedMeter(
+                        m.meterId
+                          ? {
+                              id: m.meterId,
+                              meterNumber: m.meterNumber,
+                              customerName: m.name,
+                              meterCategory: m.meterCategory || null,
+                              accountNumber: m.accountNumber || null,
+                            }
+                          : null
+                      );
                       toast({ title: "Loaded Meter Details", description: `${m.name} (${m.meterNumber})` });
                     }}
                     className={cn(
@@ -456,7 +519,7 @@ const DashboardUtilities = () => {
                   <div>
                     <p className="font-bold mb-0.5">Quick Lookup Alternative</p>
                     <p className="text-muted-foreground">
-                      Simply enter your **ECG Phone Number** (e.g. <span className="text-foreground font-mono font-semibold">024XXXXXXX</span>) to instantly load all meters linked to your ECG account.
+                      Simply enter your <strong>ECG Phone Number</strong> (e.g. <span className="text-foreground font-mono font-semibold">024XXXXXXX</span>) to instantly load all meters linked to your ECG account.
                     </p>
                   </div>
                 </div>
@@ -474,7 +537,7 @@ const DashboardUtilities = () => {
                 <input
                   type="text"
                   value={phoneNumber}
-                  onChange={(e) => { setPhoneNumber(e.target.value); setAccountName(null); setVerifyError(null); }}
+                  onChange={(e) => { setPhoneNumber(e.target.value); clearVerification(); }}
                   placeholder="Phone Number (Optional, e.g., 024XXXXXXX)"
                   className="w-full h-12 px-4 bg-secondary/60 border border-border rounded-2xl text-sm font-medium placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary/50 transition-colors"
                 />
@@ -484,7 +547,7 @@ const DashboardUtilities = () => {
               <input
                 type="text"
                 value={accountNumber}
-                onChange={(e) => { setAccountNumber(e.target.value); setAccountName(null); setVerifyError(null); }}
+                onChange={(e) => { setAccountNumber(e.target.value); clearVerification(); }}
                 placeholder={
                   activeTab === "electricity"
                     ? provider === "ECG Prepaid"
@@ -725,15 +788,16 @@ const DashboardUtilities = () => {
         onClose={() => setCheckoutOpen(false)}
         amount={numAmount}
         email={user?.email || "customer@swiftdata.gh"}
-        recipientPhone={selectedMeter ? selectedMeter.meterNumber : accountNumber.trim()}
+        recipientPhone={phoneNumber.trim() || (isGhanaPhone(accountNumber.trim()) ? accountNumber.trim() : "")}
         recipientNetwork={""}
         metadata={{
           order_type: "utility",
           utility_type: activeTab,
           utility_provider: provider,
-          utility_account_number: selectedMeter ? selectedMeter.meterNumber : accountNumber.trim(),
-          utility_account_name: selectedMeter ? (selectedMeter.customerName || selectedMeter.alias) : accountName,
+          utility_account_number: selectedMeter?.meterNumber || accountNumber.trim() || phoneNumber.trim(),
+          utility_account_name: selectedMeter ? (selectedMeter.customerName || selectedMeter.alias || accountName) : accountName,
           agent_id: user?.id,
+          base_price: numAmount,
           lookup_transaction_id: lookupTxId,
           meter_id: selectedMeter?.id,
           meter_number: selectedMeter?.meterNumber,

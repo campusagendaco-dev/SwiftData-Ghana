@@ -14,6 +14,7 @@ import {
   Sparkles
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getFunctionErrorMessage } from "@/lib/function-errors";
 import {
   Dialog,
   DialogContent,
@@ -46,7 +47,7 @@ interface ImportedPackage {
   external_id?: string;
 }
 
-const KORBA_PROVIDER_ID = "1177b72a-a2d7-462d-9366-9dde6e83ccd7";
+const DEFAULT_KORBA_PROVIDER_ID = "1177b72a-a2d7-462d-9366-9dde6e83ccd7";
 
 const parseCapacityGb = (size: string) => {
   const cleaned = size.replace(/\s+/g, "").toUpperCase();
@@ -65,6 +66,7 @@ const AdminKorbaPackages = () => {
   const [fetchingApi, setFetchingApi] = useState(false);
 
   // States
+  const [korbaProviderId, setKorbaProviderId] = useState<string>(DEFAULT_KORBA_PROVIDER_ID);
   const [importedPkgs, setImportedPkgs] = useState<ImportedPackage[]>([]);
   const [fetchedBundles, setFetchedBundles] = useState<KorbaBundle[]>([]);
   const [activeTab, setActiveTab] = useState("MTN");
@@ -74,6 +76,7 @@ const AdminKorbaPackages = () => {
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [selectedBundle, setSelectedBundle] = useState<KorbaBundle | null>(null);
   const [targetPackageSize, setTargetPackageSize] = useState("");
+  const [targetPackageNetwork, setTargetPackageNetwork] = useState("");
   const [isNewPackageSize, setIsNewPackageSize] = useState(false);
   const [newSizeName, setNewSizeName] = useState("");
   
@@ -97,6 +100,19 @@ const AdminKorbaPackages = () => {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
+      // 0. Resolve Korba provider ID dynamically (fallback to default UUID)
+      let resolvedProviderId = DEFAULT_KORBA_PROVIDER_ID;
+      const { data: provRow } = await supabase
+        .from("providers")
+        .select("id")
+        .ilike("name", "%korba%")
+        .limit(1)
+        .maybeSingle();
+      if (provRow?.id) {
+        resolvedProviderId = provRow.id;
+        setKorbaProviderId(provRow.id);
+      }
+
       // 1. Fetch package settings under standard networks
       const { data: pkgs, error: pkgsErr } = await supabase
         .from("global_package_settings")
@@ -108,7 +124,7 @@ const AdminKorbaPackages = () => {
       const { data: mappings, error: mapsErr } = await supabase
         .from("provider_packages")
         .select("package_name, network, external_id")
-        .eq("provider_id", KORBA_PROVIDER_ID);
+        .eq("provider_id", resolvedProviderId);
       if (mapsErr) throw mapsErr;
 
       // Merge mappings to packages
@@ -142,45 +158,44 @@ const AdminKorbaPackages = () => {
       const { data, error } = await supabase.functions.invoke("system-payout-v1", {
         body: { action: "get_korba_packages" }
       });
-      if (error) throw error;
-      if (data?.success) {
-        const rawBundles = data.bundles || [];
-        const flattened: KorbaBundle[] = [];
-        
-        rawBundles.forEach((item: any) => {
-          if (item.bundles && Array.isArray(item.bundles)) {
-            // This is an MTN category group!
-            item.bundles.forEach((subBundle: any) => {
-              flattened.push({
-                name: subBundle.name,
-                product_id: subBundle.product_id,
-                amount: subBundle.amount,
-                validity: subBundle.validity || "Non-expiry",
-                network: item.network || "MTN",
-                category: item.name || "Data Bundles"
-              });
-            });
-          } else {
-            // This is a Telecel or AirtelTigo flat bundle!
-            flattened.push({
-              name: item.name,
-              product_id: item.product_id || item.bundle_id,
-              amount: item.amount,
-              validity: item.validity || "Non-expiry",
-              network: item.network,
-              category: item.category || "General"
-            });
-          }
-        });
-
-        setFetchedBundles(flattened);
-        toast({
-          title: "Fetched Bundles",
-          description: `Successfully fetched and flattened ${flattened.length} packages from Korba API.`
-        });
-      } else {
-        throw new Error(data?.error || "Failed to fetch bundles");
+      if (error || !data?.success) {
+        const msg = data?.error || (await getFunctionErrorMessage(error, "Could not retrieve bundles from Korba gateway"));
+        throw new Error(msg);
       }
+      const rawBundles = Array.isArray(data.bundles) ? data.bundles : [];
+      const flattened: KorbaBundle[] = [];
+      
+      rawBundles.forEach((item: any) => {
+        if (item?.bundles && Array.isArray(item.bundles)) {
+          // This is an MTN category group!
+          item.bundles.forEach((subBundle: any) => {
+            flattened.push({
+              name: String(subBundle?.name || item?.name || "Unnamed Bundle"),
+              product_id: String(subBundle?.product_id || subBundle?.bundle_id || ""),
+              amount: String(subBundle?.amount ?? "0"),
+              validity: String(subBundle?.validity || "Non-expiry"),
+              network: String(item?.network || "MTN"),
+              category: String(item?.name || "Data Bundles")
+            });
+          });
+        } else if (item) {
+          // This is a Telecel or AirtelTigo flat bundle!
+          flattened.push({
+            name: String(item.name || "Unnamed Bundle"),
+            product_id: String(item.product_id || item.bundle_id || ""),
+            amount: String(item.amount ?? "0"),
+            validity: String(item.validity || "Non-expiry"),
+            network: String(item.network || "MTN"),
+            category: String(item.category || "General")
+          });
+        }
+      });
+
+      setFetchedBundles(flattened);
+      toast({
+        title: "Fetched Bundles",
+        description: `Successfully fetched and flattened ${flattened.length} packages from Korba API.`
+      });
     } catch (e: any) {
       console.error(e);
       toast({
@@ -196,10 +211,11 @@ const AdminKorbaPackages = () => {
   // Open import / map dialog for a bundle
   const handleOpenImport = (bundle: KorbaBundle) => {
     setSelectedBundle(bundle);
-    setCostPrice(bundle.amount);
+    const parsedBase = parseFloat(bundle.amount);
+    const base = Number.isFinite(parsedBase) ? parsedBase : 0;
+    setCostPrice(base.toFixed(2));
     
     // Auto-calculate suggested markups
-    const base = parseFloat(bundle.amount);
     setAgentPrice(base.toFixed(2));
     setSubAgentPrice(base.toFixed(2));
     setPublicPrice((base * 1.12).toFixed(2));
@@ -210,14 +226,17 @@ const AdminKorbaPackages = () => {
       setIsNewPackageSize(true);
       setNewSizeName(bundle.name);
       setTargetPackageSize("");
+      setTargetPackageNetwork(activeTab);
     } else {
       const networkPkgs = importedPkgs.filter(p => p.network === activeTab || (activeTab === "MTN" && p.network === "MTN Mash Up"));
       if (networkPkgs.length > 0) {
         setTargetPackageSize(networkPkgs[0].package_size);
+        setTargetPackageNetwork(networkPkgs[0].network);
         setIsNewPackageSize(false);
       } else {
         setIsNewPackageSize(true);
         setTargetPackageSize("");
+        setTargetPackageNetwork(activeTab);
       }
       setNewSizeName("");
     }
@@ -230,18 +249,26 @@ const AdminKorbaPackages = () => {
     if (!selectedBundle) return;
     setSaving(true);
 
-    const costVal = costPrice ? parseFloat(costPrice) : parseFloat(selectedBundle.amount);
-    const agentVal = agentPrice ? parseFloat(agentPrice) : costVal;
-    const subAgentVal = subAgentPrice ? parseFloat(subAgentPrice) : costVal;
-    const publicVal = publicPrice ? parseFloat(publicPrice) : Number((costVal * 1.12).toFixed(2));
-    const apiVal = apiPrice ? parseFloat(apiPrice) : costVal;
+    const parsedBundleAmt = parseFloat(selectedBundle.amount);
+    const fallbackBase = Number.isFinite(parsedBundleAmt) ? parsedBundleAmt : 0;
+    const parseNum = (v: string, fb: number) => {
+      const n = parseFloat(v);
+      return Number.isFinite(n) ? n : fb;
+    };
+    const costVal = parseNum(costPrice, fallbackBase);
+    const agentVal = parseNum(agentPrice, costVal);
+    const subAgentVal = parseNum(subAgentPrice, costVal);
+    const publicVal = parseNum(publicPrice, Number((costVal * 1.12).toFixed(2)));
+    const apiVal = parseNum(apiPrice, costVal);
 
-    let providerNetwork = "MTN";
-    if (selectedBundle.network.includes("Telecel") || selectedBundle.network.includes("Vodafone")) {
-      providerNetwork = "Telecel";
-    } else if (selectedBundle.network.includes("Airtel") || selectedBundle.network.includes("Tigo")) {
-      providerNetwork = "AirtelTigo";
+    let derivedNetwork = "MTN";
+    const rawBundleNet = String(selectedBundle.network || "");
+    if (rawBundleNet.includes("Telecel") || rawBundleNet.includes("Vodafone")) {
+      derivedNetwork = "Telecel";
+    } else if (rawBundleNet.includes("Airtel") || rawBundleNet.includes("Tigo")) {
+      derivedNetwork = "AirtelTigo";
     }
+    const providerNetwork = !isNewPackageSize && targetPackageNetwork ? targetPackageNetwork : derivedNetwork;
 
     const standardSize = isNewPackageSize ? newSizeName.trim() : targetPackageSize;
 
@@ -295,7 +322,7 @@ const AdminKorbaPackages = () => {
       const { error: mappingErr } = await supabase
         .from("provider_packages")
         .upsert({
-          provider_id: KORBA_PROVIDER_ID,
+          provider_id: korbaProviderId,
           network: providerNetwork,
           package_name: standardSize,
           cost_price: costVal,
@@ -380,7 +407,7 @@ const AdminKorbaPackages = () => {
             cost_price: costVal || 0,
             updated_at: new Date().toISOString()
           })
-          .eq("provider_id", KORBA_PROVIDER_ID)
+          .eq("provider_id", korbaProviderId)
           .eq("network", editingPkg.network)
           .eq("package_name", editingPkg.package_size);
 
@@ -419,7 +446,7 @@ const AdminKorbaPackages = () => {
       const { error } = await supabase
         .from("provider_packages")
         .delete()
-        .eq("provider_id", KORBA_PROVIDER_ID)
+        .eq("provider_id", korbaProviderId)
         .eq("network", pkg.network)
         .eq("package_name", pkg.package_size);
 
@@ -452,7 +479,7 @@ const AdminKorbaPackages = () => {
       await supabase
         .from("provider_packages")
         .delete()
-        .eq("provider_id", KORBA_PROVIDER_ID)
+        .eq("provider_id", korbaProviderId)
         .eq("network", pkg.network)
         .eq("package_name", pkg.package_size);
 
@@ -587,19 +614,19 @@ const AdminKorbaPackages = () => {
 
   const filteredFetched = fetchedBundles.filter(b => {
     // Map Korba API network to active tab
-    const apiNet = b.network.toUpperCase();
+    const apiNet = (b.network || "").toUpperCase();
     const tabNet = activeTab.toUpperCase();
     const isMatch = apiNet.includes(tabNet) || (tabNet === "TELECEL" && apiNet.includes("VODAFONE"));
     
-    // Make sure it isn't already mapped
-    const isAlreadyMapped = importedPkgs.some(
+    // Make sure it isn't already mapped (match on external_id regardless of renamed package_size)
+    const isAlreadyMapped = !!b.product_id && importedPkgs.some(
       (p) => (p.network === activeTab || (activeTab === "MTN" && p.network === "MTN Mash Up")) && 
-             p.package_size === b.name && 
              p.external_id === b.product_id
     );
 
-    const matchesSearch = b.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          (b.product_id || "").toLowerCase().includes(searchQuery.toLowerCase());
+    const q = searchQuery.toLowerCase();
+    const matchesSearch = (b.name || "").toLowerCase().includes(q) ||
+                          (b.product_id || "").toLowerCase().includes(q);
 
     return isMatch && !isAlreadyMapped && matchesSearch;
   });
@@ -894,14 +921,18 @@ const AdminKorbaPackages = () => {
                     <p className="text-[10px] text-amber-500 font-medium">No standard package sizes exist. Please check 'Create new package size name' above.</p>
                   ) : (
                     <select
-                      value={targetPackageSize}
-                      onChange={(e) => setTargetPackageSize(e.target.value)}
+                      value={`${targetPackageNetwork}:::${targetPackageSize}`}
+                      onChange={(e) => {
+                        const [net, size] = e.target.value.split(":::");
+                        setTargetPackageNetwork(net || activeTab);
+                        setTargetPackageSize(size || "");
+                      }}
                       className="h-9 text-xs border border-input bg-background rounded-md px-2 w-full focus:outline-none focus:ring-1 focus:ring-purple-500"
                     >
                       {importedPkgs
                         .filter(p => p.network === activeTab || (activeTab === "MTN" && p.network === "MTN Mash Up"))
                         .map(p => (
-                          <option key={p.id} value={p.package_size}>{p.package_size} ({p.network})</option>
+                          <option key={p.id} value={`${p.network}:::${p.package_size}`}>{p.package_size} ({p.network})</option>
                         ))
                       }
                     </select>

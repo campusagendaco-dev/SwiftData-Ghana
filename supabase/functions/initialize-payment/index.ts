@@ -498,12 +498,17 @@ serve(async (req: Request) => {
     const deviceFp = String(payload?.device_fingerprint || metadata?.device_fingerprint || "").trim();
 
     // Ghana Phone Prefix Validation Guard
-    let cleanTarget10 = rawTargetPhone;
-    if (rawTargetPhone.startsWith("233") && rawTargetPhone.length === 12) {
-      cleanTarget10 = "0" + rawTargetPhone.slice(3);
-    } else if (rawTargetPhone.length === 9) {
+    // For utility orders, customer_phone may hold a 9/10-digit meter or smartcard number,
+    // so validate payment_phone instead (skip validating meter/account numbers as mobile prefixes).
+    const phoneToValidate = orderType === "utility"
+      ? String(metadata?.payment_phone || "").trim().replace(/\D+/g, "")
+      : rawTargetPhone;
+    let cleanTarget10 = phoneToValidate;
+    if (phoneToValidate.startsWith("233") && phoneToValidate.length === 12) {
+      cleanTarget10 = "0" + phoneToValidate.slice(3);
+    } else if (phoneToValidate.length === 9) {
       // A number typed without its leading 0 still gets the Ghana prefix check.
-      cleanTarget10 = "0" + rawTargetPhone;
+      cleanTarget10 = "0" + phoneToValidate;
     }
     if (cleanTarget10.length === 10 && cleanTarget10.startsWith("0")) {
       const ghanaPrefixes = ["024", "054", "055", "059", "025", "053", "020", "050", "027", "057", "026", "056", "023"];
@@ -515,7 +520,7 @@ serve(async (req: Request) => {
           suggestion = ` Did you mean 054${cleanTarget10.slice(3)}?`;
         }
         return new Response(JSON.stringify({
-          error: `Prefix '${prefix}' is not a valid Ghana mobile network prefix.${suggestion} Please check the recipient number.`
+          error: `Prefix '${prefix}' is not a valid Ghana mobile network prefix.${suggestion} Please check the ${orderType === "utility" ? "MoMo payment" : "recipient"} number.`
         }), {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -1382,16 +1387,19 @@ serve(async (req: Request) => {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      if (amount < 5) {
+      if (!Number.isFinite(amount) || amount < 5) {
         return new Response(JSON.stringify({ error: "Minimum utility payment is GHS 5.00" }), {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      // If client explicitly passed the base price (excluding fees), we use it.
-      // Otherwise, we default to the amount parameter.
-      const basePriceVal = payload?.base_price || metadata?.base_price;
-      const utilityBase = basePriceVal ? Number(basePriceVal) : Number(amount.toFixed(2));
+      if (amount > 50000) {
+        return new Response(JSON.stringify({ error: "Maximum single utility payment is GHS 50,000.00" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const utilityBase = Math.round(amount * 100) / 100;
       resolvedPaystackFee = 0;
       resolvedAmount = utilityBase;
       enrichedMetadata = {
@@ -1679,7 +1687,7 @@ serve(async (req: Request) => {
           "Authorization": `HMAC ${KORBA_CLIENT_KEY}:${signatureHex}`,
         },
         body: JSON.stringify(korbaPayload),
-        disableFallback: false,
+        disableFallback: true,
       });
 
       const responseText = await response.text();

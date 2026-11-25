@@ -341,7 +341,22 @@ export class KorbaAdapter implements ProviderAdapter {
         let token: string | null = null;
         try {
           const parsed = JSON.parse(resText);
-          token = parsed.prepaid_token || parsed.prepaidToken || (parsed.data?.prepaid_token) || (parsed.results?.prepaid_token) || null;
+          token =
+            parsed.prepaid_token ||
+            parsed.prepaidToken ||
+            parsed.token ||
+            parsed.data?.prepaid_token ||
+            parsed.data?.token ||
+            parsed.results?.prepaid_token ||
+            parsed.results?.token ||
+            parsed.results?.data?.prepaid_token ||
+            parsed.results?.data?.token ||
+            null;
+          if (!token) {
+            const msgText = String(parsed.message || parsed.results?.message || parsed.results || "");
+            const m = msgText.match(/\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b/) || msgText.match(/\b\d{20}\b/);
+            if (m) token = m[0].replace(/[-\s]/g, "");
+          }
         } catch { /* ignore */ }
         
         return { 
@@ -370,6 +385,10 @@ export class KorbaAdapter implements ProviderAdapter {
     const KORBA_CLIENT_ID = Deno.env.get("KORBA_CLIENT_ID") || provider?.settings?.client_id || "2419";
     const KORBA_CLIENT_KEY = Deno.env.get("KORBA_CLIENT_KEY") || provider?.api_key || provider?.settings?.client_key || "";
     const KORBA_SECRET_KEY = Deno.env.get("KORBA_SECRET_KEY") || provider?.api_secret || provider?.settings?.secret_key || "";
+
+    if (!KORBA_CLIENT_KEY || !KORBA_SECRET_KEY) {
+      return { ok: false, status: "processing", reason: "Korba credentials not configured." };
+    }
 
     const cleanRef = String(reference || "").trim().replace(/_disb$/, "");
     const rawProvId = String(providerOrderId || "").trim();
@@ -431,6 +450,7 @@ export class KorbaAdapter implements ProviderAdapter {
             "Authorization": `HMAC ${KORBA_CLIENT_KEY}:${signatureHex}`,
           },
           body: JSON.stringify(payload),
+          disableFallback: true,
         });
 
         const resText = await res.text();
@@ -444,12 +464,26 @@ export class KorbaAdapter implements ProviderAdapter {
             continue;
           }
 
-          const rawStatus = (parsed.status || parsed.status_code || parsed.code || "").toString().toUpperCase();
+          const resultsStatus = parsed.results && typeof parsed.results === "object" ? parsed.results.status : "";
+          const rawStatus = (parsed.status || parsed.delivery_status || resultsStatus || parsed.status_code || parsed.code || "").toString().toUpperCase();
           const codeStr = String(parsed.code || parsed.status_code || "").toUpperCase();
           const isDelivered = rawStatus === "000" || rawStatus === "0000" || codeStr === "000" || codeStr === "0000" || rawStatus === "SUCCESS" || rawStatus === "SUCCESSFUL" || rawStatus === "FULFILLED" || rawStatus === "COMPLETED" || rawStatus === "DELIVERED";
           const isFailed = rawStatus === "FAILED" || rawStatus === "ERROR" || rawStatus === "REJECTED" || rawStatus === "CANCELLED";
 
-          const token: string | null = parsed.prepaid_token || parsed.prepaidToken || (parsed.data?.prepaid_token) || null;
+          let token: string | null =
+            parsed.prepaid_token ||
+            parsed.prepaidToken ||
+            parsed.token ||
+            parsed.data?.prepaid_token ||
+            parsed.data?.token ||
+            parsed.results?.prepaid_token ||
+            parsed.results?.token ||
+            null;
+          if (!token) {
+            const msgText = String(parsed.message || parsed.results?.message || "");
+            const m = msgText.match(/\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b/) || msgText.match(/\b\d{20}\b/);
+            if (m) token = m[0].replace(/[-\s]/g, "");
+          }
 
           const currentResult: ProviderResponse = {
             ok: true,

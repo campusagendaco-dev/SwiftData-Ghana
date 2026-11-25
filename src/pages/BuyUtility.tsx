@@ -8,6 +8,7 @@ import {
   CheckCircle2, AlertCircle, Info, X, Phone, User
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getFunctionErrorMessage } from "@/lib/function-errors";
 import { ECGLogo, NEDCOLogo, GhanaWaterLogo, DSTVLogo, GOTVLogo, StarTimesLogo, KweseTVLogo, GBCTVLogo } from "@/components/BrandLogos";
 import { useConnectivity } from "@/hooks/useConnectivity";
 import { WifiOff } from "lucide-react";
@@ -115,17 +116,40 @@ const BuyUtility = () => {
   const [regAccountNumber, setRegAccountNumber] = useState("");
   const [registering, setRegistering] = useState(false);
 
-  const reset = () => {
-    setProvider("");
-    setAccountNumber("");
-    setPhoneNumber("");
-    setAmount("");
+  const isGhanaPhone = (val: string) => {
+    const digits = val.replace(/\D/g, "");
+    return (
+      ((digits.startsWith("02") || digits.startsWith("05")) && digits.length === 10) ||
+      ((digits.startsWith("2332") || digits.startsWith("2335")) && digits.length === 12) ||
+      ((digits.startsWith("2") || digits.startsWith("5")) && digits.length === 9)
+    );
+  };
+
+  const normalizeMeter = (m: any) => ({
+    ...m,
+    id: m.id || m.meterId || m.meter_id || null,
+    meterId: m.meterId || m.id || m.meter_id || null,
+    meterNumber: m.meterNumber || m.meter_number || m.meter_no || null,
+    customerName: m.customerName || m.customer_name || m.name || m.alias || null,
+    meterCategory: m.meterCategory || m.meter_category || null,
+    accountNumber: m.accountNumber || m.account_number || null,
+  });
+
+  const clearVerification = () => {
     setAccountName(null);
     setVerifyError(null);
     setLookupTxId(null);
     setMeters([]);
     setSelectedMeterId(null);
     setSelectedMeterNumber(null);
+  };
+
+  const reset = () => {
+    setProvider("");
+    setAccountNumber("");
+    setPhoneNumber("");
+    setAmount("");
+    clearVerification();
   };
 
   const handleRegisterMeter = async (e: React.FormEvent) => {
@@ -139,13 +163,17 @@ const BuyUtility = () => {
       toast({ title: "Please fill in all required fields", variant: "destructive" });
       return;
     }
+    if (!isGhanaPhone(cleanPhone)) {
+      toast({ title: "Invalid phone number", description: "Please enter a valid 10-digit Ghana mobile number (e.g. 0244123456).", variant: "destructive" });
+      return;
+    }
     setRegistering(true);
     try {
       const { data, error } = await supabase.functions.invoke("utility-lookup", {
         body: {
           action: "add_meter",
           utility_type: "electricity",
-          provider: "ECG Prepaid",
+          provider: regCategory === "POSTPAID" ? "ECG Postpaid" : "ECG Prepaid",
           alias: cleanAlias,
           meter_number: cleanMeter,
           phone_number: cleanPhone,
@@ -155,15 +183,7 @@ const BuyUtility = () => {
       });
 
       if (error || !data?.success) {
-        let errMsg = data?.error || error?.message || "Could not register meter.";
-        if (!data?.error && error && typeof (error as any).context?.json === "function") {
-          try {
-            const errBody = await (error as any).context.json();
-            if (errBody?.error) errMsg = errBody.error;
-          } catch {
-            // ignore JSON parse errors
-          }
-        }
+        const errMsg = data?.error || (await getFunctionErrorMessage(error, "Could not register meter."));
         toast({ title: "Registration failed", description: errMsg, variant: "destructive" });
       } else {
         toast({
@@ -184,7 +204,8 @@ const BuyUtility = () => {
         void handleVerify(cleanPhone, cleanMeter);
       }
     } catch (err: any) {
-      toast({ title: "Network error", description: err?.message || "Please try again later.", variant: "destructive" });
+      const errMsg = await getFunctionErrorMessage(err, "Please try again later.");
+      toast({ title: "Network error", description: errMsg, variant: "destructive" });
     } finally {
       setRegistering(false);
     }
@@ -205,8 +226,7 @@ const BuyUtility = () => {
       return;
     }
     setVerifying(true);
-    setAccountName(null);
-    setVerifyError(null);
+    clearVerification();
     
     try {
       const { data, error } = await supabase.functions.invoke("utility-lookup", {
@@ -219,9 +239,10 @@ const BuyUtility = () => {
       });
 
       if (error || !data?.success) {
-        setVerifyError(data?.error || error?.message || "Account verification failed.");
-      } else if (data.customer_name || data.accountName || (data.meters && data.meters.length > 0)) {
-        const returnedMeters = data.meters || [];
+        const errMsg = data?.error || (await getFunctionErrorMessage(error, "Account verification failed."));
+        setVerifyError(errMsg);
+      } else if (data.customer_name || data.accountName || (Array.isArray(data.meters) && data.meters.length > 0)) {
+        const returnedMeters = Array.isArray(data.meters) ? data.meters.map(normalizeMeter) : [];
         setMeters(returnedMeters);
         
         if (returnedMeters.length > 0) {
@@ -231,7 +252,7 @@ const BuyUtility = () => {
               : null) || returnedMeters[0];
           const resolvedName = matchedMeter.customerName || matchedMeter.alias || data.customer_name || data.accountName;
           setAccountName(resolvedName);
-          setSelectedMeterId(matchedMeter.id || matchedMeter.meterId || null);
+          setSelectedMeterId(matchedMeter.id || null);
           setSelectedMeterNumber(matchedMeter.meterNumber || null);
           
           if (matchedMeter.meterNumber && !targetAccount) {
@@ -255,15 +276,20 @@ const BuyUtility = () => {
         setVerifyError("Could not verify account name.");
       }
     } catch (err: any) {
-      setVerifyError("Network or server error. Please try again.");
+      const errMsg = await getFunctionErrorMessage(err, "Network or server error. Please try again.");
+      setVerifyError(errMsg);
     } finally {
       setVerifying(false);
     }
   };
 
   const handlePayClick = () => {
-    if (!accountName || !amount || !provider) {
-      toast({ title: "Fulfill all fields", description: "Please verify the account and enter a payment amount", variant: "destructive" });
+    if (!isOnline) {
+      toast({ title: "You are offline", description: "Connect to the internet to complete utility payment.", variant: "destructive" });
+      return;
+    }
+    if (!accountName || !provider || numAmount < 5) {
+      toast({ title: "Check payment details", description: "Verify the account and enter an amount of at least GHS 5.00.", variant: "destructive" });
       return;
     }
     setCheckoutOpen(true);
@@ -344,8 +370,7 @@ const BuyUtility = () => {
                       key={p.name}
                       onClick={() => {
                         setProvider(p.name);
-                        setAccountName(null);
-                        setVerifyError(null);
+                        clearVerification();
                       }}
                       className={cn(
                         "flex flex-col items-center justify-center gap-2 p-4 rounded-2xl border text-center transition-all",
@@ -376,7 +401,7 @@ const BuyUtility = () => {
                       <div>
                         <p className="font-bold mb-0.5">ECG Prepaid Verification Info</p>
                         <p className="text-muted-foreground/80 font-medium">
-                          For ECG Prepaid lookup, please enter the **phone number** registered on your ECG PowerApp mobile account. If you are a new user or need to link a new meter, click register below.
+                          For ECG Prepaid lookup, please enter the <strong>phone number</strong> registered on your ECG PowerApp mobile account. If you are a new user or need to link a new meter, click register below.
                         </p>
                       </div>
                     </div>
@@ -404,8 +429,7 @@ const BuyUtility = () => {
                           value={accountNumber}
                           onChange={(e) => {
                             setAccountNumber(e.target.value);
-                            setAccountName(null);
-                            setVerifyError(null);
+                            clearVerification();
                           }}
                           className="w-full h-12 pl-4 pr-10 bg-background/50 border border-border rounded-xl text-sm font-semibold focus:outline-none focus:border-amber-400/50 transition-colors"
                         />
@@ -426,8 +450,7 @@ const BuyUtility = () => {
                           value={phoneNumber}
                           onChange={(e) => {
                             setPhoneNumber(e.target.value.replace(/\D/g, ""));
-                            setAccountName(null);
-                            setVerifyError(null);
+                            clearVerification();
                           }}
                           className="w-full h-12 pl-4 pr-10 bg-background/50 border border-border rounded-xl text-sm font-semibold focus:outline-none focus:border-amber-400/50 transition-colors"
                         />
@@ -639,7 +662,7 @@ const BuyUtility = () => {
                 <SummaryRow label="Top Up Amount" value={amount ? `GH₵ ${Number(amount).toFixed(2)}` : "GH₵ 0.00"} />
                 {canPay && (
                   <>
-                    <SummaryRow label="Service Fee (3%)" value={`GH₵ ${fee.toFixed(2)}`} />
+                    <SummaryRow label="Service Fee" value={`GH₵ ${fee.toFixed(2)}`} />
                     <SummaryRow label="Total to Pay" value={`GH₵ ${total.toFixed(2)}`} valueClass="text-amber-500 font-black" />
                   </>
                 )}
@@ -681,7 +704,7 @@ const BuyUtility = () => {
         onClose={() => setCheckoutOpen(false)}
         amount={total}
         email={email.trim() || "customer@swiftdata.gh"}
-        recipientPhone={selectedMeterNumber || accountNumber.trim() || phoneNumber.trim()}
+        recipientPhone={phoneNumber.trim() || (isGhanaPhone(accountNumber.trim()) ? accountNumber.trim() : "")}
         recipientNetwork={""}
         metadata={{
           order_type: "utility",
@@ -693,6 +716,8 @@ const BuyUtility = () => {
           base_price: numAmount,
           meter_id: selectedMeterId || undefined,
           meter_number: selectedMeterNumber || undefined,
+          meter_category: meters.find((m: any) => (m.id || m.meterId) === selectedMeterId)?.meterCategory || undefined,
+          account_number: meters.find((m: any) => (m.id || m.meterId) === selectedMeterId)?.accountNumber || undefined,
         }}
         onSuccess={(reference) => {
           setCheckoutOpen(false);

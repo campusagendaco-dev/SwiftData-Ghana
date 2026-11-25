@@ -1112,9 +1112,9 @@ const AgentStore = () => {
     }
     if (selectedService === "utility") {
       const amt = Number(utilityAmount);
-      if (!amt || amt < 1) { toast({ title: "Invalid amount", description: "Enter a valid bill amount.", variant: "destructive" }); return; }
-      if (!utilityNumber || utilityNumber.length < 5) { toast({ title: "Invalid Account Number", description: "Please check your meter/account number.", variant: "destructive" }); return; }
-      if (utilityType.includes("ECG") && utilityNumber.length < 11) { toast({ title: "Invalid Meter Number", description: "ECG Meter numbers are typically 11 digits or more.", variant: "destructive" }); return; }
+      if (!amt || amt < 5) { toast({ title: "Invalid amount", description: "Minimum utility payment is GHS 5.00.", variant: "destructive" }); return; }
+      if (!utilityNumber.trim() || utilityNumber.trim().length < 5) { toast({ title: "Invalid Account Number", description: "Please check your meter/account number.", variant: "destructive" }); return; }
+      if (utilityType.includes("ECG") && utilityNumber.trim().length < 6) { toast({ title: "Invalid Meter Number", description: "Please enter a valid ECG meter or PowerApp phone number.", variant: "destructive" }); return; }
     }
     if (!isPhoneValid) {
       toast({ title: "Enter a valid phone number first", variant: "destructive" });
@@ -1164,7 +1164,14 @@ const AgentStore = () => {
         ? `${window.location.origin}/store/${slug}/order-status?${callbackParams.toString()}`
         : `${window.location.origin}/order-status?${callbackParams.toString()}`,
       ...(validPromo && !validPromo.is_free ? { promo_code: promoCode.trim(), promo_id: validPromo.promo_id, discount_percentage: validPromo.discount_percentage } : {}),
-      ...(selectedService === "utility" ? { bill_type: utilityType, customer_number: utilityNumber } : {}),
+      ...(selectedService === "utility" ? {
+        utility_type: utilityType === "ECG" ? "electricity" : "water",
+        utility_provider: utilityType === "ECG" ? "ECG Prepaid" : "Ghana Water Company",
+        utility_account_number: utilityNumber.trim(),
+        base_price: Number(utilityAmount),
+        bill_type: utilityType,
+        customer_number: utilityNumber.trim(),
+      } : {}),
     };
 
     setCheckoutMetadata(meta);
@@ -2070,7 +2077,7 @@ const AgentStore = () => {
             </div>
 
             {/* Pricing Panel */}
-            {Number(utilityAmount) >= 1 && utilityNumber.length >= 5 && (
+            {Number(utilityAmount) >= 5 && utilityNumber.trim().length >= 5 && (
               <div className="mt-4 p-4 rounded-2xl bg-white/[0.02] border border-white/5 space-y-3">
                 <div className="flex justify-between text-xs text-white/50">
                   <span>Bill Value:</span>

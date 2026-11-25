@@ -54,6 +54,7 @@ const AdminKorbaHub = () => {
   
   // OVA Balance state
   const [balance, setBalance] = useState<number | null>(null);
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [loadingBalance, setLoadingBalance] = useState(false);
 
   // Proxy Health state
@@ -87,19 +88,20 @@ const AdminKorbaHub = () => {
       const { data, error } = await supabase.functions.invoke("system-payout-v1", {
         body: { action: "get_korba_transactions" }
       });
-      if (error) throw error;
-      if (data?.success) {
-        setGatewayLogs(data.results || []);
-      } else {
-        throw new Error(data?.error || "Failed to fetch gateway logs");
+      if (error || !data?.success) {
+        const msg = data?.error || (await getFunctionErrorMessage(error, "Failed to retrieve transactions from Korba API."));
+        throw new Error(msg);
       }
+      setGatewayLogs(data.results || []);
     } catch (e: any) {
       console.error(e);
-      toast({
-        title: "Gateway Logs Fetch Failed",
-        description: e.message || "Failed to retrieve transactions from Korba API.",
-        variant: "destructive"
-      });
+      if (!silent) {
+        toast({
+          title: "Gateway Logs Fetch Failed",
+          description: e.message || "Failed to retrieve transactions from Korba API.",
+          variant: "destructive"
+        });
+      }
     } finally {
       if (!silent) setLoadingGatewayLogs(false);
     }
@@ -112,25 +114,27 @@ const AdminKorbaHub = () => {
       const { data, error } = await supabase.functions.invoke("system-payout-v1", {
         body: { action: "get_korba_balance" }
       });
-      if (error) throw error;
-      if (data?.success) {
-        setBalance(data.ova_balance);
-        if (!silent) {
-          toast({
-            title: "Balance Synced",
-            description: `Korba OVA Wallet balance is GHS ${Number(data.ova_balance).toFixed(2)}`,
-          });
-        }
-      } else {
-        throw new Error(data?.error || "Failed to fetch balance");
+      if (error || !data?.success) {
+        const msg = data?.error || (await getFunctionErrorMessage(error, "Failed to query OVA balance. Check function logs or credentials."));
+        throw new Error(msg);
+      }
+      setBalance(Number(data.ova_balance ?? 0));
+      setLastSyncedAt(new Date().toLocaleTimeString());
+      if (!silent) {
+        toast({
+          title: "Balance Synced",
+          description: `Korba OVA Wallet balance is GHS ${Number(data.ova_balance ?? 0).toFixed(2)}`,
+        });
       }
     } catch (e: any) {
       console.error(e);
-      toast({
-        title: "Balance Fetch Failed",
-        description: e.message || "Failed to query OVA balance. Check function logs or credentials.",
-        variant: "destructive"
-      });
+      if (!silent) {
+        toast({
+          title: "Balance Fetch Failed",
+          description: e.message || "Failed to query OVA balance. Check function logs or credentials.",
+          variant: "destructive"
+        });
+      }
     } finally {
       if (!silent) setLoadingBalance(false);
     }
@@ -143,25 +147,49 @@ const AdminKorbaHub = () => {
       const { data, error } = await supabase.functions.invoke("system-payout-v1", {
         body: { action: "get_korba_packages" }
       });
-      if (error) throw error;
-      if (data?.success) {
-        setBundles(data.bundles || []);
-        if (!silent) {
-          toast({
-            title: "Packages Refreshed",
-            description: `Successfully loaded ${data.bundles?.length || 0} bundles from Korba API.`,
+      if (error || !data?.success) {
+        const msg = data?.error || (await getFunctionErrorMessage(error, "Failed to load Korba data packages."));
+        throw new Error(msg);
+      }
+      const rawBundles = Array.isArray(data.bundles) ? data.bundles : [];
+      const flattened: KorbaBundle[] = [];
+      rawBundles.forEach((item: any) => {
+        if (item?.bundles && Array.isArray(item.bundles)) {
+          item.bundles.forEach((sub: any) => {
+            flattened.push({
+              name: String(sub?.name || item?.name || "Unnamed Bundle"),
+              product_id: String(sub?.product_id || sub?.bundle_id || ""),
+              amount: String(sub?.amount ?? "0"),
+              validity: String(sub?.validity || "Non-expiry"),
+              network: String(item?.network || "MTN"),
+            });
+          });
+        } else if (item) {
+          flattened.push({
+            name: String(item.name || "Unnamed Bundle"),
+            product_id: String(item.product_id || item.bundle_id || ""),
+            amount: String(item.amount ?? "0"),
+            validity: String(item.validity || "Non-expiry"),
+            network: String(item.network || "MTN"),
           });
         }
-      } else {
-        throw new Error(data?.error || "Failed to fetch packages");
+      });
+      setBundles(flattened);
+      if (!silent) {
+        toast({
+          title: "Packages Refreshed",
+          description: `Successfully loaded ${flattened.length} bundles from Korba API.`,
+        });
       }
     } catch (e: any) {
       console.error(e);
-      toast({
-        title: "Packages Fetch Failed",
-        description: e.message || "Failed to load Korba data packages.",
-        variant: "destructive"
-      });
+      if (!silent) {
+        toast({
+          title: "Packages Fetch Failed",
+          description: e.message || "Failed to load Korba data packages.",
+          variant: "destructive"
+        });
+      }
     } finally {
       if (!silent) setLoadingPackages(false);
     }
@@ -174,24 +202,23 @@ const AdminKorbaHub = () => {
       const { data, error } = await supabase.functions.invoke("system-payout-v1", {
         body: { action: "check_proxy_health" }
       });
-      if (error) throw error;
-      if (data?.success) {
-        setProxyHealth({
-          checked: true,
-          healthy: data.healthy,
-          error: data.error || null
+      if (error || !data?.success) {
+        const msg = data?.error || (await getFunctionErrorMessage(error, "Invalid response from health check function"));
+        throw new Error(msg);
+      }
+      setProxyHealth({
+        checked: true,
+        healthy: data.healthy,
+        error: data.error || null
+      });
+      if (!silent) {
+        toast({
+          title: data.healthy ? "Proxy is Active" : "Proxy is Unresponsive",
+          description: data.healthy 
+            ? "Database HTTP proxy connection tested successfully." 
+            : `Proxy failed: ${data.error || "Connection timed out."}`,
+          variant: data.healthy ? "default" : "destructive"
         });
-        if (!silent) {
-          toast({
-            title: data.healthy ? "Proxy is Active" : "Proxy is Unresponsive",
-            description: data.healthy 
-              ? "Database HTTP proxy connection tested successfully." 
-              : `Proxy failed: ${data.error || "Connection timed out."}`,
-            variant: data.healthy ? "default" : "destructive"
-          });
-        }
-      } else {
-        throw new Error(data?.error || "Invalid response from health check function");
       }
     } catch (e: any) {
       console.error(e);
@@ -247,10 +274,13 @@ const AdminKorbaHub = () => {
     }))) return;
     setVerifyingOrderId(orderId);
     try {
-      const { data, error } = await supabase.functions.invoke("verify-payment", {
+      const { data, error } = await confirmed.invokeAlreadyConfirmed("verify-payment", {
         body: { reference: orderId }
       });
-      if (error) throw error;
+      if (error) {
+        const msg = await getFunctionErrorMessage(error, "Network request failed while verifying transaction.");
+        throw new Error(msg);
+      }
 
       if (data?.status === "success" || data?.status === "fulfilled") {
         toast({
@@ -304,16 +334,17 @@ const AdminKorbaHub = () => {
     }))) return;
 
     try {
-      // 1. Find the matching local order
+      // 1. Find the matching local order (strip _disb suffix added for Korba disbursements)
+      const cleanOrderId = clientTxId.replace(/_disb$/i, "");
       const { data: order, error: findError } = await supabase
         .from("orders")
         .select("id, status")
-        .eq("id", clientTxId)
+        .eq("id", cleanOrderId)
         .maybeSingle();
 
       if (findError) throw findError;
       if (!order) {
-        throw new Error(`No local order found matching client reference ID: ${clientTxId}`);
+        throw new Error(`No local order found matching client reference ID: ${cleanOrderId}`);
       }
 
       if (order.status === "fulfilled" || order.status === "completed") {
@@ -370,22 +401,25 @@ const AdminKorbaHub = () => {
 
   // Filter packages
   const filteredBundles = bundles.filter(b => {
-    const matchesSearch = b.name.toLowerCase().includes(packageSearch.toLowerCase()) || 
-                          b.product_id.toLowerCase().includes(packageSearch.toLowerCase());
+    const q = packageSearch.toLowerCase();
+    const matchesSearch = (b.name || "").toLowerCase().includes(q) || 
+                          (b.product_id || "").toLowerCase().includes(q);
     
+    const netUpper = (b.network || "").toUpperCase();
     if (packageNetworkTab === "all") return matchesSearch;
-    if (packageNetworkTab === "mtn") return matchesSearch && b.network === "MTN";
-    if (packageNetworkTab === "telecel") return matchesSearch && b.network === "Vodafone/Telecel";
-    if (packageNetworkTab === "airteltigo") return matchesSearch && b.network === "AirtelTigo";
+    if (packageNetworkTab === "mtn") return matchesSearch && netUpper.includes("MTN");
+    if (packageNetworkTab === "telecel") return matchesSearch && (netUpper.includes("TELECEL") || netUpper.includes("VODAFONE"));
+    if (packageNetworkTab === "airteltigo") return matchesSearch && (netUpper.includes("AIRTEL") || netUpper.includes("TIGO"));
     return matchesSearch;
   });
 
   // Filter orders
   const filteredOrders = orders.filter(o => {
-    const matchesSearch = o.id.toLowerCase().includes(orderSearch.toLowerCase()) ||
-                          o.customer_phone.includes(orderSearch) ||
-                          (o.customer_name || "").toLowerCase().includes(orderSearch.toLowerCase()) ||
-                          (o.profiles?.full_name || "").toLowerCase().includes(orderSearch.toLowerCase());
+    const q = orderSearch.toLowerCase();
+    const matchesSearch = (o.id || "").toLowerCase().includes(q) ||
+                          (o.customer_phone || "").includes(orderSearch) ||
+                          (o.customer_name || "").toLowerCase().includes(q) ||
+                          (o.profiles?.full_name || "").toLowerCase().includes(q);
 
     if (orderStatusFilter === "all") return matchesSearch;
     return matchesSearch && o.status === orderStatusFilter;
@@ -448,7 +482,7 @@ const AdminKorbaHub = () => {
                 </h3>
                 <div className="flex items-center justify-between mt-4">
                   <span className="text-[10px] text-muted-foreground font-semibold">
-                    Synced: {new Date().toLocaleTimeString()}
+                    Synced: {lastSyncedAt || "Not synced yet"}
                   </span>
                   <Button 
                     variant="ghost" 
@@ -553,7 +587,7 @@ const AdminKorbaHub = () => {
               Ensure this IP is whitelisted on your Korba Developer settings.
             </p>
             <p className="text-[10px] bg-amber-500/5 text-amber-600 dark:text-amber-500 border border-amber-500/10 rounded-lg p-2 leading-relaxed">
-              <strong>If Proxy is Unresponsive:</strong> Run <code className="bg-amber-500/10 font-bold px-1 rounded">SELECT net.worker_restart();</code> in Supabase SQL editor, or perform a **Fast Reboot** in Project Settings.
+              <strong>If Proxy is Unresponsive:</strong> Run <code className="bg-amber-500/10 font-bold px-1 rounded">SELECT net.worker_restart();</code> in Supabase SQL editor, or perform a <strong>Fast Reboot</strong> in Project Settings.
             </p>
           </CardContent>
         </Card>
@@ -645,16 +679,16 @@ const AdminKorbaHub = () => {
                           <td className="p-4 font-bold">
                             <Badge variant="outline" className={cn(
                               "font-black tracking-tight rounded-md",
-                              b.network.includes("MTN") && "bg-yellow-500/10 text-yellow-600 border-yellow-500/20",
-                              b.network.includes("Telecel") && "bg-red-500/10 text-red-500 border-red-500/20",
-                              b.network.includes("Airtel") && "bg-cyan-500/10 text-cyan-600 border-cyan-500/20"
+                              (b.network || "").toUpperCase().includes("MTN") && "bg-yellow-500/10 text-yellow-600 border-yellow-500/20",
+                              ((b.network || "").toUpperCase().includes("TELECEL") || (b.network || "").toUpperCase().includes("VODAFONE")) && "bg-red-500/10 text-red-500 border-red-500/20",
+                              (b.network || "").toUpperCase().includes("AIRTEL") && "bg-cyan-500/10 text-cyan-600 border-cyan-500/20"
                             )}>
                               {b.network}
                             </Badge>
                           </td>
                           <td className="p-4 font-semibold text-foreground">{b.name}</td>
-                          <td className="p-4 font-mono text-muted-foreground">{b.product_id}</td>
-                          <td className="p-4 font-bold text-right text-foreground">GHS {Number(b.amount).toFixed(2)}</td>
+                          <td className="p-4 font-mono text-muted-foreground">{b.product_id || "—"}</td>
+                          <td className="p-4 font-bold text-right text-foreground">GHS {Number(b.amount || 0).toFixed(2)}</td>
                           <td className="p-4 text-muted-foreground">{b.validity || "N/A"}</td>
                         </tr>
                       ))}
