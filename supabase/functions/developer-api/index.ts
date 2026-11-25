@@ -1968,16 +1968,64 @@ serve(async (req: Request) => {
       const payload = await req.json().catch(() => null);
       if (!payload) return json({ success: false, error: "Invalid JSON body" }, 400);
 
-      const { customerNumber, billType } = payload;
+      const customerNumber = String(payload.customerNumber || payload.accountNumber || payload.account_number || "").trim();
+      const billType = String(payload.billType || payload.bill_type || payload.provider || "").trim();
       if (!customerNumber || !billType)
         return json({ success: false, error: "Missing required fields: customerNumber, billType" }, 400);
 
-      // We mock the validation for now. When the 3rd party API is integrated, we will fetch the real name.
-      return json({
-        success: true,
-        customerName: "TEST CUSTOMER - " + customerNumber,
-        validatedAmount: 41.00
-      });
+      if (profile.test_mode) {
+        return json({
+          success: true,
+          customerName: "TEST CUSTOMER - " + customerNumber,
+          accountName: "TEST CUSTOMER - " + customerNumber,
+          validatedAmount: 41.00,
+          test_mode: true,
+        });
+      }
+
+      const billUpper = billType.toUpperCase();
+      const utilityType = billUpper.includes("ECG")
+        ? "electricity"
+        : (billUpper.includes("WATER") || billUpper.includes("GWCL"))
+          ? "water"
+          : "tv";
+
+      try {
+        const lookupResp = await fetch(`${SUPABASE_URL}/functions/v1/utility-lookup`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+          },
+          body: JSON.stringify({
+            utility_type: utilityType,
+            provider: billType,
+            account_number: customerNumber,
+          }),
+        });
+        const lookupData = await lookupResp.json().catch(() => null);
+        if (!lookupData?.success) {
+          return json({ success: false, error: lookupData?.error || "Bill account validation failed." }, 400);
+        }
+
+        const rawAmt = lookupData.raw?.results?.amount
+          ?? lookupData.raw?.results?.data?.amount
+          ?? lookupData.raw?.amount
+          ?? lookupData.raw?.data?.amount
+          ?? 0;
+        const validatedAmount = Number.isFinite(Number(rawAmt)) ? Number(rawAmt) : 0;
+
+        return json({
+          success: true,
+          customerName: lookupData.accountName,
+          accountName: lookupData.accountName,
+          validatedAmount,
+          meters: lookupData.meters || undefined,
+        });
+      } catch (err: any) {
+        console.error("[developer-api] validate_bill lookup error:", err);
+        return json({ success: false, error: err?.message || "Failed to validate bill account." }, 502);
+      }
     }
 
     if (finalAction === "pay_bill" && req.method === "POST") {
@@ -2050,16 +2098,51 @@ serve(async (req: Request) => {
       const payload = await req.json().catch(() => null);
       if (!payload) return json({ success: false, error: "Invalid JSON body" }, 400);
 
-      const { accountNumber } = payload;
+      const accountNumber = String(payload.accountNumber || payload.phoneNumber || payload.meterNumber || payload.account_number || "").trim();
       if (!accountNumber)
         return json({ success: false, error: "Missing required field: accountNumber" }, 400);
 
-      // Mock validation
-      return json({
-        success: true,
-        customerName: "ECG CUSTOMER - " + accountNumber,
-        validatedAmount: 0
-      });
+      if (profile.test_mode) {
+        return json({
+          success: true,
+          customerName: "ECG CUSTOMER - " + accountNumber,
+          accountName: "ECG CUSTOMER - " + accountNumber,
+          meters: [],
+          validatedAmount: 0,
+          test_mode: true,
+        });
+      }
+
+      try {
+        const lookupResp = await fetch(`${SUPABASE_URL}/functions/v1/utility-lookup`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+          },
+          body: JSON.stringify({
+            utility_type: "electricity",
+            provider: "ECG",
+            account_number: accountNumber,
+            phone_number: accountNumber,
+          }),
+        });
+        const lookupData = await lookupResp.json().catch(() => null);
+        if (!lookupData?.success) {
+          return json({ success: false, error: lookupData?.error || "ECG account/meter lookup failed." }, 400);
+        }
+
+        return json({
+          success: true,
+          customerName: lookupData.accountName,
+          accountName: lookupData.accountName,
+          meters: lookupData.meters || [],
+          validatedAmount: 0,
+        });
+      } catch (err: any) {
+        console.error("[developer-api] ecg_lookup error:", err);
+        return json({ success: false, error: err?.message || "Failed to look up ECG account." }, 502);
+      }
     }
 
     if (finalAction === "ecg_pay" && req.method === "POST") {
