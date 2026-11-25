@@ -118,6 +118,8 @@ export default defineConfig(({ mode }) => ({
         cleanupOutdatedCaches: true,
         maximumFileSizeToCacheInBytes: 30 * 1024 * 1024,
         globPatterns: ["**/*.{ico,png,svg}"],
+        // Site background pictures (~25 MB) load when shown, not on every install.
+        globIgnores: ["**/assets/backgrounds/**"],
         // Never serve stale precached index.html for navigation — let Vercel serve fresh no-cache index.html
         navigateFallback: null,
         runtimeCaching: [
