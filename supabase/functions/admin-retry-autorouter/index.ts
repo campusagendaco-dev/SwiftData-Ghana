@@ -2,6 +2,7 @@ import { serve } from "https://raw.githubusercontent.com/denoland/deno_std/0.168
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { verifyAdmin } from "../_shared/auth.ts";
+import { needsAuthenticatorApp } from "../_shared/admin_sms_otp.ts";
 import { dispatchOrderWithFailover } from "../_shared/provider_router.ts";
 import { isOrderPausedFromApi } from "../_shared/providers.ts";
 import { log } from "../_shared/logger.ts";
@@ -27,20 +28,29 @@ serve(async (req: Request) => {
     auth: { persistSession: false }
   });
 
+  let body: any = {};
+  if (req.method === "POST") {
+    body = await req.json().catch(() => ({}));
+  }
+  // An SMS login may only count the queue (Admin > Orders); retries re-send orders.
+  const action = body?.count_only ? "count_only" : "retry";
+
   // Verify Admin authorization
-  const authResult = await verifyAdmin(req, supabaseAdmin);
+  const authResult = await verifyAdmin(req, supabaseAdmin, { allowSms: true });
   if (!authResult.success) {
     return new Response(JSON.stringify({ error: authResult.error }), {
       status: authResult.status || 401,
       headers: { ...corsHeaders, "Content-Type": "application/json" }
     });
   }
+  if (authResult.secondFactor === "sms" && needsAuthenticatorApp("admin-retry-autorouter", action)) {
+    return new Response(JSON.stringify({ error: "This needs your authenticator app (2FA). An SMS login can't do it." }), {
+      status: 403,
+      headers: { ...corsHeaders, "Content-Type": "application/json" }
+    });
+  }
 
   try {
-    let body: any = {};
-    if (req.method === "POST") {
-      body = await req.json().catch(() => ({}));
-    }
 
     const excludedTypes = "(wallet_topup,store_wallet_topup,agent_activation,sub_agent_activation,vendor_activation,free_data_claim)";
     const cutoffDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();

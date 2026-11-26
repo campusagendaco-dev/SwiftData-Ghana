@@ -17,6 +17,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { verifyAdmin } from "../_shared/auth.ts";
+import { needsAuthenticatorApp } from "../_shared/admin_sms_otp.ts";
 import { timingSafeEqual } from "../_shared/gateway-security.ts";
 import { callAiAgent, getAgentConfig } from "../_shared/ai.ts";
 import { routeAgentAction, type AgentAction, type AgentMode, shouldSkipRun } from "../_shared/agent_policy.ts";
@@ -261,21 +262,30 @@ serve(async (req: Request) => {
     (cronSecret && bearerToken && timingSafeEqual(bearerToken, cronSecret))
   );
 
+  const body = await req.json().catch(() => ({}));
+  const action = String(body?.mode || "patrol").toLowerCase();
+
   let adminUserId: string | null = null;
   if (!isCronAuthed) {
-    const authRes = await verifyAdmin(req, supabaseAdmin);
-    if (!authRes.success) {
-      return new Response(JSON.stringify({ error: authRes.error || "Unauthorized" }), {
-        status: authRes.status || 401,
+    // An SMS login may run a patrol (scan + record findings); commands need the app.
+    const authResult = await verifyAdmin(req, supabaseAdmin, { allowSms: true });
+    if (!authResult.success) {
+      return new Response(JSON.stringify({ error: authResult.error || "Unauthorized" }), {
+        status: authResult.status || 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    adminUserId = authRes.user?.id || null;
+    if (authResult.secondFactor === "sms" && needsAuthenticatorApp("ops-worker-ai", action)) {
+      return new Response(JSON.stringify({ error: "This needs your authenticator app (2FA). An SMS login can't do it." }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    adminUserId = authResult.user?.id || null;
   }
 
   try {
-    const body = await req.json().catch(() => ({}));
-    const mode = String(body?.mode || "patrol").toLowerCase();
+    const mode = action;
     if (mode !== "patrol" && mode !== "command") {
       return json({ error: "Unknown mode. Approvals are done with ai-task-decide." }, 400);
     }
