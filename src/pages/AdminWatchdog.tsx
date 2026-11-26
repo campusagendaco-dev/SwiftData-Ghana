@@ -81,7 +81,7 @@ interface ReconRunRow {
   ok: boolean;
   issues: number;
   details: Record<string, any> | null;
-  created_at: string;
+  run_at: string;
 }
 
 type ActiveTab = "fixes" | "reports";
@@ -226,8 +226,8 @@ const AdminWatchdog = () => {
           .limit(30),
         (supabase as any)
           .from("wallet_reconciliation_runs")
-          .select("id, kind, ok, issues, details, created_at")
-          .order("created_at", { ascending: false })
+          .select("id, kind, ok, issues, details, run_at")
+          .order("run_at", { ascending: false })
           .limit(10),
       ]);
 
@@ -1204,7 +1204,7 @@ const AdminWatchdog = () => {
                                 {rec.ok ? "CLEAN" : `${rec.issues} ISSUE(S)`}
                               </Badge>
                             </div>
-                            <span className="text-[11px] text-slate-400">{formatDateTime(rec.created_at)}</span>
+                            <span className="text-[11px] text-slate-400">{formatDateTime(rec.run_at)}</span>
                           </div>
                           <p className="text-xs text-slate-200">
                             Checked {Number(rec.details?.paystack_transactions ?? 0)} Paystack tx(s) (
