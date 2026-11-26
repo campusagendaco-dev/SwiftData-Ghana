@@ -111,8 +111,8 @@ async function collectIncidentContext(supabaseAdmin: any) {
   ] = await Promise.all([
     supabaseAdmin
       .from("wallet_reconciliation_runs")
-      .select("id, kind, ok, issues, details, created_at")
-      .order("created_at", { ascending: false })
+      .select("id, kind, ok, issues, details, run_at")
+      .order("run_at", { ascending: false })
       .limit(5),
     supabaseAdmin
       .from("ai_system_memory")
