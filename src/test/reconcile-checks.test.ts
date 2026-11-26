@@ -37,6 +37,32 @@ describe("extra reconciliation checks", () => {
     expect(issues[0].context).toMatchObject({ first_order_id: "o1" });
   });
 
+  it("calls it charged twice, delivered once when both orders share one supplier order number", () => {
+    const base = { agent_id: "a", customer_phone: "0241112222", network: "MTN", package_size: "2GB", amount: 8.4, status: "fulfilled", payment_method: "wallet", paystack_verified_amount: null };
+    const issues = findLedgerIssues({
+      orders: [
+        { ...base, id: "o1", created_at: at(0), provider_order_id: "SKP16946950" },
+        { ...base, id: "o2", created_at: at(1), provider_order_id: "SKP16946950" },
+      ],
+      refunds: [],
+    });
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toMatchObject({ type: "charged_twice_delivered_once", order_id: "o2", amount_ghs: 8.4 });
+    expect(issues[0].context).toMatchObject({ first_order_id: "o1", supplier_order_id: "SKP16946950" });
+  });
+
+  it("still says delivered twice when the supplier order numbers differ or are placeholders", () => {
+    const base = { agent_id: "a", customer_phone: "0241112222", network: "MTN", package_size: "2GB", amount: 8.4, status: "fulfilled", payment_method: "wallet", paystack_verified_amount: null };
+    const issues = findLedgerIssues({
+      orders: [
+        { ...base, id: "o1", created_at: at(0), provider_order_id: "dispatching" },
+        { ...base, id: "o2", created_at: at(1), provider_order_id: "dispatching" },
+      ],
+      refunds: [],
+    });
+    expect(issues.map((i) => i.type)).toEqual(["delivered_twice"]);
+  });
+
   it("finds a Paystack order delivered without full verified payment", () => {
     const issues = findLedgerIssues({
       orders: [
@@ -60,7 +86,7 @@ const issue = (over: Partial<ReconIssue> = {}): ReconIssue => ({
 
 describe("explanations", () => {
   it("has a plain explanation and a safe next step for every issue type", () => {
-    for (const type of ["paid_without_order", "paid_not_credited", "credited_without_payment", "credit_exceeds_payment", "refunded_twice", "delivered_twice", "delivered_not_fully_paid"]) {
+    for (const type of ["paid_without_order", "paid_not_credited", "credited_without_payment", "credit_exceeds_payment", "refunded_twice", "delivered_twice", "charged_twice_delivered_once", "delivered_not_fully_paid"]) {
       const e = fallbackExplanation(issue({ type, key: `${type}:x` }));
       expect(e.explanation.length).toBeGreaterThan(20);
       expect(e.next_step.length).toBeGreaterThan(10);

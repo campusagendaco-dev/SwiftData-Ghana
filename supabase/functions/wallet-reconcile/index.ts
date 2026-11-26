@@ -137,7 +137,7 @@ serve(async (req) => {
     admin.from("wallet_ledger").select("reference_id, amount, agent_id, created_at")
       .eq("reason", "order_refund").gte("created_at", from.toISOString()).limit(5000),
     admin.from("orders")
-      .select("id, agent_id, customer_phone, network, package_size, amount, status, payment_method, paystack_verified_amount, created_at")
+      .select("id, agent_id, customer_phone, network, package_size, amount, status, payment_method, paystack_verified_amount, provider_order_id, created_at")
       .in("status", ["fulfilled", "completed"]).gte("created_at", from.toISOString()).limit(5000),
   ]);
   issues.push(...findLedgerIssues({ orders: (delivered || []) as any[], refunds: (refunds || []) as any[] }));

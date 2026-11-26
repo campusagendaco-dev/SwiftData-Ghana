@@ -29,7 +29,14 @@ type OrderRow = {
   status: string | null;
   payment_method: string | null;
   paystack_verified_amount: number | string | null;
+  provider_order_id?: string | null;
   created_at: string;
+};
+// Temporary labels used while sending, never a real supplier order number
+const PLACEHOLDER_REFS = new Set(["dispatching", "routed", "duplicate_cooldown", "manual_fulfillment_mode", "paused_by_admin", "refunded", "awaiting_provider", "timeout"]);
+const realSupplierRef = (r: string | null | undefined) => {
+  const s = String(r || "").trim();
+  return s && !PLACEHOLDER_REFS.has(s) && !s.startsWith("failed_api_call") ? s : "";
 };
 type RefundRow = { reference_id: string | null; amount: number | string; agent_id: string | null; created_at: string };
 
@@ -85,14 +92,26 @@ export function findLedgerIssues(input: { orders: OrderRow[]; refunds: RefundRow
       const sig = `${o.agent_id || "guest"}|${o.customer_phone}|${o.network}|${o.package_size}`;
       const prev = lastBySig.get(sig);
       if (prev && new Date(o.created_at).getTime() - new Date(prev.created_at).getTime() <= DUPLICATE_WINDOW_MS) {
-        issues.push({
-          key: `delivered_twice:${o.id}`,
-          type: "delivered_twice",
-          order_id: o.id,
-          amount_ghs: money(amount),
-          detail: `${o.network} ${o.package_size} delivered twice to the same number within 2 minutes`,
-          context: { first_order_id: prev.id, phone: o.customer_phone, agent_id: o.agent_id },
-        });
+        // Same real supplier order number on both: the supplier most likely delivered once
+        const sharedRef = realSupplierRef(o.provider_order_id) && realSupplierRef(o.provider_order_id) === realSupplierRef(prev.provider_order_id)
+          ? realSupplierRef(o.provider_order_id) : "";
+        issues.push(sharedRef
+          ? {
+              key: `charged_twice_delivered_once:${o.id}`,
+              type: "charged_twice_delivered_once",
+              order_id: o.id,
+              amount_ghs: money(amount),
+              detail: `${o.network} ${o.package_size}: two paid orders to the same number within 2 minutes got one supplier order number (${sharedRef})`,
+              context: { first_order_id: prev.id, phone: o.customer_phone, agent_id: o.agent_id, supplier_order_id: sharedRef },
+            }
+          : {
+              key: `delivered_twice:${o.id}`,
+              type: "delivered_twice",
+              order_id: o.id,
+              amount_ghs: money(amount),
+              detail: `${o.network} ${o.package_size} delivered twice to the same number within 2 minutes`,
+              context: { first_order_id: prev.id, phone: o.customer_phone, agent_id: o.agent_id },
+            });
       }
       lastBySig.set(sig, o);
     }
@@ -124,6 +143,10 @@ const FALLBACK: Record<string, { explanation: (i: ReconIssue) => string; next_st
   delivered_twice: {
     explanation: () => "The same bundle went to the same number twice within 2 minutes. This is usually a double click or a duplicate send.",
     next_step: "Check with the provider whether both were delivered. If the customer paid once, refund or charge through the normal admin tools.",
+  },
+  charged_twice_delivered_once: {
+    explanation: (i) => `Two paid orders for the same bundle and number got one supplier order number${i.context?.supplier_order_id ? ` (${i.context.supplier_order_id})` : ""}. The supplier most likely delivered once, so the customer may have paid ${ghs(i.amount_ghs)} for a bundle they didn't get.`,
+    next_step: "Look the supplier order number up with the supplier. If only one bundle was delivered, refund the second order through the refund service (an admin confirms).",
   },
   delivered_not_fully_paid: {
     explanation: (i) => `This Paystack order was delivered, but Paystack verified ${ghs(i.amount_ghs)} less than the order amount.`,

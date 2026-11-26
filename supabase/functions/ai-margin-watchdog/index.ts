@@ -17,6 +17,7 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { verifyAdmin } from "../_shared/auth.ts";
 import { timingSafeEqual } from "../_shared/gateway-security.ts";
 import { sendPaymentSms } from "../_shared/sms.ts";
+import { isComboPackage, normalizeNetwork, normalizeSize } from "../_shared/margin_match.ts";
 import { callAiAgent } from "../_shared/ai.ts";
 import { queueAgentAction } from "../_shared/agent_actions.ts";
 
@@ -47,29 +48,6 @@ function isKorbaProvider(p: any): boolean {
   const ht = String(p?.handler_type || "").toLowerCase();
   const name = String(p?.name || "").toLowerCase();
   return ht.includes("korba") || name.includes("korba");
-}
-
-function normalizeNetwork(raw: string | null | undefined): string {
-  const s = String(raw || "").trim().toUpperCase().replace(/[\s-]+/g, "_");
-  if (!s) return "";
-  if (s.includes("MTN")) return "MTN";
-  if (s.includes("TELECEL") || s.includes("VODAFONE")) return "TELECEL";
-  if (s.includes("BIGTIME") || s.includes("BIG_TIME")) return "AT_BIGTIME";
-  if (s.includes("ISHARE") || s.includes("I_SHARE")) return "AT_ISHARE";
-  if (s === "AT" || s.includes("AIRTEL") || s.includes("AT_PREMIUM")) return "AT_PREMIUM";
-  return s;
-}
-
-function normalizeSize(raw: string | null | undefined, capacityGb?: number | null): string {
-  const s = String(raw || "").trim().toUpperCase().replace(/\s+/g, "");
-  const gbMatch = s.match(/(\d+(?:\.\d+)?)GB/);
-  if (gbMatch) return `${Number(gbMatch[1])}GB`;
-  const mbMatch = s.match(/(\d+(?:\.\d+)?)MB/);
-  if (mbMatch) return `${Number(mbMatch[1])}MB`;
-  if (capacityGb && Number.isFinite(Number(capacityGb)) && Number(capacityGb) > 0) {
-    return `${Number(capacityGb)}GB`;
-  }
-  return s;
 }
 
 function bundleKey(network: string, size: string): string {
@@ -224,6 +202,8 @@ serve(async (req: Request) => {
     const cost = Number(pkg.cost_price || 0);
     if (!Number.isFinite(cost) || cost <= 0) continue;
 
+    // Data + minutes combos / Mash Up bundles never set the cost of plain data
+    if (isComboPackage(pkg.package_name)) continue;
     const net = normalizeNetwork(pkg.network);
     const size = normalizeSize(pkg.package_name, pkg.capacity_gb);
     if (!net || !size) continue;

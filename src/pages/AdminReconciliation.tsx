@@ -43,6 +43,7 @@ const LABELS: Record<string, string> = {
   credit_exceeds_payment: "Credited more than paid",
   refunded_twice: "Refunded twice",
   delivered_twice: "Delivered twice",
+  charged_twice_delivered_once: "Charged twice, delivered once",
   delivered_not_fully_paid: "Delivered, not fully paid",
 };
 const label = (t: string) => LABELS[t] ?? t.replace(/_/g, " ");
