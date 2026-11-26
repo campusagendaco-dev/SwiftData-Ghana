@@ -58,7 +58,7 @@ export class KorbaAdapter implements ProviderAdapter {
     let korbaPayload: Record<string, any> = {};
 
     const orderType = String(data.order_type || "data").toLowerCase();
-    const isAirtime = orderType === "airtime" || (!data.package_size && !data.plan && Number(data.amount) > 0 && !data.utility_provider);
+    const isAirtime = orderType === "airtime" || (orderType !== "utility" && !data.package_size && !data.plan && Number(data.amount) > 0 && !data.utility_provider);
     if (isAirtime) {
       targetUrl = `${baseUrl}/topup/`;
       korbaPayload = {
@@ -401,11 +401,13 @@ export class KorbaAdapter implements ProviderAdapter {
     const isSentinel = (id: string) => !id || id === "timeout" || id.startsWith("failed_api_call") || id === "manual_fulfillment_mode" || id === "duplicate_cooldown" || id === "refunded";
     const cleanProvId = isSentinel(rawProvId) ? "" : rawProvId.replace(/_disb$/, "");
 
+    // Check disbursement (_disb) candidates first — prioritizing the exact provider_order_id (e.g. retry_suffix)
+    // before falling back to clean IDs so a MoMo collection leg (cleanRef) never masks a failed/pending disbursement.
     const candidateIds = Array.from(new Set([
-      cleanRef && !isSentinel(cleanRef) ? `${cleanRef}_disb` : "",
-      cleanRef && !isSentinel(cleanRef) ? cleanRef : "",
       cleanProvId ? `${cleanProvId}_disb` : "",
+      cleanRef && !isSentinel(cleanRef) ? `${cleanRef}_disb` : "",
       cleanProvId,
+      cleanRef && !isSentinel(cleanRef) ? cleanRef : "",
     ].filter(Boolean)));
 
     if (candidateIds.length === 0) {
@@ -470,10 +472,12 @@ export class KorbaAdapter implements ProviderAdapter {
             continue;
           }
 
-          const resultsStatus = parsed.results && typeof parsed.results === "object" ? parsed.results.status : "";
+          const resultsStatus = typeof parsed.results === "string"
+            ? parsed.results
+            : (parsed.results && typeof parsed.results === "object" ? parsed.results.status : "");
           const rawStatus = (parsed.status || parsed.delivery_status || resultsStatus || parsed.status_code || parsed.code || "").toString().toUpperCase();
           const codeStr = String(parsed.code || parsed.status_code || "").toUpperCase();
-          const isDelivered = rawStatus === "000" || rawStatus === "0000" || codeStr === "000" || codeStr === "0000" || rawStatus === "SUCCESS" || rawStatus === "SUCCESSFUL" || rawStatus === "FULFILLED" || rawStatus === "COMPLETED" || rawStatus === "DELIVERED";
+          const isDelivered = parsed.success !== false && (rawStatus === "000" || rawStatus === "0000" || codeStr === "000" || codeStr === "0000" || rawStatus === "SUCCESS" || rawStatus === "SUCCESSFUL" || rawStatus === "FULFILLED" || rawStatus === "COMPLETED" || rawStatus === "DELIVERED");
           const isFailed = rawStatus === "FAILED" || rawStatus === "ERROR" || rawStatus === "REJECTED" || rawStatus === "CANCELLED";
 
           const token = extractPrepaidToken(parsed, { delivered: isDelivered });

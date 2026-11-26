@@ -318,7 +318,7 @@ async function fulfillOrder(
       const isUtility = order.order_type === "utility";
       const networkName = order.utility_provider || order.network || "";
       const packageName = order.package_size || "";
-      const isAirtime = String(packageName).toUpperCase() === "AIRTIME";
+      const isAirtime = String(order.order_type || "").toLowerCase() === "airtime" || String(packageName).toUpperCase() === "AIRTIME";
       const utilAccount = order.utility_account_number || order.metadata?.meter_number || order.customer_phone;
       
       let displayPackage = `${networkName} ${packageName}`;
@@ -1371,22 +1371,27 @@ serve(async (req: any) => {
             continue;
           }
 
-          rawKorbaStatus = String(statusData?.status || statusData?.results || statusData?.delivery_status || statusData?.code || "").toLowerCase();
+          const resultsStatus = typeof statusData?.results === "string"
+            ? statusData.results
+            : (statusData?.results && typeof statusData.results === "object" ? statusData.results.status : "");
+          rawKorbaStatus = String(statusData?.status || resultsStatus || statusData?.delivery_status || statusData?.code || "").toLowerCase();
           const codeStr = String(statusData?.code || statusData?.status_code || "").toLowerCase();
 
           isExplicitSuccess =
-            rawKorbaStatus === "success" ||
-            rawKorbaStatus === "successful" ||
-            rawKorbaStatus === "paid" ||
-            rawKorbaStatus === "completed" ||
-            rawKorbaStatus === "fulfilled" ||
-            rawKorbaStatus === "delivered" ||
-            rawKorbaStatus === "000" ||
-            rawKorbaStatus === "0000" ||
-            codeStr === "000" ||
-            codeStr === "0000" ||
-            statusData?.code === 0 ||
-            statusData?.status_code === 0;
+            statusData?.success !== false && (
+              rawKorbaStatus === "success" ||
+              rawKorbaStatus === "successful" ||
+              rawKorbaStatus === "paid" ||
+              rawKorbaStatus === "completed" ||
+              rawKorbaStatus === "fulfilled" ||
+              rawKorbaStatus === "delivered" ||
+              rawKorbaStatus === "000" ||
+              rawKorbaStatus === "0000" ||
+              codeStr === "000" ||
+              codeStr === "0000" ||
+              statusData?.code === 0 ||
+              statusData?.status_code === 0
+            );
 
           isExplicitPending =
             rawKorbaStatus === "pending" ||
@@ -1400,6 +1405,10 @@ serve(async (req: any) => {
             statusData?.status === "PENDING" ||
             statusData?.status === "INITIALIZED";
 
+          const isNotFound =
+            statusData?.error_code === 421 ||
+            /does not exist|not found/i.test(String(statusData?.results || statusData?.message || statusData?.error_message || ""));
+
           isKorbaFailed =
             !isExplicitSuccess &&
             !isExplicitPending &&
@@ -1412,7 +1421,7 @@ serve(async (req: any) => {
              rawKorbaStatus.includes("decline") ||
              (statusData?.error_code && Number(statusData.error_code) > 0));
 
-          if (isExplicitSuccess || isExplicitPending) {
+          if (isExplicitSuccess || isExplicitPending || (isKorbaFailed && !isNotFound)) {
             break;
           }
         }
@@ -1430,7 +1439,17 @@ serve(async (req: any) => {
         }
 
         if (isExplicitSuccess) {
-          verifiedAmount = Number(existingOrder?.amount || 0);
+          const expectedOrderAmount = Number(existingOrder?.amount || 0);
+          const rawKorbaAmt = Number(statusData?.amount ?? statusData?.data?.amount ?? statusData?.results?.amount);
+          if (Number.isFinite(rawKorbaAmt) && rawKorbaAmt > 0 && rawKorbaAmt < expectedOrderAmount - 0.05) {
+            console.error(`[verify-payment] Korba underpayment detected for ${targetReference}: korba=${rawKorbaAmt} < expected=${expectedOrderAmount}`);
+            await supabaseAdmin.from("orders").update({
+              status: "fulfillment_failed",
+              failure_reason: `Amount mismatch: Paid GHS ${rawKorbaAmt}, expected GHS ${expectedOrderAmount}`
+            }).eq("id", targetReference);
+            return new Response(JSON.stringify({ status: "error", error: `Amount mismatch. Paid ${rawKorbaAmt} GHS, Expected ${expectedOrderAmount} GHS` }), { headers: corsHeaders });
+          }
+          verifiedAmount = Number.isFinite(rawKorbaAmt) && rawKorbaAmt > 0 ? Math.min(rawKorbaAmt, expectedOrderAmount) : expectedOrderAmount;
           paystackFeeOnVerified = Number(existingOrder?.paystack_fee || 0);
           metadata = existingOrder?.metadata || {};
           currentOrderType = (existingOrder?.order_type || "data") as string;

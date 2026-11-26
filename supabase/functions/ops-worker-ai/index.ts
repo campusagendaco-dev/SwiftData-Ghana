@@ -295,8 +295,8 @@ serve(async (req: Request) => {
     // ── MODE: ADMIN COMMAND (an admin asked, so its actions are proposed for approval) ──
     if (mode === "command") {
       if (!adminUserId) return json({ error: "Admin session required for commands" }, 403);
-      const instruction = String(body?.instruction || "").trim();
-      if (!instruction) return json({ error: "instruction is required" }, 400);
+      const instruction = String(body?.instruction || body?.command || "").trim();
+      if (!instruction) return json({ error: "instruction or command is required" }, 400);
 
       const cmdPrompt = `
 You are OPS WORKER AI — SwiftData's operations, security, and learning worker.

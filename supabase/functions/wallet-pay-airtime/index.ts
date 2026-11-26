@@ -69,19 +69,36 @@ serve(async (req) => {
 
     const parentAgentId = agentProfile?.is_sub_agent ? (agentProfile?.parent_agent_id ?? null) : null;
 
-    // --- 🔴 SECURITY ENFORCEMENT: AMOUNT RANGE CHECK ---
+    // --- 🔴 SECURITY ENFORCEMENT: AMOUNT, NETWORK & PHONE VALIDATION ---
     const amountNum = Number(requestedAmount);
-    if (isNaN(amountNum) || amountNum <= 0) {
+    const payAmount = Math.round(amountNum * 100) / 100;
+    if (!Number.isFinite(payAmount) || payAmount < 1) {
       console.error(`[SECURITY] Blocked invalid airtime amount from user ${user.id}: ${requestedAmount}`);
-      return new Response(JSON.stringify({ error: "Invalid airtime amount. Order rejected." }), {
+      return new Response(JSON.stringify({ error: "Invalid airtime amount. Minimum purchase is GHS 1.00." }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    if (amountNum > 200) {
-      console.error(`[SECURITY] Blocked excessive airtime amount from user ${user.id}: ${amountNum}`);
+    if (payAmount > 200) {
+      console.error(`[SECURITY] Blocked excessive airtime amount from user ${user.id}: ${payAmount}`);
       return new Response(JSON.stringify({ error: "Maximum single airtime purchase is GHS 200.00." }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (!network || !String(network).trim()) {
+      return new Response(JSON.stringify({ error: "Please select a mobile network." }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const normalizedPhone = normalizeRecipient(customer_phone);
+    const ghanaPrefixes = ["024", "054", "055", "059", "025", "053", "020", "050", "027", "057", "026", "056", "023"];
+    if (normalizedPhone.length !== 10 || !ghanaPrefixes.includes(normalizedPhone.slice(0, 3))) {
+      return new Response(JSON.stringify({ error: "Please enter a valid 10-digit Ghana mobile number." }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -99,7 +116,6 @@ serve(async (req) => {
 
     // Anti-Duplicate Protection (1 Minute to prevent double-clicks, strictly scoped to this agent)
     const oneMinuteAgo = new Date(Date.now() - 1 * 60 * 1000).toISOString();
-    const normalizedPhone = normalizeRecipient(customer_phone);
     let duplicateOrder = null;
 
     const { data: recentOrders } = await supabaseAdmin
@@ -124,7 +140,7 @@ serve(async (req) => {
         if (!networksMatch) return false;
 
         // Compare amount
-        if (Math.abs(Number(o.amount) - Number(requestedAmount)) > 0.01) return false;
+        if (Math.abs(Number(o.amount) - payAmount) > 0.01) return false;
 
         return true;
       });
@@ -145,10 +161,10 @@ serve(async (req) => {
     }
 
     // 1. ATOMIC DEBIT (FOREGROUND)
-    console.log(`[DEBIT-AIRTIME] Starting debit for ${requestedAmount}...`);
+    console.log(`[DEBIT-AIRTIME] Starting debit for ${payAmount}...`);
     const { data: debitResult, error: debitError } = await supabaseAdmin.rpc("debit_wallet", {
       p_agent_id: user.id,
-      p_amount: requestedAmount,
+      p_amount: payAmount,
     });
 
     if (debitError || !debitResult?.success) {
@@ -166,20 +182,24 @@ serve(async (req) => {
     const { error: insertError } = await supabaseAdmin.from("orders").insert({
       id: orderId,
       agent_id: user.id,
-      customer_phone: normalizeRecipient(customer_phone),
-      network: network,
-      amount: requestedAmount,
+      customer_phone: normalizedPhone,
+      network: String(network).trim(),
+      package_size: "AIRTIME",
+      amount: payAmount,
       order_type: "airtime",
       payment_method: "wallet",
       profit: 0,
       parent_agent_id: parentAgentId,
       parent_profit: 0,
-      status: "paid"
+      status: "paid",
+      metadata: {
+        base_price: payAmount,
+      },
     });
 
     if (insertError) {
       console.error(`[INSERT_FAIL-AIRTIME] ${orderId}:`, insertError);
-      await supabaseAdmin.rpc("credit_wallet", { p_agent_id: user.id, p_amount: requestedAmount });
+      await supabaseAdmin.rpc("credit_wallet", { p_agent_id: user.id, p_amount: payAmount });
       return new Response(JSON.stringify({ error: "Failed to create order" }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -203,11 +223,11 @@ serve(async (req) => {
     }
 
     // 3. TRIGGER SMS (NON-BLOCKING)
-    const displayPackage = `${network || ""} GHS ${Number(requestedAmount).toFixed(2)} Airtime`;
-    sendPaymentSms(supabaseAdmin, customer_phone, "payment_success", {
-      phone: customer_phone,
+    const displayPackage = `${network || ""} GHS ${payAmount.toFixed(2)} Airtime`;
+    sendPaymentSms(supabaseAdmin, normalizedPhone, "payment_success", {
+      phone: normalizedPhone,
       package: displayPackage,
-      amount: requestedAmount,
+      amount: payAmount,
       id: orderId
     }, user.id).catch(e => console.error("[SMS-ERROR-AIRTIME]", e));
 

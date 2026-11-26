@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { fetchViaDb } from "../_shared/db_proxy.ts";
 import { corsHeaders } from "../_shared/cors.ts";
+import { checkActiveProcessingDuplicate, DUPLICATE_PROCESSING_ERROR_CODE } from "../_shared/duplicate_order_guard.ts";
 
 declare const Deno: any;
 
@@ -1428,34 +1429,36 @@ serve(async (req: Request) => {
       }
     }
 
-    // ── Anti-Duplicate Protection (Only block if an identical package size for the same recipient is CURRENTLY IN PROGRESS) ──
-    const allowDuplicateSetting = settings?.allow_duplicate_purchases === true;
-    if (!allowDuplicateSetting) {
-      const customerPhone = (metadata.customer_phone || "").trim();
+    // ── Duplicate Purchase Rule ──
+    // Allow duplicate purchases for delivered/terminal orders; BLOCK & INFORM when an order
+    // for the same recipient phone + network (+ package) is currently in-flight / processing.
+    if (orderType === "data" || orderType === "airtime") {
+      const customerPhone = (metadata.customer_phone || metadata.phone || metadata.recipient_phone || "").trim();
       const network = (metadata.network || "").trim();
       const packageSize = (metadata.package_size || "").trim();
       if (customerPhone && network) {
-        const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-        let dupQuery = supabaseAdmin
-          .from("orders")
-          .select("id, status")
-          .eq("customer_phone", customerPhone)
-          .eq("network", network)
-          .in("status", ["paid", "processing", "pending", "awaiting_payment"])
-          .gte("created_at", tenMinutesAgo);
+        const dupCheck = await checkActiveProcessingDuplicate(supabaseAdmin, {
+          phone: customerPhone,
+          network,
+          packageSize: orderType === "data" ? packageSize : undefined,
+          orderType,
+          amount: orderType === "airtime" ? resolvedAmount : undefined,
+        });
 
-        if (orderType === "data" && packageSize) {
-          dupQuery = dupQuery.eq("package_size", packageSize);
-        } else if (orderType === "airtime") {
-          dupQuery = dupQuery.eq("order_type", "airtime");
-        }
-
-        const { data: existingDuplicate } = await dupQuery.limit(1).maybeSingle();
-
-        if (existingDuplicate) {
-          console.warn(`[DUPLICATE_INIT] Blocked duplicate payment initialization for ${customerPhone} (${packageSize || orderType})`);
-          return new Response(JSON.stringify({ 
-            error: "An order for this number and package size is currently in progress. Please wait for delivery confirmation before placing another request." 
+        if (dupCheck.blocked && dupCheck.existingOrder) {
+          console.warn(`[DUPLICATE_INIT] Blocked duplicate payment initialization for ${customerPhone} (${packageSize || orderType}) — active order ${dupCheck.existingOrder.id} (${dupCheck.existingOrder.status})`);
+          return new Response(JSON.stringify({
+            error: dupCheck.message,
+            code: dupCheck.code || DUPLICATE_PROCESSING_ERROR_CODE,
+            existing_order: {
+              id: dupCheck.existingOrder.id,
+              short_id: String(dupCheck.existingOrder.id).slice(0, 8).toUpperCase(),
+              status: dupCheck.existingOrder.status,
+              network: dupCheck.existingOrder.network || network,
+              package_size: dupCheck.existingOrder.package_size || packageSize,
+              customer_phone: dupCheck.existingOrder.customer_phone || customerPhone,
+              created_at: dupCheck.existingOrder.created_at,
+            },
           }), {
             status: 409,
             headers: { ...corsHeaders, "Content-Type": "application/json" }

@@ -125,6 +125,7 @@ const AdminFeatureFlags = lazy(() => import("./pages/AdminFeatureFlags"));
 const AdminSmsTemplates = lazy(() => import("./pages/AdminSmsTemplates"));
 const AdminCreditManagement = lazy(() => import("./pages/AdminCreditManagement"));
 const AdminSentinelAI = lazy(() => import("./pages/AdminSentinelAI"));
+const AdminWatchdog = lazy(() => import("./pages/AdminWatchdog"));
 const AdminSwiftVendorPro = lazy(() => import("./pages/AdminSwiftVendorPro"));
 const AdminStickers = lazy(() => import("./pages/AdminStickers"));
 const AdminAIStrategy = lazy(() => import("./pages/AdminAIStrategy"));
@@ -609,6 +610,7 @@ const AppContent = () => {
           <Route path="sms-templates" element={<AdminSmsTemplates />} />
           <Route path="credit-management" element={<AdminCreditManagement />} />
           <Route path="sentinel" element={<AdminSentinelAI />} />
+          <Route path="watchdog" element={<AdminWatchdog />} />
           <Route path="swift-vendor" element={<AdminSwiftVendorPro />} />
           <Route path="ai-strategy" element={<AdminAIStrategy />} />
           <Route path="api-network" element={<AdminAPINetwork />} />

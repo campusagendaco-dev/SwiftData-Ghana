@@ -213,9 +213,10 @@ serve(async (req: Request) => {
                   handlerType === "spendless" ? Deno.env.get("SPENDLESS_API_KEY") :
                     handlerType === "skdataplug" ? Deno.env.get("SKDATAPLUG_API_KEY") :
                       handlerType === "qhowmenzconsult" ? Deno.env.get("QHOWMENZ_API_KEY") :
-                        handlerType === "korba" ? (Deno.env.get("KORBA_SECRET_KEY") || Deno.env.get("KORBA_API_KEY")) :
+                        handlerType === "korba" ? (Deno.env.get("KORBA_CLIENT_KEY") || Deno.env.get("KORBA_API_KEY")) :
                           Deno.env.get("DATA_PROVIDER_API_KEY");
-        return [String(p.id), { ...p, api_key: String(envKey || p.api_key || "").trim() }];
+        const resolvedSecret = handlerType === "korba" ? (Deno.env.get("KORBA_SECRET_KEY") || p.api_secret || "") : p.api_secret;
+        return [String(p.id), { ...p, api_key: String(envKey || p.api_key || "").trim(), ...(resolvedSecret !== undefined ? { api_secret: resolvedSecret } : {}) }];
       }));
 
       let fulfilledCount = 0;
@@ -283,18 +284,23 @@ serve(async (req: Request) => {
               const isFailed = !isPendingRefund && (rawStatus === "failed" || rawStatus === "fulfillment_failed" || rawStatus === "rejected" || rawStatus === "cancelled" || rawStatus === "declined" || isRefunded || isStuckUnacceptedOnProvider);
 
               if (isDelivered) {
+                const deliveredToken = pRes?.raw?.prepaid_token ? String(pRes.raw.prepaid_token).trim() : null;
                 currentStatus = "fulfilled";
-                currentFailureReason = null;
+                currentFailureReason = deliveredToken ? `Token: ${deliveredToken}` : null;
                 fulfilledCount++;
                 wasUpdated = order.status !== "fulfilled";
 
                 if (order.status !== "fulfilled") {
-                  await supabaseAdmin.from("orders").update({
+                  const fulfillPatch: Record<string, any> = {
                     status: "fulfilled",
-                    failure_reason: null,
+                    failure_reason: deliveredToken ? `Token: ${deliveredToken}` : null,
                     provider_response: pRes.raw || pRes,
                     updated_at: new Date().toISOString()
-                  }).eq("id", order.id);
+                  };
+                  if (deliveredToken) {
+                    fulfillPatch.metadata = { ...(order.metadata || {}), prepaid_token: deliveredToken };
+                  }
+                  await supabaseAdmin.from("orders").update(fulfillPatch).eq("id", order.id);
 
                   await Promise.resolve(supabaseAdmin.rpc("credit_order_profits", { p_order_id: order.id })).catch(() => { });
                   console.log(`[check-order-status-bulk] Order ${order.id} marked FULFILLED.`);
@@ -537,9 +543,10 @@ serve(async (req: Request) => {
                     handlerType === "spendless" ? Deno.env.get("SPENDLESS_API_KEY") :
                       handlerType === "skdataplug" ? Deno.env.get("SKDATAPLUG_API_KEY") :
                         handlerType === "qhowmenzconsult" ? Deno.env.get("QHOWMENZ_API_KEY") :
-                          handlerType === "korba" ? (Deno.env.get("KORBA_SECRET_KEY") || Deno.env.get("KORBA_API_KEY")) :
+                          handlerType === "korba" ? (Deno.env.get("KORBA_CLIENT_KEY") || Deno.env.get("KORBA_API_KEY")) :
                             Deno.env.get("DATA_PROVIDER_API_KEY");
-          providerInfo = { ...prov, api_key: String(envKey || prov.api_key || "").trim() };
+          const resolvedSecret = handlerType === "korba" ? (Deno.env.get("KORBA_SECRET_KEY") || prov.api_secret || "") : prov.api_secret;
+          providerInfo = { ...prov, api_key: String(envKey || prov.api_key || "").trim(), ...(resolvedSecret !== undefined ? { api_secret: resolvedSecret } : {}) };
         }
       }
 
@@ -580,17 +587,23 @@ serve(async (req: Request) => {
           const isFailed = !isPendingRefund && (rawStatus === "failed" || rawStatus === "fulfillment_failed" || rawStatus === "rejected" || rawStatus === "cancelled" || rawStatus === "declined" || isRefunded || isStuckUnacceptedOnProvider);
 
           if (isDelivered) {
+            const deliveredToken = pRes?.raw?.prepaid_token ? String(pRes.raw.prepaid_token).trim() : null;
             currentStatus = "fulfilled";
-            currentFailureReason = null;
+            currentFailureReason = deliveredToken ? `Token: ${deliveredToken}` : null;
             carrierStatusDesc = "Delivered successfully to recipient line";
 
             if (order.status !== "fulfilled") {
-              await supabaseAdmin.from("orders").update({
+              const fulfillPatch: Record<string, any> = {
                 status: "fulfilled",
-                failure_reason: null,
+                failure_reason: deliveredToken ? `Token: ${deliveredToken}` : null,
                 provider_response: pRes.raw || pRes,
                 updated_at: new Date().toISOString()
-              }).eq("id", order.id);
+              };
+              if (deliveredToken) {
+                fulfillPatch.metadata = { ...(order.metadata || {}), prepaid_token: deliveredToken };
+                order.metadata = fulfillPatch.metadata;
+              }
+              await supabaseAdmin.from("orders").update(fulfillPatch).eq("id", order.id);
 
               // Idempotently credit agent profits
               await Promise.resolve(supabaseAdmin.rpc("credit_order_profits", { p_order_id: order.id })).catch(() => { });
@@ -788,10 +801,20 @@ serve(async (req: Request) => {
     // =========================================================================
     // CRITICAL SECURITY ENFORCEMENT: NEVER REVEAL THE PROVIDER TO USERS!
     // =========================================================================
+    const resolvedPrepaidToken = liveProviderResult?.raw?.prepaid_token || order.metadata?.prepaid_token || null;
+
     if (!isAdmin) {
       let userFriendlyMessage = "Order status verified with network.";
       if (currentStatus === "fulfilled") {
-        userFriendlyMessage = "Success! Data bundle delivered successfully to your recipient number.";
+        if (order.order_type === "utility") {
+          userFriendlyMessage = resolvedPrepaidToken
+            ? `Success! Utility payment completed. Token: ${resolvedPrepaidToken}`
+            : "Success! Utility payment completed.";
+        } else if (order.order_type === "airtime") {
+          userFriendlyMessage = "Success! Airtime delivered successfully to your recipient number.";
+        } else {
+          userFriendlyMessage = "Success! Data bundle delivered successfully to your recipient number.";
+        }
       } else if (currentStatus === "processing") {
         userFriendlyMessage = "Your order is actively being transmitted across the carrier network. Delivery completes in seconds.";
       } else if (currentStatus === "fulfillment_failed") {
@@ -814,6 +837,7 @@ serve(async (req: Request) => {
           created_at: order.created_at,
           updated_at: order.updated_at,
           carrier_status: carrierStatusDesc,
+          prepaid_token: resolvedPrepaidToken,
           failure_reason: sanitizeForUser(currentFailureReason),
         },
         message: userFriendlyMessage,

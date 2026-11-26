@@ -4,6 +4,7 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { sendPaymentSms, getSmsConfig, sendSmsViaTxtConnect } from "../_shared/sms.ts";
 import { sendWhatsAppOrderReceipt } from "../_shared/whatsapp.ts";
 import { log } from "../_shared/logger.ts";
+import { checkActiveProcessingDuplicate, DUPLICATE_PROCESSING_ERROR_CODE } from "../_shared/duplicate_order_guard.ts";
 
 // --- HELPERS ---
 function normalizeNetworkForPricing(network: string): "MTN" | "MTN Mash Up" | "Telecel" | "AirtelTigo" {
@@ -433,55 +434,34 @@ serve(async (req: Request) => {
 
     const amountNum = resolvedChargeAmount;
 
-    // Anti-Duplicate Protection (Strict guard to prevent duplicate purchases for identical recipient + package size while in-progress)
-    const allowDuplicateSetting = sysSettings?.allow_duplicate_purchases === true;
-    const clientAllowDuplicate = payload?.allow_duplicate === true || payload?.allow_duplicate === "true";
-    const skipDuplicateCheck = allowDuplicateSetting || clientAllowDuplicate;
+    // Duplicate Purchase Rule:
+    // Allow duplicate purchases once previous orders are delivered/terminal.
+    // BLOCK & INFORM whenever an active in-flight/processing order exists for the same phone + network + package.
+    const dupCheck = await checkActiveProcessingDuplicate(supabaseAdmin, {
+      phone: normalizedPhone,
+      network: networkRaw || normalizedNet,
+      packageSize: package_size,
+      orderType: "data",
+    });
 
-    if (!skipDuplicateCheck) {
-      const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-      let duplicateOrder = null;
-
-      const { data: recentOrders } = await supabaseAdmin
-        .from("orders")
-        .select("id, status, network, package_size, amount, created_at")
-        .eq("customer_phone", normalizedPhone)
-        .gte("created_at", tenMinutesAgo);
-
-      if (recentOrders && recentOrders.length > 0) {
-        // Only block if an active order for the EXACT SAME recipient, EXACT SAME offer/network, and EXACT SAME package size is STILL IN-PROGRESS.
-        // If previous order is fulfilled, completed, failed, or refunded, or if package size / offer type is DIFFERENT, ALLOW purchase!
-        const activeStatuses = ["paid", "processing", "pending", "awaiting_payment"];
-        const match = recentOrders.find((o: any) => {
-          if (!activeStatuses.includes(o.status)) return false;
-
-          // Compare network / offer type strictly
-          const n1 = String(o.network || "").trim().toUpperCase();
-          const n2 = String(networkRaw || normalizedNet || "").trim().toUpperCase();
-          if (n1 !== n2) return false;
-
-          // Compare package size (whitespace & case insensitive)
-          const p1 = String(o.package_size || "").replace(/\s+/g, "").toUpperCase();
-          const p2 = String(package_size || "").replace(/\s+/g, "").toUpperCase();
-          if (p1 !== p2) return false;
-
-          return true;
-        });
-
-        if (match) {
-          duplicateOrder = match;
-        }
-      }
-
-      if (duplicateOrder) {
-        console.warn(`[DUPLICATE] Blocked purchase: Active order ${duplicateOrder.id} (${duplicateOrder.package_size}) for ${normalizedPhone} is currently ${duplicateOrder.status}.`);
-        return new Response(JSON.stringify({ 
-          error: "An order for this phone number and package size is currently in progress. Please wait for delivery confirmation before placing another request for the same package." 
-        }), {
-          status: 409,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
+    if (dupCheck.blocked && dupCheck.existingOrder) {
+      console.warn(`[DUPLICATE] Blocked purchase: Active order ${dupCheck.existingOrder.id} (${dupCheck.existingOrder.package_size}) for ${normalizedPhone} is currently ${dupCheck.existingOrder.status}.`);
+      return new Response(JSON.stringify({
+        error: dupCheck.message,
+        code: dupCheck.code || DUPLICATE_PROCESSING_ERROR_CODE,
+        existing_order: {
+          id: dupCheck.existingOrder.id,
+          short_id: String(dupCheck.existingOrder.id).slice(0, 8).toUpperCase(),
+          status: dupCheck.existingOrder.status,
+          network: dupCheck.existingOrder.network || networkRaw || normalizedNet,
+          package_size: dupCheck.existingOrder.package_size || package_size,
+          customer_phone: dupCheck.existingOrder.customer_phone || normalizedPhone,
+          created_at: dupCheck.existingOrder.created_at,
+        },
+      }), {
+        status: 409,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     // 1. ATOMIC DEBIT (wallet first, credit fallback)

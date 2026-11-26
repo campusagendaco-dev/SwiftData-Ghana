@@ -94,6 +94,7 @@ async function verifyKorbaSignature(
 }
 
 import { fetchViaDb } from "../_shared/db_proxy.ts";
+import { extractPrepaidToken } from "../_shared/korba_token.ts";
 
 async function verifyKorbaStatusViaApi(
   supabaseAdmin: any,
@@ -107,8 +108,12 @@ async function verifyKorbaStatusViaApi(
   try {
     const isDisb = isDisbursementCallback || transactionId.endsWith("_disb");
     const cleanId = String(transactionId || "").trim().replace(/_disb$/, "");
-    // Only query `${cleanId}_disb` when `isDisbursementCallback` is true (never fall back from `_disb` to collection leg `cleanId`).
-    const candidateIds = isDisb ? [`${cleanId}_disb`] : [cleanId];
+    const isKorbaPayment = String(paymentMethod || "").toLowerCase() === "korba";
+    // When payment_method === "korba", keep collection (cleanId) and disbursement (${cleanId}_disb) legs strictly isolated
+    // so a disbursement callback can never match the collection leg's SUCCESS. Otherwise test both _disb and clean IDs.
+    const candidateIds = isKorbaPayment
+      ? (isDisb ? [`${cleanId}_disb`] : [cleanId])
+      : (isDisb ? [`${cleanId}_disb`, cleanId] : [cleanId, `${cleanId}_disb`]);
 
     for (const txId of candidateIds) {
       const statusPayload = {
@@ -149,33 +154,32 @@ async function verifyKorbaStatusViaApi(
 
       if (response.ok) {
         const resData = await response.json();
-        const rawStatus = String(resData?.status || resData?.results || resData?.delivery_status || resData?.code || "").toLowerCase();
+        const resultsStatus = typeof resData?.results === "string"
+          ? resData.results
+          : (resData?.results && typeof resData.results === "object" ? resData.results.status : "");
+        const rawStatus = String(resData?.status || resultsStatus || resData?.delivery_status || resData?.code || "").toLowerCase();
         const codeStr = String(resData?.code || resData?.status_code || "").toLowerCase();
         
         const isExplicitSuccess = 
-          rawStatus === "success" || 
-          rawStatus === "successful" || 
-          rawStatus === "paid" || 
-          rawStatus === "completed" || 
-          rawStatus === "fulfilled" ||
-          rawStatus === "delivered" ||
-          rawStatus === "000" ||
-          rawStatus === "0000" ||
-          codeStr === "000" ||
-          codeStr === "0000";
+          resData?.success !== false && (
+            rawStatus === "success" || 
+            rawStatus === "successful" || 
+            rawStatus === "paid" || 
+            rawStatus === "completed" || 
+            rawStatus === "fulfilled" ||
+            rawStatus === "delivered" ||
+            rawStatus === "000" ||
+            rawStatus === "0000" ||
+            codeStr === "000" ||
+            codeStr === "0000"
+          );
 
         if (isExplicitSuccess) {
           console.log(`[korba-webhook] Confirmed Korba status as SUCCESS via status API for txId: ${txId}`);
           const rawAmt = Number(resData?.amount ?? resData?.data?.amount ?? resData?.results?.amount);
           const verifiedAmt = Number.isFinite(rawAmt) && rawAmt > 0 ? rawAmt : null;
-          let apiToken: string | null =
-            resData?.token || resData?.prepaid_token || resData?.voucher ||
-            resData?.data?.token || resData?.data?.prepaid_token || null;
-          if (!apiToken && typeof resData?.message === "string") {
-            const m = resData.message.match(/\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b/) || resData.message.match(/\b\d{20}\b/);
-            if (m) apiToken = m[0].replace(/[-\s]/g, "");
-          }
-          return { confirmed: true, amount: verifiedAmt, prepaidToken: apiToken ? String(apiToken).trim() : null };
+          const apiToken = extractPrepaidToken(resData, { delivered: true });
+          return { confirmed: true, amount: verifiedAmt, prepaidToken: apiToken };
         }
       }
     }
@@ -256,10 +260,7 @@ serve(async (req: Request) => {
 
   // Automatically extract prepaid token from message if not provided in prepaid_token parameter
   if (!prepaidToken && message) {
-    const tokenMatch = message.match(/\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b/) || message.match(/\b\d{20}\b/);
-    if (tokenMatch) {
-      prepaidToken = tokenMatch[0].replace(/[-\s]/g, "");
-    }
+    prepaidToken = extractPrepaidToken({ message }, { delivered: status === "SUCCESS" }) || "";
   }
 
   console.log(`[korba-webhook] Callback received: tx=${transactionId}, status=${status}, msg=${message}, token=${prepaidToken}`);
@@ -405,7 +406,7 @@ serve(async (req: Request) => {
             const isUtility = existingOrder.order_type === "utility";
             const networkName = existingOrder.utility_provider || existingOrder.network || "";
             const packageName = existingOrder.package_size || "";
-            const isAirtime = String(packageName).toUpperCase() === "AIRTIME";
+            const isAirtime = String(existingOrder.order_type || "").toLowerCase() === "airtime" || String(packageName).toUpperCase() === "AIRTIME";
             const utilAccount = existingOrder.utility_account_number || existingOrder.metadata?.meter_number || existingOrder.customer_phone;
             
             let displayPackage = `${networkName} ${packageName}`;
@@ -719,9 +720,12 @@ serve(async (req: Request) => {
       })
       .eq("id", cleanedTransactionId);
 
-    // Send SMS alert that payment was successful (similar to paystack-webhook)
-    if (existingOrder.customer_phone) {
-      await sendPaymentSms(supabaseAdmin, existingOrder.customer_phone, "payment_success", {}, existingOrder.agent_id);
+    // Send SMS alert that payment was successful (for utility orders, prefer payment_phone over meter/account number)
+    const collectionSmsPhone = existingOrder.order_type === "utility"
+      ? (existingOrder.metadata?.payment_phone || existingOrder.metadata?.phone || existingOrder.customer_phone)
+      : existingOrder.customer_phone;
+    if (collectionSmsPhone) {
+      await sendPaymentSms(supabaseAdmin, collectionSmsPhone, "payment_success", {}, existingOrder.agent_id);
     }
 
     // Call verify-payment Edge Function synchronously to perform immediate delivery

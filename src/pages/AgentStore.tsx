@@ -163,6 +163,7 @@ const AgentStore = () => {
   const isPhoneValid = phoneDigits.length === 10 || phoneDigits.length === 12 || phoneDigits.length === 9;
   const [buying, setBuying] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [duplicateOrderNotice, setDuplicateOrderNotice] = useState<string | null>(null);
   const [checkoutMetadata, setCheckoutMetadata] = useState<any>(null);
   const [isCheckingBeneficiary, setIsCheckingBeneficiary] = useState(false);
   const [beneficiaryError, setBeneficiaryError] = useState<string | null>(null);
@@ -402,6 +403,7 @@ const AgentStore = () => {
       toast({ title: "Invalid phone number", description: "Use a valid Ghana number.", variant: "destructive" });
       return;
     }
+    setDuplicateOrderNotice(null);
     setBuying(true);
 
     if (selectedService === "data" && !bypassBeneficiary) {
@@ -435,7 +437,15 @@ const AgentStore = () => {
 
       if (error || data?.error) {
         const description = data?.error || await getFunctionErrorMessage(error, "Could not complete purchase.");
-        toast({ title: "Purchase failed", description, variant: "destructive" });
+        const isDuplicateProcessing = data?.code === "DUPLICATE_PROCESSING_ORDER" || /already have a processing|currently in progress/i.test(description);
+        if (isDuplicateProcessing) {
+          setDuplicateOrderNotice(description);
+        }
+        toast({
+          title: isDuplicateProcessing ? "Order Already Processing" : "Purchase failed",
+          description,
+          variant: "destructive",
+        });
         setBuying(false);
         return;
       }
@@ -1123,7 +1133,8 @@ const AgentStore = () => {
     }
 
     if (selectedService === "data" && !bypassBeneficiary) {
-      setBuying(true);
+      setDuplicateOrderNotice(null);
+    setBuying(true);
       const isValid = await checkBeneficiaryValidity(phoneDigits, selectedNetwork);
       setBuying(false);
       if (!isValid) {
@@ -1206,6 +1217,14 @@ const AgentStore = () => {
 
   const handleCheckoutFailure = (error: string) => {
     setBuying(false);
+    if (error && /already have a processing|currently in progress/i.test(error)) {
+      setDuplicateOrderNotice(error);
+      toast({
+        title: "Order Already Processing",
+        description: error,
+        variant: "destructive",
+      });
+    }
   };
 
   const handlePay = async () => {
@@ -1324,6 +1343,25 @@ const AgentStore = () => {
             </button>
           )}
         </div>
+
+        {/* Duplicate processing order warning */}
+        {duplicateOrderNotice && (
+          <div role="alert" className="flex items-start gap-2.5 rounded-2xl border border-amber-400/40 bg-amber-500/15 px-3.5 py-3 text-xs text-amber-100">
+            <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+            <div className="flex-1 space-y-0.5">
+              <p className="font-black uppercase tracking-wide text-amber-300 text-[11px]">Order Already Processing</p>
+              <p className="leading-snug text-amber-100/90">{duplicateOrderNotice}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setDuplicateOrderNotice(null)}
+              aria-label="Dismiss notice"
+              className="shrink-0 p-1 rounded-lg hover:bg-white/10 text-amber-200"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
 
         {/* Payment Method Selector for Storefront Customer */}
         {isCustomerLoggedIn && !isFreePromo && (

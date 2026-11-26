@@ -321,6 +321,7 @@ const BuyData = ({ initialNetwork, initialCategory }: BuyDataProps = {}) => {
   const [resolvedName, setResolvedName] = useState<string | null>(null);
   const [resolvingName, setResolvingName] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [duplicateOrderNotice, setDuplicateOrderNotice] = useState<string | null>(null);
   const [checkoutMetadata, setCheckoutMetadata] = useState<any>(null);
   const [checkoutAmount, setCheckoutAmount] = useState<number>(0);
   const [showMtnExpressModal, setShowMtnExpressModal] = useState(false);
@@ -1003,6 +1004,7 @@ const BuyData = ({ initialNetwork, initialCategory }: BuyDataProps = {}) => {
       return;
     }
 
+    setDuplicateOrderNotice(null);
     setCheckoutAmount(total);
     setCheckoutMetadata(meta);
     setSelectedPkg(null);
@@ -1054,8 +1056,16 @@ const BuyData = ({ initialNetwork, initialCategory }: BuyDataProps = {}) => {
     window.location.href = `${getAppBaseUrl()}/order-status?${callbackParams.toString()}`;
   };
 
-  const handleCheckoutFailure = (_error?: string) => {
+  const handleCheckoutFailure = (error?: string) => {
     setBuying(false);
+    if (error && /already have a processing|currently in progress/i.test(error)) {
+      setDuplicateOrderNotice(error);
+      toast({
+        title: "Order Already Processing",
+        description: error,
+        variant: "destructive",
+      });
+    }
   };
 
   const memoizedGrid = useMemo(() => {
@@ -1554,6 +1564,24 @@ const BuyData = ({ initialNetwork, initialCategory }: BuyDataProps = {}) => {
           ) : (
             memoizedGrid
           )
+        )}
+
+        {duplicateOrderNotice && (
+          <div role="alert" className="mb-4 flex items-start gap-3 rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4 text-left text-xs sm:text-sm text-amber-800 dark:text-amber-200">
+            <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+            <div className="flex-1 space-y-0.5">
+              <p className="font-black uppercase tracking-wide text-amber-700 dark:text-amber-300 text-xs">Order Already Processing</p>
+              <p className="font-medium leading-relaxed">{duplicateOrderNotice}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setDuplicateOrderNotice(null)}
+              aria-label="Dismiss notice"
+              className="shrink-0 p-1 rounded-lg hover:bg-amber-500/20 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         )}
 
         {/* Reseller Banner */}

@@ -18,6 +18,7 @@ import { verifyAdmin } from "../_shared/auth.ts";
 import { timingSafeEqual } from "../_shared/gateway-security.ts";
 import { sendPaymentSms } from "../_shared/sms.ts";
 import { callAiAgent } from "../_shared/ai.ts";
+import { queueAgentAction } from "../_shared/agent_actions.ts";
 
 declare const Deno: any;
 
@@ -190,11 +191,13 @@ serve(async (req: Request) => {
 
   // SwiftData rule: SME data bundles MUST NEVER be routed to Korba — exclude Korba from SME wholesale cost comparison
   const smeProviders = (providersRes.data || []).filter((p: any) => !isKorbaProvider(p));
-  const smeProviderMap = new Map<string, { name: string; priority: number }>();
+  const smeProviderMap = new Map<string, { id: string; name: string; priority: number; balance: number }>();
   for (const p of smeProviders) {
     smeProviderMap.set(String(p.id), {
+      id: String(p.id),
       name: String(p.name || p.id),
       priority: Number(p.priority ?? 999),
+      balance: Number(p.balance ?? 0),
     });
   }
 
@@ -204,7 +207,12 @@ serve(async (req: Request) => {
     {
       primaryCost: number;
       primaryProvider: string;
+      primaryProviderId: string;
       primaryPriority: number;
+      cheapestCost: number;
+      cheapestProvider: string;
+      cheapestProviderId: string;
+      cheapestBalance: number;
       maxCost: number;
       maxProvider: string;
     }
@@ -226,7 +234,12 @@ serve(async (req: Request) => {
       wholesaleIndex.set(key, {
         primaryCost: cost,
         primaryProvider: prov.name,
+        primaryProviderId: prov.id,
         primaryPriority: prov.priority,
+        cheapestCost: cost,
+        cheapestProvider: prov.name,
+        cheapestProviderId: prov.id,
+        cheapestBalance: prov.balance,
         maxCost: cost,
         maxProvider: prov.name,
       });
@@ -234,7 +247,14 @@ serve(async (req: Request) => {
       if (prov.priority < existing.primaryPriority) {
         existing.primaryCost = cost;
         existing.primaryProvider = prov.name;
+        existing.primaryProviderId = prov.id;
         existing.primaryPriority = prov.priority;
+      }
+      if (cost < existing.cheapestCost) {
+        existing.cheapestCost = cost;
+        existing.cheapestProvider = prov.name;
+        existing.cheapestProviderId = prov.id;
+        existing.cheapestBalance = prov.balance;
       }
       if (cost > existing.maxCost) {
         existing.maxCost = cost;
@@ -438,7 +458,7 @@ Rules:
 
   const aiResult = await callAiAgent(
     supabase,
-    "ops_worker",
+    "ai_margin_watchdog",
     systemPrompt,
     `Margin Watchdog Audit Snapshot:\n${JSON.stringify(aiPayload)}`,
     1100,
@@ -500,6 +520,101 @@ Rules:
     });
   } catch (err) {
     console.error("[ai-margin-watchdog] Failed to log to ai_insights:", err);
+  }
+
+  // 4b. Write structured findings into ai_system_memory for the Watchdog Hub
+  try {
+    const memoryKey = "margin_watchdog:latest";
+    const { data: existingMem } = await supabase
+      .from("ai_system_memory")
+      .select("id, observations_count")
+      .eq("memory_key", memoryKey)
+      .maybeSingle();
+
+    const memoryPayload = {
+      category: "ops_playbook",
+      summary: `[${severity}] ${headline}`.slice(0, 500),
+      confidence: 0.95,
+      data: {
+        source: "ai_margin_watchdog",
+        severity,
+        executive_summary: executiveSummary,
+        ai_provider: aiResult.provider,
+        ai_model: aiResult.model,
+        scanned_global_packages: globalRows.length,
+        scanned_agents: agentsChecked,
+        loss_count: lossFindings.length,
+        razor_thin_count: razorThinFindings.length,
+        cost_drift_count: costDriftAlerts.length,
+        top_loss_findings: lossFindings.slice(0, 15),
+        top_razor_thin_findings: razorThinFindings.slice(0, 10),
+        top_cost_drift_alerts: costDriftAlerts.slice(0, 10),
+        prioritized_actions: prioritizedActions.slice(0, 10),
+      },
+      last_observed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    if (existingMem?.id) {
+      await supabase
+        .from("ai_system_memory")
+        .update({
+          ...memoryPayload,
+          observations_count: Number(existingMem.observations_count || 1) + 1,
+        })
+        .eq("id", existingMem.id);
+    } else {
+      await supabase.from("ai_system_memory").insert({
+        memory_key: memoryKey,
+        observations_count: 1,
+        ...memoryPayload,
+      });
+    }
+  } catch (err) {
+    console.error("[ai-margin-watchdog] Failed to upsert ai_system_memory:", err);
+  }
+
+  // 4c. Queue low-risk, executable SME provider rebalance proposals into ai_worker_tasks
+  //     when a cheaper funded non-Korba SME provider can eliminate a detected margin loss.
+  const queuedFixTasks: Array<{ provider_id: string; provider: string; bundle: string }> = [];
+  if (lossFindings.length > 0) {
+    const proposedProviders = new Set<string>();
+    for (const finding of lossFindings) {
+      if (queuedFixTasks.length >= 3) break;
+      const key = bundleKey(finding.network, finding.package_size);
+      const idx = wholesaleIndex.get(key);
+      if (!idx) continue;
+      if (
+        idx.cheapestProviderId &&
+        idx.cheapestProviderId !== idx.primaryProviderId &&
+        idx.cheapestCost < finding.sell_price &&
+        idx.cheapestBalance >= 100 &&
+        !proposedProviders.has(idx.cheapestProviderId)
+      ) {
+        proposedProviders.add(idx.cheapestProviderId);
+        try {
+          const qRes = await queueAgentAction(supabase, "ai_margin_watchdog", {
+            type: "rebalance_sme_provider",
+            priority: "high",
+            title: `Promote ${idx.cheapestProvider} to priority 1 to stop ${finding.network} ${finding.package_size} margin loss`,
+            reason: `${finding.network} ${finding.package_size} (${finding.tier}) sells at GHS ${finding.sell_price.toFixed(2)} vs ${idx.primaryProvider} cost GHS ${idx.primaryCost.toFixed(2)}. ${idx.cheapestProvider} offers GHS ${idx.cheapestCost.toFixed(2)} (bal GHS ${idx.cheapestBalance.toFixed(2)}).`,
+            params: {
+              provider_id: idx.cheapestProviderId,
+              new_priority: 1,
+            },
+          });
+          if (qRes.queued) {
+            queuedFixTasks.push({
+              provider_id: idx.cheapestProviderId,
+              provider: idx.cheapestProvider,
+              bundle: `${finding.network} ${finding.package_size}`,
+            });
+          }
+        } catch (err) {
+          console.warn("[ai-margin-watchdog] Failed to queue rebalance_sme_provider task:", err);
+        }
+      }
+    }
   }
 
   // 5. Alert admins via SMS + in-app notification if ANY loss-making bundle is found
@@ -600,7 +715,9 @@ Rules:
         razor_thin_count: razorThinFindings.length,
         cost_drift_count: costDriftAlerts.length,
         admin_sms_sent: smsSentCount,
+        queued_fix_tasks: queuedFixTasks.length,
       },
+      queued_fix_tasks: queuedFixTasks,
       loss_findings: lossFindings,
       razor_thin_findings: razorThinFindings,
       cost_drift_alerts: costDriftAlerts,

@@ -498,8 +498,13 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
       window.location.href = data.authorization_url;
     } catch (err: any) {
       console.error("Paystack fallback checkout error:", err);
-      setErrorMessage(err.message || "Failed to launch Paystack checkout.");
+      const msg = err.message || "Failed to launch Paystack checkout.";
+      setErrorMessage(msg);
       setStep('payment_number');
+      if (/already have a processing|currently in progress/i.test(msg)) {
+        toast({ title: "Order Already Processing", description: msg, variant: "destructive" });
+      }
+      onFailure(msg);
     }
   };
 
@@ -561,9 +566,13 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
       XCheckout.pay();
     } catch (err: any) {
       console.error("Korba XCheckout launch error:", err);
-      setErrorMessage(err.message || "Failed to trigger Korba checkout screen.");
+      const msg = err.message || "Failed to trigger Korba checkout screen.";
+      setErrorMessage(msg);
       setStep('payment_number');
-      onFailure(err.message || "Korba Checkout error");
+      if (/already have a processing|currently in progress/i.test(msg)) {
+        toast({ title: "Order Already Processing", description: msg, variant: "destructive" });
+      }
+      onFailure(msg);
     }
   };
 
@@ -613,9 +622,13 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
       window.location.href = data.authorization_url;
     } catch (err: any) {
       console.error("Paystack Card launch error:", err);
-      setErrorMessage(err.message || "Failed to trigger Card payment screen.");
+      const msg = err.message || "Failed to trigger Card payment screen.";
+      setErrorMessage(msg);
       setStep('payment_number');
-      onFailure(err.message || "Card Checkout error");
+      if (/already have a processing|currently in progress/i.test(msg)) {
+        toast({ title: "Order Already Processing", description: msg, variant: "destructive" });
+      }
+      onFailure(msg);
     }
   };
 
@@ -672,6 +685,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
       });
 
       if (error) throw error;
+      if (data?.error) throw new Error(data.error);
 
       if (data?.status === "send_otp") {
         setReference(data.reference || orderId);
@@ -694,6 +708,9 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
       const msg = await getFunctionErrorMessage(err, "Failed to trigger direct MoMo prompt");
       setErrorMessage(msg);
       setStep('payment_number');
+      if (/already have a processing|currently in progress/i.test(msg)) {
+        toast({ title: "Order Already Processing", description: msg, variant: "destructive" });
+      }
       onFailure(msg);
     }
   };
@@ -714,6 +731,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
       });
 
       if (error) throw error;
+      if (data?.error) throw new Error(data.error);
 
       if (data?.status === "success") {
         setStep('success');
@@ -759,12 +777,26 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
   };
   const gatewayName = activeGateway === "korba" ? "Korba" : "Paystack";
 
-  const errorNote = (msg: React.ReactNode) => (
-    <div role="alert" className="flex items-start gap-2 rounded-xl border border-rose-500/25 bg-rose-500/[0.08] px-3 py-2.5 text-[12.5px] leading-snug text-rose-700 dark:text-rose-300">
-      <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-      <span>{msg}</span>
-    </div>
-  );
+  const errorNote = (msg: React.ReactNode) => {
+    const isProcessingDuplicate = typeof msg === "string" && /already have a processing|currently in progress/i.test(msg);
+    if (isProcessingDuplicate) {
+      return (
+        <div role="alert" className="flex items-start gap-2.5 rounded-xl border border-amber-500/35 bg-amber-500/[0.12] px-3.5 py-3 text-[12.5px] leading-snug text-amber-800 dark:text-amber-200">
+          <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-amber-500" />
+          <div className="space-y-0.5">
+            <p className="font-bold text-[12px] uppercase tracking-wide text-amber-700 dark:text-amber-300">Order Already Processing</p>
+            <p>{msg}</p>
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div role="alert" className="flex items-start gap-2 rounded-xl border border-rose-500/25 bg-rose-500/[0.08] px-3 py-2.5 text-[12.5px] leading-snug text-rose-700 dark:text-rose-300">
+        <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+        <span>{msg}</span>
+      </div>
+    );
+  };
 
   const spinner = (title: string, sub: string) => (
     <div className="py-10 flex flex-col items-center text-center gap-4" aria-live="polite">

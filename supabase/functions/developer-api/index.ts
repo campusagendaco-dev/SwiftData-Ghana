@@ -7,6 +7,7 @@ import { normalizePhone, sendSmsViaTxtConnect, getSmsConfig } from "../_shared/s
 import { getActiveProviders, logProviderError } from "../_shared/providers.ts";
 import { notifyWalletCredit, notifyApiClient } from "../_shared/webhooks.ts";
 import { StandardAdapter } from "../_shared/providers/standard.ts";
+import { checkActiveProcessingDuplicate, DUPLICATE_PROCESSING_ERROR_CODE } from "../_shared/duplicate_order_guard.ts";
 
 function getEnv(...keys: string[]): string {
   for (const k of keys) { const v = (Deno as any).env.get(k)?.trim(); if (v) return v; }
@@ -1255,22 +1256,17 @@ serve(async (req: Request) => {
         }
       }
 
-      // Anti-Duplicate Protection (Smart Idempotency & 2-Minute Window)
-      const { data: sysSettings } = await supabase
-        .from("system_settings")
-        .select("allow_duplicate_purchases")
-        .eq("id", 1)
-        .maybeSingle();
-
-      const allowDuplicate = payload?.allow_duplicate === true || 
-                             payload?.bypass_duplicate_check === true || 
-                             req.headers.get("X-Bypass-Duplicate-Check") === "true" ||
-                             (getEnv("ALLOW_DUPLICATE_PURCHASES") !== "" ? getEnv("ALLOW_DUPLICATE_PURCHASES").toLowerCase() === "true" : sysSettings?.allow_duplicate_purchases === true);
+      // Duplicate Purchase Rule:
+      // - Allow duplicate purchases once previous orders are delivered/terminal.
+      // - Block & inform when an active in-flight/processing order exists for the same phone + network (+ package).
+      // - Preserve strict client_reference idempotency unless explicitly bypassed via header/flag.
+      const explicitBypass = payload?.bypass_duplicate_check === true ||
+                             req.headers.get("X-Bypass-Duplicate-Check") === "true";
       const normalizedPhone = normalizeRecipient(phone);
       const clientRef = request_id || payload?.client_reference || req.headers.get("X-Idempotency-Key");
 
-      if (!allowDuplicate) {
-        let duplicateOrder = null;
+      if (!explicitBypass) {
+        let idempotencyMatch = null;
 
         // 1. Strict Idempotency Check (if client provided a reference)
         if (clientRef) {
@@ -1282,8 +1278,8 @@ serve(async (req: Request) => {
              .gte("created_at", oneHourAgo)
              .limit(100);
              
-           duplicateOrder = data?.find((o: any) => o.metadata?.client_reference === clientRef);
-           if (!duplicateOrder) {
+           idempotencyMatch = data?.find((o: any) => o.metadata?.client_reference === clientRef);
+           if (!idempotencyMatch) {
              const { data: exactClientRefOrder } = await supabase
                .from("orders")
                .select("id, status, metadata")
@@ -1291,53 +1287,43 @@ serve(async (req: Request) => {
                .eq("metadata->>client_reference", String(clientRef).trim())
                .limit(1)
                .maybeSingle();
-             if (exactClientRefOrder) duplicateOrder = exactClientRefOrder;
+             if (exactClientRefOrder) idempotencyMatch = exactClientRefOrder;
            }
         }
 
-        // 2. Fallback Time-Window Check (Only block if identical package size is CURRENTLY IN PROGRESS)
-        if (!duplicateOrder) {
-          const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-          const { data: recentOrders } = await supabase
-            .from("orders")
-            .select("id, status, network, package_size, amount, created_at")
-            .eq("agent_id", currentUserId ?? "")
-            .eq("customer_phone", normalizedPhone)
-            .gte("created_at", tenMinutesAgo);
-
-          if (recentOrders && recentOrders.length > 0) {
-            const activeStatuses = ["paid", "processing", "pending", "awaiting_payment"];
-            const match = recentOrders.find((o: any) => {
-              if (!activeStatuses.includes(o.status)) return false;
-
-              // Compare network / offer type strictly
-              const n1 = String(o.network || "").trim().toUpperCase();
-              const n2 = String(network || "").trim().toUpperCase();
-              if (n1 !== n2) return false;
-
-              // Compare package_size or amount
-              if (package_size) {
-                const p1 = String(o.package_size || "").replace(/\s+/g, "").toUpperCase();
-                const p2 = String(package_size || "").replace(/\s+/g, "").toUpperCase();
-                if (p1 !== p2) return false;
-              } else {
-                if (Math.abs(Number(o.amount) - Number(serverValidatedAmount)) > 0.01) return false;
-              }
-
-              return true;
-            });
-
-            if (match) {
-              duplicateOrder = match;
-            }
-          }
+        if (idempotencyMatch) {
+          console.warn(`[DUPLICATE] Rejected developer duplicate request_id for ${normalizedPhone} by ${currentUserId}`);
+          return json({
+            success: false,
+            code: "DUPLICATE_CLIENT_REFERENCE",
+            error: `Duplicate request reference '${clientRef}' detected (Order #${String(idempotencyMatch.id).slice(0, 8).toUpperCase()}). Please provide a unique 'request_id'.`
+          }, 409);
         }
 
-        if (duplicateOrder) {
-          console.warn(`[DUPLICATE] Rejected developer duplicate order for ${normalizedPhone} by ${currentUserId}`);
-          return json({ 
-            success: false, 
-            error: "Duplicate request detected. An identical order or reference was processed recently. Please wait 60 minutes or provide a unique 'request_id'." 
+        // 2. Active Processing Order Guard (60-minute window; allows duplicates once delivered/terminal)
+        const dupCheck = await checkActiveProcessingDuplicate(supabase, {
+          phone: normalizedPhone,
+          network,
+          packageSize: package_size || undefined,
+          orderType: isAirtimeOrder ? "airtime" : "data",
+          amount: isAirtimeOrder ? serverValidatedAmount : undefined,
+        });
+
+        if (dupCheck.blocked && dupCheck.existingOrder) {
+          console.warn(`[DUPLICATE] Rejected developer duplicate processing order for ${normalizedPhone} by ${currentUserId} — active order ${dupCheck.existingOrder.id}`);
+          return json({
+            success: false,
+            code: dupCheck.code || DUPLICATE_PROCESSING_ERROR_CODE,
+            error: dupCheck.message,
+            existing_order: {
+              id: dupCheck.existingOrder.id,
+              short_id: String(dupCheck.existingOrder.id).slice(0, 8).toUpperCase(),
+              status: dupCheck.existingOrder.status,
+              network: dupCheck.existingOrder.network || network,
+              package_size: dupCheck.existingOrder.package_size || package_size || "AIRTIME",
+              customer_phone: dupCheck.existingOrder.customer_phone || normalizedPhone,
+              created_at: dupCheck.existingOrder.created_at,
+            },
           }, 409);
         }
       }

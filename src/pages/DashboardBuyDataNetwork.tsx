@@ -169,6 +169,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
   const [resolvedName, setResolvedName] = useState<string | null>(null);
   const [resolvingName, setResolvingName] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [duplicateOrderNotice, setDuplicateOrderNotice] = useState<string | null>(null);
   const [checkoutMetadata, setCheckoutMetadata] = useState<any>(null);
   const [activationFee, setActivationFee] = useState(50);
   const [saveToBeneficiary, setSaveToBeneficiary] = useState(true);
@@ -847,6 +848,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
       return;
     }
     if (!validate()) return;
+    setDuplicateOrderNotice(null);
     setBuying(true);
 
     if (!bypassBeneficiary) {
@@ -893,7 +895,15 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
 
       if (error || data?.error) {
         const description = data?.error || await getFunctionErrorMessage(error, "Could not complete purchase.");
-        toast({ title: "Purchase failed", description, variant: "destructive" });
+        const isDuplicateProcessing = data?.code === "DUPLICATE_PROCESSING_ORDER" || /already have a processing|currently in progress/i.test(description);
+        if (isDuplicateProcessing) {
+          setDuplicateOrderNotice(description);
+        }
+        toast({
+          title: isDuplicateProcessing ? "Order Already Processing" : "Purchase failed",
+          description,
+          variant: "destructive",
+        });
         setBuying(false);
         return;
       }
@@ -1003,6 +1013,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
       } : {}),
     };
 
+    setDuplicateOrderNotice(null);
     setCheckoutMetadata(meta);
     setCheckoutOpen(true);
   };
@@ -1031,8 +1042,16 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
     window.location.href = `${getAppBaseUrl()}/order-status?${callbackParams.toString()}`;
   };
 
-  const handleCheckoutFailure = (_error?: string) => {
+  const handleCheckoutFailure = (error?: string) => {
     setBuying(false);
+    if (error && /already have a processing|currently in progress/i.test(error)) {
+      setDuplicateOrderNotice(error);
+      toast({
+        title: "Order Already Processing",
+        description: error,
+        variant: "destructive",
+      });
+    }
   };
 
   return (
@@ -1438,6 +1457,25 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
                   className="bg-amber-500 text-black px-2 py-1 rounded text-[9px] font-black hover:bg-amber-400 transition-colors"
                 >
                   TOP UP
+                </button>
+              </div>
+            )}
+
+            {/* Duplicate processing order notice */}
+            {duplicateOrderNotice && (
+              <div role="alert" className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-xs text-amber-700 dark:text-amber-200 flex items-start gap-2.5">
+                <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                <div className="flex-1 space-y-0.5">
+                  <p className="font-black uppercase tracking-wide text-[11px] text-amber-700 dark:text-amber-300">Order Already Processing</p>
+                  <p className="font-medium leading-relaxed">{duplicateOrderNotice}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDuplicateOrderNotice(null)}
+                  aria-label="Dismiss notice"
+                  className="shrink-0 p-1 rounded hover:bg-amber-500/20 transition-colors"
+                >
+                  <X className="w-3.5 h-3.5" />
                 </button>
               </div>
             )}
