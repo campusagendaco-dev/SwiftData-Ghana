@@ -24,6 +24,7 @@ export const TERMINAL_ORDER_STATUSES = [
 ] as const;
 
 export const ACTIVE_DUPLICATE_WINDOW_MS = 60 * 60 * 1000; // 60 minutes
+export const SIBLING_RACE_WINDOW_MS = 2 * 60 * 1000; // 2 minutes for delivered-during-race check
 export const DUPLICATE_PROCESSING_ERROR_CODE = "DUPLICATE_PROCESSING_ORDER";
 
 export interface DuplicateCandidateOrder {
@@ -34,7 +35,16 @@ export interface DuplicateCandidateOrder {
   customer_phone?: string | null;
   order_type?: string | null;
   amount?: number | string | null;
+  provider_id?: string | null;
+  provider_order_id?: string | null;
   created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface SiblingDispatchDecision {
+  action: "allow" | "hold_inflight" | "hold_recent_delivered";
+  sibling?: DuplicateCandidateOrder;
+  reason?: string;
 }
 
 export interface DuplicateCheckTarget {
@@ -236,4 +246,136 @@ export async function checkActiveProcessingDuplicate(
       phone: normalizedPhone,
     }),
   };
+}
+
+export function isDuplicateProcessingDbError(
+  err: { message?: string | null; code?: string | null; details?: string | null } | null | undefined,
+): boolean {
+  if (!err) return false;
+  return String(err.message || "").includes(DUPLICATE_PROCESSING_ERROR_CODE);
+}
+
+export function parseDuplicateProcessingDbError(
+  err: { message?: string | null; details?: string | null } | null | undefined,
+): { message: string; existingOrderId?: string } {
+  const rawMessage = String(err?.message || "");
+  const cleanedMessage = rawMessage
+    .replace(/^.*DUPLICATE_PROCESSING_ORDER:\s*/i, "")
+    .trim();
+  const detailMatch = String(err?.details || "").match(/existing_order_id=([0-9a-f-]{36})/i);
+  return {
+    message: cleanedMessage || "You already have a processing order for this recipient. Please wait for it to be delivered before placing another order.",
+    existingOrderId: detailMatch?.[1],
+  };
+}
+
+/**
+ * Decide whether verify-payment may dispatch `currentOrder` to an upstream provider
+ * given candidate sibling orders for the same phone.
+ *
+ * Rules:
+ * - Only inspects older siblings (created_at < current.created_at, or equal created_at with smaller id)
+ *   matching normalized phone, normalized network, and normalized package_size (plus amount for airtime).
+ * - If an older sibling is currently in-flight (pending, paid, processing, queued, initiated) within
+ *   the active 60-minute window -> `hold_inflight` (MUST NOT dispatch concurrently!).
+ * - If an older sibling is already delivered (fulfilled/completed/delivered):
+ *     * If it was delivered BEFORE `currentOrder` was created (`sibling.updated_at < currentOrder.created_at`),
+ *       this is a deliberate repeat purchase -> `allow`!
+ *     * If `currentOrder` was created while the older sibling was still in-flight
+ *       (`currentOrder.created_at <= sibling.updated_at`) and within `SIBLING_RACE_WINDOW_MS` (2 min)
+ *       of `sibling.created_at` -> `hold_recent_delivered` (race duplicate, MUST NOT double-deliver!).
+ */
+export function evaluateSiblingDispatchGuard(
+  currentOrder: {
+    id: string;
+    customer_phone?: string | null;
+    network?: string | null;
+    package_size?: string | null;
+    order_type?: string | null;
+    amount?: number | string | null;
+    created_at?: string | null;
+  },
+  siblings: DuplicateCandidateOrder[] | null | undefined,
+  opts?: {
+    inFlightWindowMs?: number;
+    deliveredRaceWindowMs?: number;
+    nowMs?: number;
+  },
+): SiblingDispatchDecision {
+  if (!siblings || siblings.length === 0) return { action: "allow" };
+
+  const targetPhone = normalizeDuplicatePhone(currentOrder.customer_phone);
+  const targetNetwork = normalizeDuplicateNetwork(currentOrder.network);
+  const targetPackage = normalizeDuplicatePackage(currentOrder.package_size);
+  const targetType = String(currentOrder.order_type || "data").trim().toLowerCase();
+  const currentCreatedMs = currentOrder.created_at ? Date.parse(currentOrder.created_at) : NaN;
+  const nowMs = opts?.nowMs ?? Date.now();
+  const inFlightWindowMs = opts?.inFlightWindowMs ?? ACTIVE_DUPLICATE_WINDOW_MS;
+  const deliveredRaceWindowMs = opts?.deliveredRaceWindowMs ?? SIBLING_RACE_WINDOW_MS;
+
+  if (!targetPhone || !targetNetwork) return { action: "allow" };
+
+  for (const sibling of siblings) {
+    if (!sibling?.id || sibling.id === currentOrder.id) continue;
+
+    if (normalizeDuplicatePhone(sibling.customer_phone) !== targetPhone) continue;
+    if (normalizeDuplicateNetwork(sibling.network) !== targetNetwork) continue;
+
+    if (targetType === "airtime") {
+      const sibType = String(sibling.order_type || "").trim().toLowerCase();
+      if (sibType && sibType !== "airtime") continue;
+      if (currentOrder.amount != null && sibling.amount != null) {
+        if (Math.abs(Number(sibling.amount) - Number(currentOrder.amount)) > 0.01) continue;
+      }
+    } else if (targetPackage) {
+      if (normalizeDuplicatePackage(sibling.package_size) !== targetPackage) continue;
+    }
+
+    const siblingCreatedMs = sibling.created_at ? Date.parse(sibling.created_at) : NaN;
+    const isOlder =
+      Number.isFinite(siblingCreatedMs) && Number.isFinite(currentCreatedMs)
+        ? siblingCreatedMs < currentCreatedMs ||
+          (siblingCreatedMs === currentCreatedMs && sibling.id < currentOrder.id)
+        : sibling.id < currentOrder.id;
+
+    if (!isOlder) continue;
+
+    const sibStatus = String(sibling.status || "").trim().toLowerCase();
+
+    // 1. Older sibling is still in-flight -> NEVER dispatch a second concurrent order.
+    if (isInFlightOrderStatus(sibStatus)) {
+      if (!Number.isFinite(siblingCreatedMs) || nowMs - siblingCreatedMs <= inFlightWindowMs) {
+        return {
+          action: "hold_inflight",
+          sibling,
+          reason: `Blocked concurrent dispatch: older sibling order #${sibling.id.slice(0, 8).toUpperCase()} is currently ${sibStatus}${sibling.provider_order_id ? ` (${sibling.provider_order_id})` : ""}.`,
+        };
+      }
+      continue;
+    }
+
+    // 2. Older sibling is already delivered: allow deliberate repeat purchases placed AFTER delivery,
+    //    but block if currentOrder was created while the older sibling was still in-flight (within race window).
+    if ((DELIVERED_ORDER_STATUSES as readonly string[]).includes(sibStatus)) {
+      const siblingUpdatedMs = sibling.updated_at ? Date.parse(sibling.updated_at) : NaN;
+      const withinRaceWindow =
+        Number.isFinite(siblingCreatedMs) &&
+        Number.isFinite(currentCreatedMs) &&
+        currentCreatedMs - siblingCreatedMs <= deliveredRaceWindowMs;
+      const createdBeforeSiblingDelivered =
+        Number.isFinite(siblingUpdatedMs) &&
+        Number.isFinite(currentCreatedMs) &&
+        currentCreatedMs <= siblingUpdatedMs;
+
+      if (withinRaceWindow && createdBeforeSiblingDelivered) {
+        return {
+          action: "hold_recent_delivered",
+          sibling,
+          reason: `Blocked double-delivery race: order was created while sibling #${sibling.id.slice(0, 8).toUpperCase()} was still in-flight and has since been delivered.`,
+        };
+      }
+    }
+  }
+
+  return { action: "allow" };
 }

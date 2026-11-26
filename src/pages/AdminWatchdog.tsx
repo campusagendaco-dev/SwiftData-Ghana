@@ -89,6 +89,7 @@ type TaskStatusFilter = "all" | "awaiting_approval" | "executed" | "rejected" | 
 
 const WATCHDOG_AGENT_FILTERS = [
   { key: "all", label: "All Agents" },
+  { key: "ai_fix_proposer", label: "AI Fix Proposer" },
   { key: "ai_margin_watchdog", label: "Margin Watchdog" },
   { key: "reconciliation_explainer", label: "Financial Reconciler" },
   { key: "ops_worker", label: "Ops Worker AI" },
@@ -146,6 +147,7 @@ function statusBadgeClass(status: string): string {
 
 function normalizeAgentKey(name: string | null | undefined): string {
   const s = String(name || "").toLowerCase();
+  if (s.includes("fix_proposer") || s.includes("fix-proposer") || s.includes("fix_proposal")) return "ai_fix_proposer";
   if (s.includes("margin")) return "ai_margin_watchdog";
   if (s.includes("reconcil")) return "reconciliation_explainer";
   if (s.includes("ops_worker") || s.includes("ops-worker")) return "ops_worker";
@@ -174,7 +176,7 @@ const AdminWatchdog = () => {
   const [expandedFindings, setExpandedFindings] = useState<Record<string, boolean>>({});
   const [busyTaskId, setBusyTaskId] = useState<string | null>(null);
 
-  const [runningAction, setRunningAction] = useState<"margin" | "reconcile" | "patrol" | null>(null);
+  const [runningAction, setRunningAction] = useState<"margin" | "reconcile" | "patrol" | "fix_proposer" | null>(null);
   const [lastActionBanner, setLastActionBanner] = useState<{
     title: string;
     detail: string;
@@ -307,13 +309,26 @@ const AdminWatchdog = () => {
     return runs.filter((r) => normalizeAgentKey(r.agent_name) === agentFilter);
   }, [runs, agentFilter]);
 
+  const fixPlaybooks = useMemo(() => {
+    return memories.filter(
+      (m) =>
+        m.category === "fix_proposal" ||
+        m.memory_key.startsWith("fix_proposal:") ||
+        m.data?.proposal_type === "fix_proposal" ||
+        m.data?.source === "ai_fix_proposer"
+    );
+  }, [memories]);
+
   const filteredMemories = useMemo(() => {
     if (agentFilter === "all") return memories;
     return memories.filter((m) => {
       const src = normalizeAgentKey(m.data?.source || m.memory_key);
+      if (agentFilter === "ai_fix_proposer")
+        return m.category === "fix_proposal" || m.memory_key.startsWith("fix_proposal:") || src === "ai_fix_proposer";
       if (agentFilter === "ai_margin_watchdog") return m.memory_key.includes("margin") || src === "ai_margin_watchdog";
       if (agentFilter === "reconciliation_explainer") return m.memory_key.includes("reconcil") || src === "reconciliation_explainer";
-      if (agentFilter === "ops_worker") return !m.memory_key.includes("margin") && !m.memory_key.includes("reconcil");
+      if (agentFilter === "ops_worker")
+        return !m.memory_key.includes("margin") && !m.memory_key.includes("reconcil") && !m.memory_key.startsWith("fix_proposal:");
       return src === agentFilter;
     });
   }, [memories, agentFilter]);
@@ -385,6 +400,37 @@ const AdminWatchdog = () => {
       await fetchWatchdogData(true);
     } catch (err: any) {
       toast.error(err?.message || "Financial Reconciler failed", { id: toastId });
+    } finally {
+      setRunningAction(null);
+    }
+  };
+
+  const handleRunFixProposer = async () => {
+    if (runningAction) return;
+    setRunningAction("fix_proposer");
+    const toastId = toast.loading("Running AI Fix Proposer across active incidents...");
+    try {
+      const { data, error } = await supabase.functions.invoke("ai-fix-proposer", {
+        body: { source: "admin_manual" },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      const playbooks = Number(data?.playbooks_saved ?? 0);
+      const queuedCount = Number(data?.queued_tasks ?? 0);
+      const headline = String(data?.headline || "AI Fix Proposer analysis complete.");
+      setLastActionBanner({
+        title: `AI Fix Proposer: ${data?.severity || "COMPLETE"}`,
+        detail: `${headline}${playbooks > 0 ? ` · ${playbooks} playbook(s) saved` : ""}${
+          queuedCount > 0 ? ` · ${queuedCount} task(s) queued for 2FA approval` : ""
+        }`,
+        tone: data?.severity === "CRITICAL" ? "error" : data?.severity === "WARNING" ? "warn" : "ok",
+      });
+      toast.success(headline, { id: toastId });
+      setActiveTab("fixes");
+      await fetchWatchdogData(true);
+    } catch (err: any) {
+      toast.error(err?.message || "AI Fix Proposer failed", { id: toastId });
     } finally {
       setRunningAction(null);
     }
@@ -645,6 +691,19 @@ const AdminWatchdog = () => {
                   <Scale className="h-3.5 w-3.5" />
                 )}
                 Run Financial Reconciler
+              </Button>
+
+              <Button
+                onClick={handleRunFixProposer}
+                disabled={runningAction !== null}
+                className="rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs h-9 px-4 gap-2"
+              >
+                {runningAction === "fix_proposer" ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Wrench className="h-3.5 w-3.5" />
+                )}
+                Run AI Fix Proposer
               </Button>
 
               <Button
@@ -960,6 +1019,132 @@ const AdminWatchdog = () => {
                   </Card>
                 );
               })}
+            </div>
+          )}
+
+          {/* Proposed Fix Playbooks from ai_fix_proposer */}
+          {fixPlaybooks.length > 0 && (
+            <div className="space-y-3 pt-4 border-t border-slate-800/80">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h2 className="text-sm font-bold text-white flex items-center gap-2">
+                    <Sparkles className="h-4 w-4 text-emerald-400" />
+                    AI Fix Proposals &amp; Root-Cause Playbooks
+                  </h2>
+                  <p className="text-xs text-slate-400">
+                    Generated by <code className="text-emerald-300">ai_fix_proposer</code> from reconciliation, margin, provider &amp; stuck-order incidents.
+                  </p>
+                </div>
+                <Badge className="bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[10px]">
+                  {fixPlaybooks.length} playbook(s)
+                </Badge>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {fixPlaybooks.map((pb) => {
+                  const d = pb.data || {};
+                  const severity = String(d.severity || "high").toLowerCase();
+                  const steps: string[] = Array.isArray(d.recommended_steps) ? d.recommended_steps : [];
+                  const linkedTaskType = String(d.safe_action?.type || d.action_outcome?.task_type || "");
+                  const linkedTask = tasks.find(
+                    (t) =>
+                      t.status === "awaiting_approval" &&
+                      normalizeAgentKey(t.agent_name) === "ai_fix_proposer" &&
+                      (linkedTaskType ? t.task_type === linkedTaskType : false)
+                  );
+
+                  return (
+                    <Card
+                      key={pb.id}
+                      className="bg-slate-900/80 border border-emerald-500/25 text-slate-100 flex flex-col justify-between"
+                    >
+                      <CardContent className="p-4 sm:p-5 space-y-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <Badge className={cn("text-[10px] font-bold uppercase", priorityBadgeClass(severity))}>
+                              {severity}
+                            </Badge>
+                            {d.incident_type && (
+                              <Badge className="bg-slate-800 text-cyan-300 border border-slate-700 text-[10px] uppercase">
+                                {String(d.incident_type).replace(/_/g, " ")}
+                              </Badge>
+                            )}
+                          </div>
+                          <span className="text-[11px] text-slate-400">{formatDateTime(pb.last_observed_at)}</span>
+                        </div>
+
+                        <h3 className="text-sm font-bold text-white leading-snug">
+                          {String(d.title || pb.summary)}
+                        </h3>
+
+                        {d.root_cause && (
+                          <div className="rounded-xl bg-slate-950/70 border border-slate-800 p-3 space-y-1">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-amber-300">Root Cause</p>
+                            <p className="text-xs text-slate-200 leading-relaxed">{String(d.root_cause)}</p>
+                          </div>
+                        )}
+
+                        {d.impact && (
+                          <div className="rounded-xl bg-rose-500/5 border border-rose-500/20 p-3 space-y-1">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-rose-300">Impact</p>
+                            <p className="text-xs text-rose-100/90 leading-relaxed">{String(d.impact)}</p>
+                          </div>
+                        )}
+
+                        {steps.length > 0 && (
+                          <div className="space-y-1.5">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-cyan-300">
+                              Recommended Fix Steps
+                            </p>
+                            <ol className="space-y-1 list-decimal list-inside text-xs text-slate-300">
+                              {steps.map((step, idx) => (
+                                <li key={idx} className="leading-relaxed">
+                                  {step}
+                                </li>
+                              ))}
+                            </ol>
+                          </div>
+                        )}
+
+                        {d.guardrail_note && (
+                          <p className="text-[11px] text-emerald-300/80 flex items-center gap-1.5">
+                            <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
+                            <span>{String(d.guardrail_note)}</span>
+                          </p>
+                        )}
+
+                        {linkedTask && (
+                          <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-800">
+                            <Button
+                              size="sm"
+                              disabled={busyTaskId === linkedTask.id}
+                              onClick={() => void handleDecideTask(linkedTask, true)}
+                              className="rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs gap-1.5 h-8 px-3.5"
+                            >
+                              {busyTaskId === linkedTask.id ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <CheckCircle2 className="h-3.5 w-3.5" />
+                              )}
+                              Approve &amp; Auto-Fix
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={busyTaskId === linkedTask.id}
+                              onClick={() => void handleDecideTask(linkedTask, false)}
+                              className="rounded-xl border-slate-700 bg-slate-900 text-slate-300 hover:bg-rose-600 hover:text-white hover:border-rose-600 font-bold text-xs gap-1.5 h-8 px-3"
+                            >
+                              <XCircle className="h-3.5 w-3.5" />
+                              Reject
+                            </Button>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>

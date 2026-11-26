@@ -16,6 +16,13 @@ import { isDuplicateOrderError, isBeneficiaryFailure, isUncertainDeliveryError, 
 import { verifyAdmin } from "../_shared/auth.ts";
 import { autoSubmitBeneficiaryNumber } from "../_shared/beneficiary_auto_submit.ts";
 import { allowsSiblingDedup, prizeOrderGuard, routingOrderType } from "../_shared/mystery_box.ts";
+import {
+  ACTIVE_DUPLICATE_WINDOW_MS,
+  DELIVERED_ORDER_STATUSES,
+  IN_FLIGHT_ORDER_STATUSES,
+  evaluateSiblingDispatchGuard,
+  getPhoneLookupVariants,
+} from "../_shared/duplicate_order_guard.ts";
 
 // --- Utilities ---
 
@@ -1990,85 +1997,96 @@ serve(async (req: any) => {
     // Standard Data/Airtime/Utility/AFA Fulfillment
     const activeProviders = await resolveProvidersForOrder(supabaseAdmin, claimedOrder);
 
-    // --- SIBLING DUPLICATE PROTECTION ---
-    // Look for any identical order submitted in the last 60 seconds for the same phone, network, package, and amount.
-    // We check if an active sibling order for identical details is currently processing (e.g. rapid double-click or webhook race condition within 60 seconds).
+    // --- SIBLING DUPLICATE / CONCURRENT DISPATCH PROTECTION ---
+    // Even if two sibling orders for the same (phone, network, package) exist simultaneously
+    // (e.g. concurrent checkout webhooks or pre-trigger orders), never dispatch a newer sibling
+    // while an older sibling is still in-flight (pending/paid/processing/queued/initiated), nor
+    // double-deliver if the newer sibling was created before the older sibling finished delivering.
+    // Deliberate repeat purchases placed AFTER a previous order is already delivered remain allowed.
     if (isProviderOrder && allowsSiblingDedup(currentOrderType) && customerPhone && network && packageSize) {
-      const sixtySecondsAgo = new Date(Date.now() - 60 * 1000).toISOString();
+      const siblingWindowStartIso = new Date(Date.now() - ACTIVE_DUPLICATE_WINDOW_MS).toISOString();
+      const phoneVariants = getPhoneLookupVariants(customerPhone);
+      const siblingQueryStatuses = [...IN_FLIGHT_ORDER_STATUSES, ...DELIVERED_ORDER_STATUSES];
+
       const { data: rawSiblings } = await supabaseAdmin
         .from("orders")
-        .select("id, status, provider_order_id, provider_id, profit, parent_profit, parent_agent_id, created_at, network, package_size, amount")
-        .eq("customer_phone", customerPhone)
+        .select("id, status, provider_order_id, provider_id, customer_phone, order_type, network, package_size, amount, created_at, updated_at")
+        .in("customer_phone", phoneVariants.length > 0 ? phoneVariants : [customerPhone])
         .neq("id", targetReference)
-        .in("status", ["processing", "paid"])
-        .gte("created_at", sixtySecondsAgo)
-        .order("created_at", { ascending: false });
+        .in("status", siblingQueryStatuses)
+        .gte("created_at", siblingWindowStartIso)
+        .order("created_at", { ascending: true })
+        .limit(25);
 
-      const siblingOrders = (rawSiblings || []).filter((o: any) => {
-        // Only inspect siblings that have a valid provider_order_id (actually sent to provider)
-        if (!o.provider_order_id || o.provider_order_id === "timeout") return false;
-        const n1 = String(o.network || "").trim().toUpperCase();
-        const n2 = String(network || "").trim().toUpperCase();
-        const networksMatch = n1 === n2 ||
-          ((n1 === "MTN" || n1 === "YELLO") && (n2 === "MTN" || n2 === "YELLO")) ||
-          ((n1 === "TELECEL" || n1 === "VODAFONE" || n1 === "RED") && (n2 === "TELECEL" || n2 === "VODAFONE" || n2 === "RED")) ||
-          ((n1 === "AT" || n1 === "AIRTELTIGO" || n1 === "BLUE") && (n2 === "AT" || n2 === "AIRTELTIGO" || n2 === "BLUE"));
-        if (!networksMatch) return false;
+      const siblingDecision = evaluateSiblingDispatchGuard(
+        {
+          id: targetReference,
+          customer_phone: customerPhone,
+          network,
+          package_size: packageSize,
+          order_type: effectiveOrderType,
+          amount: claimedOrder.amount,
+          created_at: claimedOrder.created_at,
+        },
+        rawSiblings || [],
+      );
 
-        const p1 = String(o.package_size || "").replace(/\s+/g, "").toUpperCase();
-        const p2 = String(packageSize || "").replace(/\s+/g, "").toUpperCase();
-        if (p1 !== p2) return false;
+      if (siblingDecision.action !== "allow" && siblingDecision.sibling) {
+        const delayedUntil = new Date(Date.now() + ACTIVE_DUPLICATE_WINDOW_MS).toISOString();
+        const blockReason =
+          siblingDecision.reason ||
+          `Blocked concurrent dispatch: older sibling order #${siblingDecision.sibling.id.slice(0, 8).toUpperCase()} is active.`;
 
-        if (Math.abs(Number(o.amount) - Number(claimedOrder.amount)) > 0.01) return false;
-        return true;
-      });
+        console.warn(`[verify-payment] ${blockReason} Holding order ${targetReference} without dispatching to provider.`);
 
-      if (siblingOrders && siblingOrders.length > 0) {
-        console.log(`[verify-payment] Found ${siblingOrders.length} active in-progress sibling orders for rapid-fire duplicate protection.`);
-        
-        for (const sibling of siblingOrders) {
-          const siblingTime = new Date(sibling.created_at).getTime();
-          const currentTime = new Date(claimedOrder.created_at).getTime();
-          const isOlder = siblingTime < currentTime || (siblingTime === currentTime && sibling.id < targetReference);
+        await supabaseAdmin
+          .from("orders")
+          .update({
+            status: "processing",
+            provider_order_id: "duplicate_cooldown",
+            failure_reason: blockReason,
+            last_retry_at: new Date().toISOString(),
+            metadata: {
+              ...(claimedOrder.metadata || {}),
+              duplicate_delayed: true,
+              delayed_until: delayedUntil,
+              sibling_order_id: siblingDecision.sibling.id,
+              sibling_guard_action: siblingDecision.action,
+              last_duplicate_reason: blockReason,
+            },
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", targetReference);
 
-          if (!isOlder) continue;
-          
-          // Check assigned provider first for fast status check
-          const assignedProvider = activeProviders.find((p: any) => p.id === sibling.provider_id) || activeProviders[0];
-          if (assignedProvider) {
-            const checkResult = await callProviderApi(supabaseAdmin, assignedProvider, {
-              transaction_id: sibling.provider_order_id,
-              order_id: sibling.provider_order_id,
-              reference: sibling.id,
-            }, "status");
-            
-            if (checkResult.ok) {
-              const isDelivered = checkResult.status === "delivered" || checkResult.status === "success" || checkResult.status === "successful" || checkResult.status === "fulfilled" || checkResult.status === "completed" || checkResult.status === "sent";
-              
-              if (isDelivered) {
-                console.log(`[verify-payment] Sibling order ${sibling.id} was fulfilled at provider. Marking current order ${targetReference} as fulfilled.`);
-                await supabaseAdmin.from("orders").update({
-                  status: "fulfilled",
-                  provider_id: assignedProvider.id,
-                  provider_order_id: checkResult.id || sibling.provider_order_id || null,
-                  failure_reason: null
-                }).eq("id", sibling.id);
-                
-                await supabaseAdmin.from("orders").update({
-                  status: "fulfilled",
-                  provider_id: assignedProvider.id,
-                  provider_order_id: checkResult.id || sibling.provider_order_id || null,
-                  failure_reason: `Completed via duplicate sibling order ${sibling.id}`
-                }).eq("id", targetReference);
+        log(supabaseAdmin, {
+          level: "warn",
+          source: "verify-payment",
+          event: "order.sibling_dispatch_blocked",
+          message: blockReason,
+          order_id: targetReference,
+          agent_id: claimedOrder.agent_id,
+          data: {
+            action: siblingDecision.action,
+            sibling_order_id: siblingDecision.sibling.id,
+            sibling_status: siblingDecision.sibling.status,
+            sibling_provider_order_id: siblingDecision.sibling.provider_order_id,
+            network,
+            package_size: packageSize,
+            recipient,
+            delayed_until: delayedUntil,
+          },
+        });
 
-                await Promise.resolve(supabaseAdmin.rpc("credit_order_profits", { p_order_id: sibling.id })).catch(() => {});
-                await Promise.resolve(supabaseAdmin.rpc("credit_order_profits", { p_order_id: targetReference })).catch(() => {});
-                
-                return new Response(JSON.stringify({ status: "fulfilled", provider_order_id: checkResult.id || sibling.provider_order_id }), { headers: corsHeaders });
-              }
-            }
-          }
-        }
+        return new Response(
+          JSON.stringify({
+            status: "processing",
+            provider_order_id: "duplicate_cooldown",
+            sibling_order_id: siblingDecision.sibling.id,
+            delayed_until: delayedUntil,
+            message: blockReason,
+          }),
+          { headers: corsHeaders },
+        );
       }
     }
 

@@ -4,7 +4,12 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { sendPaymentSms, getSmsConfig, sendSmsViaTxtConnect } from "../_shared/sms.ts";
 import { sendWhatsAppOrderReceipt } from "../_shared/whatsapp.ts";
 import { log } from "../_shared/logger.ts";
-import { checkActiveProcessingDuplicate, DUPLICATE_PROCESSING_ERROR_CODE } from "../_shared/duplicate_order_guard.ts";
+import {
+  checkActiveProcessingDuplicate,
+  DUPLICATE_PROCESSING_ERROR_CODE,
+  isDuplicateProcessingDbError,
+  parseDuplicateProcessingDbError,
+} from "../_shared/duplicate_order_guard.ts";
 
 // --- HELPERS ---
 function normalizeNetworkForPricing(network: string): "MTN" | "MTN Mash Up" | "Telecel" | "AirtelTigo" {
@@ -575,6 +580,25 @@ serve(async (req: Request) => {
       console.error(`[INSERT_FAIL] ${orderId}:`, insertError);
       log(supabaseAdmin, { level: "error", source: "wallet-buy-data", event: "order.create_failed", message: `Order insert failed: ${insertError.message}`, order_id: orderId, agent_id: user.id, data: { network: networkRaw, package_size, amount: amountNum, error: insertError.message } });
       await supabaseAdmin.rpc("credit_wallet", { p_agent_id: user.id, p_amount: amountNum });
+      if (isDuplicateProcessingDbError(insertError)) {
+        const parsed = parseDuplicateProcessingDbError(insertError);
+        console.warn(`[DUPLICATE_DB_GUARD] Atomic DB trigger blocked concurrent order ${orderId} for ${normalizedPhone}: ${parsed.message}`);
+        return new Response(JSON.stringify({
+          error: parsed.message,
+          code: DUPLICATE_PROCESSING_ERROR_CODE,
+          existing_order: parsed.existingOrderId ? {
+            id: parsed.existingOrderId,
+            short_id: parsed.existingOrderId.slice(0, 8).toUpperCase(),
+            status: "processing",
+            network: networkRaw || normalizedNet,
+            package_size,
+            customer_phone: normalizedPhone,
+          } : undefined,
+        }), {
+          status: 409,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
       return new Response(JSON.stringify({ error: "Failed to create order record" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },

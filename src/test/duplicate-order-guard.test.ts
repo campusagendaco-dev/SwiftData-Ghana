@@ -8,12 +8,15 @@ import {
   IN_FLIGHT_ORDER_STATUSES,
   TERMINAL_ORDER_STATUSES,
   checkActiveProcessingDuplicate,
+  evaluateSiblingDispatchGuard,
   findBlockingProcessingOrder,
   formatDuplicateProcessingMessage,
   getPhoneLookupVariants,
   isDeliveredOrTerminalStatus,
+  isDuplicateProcessingDbError,
   isInFlightOrderStatus,
   normalizeDuplicatePhone,
+  parseDuplicateProcessingDbError,
 } from "../../supabase/functions/_shared/duplicate_order_guard";
 
 const read = (relativePath: string) =>
@@ -263,5 +266,180 @@ describe("Duplicate Purchase Rule (allow delivered, block & inform processing)",
     expect(buyData).toContain("duplicateOrderNotice");
     expect(dashBuy).toContain("duplicateOrderNotice");
     expect(agentStore).toContain("duplicateOrderNotice");
+  });
+});
+
+describe("Concurrent Double-Delivery Shield (DB trigger + verify-payment sibling guard)", () => {
+  const baseMs = Date.parse("2026-11-26T08:00:00.000Z");
+  const isoAt = (offsetSec: number) => new Date(baseMs + offsetSec * 1000).toISOString();
+
+  it("blocks a newer sibling from dispatching while an older sibling is processing/dispatching/paid", () => {
+    for (const sibStatus of ["paid", "processing", "pending", "queued", "initiated"]) {
+      const decision = evaluateSiblingDispatchGuard(
+        {
+          id: "681b0b74-6600-4acb-89f1-15d44a42b66c",
+          customer_phone: "0247915707",
+          network: "MTN",
+          package_size: "5GB",
+          order_type: "data",
+          amount: 25,
+          created_at: isoAt(75),
+        },
+        [
+          {
+            id: "184ca2bf-2ae8-46a7-a043-2f64bfbd5809",
+            status: sibStatus,
+            provider_order_id: sibStatus === "processing" ? "dispatching" : null,
+            customer_phone: "+233247915707",
+            network: "YELLO",
+            package_size: "5 GB",
+            order_type: "data",
+            amount: 25,
+            created_at: isoAt(0),
+            updated_at: isoAt(5),
+          },
+        ],
+        { nowMs: baseMs + 80 * 1000 },
+      );
+
+      expect(decision.action).toBe("hold_inflight");
+      expect(decision.sibling?.id).toBe("184ca2bf-2ae8-46a7-a043-2f64bfbd5809");
+      expect(decision.reason).toContain("184CA2BF");
+    }
+  });
+
+  it("allows the older sibling to dispatch when two sibling orders race at the same time", () => {
+    const decision = evaluateSiblingDispatchGuard(
+      {
+        id: "184ca2bf-2ae8-46a7-a043-2f64bfbd5809",
+        customer_phone: "0247915707",
+        network: "MTN",
+        package_size: "5GB",
+        order_type: "data",
+        amount: 25,
+        created_at: isoAt(0),
+      },
+      [
+        {
+          id: "681b0b74-6600-4acb-89f1-15d44a42b66c",
+          status: "processing",
+          provider_order_id: "dispatching",
+          customer_phone: "0247915707",
+          network: "MTN",
+          package_size: "5GB",
+          order_type: "data",
+          amount: 25,
+          created_at: isoAt(2),
+          updated_at: isoAt(3),
+        },
+      ],
+      { nowMs: baseMs + 4 * 1000 },
+    );
+
+    expect(decision.action).toBe("allow");
+  });
+
+  it("blocks a race-created duplicate even if the older sibling just transitioned to fulfilled", () => {
+    // Older order created at T=0, fulfilled at T=40s.
+    // Duplicate order created at T=15s (WHILE older order was still in-flight!).
+    const decision = evaluateSiblingDispatchGuard(
+      {
+        id: "681b0b74-6600-4acb-89f1-15d44a42b66c",
+        customer_phone: "0247915707",
+        network: "MTN",
+        package_size: "5GB",
+        order_type: "data",
+        amount: 25,
+        created_at: isoAt(15),
+      },
+      [
+        {
+          id: "184ca2bf-2ae8-46a7-a043-2f64bfbd5809",
+          status: "fulfilled",
+          provider_order_id: "PROV-123",
+          customer_phone: "0247915707",
+          network: "MTN",
+          package_size: "5GB",
+          order_type: "data",
+          amount: 25,
+          created_at: isoAt(0),
+          updated_at: isoAt(40),
+        },
+      ],
+      { nowMs: baseMs + 45 * 1000 },
+    );
+
+    expect(decision.action).toBe("hold_recent_delivered");
+    expect(decision.sibling?.id).toBe("184ca2bf-2ae8-46a7-a043-2f64bfbd5809");
+  });
+
+  it("ALLOWS a deliberate repeat purchase placed AFTER the previous order was already delivered", () => {
+    // Older order created at T=0, delivered at T=20s.
+    // Customer deliberately buys the same bundle again at T=45s (AFTER delivery).
+    const decision = evaluateSiblingDispatchGuard(
+      {
+        id: "99999999-aaaa-bbbb-cccc-dddddddddddd",
+        customer_phone: "0247915707",
+        network: "MTN",
+        package_size: "5GB",
+        order_type: "data",
+        amount: 25,
+        created_at: isoAt(45),
+      },
+      [
+        {
+          id: "184ca2bf-2ae8-46a7-a043-2f64bfbd5809",
+          status: "fulfilled",
+          provider_order_id: "PROV-123",
+          customer_phone: "0247915707",
+          network: "MTN",
+          package_size: "5GB",
+          order_type: "data",
+          amount: 25,
+          created_at: isoAt(0),
+          updated_at: isoAt(20),
+        },
+      ],
+      { nowMs: baseMs + 50 * 1000 },
+    );
+
+    expect(decision.action).toBe("allow");
+  });
+
+  it("detects and parses DUPLICATE_PROCESSING_ORDER database trigger errors cleanly", () => {
+    const dbErr = {
+      code: "23505",
+      message:
+        "DUPLICATE_PROCESSING_ORDER: You already have a processing MTN 5GB order for 0247915707 (Order #184CA2BF). Please wait for it to be delivered before placing another order.",
+      details: "existing_order_id=184ca2bf-2ae8-46a7-a043-2f64bfbd5809;status=processing",
+    };
+
+    expect(isDuplicateProcessingDbError(dbErr)).toBe(true);
+    expect(isDuplicateProcessingDbError({ message: "other error" })).toBe(false);
+
+    const parsed = parseDuplicateProcessingDbError(dbErr);
+    expect(parsed.existingOrderId).toBe("184ca2bf-2ae8-46a7-a043-2f64bfbd5809");
+    expect(parsed.message).toBe(
+      "You already have a processing MTN 5GB order for 0247915707 (Order #184CA2BF). Please wait for it to be delivered before placing another order.",
+    );
+  });
+
+  it("enforces atomic DB advisory lock trigger and wires DB-error + sibling guards in Edge Functions", () => {
+    const migration = read("supabase/migrations/20261126090000_prevent_concurrent_duplicate_orders.sql");
+    const walletBuy = read("supabase/functions/wallet-buy-data/index.ts");
+    const verifyPayment = read("supabase/functions/verify-payment/index.ts");
+
+    expect(migration).toContain("pg_advisory_xact_lock");
+    expect(migration).toContain("order_inflight:");
+    expect(migration).toContain("DUPLICATE_PROCESSING_ORDER");
+    expect(migration).toContain("BEFORE INSERT ON public.orders");
+    expect(migration).toContain("interval '60 minutes'");
+
+    expect(walletBuy).toContain("isDuplicateProcessingDbError");
+    expect(walletBuy).toContain("parseDuplicateProcessingDbError");
+
+    expect(verifyPayment).toContain("evaluateSiblingDispatchGuard");
+    expect(verifyPayment).toContain("order.sibling_dispatch_blocked");
+    expect(verifyPayment).toContain("getPhoneLookupVariants");
   });
 });

@@ -179,6 +179,86 @@ serve(async (req) => {
     issues: issues.length,
     details: { ...summary, sample: explained.slice(0, 100) },
   });
+
+  // Persist reconciliation snapshot & discrepancies into ai_system_memory so
+  // ai-fix-proposer and /admin/watchdog always see them (including "Delivered twice").
+  try {
+    const nowIso = new Date().toISOString();
+    const issueTypesList = Object.entries(summary.by_type)
+      .map(([k, v]) => `${v} ${k.replace(/_/g, " ")}`)
+      .join(", ");
+    const latestSummary = ok
+      ? `[CLEAN] Reconciled ${txs.length} Paystack tx(s) (${hours}h) — 0 discrepancies.`
+      : `[ISSUES] ${issues.length} reconciliation discrepancy(ies) totaling GH₵${summary.issues_total_ghs.toFixed(2)}: ${issueTypesList}`;
+
+    const upsertMemory = async (memoryKey: string, category: string, memSummary: string, data: Record<string, unknown>) => {
+      const { data: existing } = await admin
+        .from("ai_system_memory")
+        .select("id, observations_count")
+        .eq("memory_key", memoryKey)
+        .maybeSingle();
+
+      if (existing?.id) {
+        await admin
+          .from("ai_system_memory")
+          .update({
+            category,
+            summary: memSummary.slice(0, 500),
+            data,
+            confidence: 0.98,
+            observations_count: Number(existing.observations_count || 1) + 1,
+            last_observed_at: nowIso,
+            updated_at: nowIso,
+          })
+          .eq("id", existing.id);
+      } else {
+        await admin.from("ai_system_memory").insert({
+          memory_key: memoryKey,
+          category,
+          summary: memSummary.slice(0, 500),
+          data,
+          confidence: 0.98,
+          observations_count: 1,
+          last_observed_at: nowIso,
+        });
+      }
+    };
+
+    await upsertMemory(
+      "reconciliation:latest",
+      ok ? "baseline" : "error_signature",
+      latestSummary,
+      {
+        source: "reconciliation_explainer",
+        ...summary,
+        sample: explained.slice(0, 50),
+      }
+    );
+
+    if (!ok) {
+      for (const [issueType, count] of Object.entries(summary.by_type)) {
+        if (!Number(count)) continue;
+        const matching = explained.filter((i) => i.type === issueType);
+        const typeTotal = Number(matching.reduce((s, i) => s + Number(i.amount_ghs || 0), 0).toFixed(2));
+        await upsertMemory(
+          `reconciliation:issue:${issueType}`,
+          "error_signature",
+          `${count} ${issueType.replace(/_/g, " ")} discrepancy(ies) totaling GH₵${typeTotal.toFixed(2)} (${hours}h window)`,
+          {
+            source: "reconciliation_explainer",
+            issue_type: issueType,
+            count,
+            total_ghs: typeTotal,
+            window_hours: hours,
+            sample: matching.slice(0, 20),
+          }
+        );
+      }
+    }
+  } catch (err) {
+    console.warn("[wallet-reconcile] Failed to persist reconciliation memory:", err);
+  }
+
   if (!ok) {
     await admin.rpc("notify_admins", {
       p_title: "Paystack reconciliation found issues",
