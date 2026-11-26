@@ -9,7 +9,7 @@ const root = join(__dirname, "..", "..");
 const fnDir = join(root, "supabase", "functions");
 const read = (...p: string[]) => readFileSync(join(root, ...p), "utf8");
 
-const SMS_ALLOWED = ["system-payout-v1", "admin-user-actions"];
+const SMS_ALLOWED = ["system-payout-v1", "admin-user-actions", "admin-retry-autorouter", "ops-worker-ai"];
 
 describe("admin SMS login stays limited", () => {
   it("verifyAdmin needs the authenticator app unless a function explicitly allows SMS", () => {

@@ -74,6 +74,19 @@ describe("the screens explain the SMS login", () => {
   });
 });
 
+describe("SMS logins on the order router and the ops agent", () => {
+  it("may only count the retry queue; every retry needs the app", () => {
+    expect(needsAuthenticatorApp("admin-retry-autorouter", "count_only")).toBe(false);
+    expect(needsAuthenticatorApp("admin-retry-autorouter", "retry")).toBe(true);
+    expect(needsAuthenticatorApp("admin-retry-autorouter", "anything_new")).toBe(true);
+  });
+  it("may run an agent patrol; commands and anything unknown need the app", () => {
+    expect(needsAuthenticatorApp("ops-worker-ai", "patrol")).toBe(false);
+    expect(needsAuthenticatorApp("ops-worker-ai", "command")).toBe(true);
+    expect(needsAuthenticatorApp("ops-worker-ai", "")).toBe(true);
+  });
+});
+
 describe("SMS codes", () => {
   it("go only to the pinned phone, never the profile phone the person can edit", async () => {
     const db = seed();

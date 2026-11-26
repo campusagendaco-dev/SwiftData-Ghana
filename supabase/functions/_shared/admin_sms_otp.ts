@@ -39,7 +39,20 @@ const NEEDS_APP: Record<string, Set<string>> = {
   ]),
 };
 
+/**
+ * Functions where an SMS login may do ONLY these actions; everything else (including any action
+ * added later) needs the authenticator app.
+ */
+const SMS_ONLY: Record<string, Set<string>> = {
+  // read-only queue count shown on Admin > Orders; every retry re-sends orders
+  "admin-retry-autorouter": new Set(["count_only"]),
+  // agents scan and record findings (safe-agents design); "command" carries out instructions
+  "ops-worker-ai": new Set(["patrol"]),
+};
+
 export function needsAuthenticatorApp(fn: string, action: unknown): boolean {
+  const only = SMS_ONLY[fn];
+  if (only) return !only.has(String(action ?? ""));
   return NEEDS_APP[fn]?.has(String(action ?? "")) ?? false;
 }
 
