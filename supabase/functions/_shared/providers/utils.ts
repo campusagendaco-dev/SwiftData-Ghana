@@ -315,6 +315,9 @@ export function isNonRetryableTerminalError(reason: string | null | undefined): 
   return (
     r.includes("invalid number") ||
     r.includes("invalid recipient") ||
+    r.includes("invalid bundle") ||
+    r.includes("bundle package not found") ||
+    r.includes("no bundle found") ||
     r.includes("wrong network") ||
     r.includes("not an mtn") ||
     r.includes("not a telecel") ||

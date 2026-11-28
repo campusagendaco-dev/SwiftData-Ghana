@@ -2651,12 +2651,13 @@ serve(async (req: any) => {
         break; // success — stop trying
       } else {
         const isDuplicateErr = isDuplicateOrderError(result.reason);
-        // Increment consecutive failures ONLY for technical server outages, NOT for unlisted beneficiary numbers or validation/duplicate errors
+        const isCatalogMismatchErr = /invalid bundle|bundle package not found|no bundle found|unsupported package|bundle not available/i.test(String(result.reason || ""));
+        // Increment consecutive failures ONLY for technical server outages, NOT for unlisted beneficiary numbers, catalog mismatches, or validation/duplicate errors
         isBeneficiaryErr = /beneficiary|payee|limit|not_allowed|not allowed|not added|whitelist|recipient/i.test(String(result.reason || "")) || isDuplicateErr;
         let newFailures = 0;
 
         const isDatamartProvider = (provider.handler_type || "").toLowerCase() === "datamart";
-        if (!isBeneficiaryErr && !isDatamartProvider) {
+        if (!isBeneficiaryErr && !isCatalogMismatchErr && !isDatamartProvider) {
           const { data: prov } = await supabaseAdmin.from("providers").select("consecutive_failures").eq("id", provider.id).maybeSingle();
           newFailures = ((prov as any)?.consecutive_failures || 0) + 1;
           // Increment consecutive failures for healthy priority sorting, but NEVER automatically disable the provider
